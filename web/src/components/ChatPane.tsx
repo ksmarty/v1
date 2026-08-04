@@ -8,7 +8,7 @@ import {
 } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, retryChat, streamChat } from '../api';
-import type { ChatEvent, ChatUsage, ProviderModel } from '../types';
+import type { ChatEvent, ChatUsage, ProviderModel, Todo } from '../types';
 import { errMsg } from '../utils';
 import { renderMarkdown } from '../markdown';
 import { Button, ErrorBox, IconButton, Spinner } from './ui';
@@ -281,6 +281,8 @@ export default function ChatPane({
   const [customModel, setCustomModel] = useState(false);
   const [llmModels, setLlmModels] = useState<ProviderModel[]>([]);
   const [storedModel, setStoredModel] = useState('');
+  const [todos, setTodos] = useState<Todo[]>([]);
+  const [todosOpen, setTodosOpen] = useState(true);
   const navigate = useNavigate();
 
   const itemsRef = useRef<Item[]>([]);
@@ -381,6 +383,16 @@ export default function ChatPane({
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Load the agent-maintained todo list for this project.
+  useEffect(() => {
+    api
+      .getTodos(projectId)
+      .then((r) => setTodos(r.todos))
+      .catch(() => {
+        // no todos yet — leave the panel hidden
+      });
+  }, [projectId]);
 
   // Auto-scroll on new content.
   useEffect(() => {
@@ -492,6 +504,11 @@ export default function ChatPane({
               },
             ]);
           }
+          break;
+        }
+        case 'todos': {
+          setTodos(ev.todos);
+          setTodosOpen(true);
           break;
         }
         case 'done': {
@@ -704,6 +721,47 @@ export default function ChatPane({
                 Retry
               </Button>
             </div>
+          </div>
+        )}
+        {todos.length > 0 && (
+          <div className="mx-auto mb-2 w-full max-w-2xl rounded-xl border border-border bg-surface/50">
+            <button
+              type="button"
+              onClick={() => setTodosOpen((o) => !o)}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-subtle transition-colors hover:text-text"
+            >
+              {todosOpen ? (
+                <IconChevronDown className="h-3.5 w-3.5 shrink-0 text-faint" />
+              ) : (
+                <IconChevronRight className="h-3.5 w-3.5 shrink-0 text-faint" />
+              )}
+              To do
+              <span className="ml-auto font-normal text-faint">
+                {todos.filter((t) => !t.done).length} left
+              </span>
+            </button>
+            {todosOpen && (
+              <ul className="border-t border-border/80 px-3 py-2">
+                {todos.map((t, i) => (
+                  <li key={i} className="flex items-start gap-2.5 py-1">
+                    <span
+                      className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
+                        t.done ? 'border-emerald-500 bg-emerald-500 text-emerald-50' : 'border-border-strong'
+                      }`}
+                    >
+                      {t.done && <IconCheck className="h-3 w-3" />}
+                    </span>
+                    <span
+                      className={`min-w-0 text-sm ${
+                        t.done ? 'text-faint line-through' : 'text-text'
+                      }`}
+                    >
+                      {t.title}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         )}
         {!loading && !loadError && items.length === 0 && (

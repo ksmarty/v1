@@ -13,6 +13,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"v1/internal/store"
 )
 
 // PreviewStarter starts (or restarts) a project's preview and returns its URL.
@@ -26,6 +28,9 @@ type Executor struct {
 	ProjectID      string
 	PreviewCommand string
 	Previews       PreviewStarter
+	Store          *store.Store
+	OnTodos        func([]store.Todo)
+	OnFileChange   func()
 }
 
 // Execute runs one tool call and returns the result string fed back to the LLM.
@@ -43,9 +48,35 @@ func (e *Executor) Execute(name, argsJSON string) (string, error) {
 		return e.runCommand(argsJSON)
 	case "restart_preview":
 		return e.restartPreview()
+	case "set_todos":
+		return e.setTodos(argsJSON)
 	default:
 		return "", fmt.Errorf("unknown tool %q", name)
 	}
+}
+
+// setTodos replaces the project's task list. The agent is expected to pass the
+// full desired list (not a delta) so items keep their order and done state.
+func (e *Executor) setTodos(argsJSON string) (string, error) {
+	var args struct {
+		Todos []store.Todo `json:"todos"`
+	}
+	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
+		return "", fmt.Errorf("invalid arguments: %w", err)
+	}
+	if e.Store == nil {
+		return "", fmt.Errorf("todo store unavailable")
+	}
+	if args.Todos == nil {
+		args.Todos = []store.Todo{}
+	}
+	if err := e.Store.SetTodos(e.ProjectID, args.Todos); err != nil {
+		return "", err
+	}
+	if e.OnTodos != nil {
+		e.OnTodos(args.Todos)
+	}
+	return toolResult(map[string]any{"ok": true, "count": len(args.Todos)}), nil
 }
 
 // resolve maps a workspace-relative path to an absolute path, rejecting
@@ -178,6 +209,9 @@ func (e *Executor) writeFile(argsJSON string) (string, error) {
 	if err := os.WriteFile(full, []byte(args.Content), 0o644); err != nil {
 		return "", err
 	}
+	if e.OnFileChange != nil {
+		e.OnFileChange()
+	}
 	return toolResult(map[string]any{"ok": true, "path": args.Path, "bytes": len(args.Content)}), nil
 }
 
@@ -209,6 +243,9 @@ func (e *Executor) editFile(argsJSON string) (string, error) {
 	content = strings.Replace(content, args.OldString, args.NewString, 1)
 	if err := os.WriteFile(full, []byte(content), 0o644); err != nil {
 		return "", err
+	}
+	if e.OnFileChange != nil {
+		e.OnFileChange()
 	}
 	res := map[string]any{"ok": true, "path": args.Path}
 	if n > 1 {

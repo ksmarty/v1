@@ -16,6 +16,7 @@ import type {
   ProvidersSearchResult,
   PushResult,
   Settings,
+  Todo,
 } from './types';
 
 export class ApiError extends Error {
@@ -129,6 +130,7 @@ export const api = {
   getMessages: (id: string) => request<ChatMessage[]>(`/api/projects/${id}/messages`),
   truncateMessages: (id: string, messageId: number) =>
     post<void>(`/api/projects/${id}/messages/truncate`, { id: messageId }),
+  getTodos: (id: string) => request<{ todos: Todo[] }>(`/api/projects/${id}/todos`),
 
   // Preview
   getPreviewStatus: (id: string) => request<PreviewStatus>(`/api/projects/${id}/preview/status`),

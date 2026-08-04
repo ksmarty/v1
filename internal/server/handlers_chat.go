@@ -61,6 +61,20 @@ func (s *Server) handleListMessages(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
+// handleGetTodos returns the project's agent-maintained todo list.
+func (s *Server) handleGetTodos(w http.ResponseWriter, r *http.Request) {
+	p := s.projectOr404(w, r)
+	if p == nil {
+		return
+	}
+	todos, err := s.st.GetTodos(p.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"todos": todos})
+}
+
 // ---- chat (SSE agent loop) ----
 
 func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
@@ -210,6 +224,10 @@ func (s *Server) streamChatTurn(w http.ResponseWriter, r *http.Request, p *store
 		ProjectID:      p.ID,
 		PreviewCommand: p.PreviewCommand,
 		Previews:       s.previews,
+		Store:          s.st,
+		OnTodos: func(t []store.Todo) {
+			emit(agent.ChatEvent{Type: "todos", Todos: t})
+		},
 	}
 	turn, err := agent.RunChat(ctx, params)
 	if err != nil {

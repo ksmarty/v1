@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -166,6 +167,42 @@ func (s *Store) SetSetting(key, value string) error {
 func (s *Store) DeleteSetting(key string) error {
 	_, err := s.db.Exec(`DELETE FROM settings WHERE key = ?`, key)
 	return err
+}
+
+// ---- todos ----
+
+// Todo is one item in a project's task list maintained by the agent.
+type Todo struct {
+	Title string `json:"title"`
+	Done  bool   `json:"done"`
+}
+
+// todoSettingKey returns the settings key backing a project's todo list.
+func todoSettingKey(projectID string) string { return "project_todos:" + projectID }
+
+// GetTodos returns a project's todo list (empty when none was ever set).
+func (s *Store) GetTodos(projectID string) ([]Todo, error) {
+	v, ok, err := s.GetSetting(todoSettingKey(projectID))
+	if err != nil || !ok || v == "" {
+		return []Todo{}, err
+	}
+	var out []Todo
+	if err := json.Unmarshal([]byte(v), &out); err != nil {
+		return []Todo{}, nil
+	}
+	return out, nil
+}
+
+// SetTodos stores a project's todo list.
+func (s *Store) SetTodos(projectID string, todos []Todo) error {
+	if todos == nil {
+		todos = []Todo{}
+	}
+	data, err := json.Marshal(todos)
+	if err != nil {
+		return err
+	}
+	return s.SetSetting(todoSettingKey(projectID), string(data))
 }
 
 // ---- sessions ----

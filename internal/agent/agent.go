@@ -18,6 +18,7 @@ Rules:
 - The workspace already contains a project; prefer the existing project structure and conventions.
 - All file paths are relative to the workspace root.
 - After writing or changing code, call restart_preview so the user can see the result.
+- Keep a visible todo list of your work using set_todos; add items up front and mark them done as they complete.
 - Keep your responses concise.`
 
 const maxRounds = 15
@@ -38,13 +39,14 @@ type TurnResult struct {
 
 // ChatEvent is one SSE event sent to the chat client.
 type ChatEvent struct {
-	Type   string `json:"type"`
-	Text   string `json:"text,omitempty"`
-	Name   string `json:"name,omitempty"`
-	Detail string `json:"detail,omitempty"`
-	OK     bool   `json:"ok,omitempty"`
-	Error  string `json:"error,omitempty"`
-	Usage  *Usage `json:"usage,omitempty"`
+	Type   string      `json:"type"`
+	Text   string      `json:"text,omitempty"`
+	Name   string      `json:"name,omitempty"`
+	Detail string      `json:"detail,omitempty"`
+	OK     bool        `json:"ok,omitempty"`
+	Error  string      `json:"error,omitempty"`
+	Usage  *Usage      `json:"usage,omitempty"`
+	Todos  []store.Todo `json:"todos,omitempty"`
 }
 
 // ChatParams carries everything needed to run one chat turn.
@@ -301,6 +303,30 @@ var tools = []llm.Tool{
 			Parameters: map[string]any{
 				"type":       "object",
 				"properties": map[string]any{},
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: llm.ToolFunction{
+			Name:        "set_todos",
+			Description: "Maintain the task list shown to the user. Pass the full desired list as an array of {title, done} objects (not a delta); items are shown in order. Call it to create todos at the start of a task and to mark items done as they complete.",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"todos": map[string]any{
+						"type": "array",
+						"items": map[string]any{
+							"type": "object",
+							"properties": map[string]any{
+								"title": map[string]any{"type": "string"},
+								"done":  map[string]any{"type": "boolean"},
+							},
+							"required": []string{"title"},
+						},
+					},
+				},
+				"required": []string{"todos"},
 			},
 		},
 	},

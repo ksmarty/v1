@@ -104,6 +104,11 @@ export interface ChatUsage {
   model?: string;
 }
 
+export interface Todo {
+  title: string;
+  done: boolean;
+}
+
 export interface ChatMessage {
   id: string;
   role: string;
@@ -120,6 +125,7 @@ export type ChatEvent =
   | { type: 'reasoning'; text: string }
   | { type: 'tool_start'; name: string; detail: string }
   | { type: 'tool_end'; name: string; ok: boolean; detail: string }
+  | { type: 'todos'; todos: Todo[] }
   | { type: 'done'; usage?: ChatUsage }
   | { type: 'error'; error: string };
 
