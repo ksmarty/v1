@@ -1,7 +1,12 @@
 package server
 
 import (
+	"encoding/json"
+	"io"
 	"net/http"
+	"strings"
+
+	"v1/internal/llm"
 )
 
 // ---- auth ----
@@ -11,6 +16,7 @@ func (s *Server) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
 		"authRequired":  !s.cfg.AuthDisabled,
 		"authenticated": s.auth.Authenticated(r),
 		"setupRequired": s.auth.SetupRequired(),
+		"oidcEnabled":   s.oidcEnabled(),
 	})
 }
 
@@ -71,11 +77,16 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 	baseURL, apiKey, model := s.llmConfig()
+	models := llm.ModelsForBaseURL(baseURL)
+	if models == nil {
+		models = []llm.ProviderModel{}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"llm": map[string]any{
 			"baseURL":   baseURL,
 			"model":     model,
 			"apiKeySet": apiKey != "",
+			"models":    models,
 		},
 		"github": map[string]any{
 			"tokenSet":      s.githubToken() != "",
@@ -159,7 +170,36 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleTestLLM(w http.ResponseWriter, r *http.Request) {
-	if err := s.llmClient().TestModels(r.Context()); err != nil {
+	// Optional body: non-empty fields override the stored/env configuration.
+	var body struct {
+		BaseURL string `json:"baseURL"`
+		APIKey  string `json:"apiKey"`
+		Model   string `json:"model"`
+	}
+	if r.Body != nil {
+		data, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "reading body: "+err.Error())
+			return
+		}
+		if len(strings.TrimSpace(string(data))) > 0 {
+			if err := json.Unmarshal(data, &body); err != nil {
+				writeError(w, http.StatusBadRequest, "invalid JSON body: "+err.Error())
+				return
+			}
+		}
+	}
+	baseURL, apiKey, model := s.llmConfig()
+	if body.BaseURL != "" {
+		baseURL = body.BaseURL
+	}
+	if body.APIKey != "" {
+		apiKey = body.APIKey
+	}
+	if body.Model != "" {
+		model = body.Model
+	}
+	if err := llm.NewClient(baseURL, apiKey, model).TestModels(r.Context()); err != nil {
 		writeJSON(w, http.StatusOK, map[string]any{"ok": false, "error": err.Error()})
 		return
 	}

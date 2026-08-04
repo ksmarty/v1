@@ -157,7 +157,11 @@ export default function Settings() {
   const [llmSaved, setLlmSaved] = useState(false);
   const [llmError, setLlmError] = useState<string | null>(null);
   const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState<{ ok: boolean; error?: string } | null>(null);
+  const [testResult, setTestResult] = useState<{
+    ok: boolean;
+    error?: string;
+    baseURL: string;
+  } | null>(null);
 
   // GitHub PAT
   const [token, setToken] = useState('');
@@ -228,10 +232,10 @@ export default function Settings() {
     setTesting(true);
     setTestResult(null);
     try {
-      const r = await api.testLLM();
-      setTestResult(r);
+      const r = await api.testLLM({ baseURL, apiKey, model });
+      setTestResult({ ok: r.ok, error: r.error, baseURL });
     } catch (err) {
-      setTestResult({ ok: false, error: errMsg(err) });
+      setTestResult({ ok: false, error: errMsg(err), baseURL });
     } finally {
       setTesting(false);
     }
@@ -360,18 +364,19 @@ export default function Settings() {
               model={model}
               onBaseURLChange={setBaseURL}
               onModelChange={setModel}
-            />
-            <Field label="API key">
-              <Input
-                type="password"
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                placeholder={
-                  settings.llm.apiKeySet ? '•••••••• (set — enter to replace)' : 'Not set'
-                }
-                autoComplete="off"
-              />
-            </Field>
+            >
+              <Field label="API key">
+                <Input
+                  type="password"
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  placeholder={
+                    settings.llm.apiKeySet ? '•••••••• (set — enter to replace)' : 'Not set'
+                  }
+                  autoComplete="off"
+                />
+              </Field>
+            </ProviderSelector>
             <SaveRow
               saving={llmSaving}
               saved={llmSaved}
@@ -385,12 +390,16 @@ export default function Settings() {
             {testResult &&
               (testResult.ok ? (
                 <p className="flex items-center gap-1.5 text-xs text-emerald-500">
-                  <IconCheck className="h-3.5 w-3.5" /> Connection successful
+                  <IconCheck className="h-3.5 w-3.5" /> Connection successful — against{' '}
+                  {testResult.baseURL.trim() ? testResult.baseURL : 'stored endpoint'}
                 </p>
               ) : (
                 <p className="flex items-start gap-1.5 text-xs text-red-400">
                   <IconX className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                  {testResult.error || 'Connection failed'}
+                  <span>
+                    {testResult.error || 'Connection failed'} — against{' '}
+                    {testResult.baseURL.trim() ? testResult.baseURL : 'stored endpoint'}
+                  </span>
                 </p>
               ))}
           </form>

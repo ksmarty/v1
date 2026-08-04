@@ -1,12 +1,14 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api';
+import type { AuthStatus } from '../types';
 import { errMsg } from '../utils';
 import { Button, Center, ErrorBox, Input, Spinner } from '../components/ui';
 import { IconLock } from '../components/icons';
 
 export default function Login({ mode }: { mode: 'login' | 'setup' }) {
   const navigate = useNavigate();
+  const [authStatus, setAuthStatus] = useState<AuthStatus | null>(null);
   const [checking, setChecking] = useState(true);
   const [checkError, setCheckError] = useState<string | null>(null);
   const [password, setPassword] = useState('');
@@ -20,6 +22,7 @@ export default function Login({ mode }: { mode: 'login' | 'setup' }) {
       .getAuthStatus()
       .then((s) => {
         if (cancelled) return;
+        setAuthStatus(s);
         if (mode === 'login') {
           if (s.setupRequired) {
             navigate('/setup', { replace: true });
@@ -108,6 +111,25 @@ export default function Login({ mode }: { mode: 'login' | 'setup' }) {
               : 'Enter your password to continue.'}
           </p>
         </div>
+
+        {!isSetup && authStatus?.oidcEnabled && (
+          <>
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => {
+                window.location.href = '/api/auth/oidc/start';
+              }}
+            >
+              Sign in with Authentik
+            </Button>
+            <div className="my-4 flex items-center gap-3 text-xs text-faint">
+              <div className="h-px flex-1 bg-border" />
+              or with password
+              <div className="h-px flex-1 bg-border" />
+            </div>
+          </>
+        )}
 
         <form
           onSubmit={submit}

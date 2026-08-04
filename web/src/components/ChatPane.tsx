@@ -1,23 +1,98 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { api, streamChat } from '../api';
-import type { ChatEvent } from '../types';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent,
+} from 'react';
+import { useNavigate } from 'react-router-dom';
+import { api, retryChat, streamChat } from '../api';
+import type { ChatEvent, ChatUsage, ProviderModel } from '../types';
 import { errMsg } from '../utils';
+import { renderMarkdown } from '../markdown';
 import { Button, ErrorBox, IconButton, Spinner } from './ui';
 import {
   IconArrowUp,
   IconCheck,
   IconChevronDown,
   IconChevronRight,
+  IconModel,
+  IconPencil,
+  IconRefresh,
+  IconRewind,
   IconSquare,
   IconWrench,
   IconX,
 } from './icons';
 
-type Item =
-  | { kind: 'msg'; key: string; role: string; content: string; streaming?: boolean }
-  | { kind: 'tool'; key: string; name: string; detail: string; running: boolean; ok?: boolean };
+type ToolCall = { name: string; detail: string };
 
-function ToolRow({ item }: { item: Extract<Item, { kind: 'tool' }> }) {
+type MsgItem = {
+  kind: 'msg';
+  key: string;
+  role: 'user' | 'assistant' | 'error';
+  content: string;
+  reasoning?: string;
+  usage?: ChatUsage;
+  model?: string;
+  toolCalls?: ToolCall[];
+  toolResults?: ToolCall[];
+  streaming?: boolean;
+  stale?: boolean;
+  editing?: boolean;
+};
+
+type ToolItem = {
+  kind: 'tool';
+  key: string;
+  name: string;
+  detail: string;
+  running: boolean;
+  ok?: boolean;
+};
+
+type Item = MsgItem | ToolItem;
+
+/** Parses an assistant message's tool_json: {"tool_calls":[{function:{name,arguments}}]}. */
+function parseToolCalls(tool: string): ToolCall[] | null {
+  try {
+    const data = JSON.parse(tool) as {
+      tool_calls?: { function?: { name?: string; arguments?: string } }[];
+    };
+    if (!Array.isArray(data.tool_calls)) return null;
+    return data.tool_calls.map((c) => ({
+      name: c?.function?.name ?? 'tool',
+      detail: c?.function?.arguments ?? '',
+    }));
+  } catch {
+    return null;
+  }
+}
+
+/** Parses a role "tool" message's tool_json: {"name": "..."}. */
+function parseToolName(tool: string): string {
+  try {
+    const data = JSON.parse(tool) as { name?: string };
+    return typeof data.name === 'string' && data.name ? data.name : 'tool';
+  } catch {
+    return 'tool';
+  }
+}
+
+function formatUsage(usage: ChatUsage, msgModel?: string): string {
+  const parts = [`${usage.input.toLocaleString()} in · ${usage.output.toLocaleString()} out`];
+  const m = msgModel ?? usage.model;
+  if (m) parts.push(m);
+  return parts.join(' · ');
+}
+
+/** True when a message key is a persisted row id (not a live/synthetic key). */
+function persisted(key: string): boolean {
+  return Number.isFinite(Number(key));
+}
+
+function ToolRow({ item }: { item: ToolItem }) {
   const [open, setOpen] = useState(false);
   return (
     <div className="rounded-lg border border-border/80 bg-surface/50 text-xs">
@@ -51,18 +126,162 @@ function ToolRow({ item }: { item: Extract<Item, { kind: 'tool' }> }) {
   );
 }
 
+function ReasoningBlock({ text, autoOpen }: { text: string; autoOpen: boolean }) {
+  const [open, setOpen] = useState(autoOpen);
+  useEffect(() => {
+    setOpen(autoOpen);
+  }, [autoOpen]);
+  return (
+    <div className="rounded-lg border border-border/80 bg-surface/50 text-xs">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex min-h-[30px] w-full items-center gap-2 px-2.5 py-1.5 text-left text-dim transition-colors hover:text-text"
+      >
+        {open ? (
+          <IconChevronDown className="h-3.5 w-3.5 shrink-0" />
+        ) : (
+          <IconChevronRight className="h-3.5 w-3.5 shrink-0" />
+        )}
+        <span className="font-mono">Thinking</span>
+      </button>
+      {open && (
+        <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words border-t border-border/80 px-3 py-2 font-mono text-[11px] leading-relaxed text-subtle">
+          {text}
+        </pre>
+      )}
+    </div>
+  );
+}
+
+function ToolChip({ name, detail }: ToolCall) {
+  return (
+    <span className="inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-md border border-border bg-surface/50 px-2 py-0.5 font-mono text-[10px] text-dim">
+      <IconWrench className="h-3 w-3 shrink-0 text-faint" />
+      <span className="shrink-0 text-text">{name}</span>
+      {detail && <span className="min-w-0 flex-1 truncate text-faint">{detail}</span>}
+    </span>
+  );
+}
+
+function ToolResultBlock({ name, detail }: ToolCall) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="rounded-lg border border-border/80 bg-surface/50 text-xs">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex min-h-[30px] w-full items-center gap-2 px-2.5 py-1.5 text-left text-dim transition-colors hover:text-text"
+      >
+        {open ? (
+          <IconChevronDown className="h-3.5 w-3.5 shrink-0" />
+        ) : (
+          <IconChevronRight className="h-3.5 w-3.5 shrink-0" />
+        )}
+        <IconWrench className="h-3.5 w-3.5 shrink-0" />
+        <span className="shrink-0 font-mono text-text">{name}</span>
+        <span className="text-faint">result</span>
+      </button>
+      {open && (
+        <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-words border-t border-border/80 px-3 py-2 font-mono text-[11px] leading-relaxed text-subtle">
+          {detail}
+        </pre>
+      )}
+    </div>
+  );
+}
+
+function Markdown({ text, streaming }: { text: string; streaming?: boolean }) {
+  const html = useMemo(() => renderMarkdown(text, streaming), [text, streaming]);
+  const onCopy = (e: MouseEvent<HTMLDivElement>) => {
+    const btn = (e.target as HTMLElement).closest('button[data-copy]');
+    if (!(btn instanceof HTMLButtonElement)) return;
+    const code = btn.parentElement?.querySelector('code');
+    const content = code?.textContent ?? '';
+    if (!content) return;
+    void navigator.clipboard
+      .writeText(content)
+      .then(() => {
+        const label = btn.textContent;
+        btn.textContent = 'Copied';
+        window.setTimeout(() => {
+          btn.textContent = label;
+        }, 1500);
+      })
+      .catch(() => {
+        // clipboard unavailable — ignore
+      });
+  };
+  return <div className="md" onClick={onCopy} dangerouslySetInnerHTML={{ __html: html }} />;
+}
+
+function EditUserBubble({
+  initial,
+  onSubmit,
+  onCancel,
+}: {
+  initial: string;
+  onSubmit: (text: string) => void;
+  onCancel: () => void;
+}) {
+  const [value, setValue] = useState(initial);
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (el) {
+      el.focus();
+      el.select();
+    }
+  }, []);
+  const submit = () => {
+    if (value.trim()) onSubmit(value);
+  };
+  return (
+    <div className="ml-auto flex w-full max-w-[85%] flex-col gap-2">
+      <textarea
+        ref={ref}
+        rows={3}
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            submit();
+          }
+        }}
+        className="max-h-60 w-full resize-y rounded-xl border border-border-strong bg-surface px-3.5 py-2 text-sm text-text outline-none transition-colors focus:border-subtle"
+      />
+      <div className="flex justify-end gap-2">
+        <Button variant="ghost" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button variant="outline" onClick={submit}>
+          Send
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export default function ChatPane({
   projectId,
   onPreviewRestart,
+  llmReady,
 }: {
   projectId: string;
   onPreviewRestart: () => void;
+  llmReady: boolean;
 }) {
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
+  const [model, setModel] = useState('');
+  const [customModel, setCustomModel] = useState(false);
+  const [llmModels, setLlmModels] = useState<ProviderModel[]>([]);
+  const [storedModel, setStoredModel] = useState('');
+  const navigate = useNavigate();
 
   const itemsRef = useRef<Item[]>([]);
   const counterRef = useRef(0);
@@ -79,23 +298,77 @@ export default function ChatPane({
     setItems(itemsRef.current);
   }, []);
 
+  // Model catalog for the chat header.
+  useEffect(() => {
+    api
+      .getSettings()
+      .then((s) => {
+        setLlmModels(s.llm.models);
+        setStoredModel(s.llm.model);
+        if (s.llm.model) setModel(s.llm.model);
+      })
+      .catch(() => {
+        // header falls back to the free-text option
+      });
+  }, []);
+
+  // With no stored model and no catalog, surface the free-text input directly.
+  useEffect(() => {
+    if (storedModel === '' && llmModels.length === 0) setCustomModel(true);
+  }, [storedModel, llmModels]);
+
+  const modelOptions = useMemo(() => {
+    const opts: { id: string; name: string }[] = llmModels.map((m) => ({ id: m.id, name: m.name }));
+    if (storedModel && !llmModels.some((m) => m.id === storedModel)) {
+      opts.push({ id: storedModel, name: `${storedModel} (stored)` });
+    }
+    return opts;
+  }, [llmModels, storedModel]);
+
+  const customActive = customModel || (model !== '' && !modelOptions.some((m) => m.id === model));
+  const selectValue = customActive ? 'custom' : model;
+  const modelOverride = model.trim() || undefined;
+
   const load = useCallback(async () => {
     setLoading(true);
     setLoadError(null);
     try {
       const msgs = await api.getMessages(projectId);
-      const mapped: Item[] = msgs.map((m) =>
-        m.tool || m.role === 'tool'
-          ? {
-              kind: 'tool',
+      const mapped: Item[] = [];
+      for (const m of msgs) {
+        if (m.role === 'tool') {
+          const name = m.tool ? parseToolName(m.tool) : 'tool';
+          const last = mapped[mapped.length - 1];
+          if (last && last.kind === 'msg' && last.role === 'assistant') {
+            last.toolResults = [...(last.toolResults ?? []), { name, detail: m.content }];
+          } else {
+            mapped.push({
+              kind: 'msg',
               key: m.id,
-              name: m.tool || 'tool',
-              detail: m.content,
-              running: false,
-              ok: true,
-            }
-          : { kind: 'msg', key: m.id, role: m.role, content: m.content },
-      );
+              role: 'assistant',
+              content: '',
+              toolResults: [{ name, detail: m.content }],
+            });
+          }
+        } else if (m.role === 'assistant') {
+          const item: MsgItem = {
+            kind: 'msg',
+            key: m.id,
+            role: 'assistant',
+            content: m.content,
+            reasoning: m.reasoning,
+            usage: m.usage,
+            model: m.model,
+          };
+          const calls = m.tool ? parseToolCalls(m.tool) : null;
+          if (calls) item.toolCalls = calls;
+          mapped.push(item);
+        } else if (m.role === 'user') {
+          mapped.push({ kind: 'msg', key: m.id, role: 'user', content: m.content });
+        } else {
+          mapped.push({ kind: 'msg', key: m.id, role: 'error', content: m.content });
+        }
+      }
       itemsRef.current = mapped;
       setItems(mapped);
     } catch (e) {
@@ -136,6 +409,35 @@ export default function ChatPane({
   const handleEvent = useCallback(
     (ev: ChatEvent) => {
       switch (ev.type) {
+        case 'reasoning': {
+          let k = assistantKeyRef.current;
+          if (!k) {
+            k = `s${++counterRef.current}`;
+            assistantKeyRef.current = k;
+            const nk = k;
+            update((prev) => [
+              ...prev,
+              {
+                kind: 'msg',
+                key: nk,
+                role: 'assistant',
+                content: '',
+                reasoning: ev.text,
+                streaming: true,
+              },
+            ]);
+          } else {
+            const ck = k;
+            update((prev) =>
+              prev.map((it) =>
+                it.kind === 'msg' && it.key === ck
+                  ? { ...it, reasoning: (it.reasoning ?? '') + ev.text }
+                  : it,
+              ),
+            );
+          }
+          break;
+        }
         case 'delta': {
           let k = assistantKeyRef.current;
           if (!k) {
@@ -193,6 +495,17 @@ export default function ChatPane({
           break;
         }
         case 'done': {
+          if (ev.usage) {
+            const k = assistantKeyRef.current;
+            if (k) {
+              const ck = k;
+              update((prev) =>
+                prev.map((it) =>
+                  it.kind === 'msg' && it.key === ck ? { ...it, usage: ev.usage } : it,
+                ),
+              );
+            }
+          }
           finish();
           break;
         }
@@ -209,40 +522,174 @@ export default function ChatPane({
     [update, finish],
   );
 
-  const send = useCallback(async () => {
-    const text = input.trim();
-    if (!text || streaming) return;
-    setInput('');
-    update((prev) => [
-      ...prev,
-      { kind: 'msg', key: `u${++counterRef.current}`, role: 'user', content: text },
-    ]);
-    setStreaming(true);
-    assistantKeyRef.current = null;
-    const ctrl = new AbortController();
-    abortRef.current = ctrl;
-    try {
-      await streamChat(projectId, text, handleEvent, ctrl.signal);
-      finish();
-    } catch (e) {
-      const aborted = e instanceof DOMException && e.name === 'AbortError';
+  const run = useCallback(
+    async (start: (signal: AbortSignal) => Promise<void>) => {
+      if (streaming) return;
+      setStreaming(true);
+      assistantKeyRef.current = null;
+      const ctrl = new AbortController();
+      abortRef.current = ctrl;
+      try {
+        await start(ctrl.signal);
+        finish();
+      } catch (e) {
+        const aborted = e instanceof DOMException && e.name === 'AbortError';
+        update((prev) => [
+          ...prev,
+          {
+            kind: 'msg',
+            key: `e${++counterRef.current}`,
+            role: 'error',
+            content: aborted ? 'Generation stopped.' : errMsg(e),
+          },
+        ]);
+        finish();
+      }
+    },
+    [streaming, finish, update],
+  );
+
+  const sendText = useCallback(
+    (text: string) => {
+      const trimmed = text.trim();
+      if (!trimmed || streaming || !llmReady) return;
+      setInput('');
       update((prev) => [
         ...prev,
-        {
-          kind: 'msg',
-          key: `e${++counterRef.current}`,
-          role: 'error',
-          content: aborted ? 'Generation stopped.' : errMsg(e),
-        },
+        { kind: 'msg', key: `u${++counterRef.current}`, role: 'user', content: trimmed },
       ]);
-      finish();
-    }
-  }, [input, streaming, projectId, handleEvent, finish, update]);
+      void run((signal) => streamChat(projectId, trimmed, { model: modelOverride }, handleEvent, signal));
+    },
+    [streaming, llmReady, projectId, modelOverride, handleEvent, run, update],
+  );
+
+  const send = useCallback(() => sendText(input), [input, sendText]);
+
+  const regenerate = useCallback(() => {
+    if (streaming || !llmReady) return;
+    update((prev) => {
+      let idx = -1;
+      for (let i = prev.length - 1; i >= 0; i--) {
+        const it = prev[i];
+        if (it.kind === 'msg' && it.role === 'assistant') {
+          idx = i;
+          break;
+        }
+      }
+      if (idx === -1) return prev;
+      return prev.map((it, i) => (i === idx ? { ...it, stale: true } : it));
+    });
+    void run((signal) => retryChat(projectId, handleEvent, signal));
+  }, [streaming, llmReady, projectId, handleEvent, run, update]);
+
+  const setItemEditing = useCallback(
+    (key: string, editing: boolean) => {
+      update((prev) =>
+        prev.map((it) => (it.kind === 'msg' && it.key === key ? { ...it, editing } : it)),
+      );
+    },
+    [update],
+  );
+
+  // Editing a persisted user message rewinds the thread to it (drops the
+  // display tail) and re-runs from the edited text via editMessageId.
+  const editUserMessage = useCallback(
+    (key: string, text: string) => {
+      const trimmed = text.trim();
+      const id = Number(key);
+      if (!trimmed || streaming || !llmReady || !persisted(key)) return;
+      setItemEditing(key, false);
+      update((prev) => {
+        const idx = prev.findIndex((it) => it.kind === 'msg' && it.key === key);
+        if (idx === -1) return prev;
+        const edited: MsgItem = {
+          ...(prev[idx] as MsgItem),
+          kind: 'msg',
+          role: 'user',
+          content: trimmed,
+          editing: false,
+          stale: false,
+          usage: undefined,
+          toolCalls: undefined,
+          toolResults: undefined,
+        };
+        return prev.slice(0, idx).concat(edited);
+      });
+      toolStackRef.current = {};
+      assistantKeyRef.current = null;
+      void run((signal) =>
+        streamChat(projectId, trimmed, { model: modelOverride, editMessageId: id }, handleEvent, signal),
+      );
+    },
+    [streaming, llmReady, projectId, modelOverride, handleEvent, run, update],
+  );
+
+  // Rewind/revert: cut the thread back to a chosen message (drops everything
+  // after it) without re-running.
+  const rewindTo = useCallback(
+    async (key: string) => {
+      const id = Number(key);
+      if (!persisted(key)) return;
+      try {
+        await api.truncateMessages(projectId, id);
+        await load();
+      } catch (e) {
+        setLoadError(errMsg(e));
+      }
+    },
+    [projectId, load],
+  );
 
   const stop = () => abortRef.current?.abort();
 
+  const lastMsgIdx = useMemo(() => {
+    for (let i = items.length - 1; i >= 0; i--) {
+      if (items[i].kind === 'msg') return i;
+    }
+    return -1;
+  }, [items]);
+
   return (
     <div className="flex h-full min-h-0 flex-col">
+      {llmReady && (
+        <div className="shrink-0 border-b border-border px-3 py-1.5 md:px-4">
+          <div className="mx-auto flex max-w-2xl items-center gap-2">
+            <IconModel className="h-3.5 w-3.5 shrink-0 text-dim" />
+            <select
+              value={selectValue}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (v === 'custom') {
+                  setCustomModel(true);
+                  setModel('');
+                } else {
+                  setCustomModel(false);
+                  setModel(v);
+                }
+              }}
+              aria-label="Model"
+              className="min-w-0 flex-1 rounded-md border border-border bg-surface px-2 py-1 font-mono text-xs text-text outline-none transition-colors focus:border-subtle"
+            >
+              {modelOptions.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name}
+                </option>
+              ))}
+              <option value="custom">Custom…</option>
+            </select>
+            {customActive && (
+              <input
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+                placeholder="model id"
+                spellCheck={false}
+                className="min-w-0 flex-1 rounded-md border border-border bg-surface px-2 py-1 font-mono text-xs text-text outline-none transition-colors placeholder:text-faint focus:border-subtle"
+              />
+            )}
+          </div>
+        </div>
+      )}
+
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-3 py-4 md:px-4">
         {loading && (
           <div className="flex justify-center py-10">
@@ -269,15 +716,48 @@ export default function ChatPane({
         )}
         {!loading && !loadError && items.length > 0 && (
           <div className="mx-auto flex max-w-2xl flex-col gap-3">
-            {items.map((it) => {
+            {items.map((it, i) => {
+              const isLastMsg = i === lastMsgIdx;
               if (it.kind === 'tool') return <ToolRow key={it.key} item={it} />;
               if (it.role === 'user') {
+                if (it.editing) {
+                  return (
+                    <EditUserBubble
+                      key={it.key}
+                      initial={it.content}
+                      onSubmit={(text) => editUserMessage(it.key, text)}
+                      onCancel={() => setItemEditing(it.key, false)}
+                    />
+                  );
+                }
                 return (
                   <div
                     key={it.key}
-                    className="ml-auto max-w-[85%] whitespace-pre-wrap break-words rounded-2xl bg-border px-3.5 py-2 text-sm text-text"
+                    className="ml-auto max-w-[85%] rounded-2xl bg-border px-3.5 py-2 text-sm text-text"
                   >
-                    {it.content}
+                    <div className="whitespace-pre-wrap break-words">{it.content}</div>
+                    {persisted(it.key) && !streaming && (
+                      <div className="mt-1 flex justify-end gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setItemEditing(it.key, true)}
+                          aria-label="Edit and resend"
+                          title="Edit and resend"
+                          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-dim transition-colors hover:bg-surface hover:text-text"
+                        >
+                          <IconPencil className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void rewindTo(it.key)}
+                          aria-label="Rewind to here"
+                          title="Rewind to here (delete everything after)"
+                          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-dim transition-colors hover:bg-surface hover:text-text"
+                        >
+                          <IconRewind className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    )}
                   </div>
                 );
               }
@@ -291,11 +771,45 @@ export default function ChatPane({
               return (
                 <div
                   key={it.key}
-                  className="whitespace-pre-wrap break-words text-sm leading-relaxed text-text"
+                  className={`flex min-w-0 flex-col gap-1.5 ${it.stale ? 'opacity-45' : ''}`}
                 >
-                  {it.content}
-                  {it.streaming && (
-                    <span className="ml-0.5 inline-block h-4 w-[7px] animate-pulse rounded-[2px] bg-subtle align-text-bottom" />
+                  {it.reasoning && <ReasoningBlock text={it.reasoning} autoOpen={it.streaming ?? false} />}
+                  <div className="min-w-0">
+                    <Markdown text={it.content} streaming={it.streaming} />
+                  </div>
+                  {it.toolCalls && it.toolCalls.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {it.toolCalls.map((tc, j) => (
+                        <ToolChip key={j} {...tc} />
+                      ))}
+                    </div>
+                  )}
+                  {it.toolResults &&
+                    it.toolResults.map((tr, j) => <ToolResultBlock key={j} {...tr} />)}
+                  {it.usage && <div className="text-[10px] text-faint">{formatUsage(it.usage, it.model)}</div>}
+                  {persisted(it.key) && !streaming && (
+                    <div className="flex gap-1">
+                      {isLastMsg && (
+                        <button
+                          type="button"
+                          onClick={regenerate}
+                          aria-label="Regenerate response"
+                          title="Retry with the same prompt"
+                          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-dim transition-colors hover:bg-border hover:text-text"
+                        >
+                          <IconRefresh className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => void rewindTo(it.key)}
+                        aria-label="Rewind to here"
+                        title="Rewind to here (delete this response and everything after)"
+                        className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-dim transition-colors hover:bg-border hover:text-text"
+                      >
+                        <IconRewind className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
                   )}
                 </div>
               );
@@ -304,42 +818,55 @@ export default function ChatPane({
         )}
       </div>
 
-      <div className="shrink-0 border-t border-border p-2.5 md:p-3">
-        <div className="mx-auto flex max-w-2xl items-end gap-2 rounded-xl border border-border-strong bg-surface p-2 transition-colors focus-within:border-subtle">
-          <textarea
-            ref={taRef}
-            rows={1}
-            value={input}
-            placeholder="Describe what to build…"
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                void send();
-              }
-            }}
-            className="max-h-40 min-h-[36px] flex-1 resize-none bg-transparent px-1.5 py-1.5 text-sm text-text outline-none placeholder:text-faint"
-          />
-          {streaming ? (
-            <IconButton
-              onClick={stop}
-              aria-label="Stop generating"
-              className="h-9 w-9 shrink-0 md:h-9 md:w-9"
-            >
-              <IconSquare className="h-4 w-4" />
-            </IconButton>
-          ) : (
-            <IconButton
-              onClick={() => void send()}
-              disabled={!input.trim()}
-              aria-label="Send message"
-              className="h-9 w-9 shrink-0 bg-primary text-primary-text hover:opacity-90 hover:text-primary-text disabled:bg-border disabled:text-faint md:h-9 md:w-9"
-            >
-              <IconArrowUp className="h-4 w-4" />
-            </IconButton>
-          )}
+      {llmReady ? (
+        <div className="shrink-0 border-t border-border p-2.5 md:p-3">
+          <div className="mx-auto flex max-w-2xl items-end gap-2 rounded-xl border border-border-strong bg-surface p-2 transition-colors focus-within:border-subtle">
+            <textarea
+              ref={taRef}
+              rows={1}
+              value={input}
+              placeholder="Describe what to build…"
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  void send();
+                }
+              }}
+              className="max-h-40 min-h-[36px] flex-1 resize-none bg-transparent px-1.5 py-1.5 text-sm text-text outline-none placeholder:text-faint"
+            />
+            {streaming ? (
+              <IconButton
+                onClick={stop}
+                aria-label="Stop generating"
+                className="h-9 w-9 shrink-0 md:h-9 md:w-9"
+              >
+                <IconSquare className="h-4 w-4" />
+              </IconButton>
+            ) : (
+              <IconButton
+                onClick={() => void send()}
+                disabled={!input.trim()}
+                aria-label="Send message"
+                className="h-9 w-9 shrink-0 bg-primary text-primary-text hover:opacity-90 hover:text-primary-text disabled:bg-border disabled:text-faint md:h-9 md:w-9"
+              >
+                <IconArrowUp className="h-4 w-4" />
+              </IconButton>
+            )}
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="shrink-0 border-t border-border p-2.5 md:p-3">
+          <div className="mx-auto flex max-w-2xl flex-col items-center gap-3 rounded-xl border border-border-strong bg-surface px-4 py-5 text-center">
+            <p className="text-sm text-text">
+              No AI provider configured — set an API key and model in Settings to start building.
+            </p>
+            <Button onClick={() => navigate('/settings')} className="min-h-11 md:min-h-9">
+              Open Settings
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

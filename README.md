@@ -58,11 +58,17 @@ All configuration is via environment variables:
 | `V1_MODEL` | `gpt-4o` | Model used to generate apps. |
 | `V1_GITHUB_TOKEN` | — | GitHub personal access token (repo import/push). |
 | `V1_GITHUB_OAUTH_CLIENT_ID` | — | Client ID of a GitHub OAuth App for device-flow login (see below). |
+| `V1_AUTH_OIDC_ENABLED` | — | `true` forces OIDC login on (also auto-enables when all `V1_OIDC_*` are set). |
+| `V1_OIDC_ISSUER` | — | OIDC issuer URL. For Authentik: `https://auth.example.com/application/o/<slug>/`. |
+| `V1_OIDC_CLIENT_ID` | — | OIDC client ID registered with the provider. |
+| `V1_OIDC_CLIENT_SECRET` | — | OIDC client secret. |
+| `V1_OIDC_REDIRECT_URI` | — | Callback URI, e.g. `https://v1.example.com/api/auth/oidc/callback`. Auto-derived if unset. |
+| `V1_OIDC_ALLOWED_EMAILS` | — | Comma list of emails allowed to log in (empty = any authenticated user). |
 | `V1_MAX_PREVIEWS` | `3` | Max preview dev servers running at once. |
 
 ### LLM providers
 
-The Settings page has a **provider selector** powered by a [models.dev](https://models.dev) catalog (the same provider data opencode/pi use): pick a provider (OpenAI, OpenRouter, opencode zen, Google, Groq, DeepSeek, Mistral, xAI, Moonshot, Zhipu, Together, Fireworks, Cerebras, Ollama, LM Studio, …), and the base URL and model list fill in automatically — just paste your key and pick a model. "Custom endpoint" covers anything else OpenAI-compatible, and a refresh button pulls the latest model lists from models.dev.
+The Settings page has a **provider selector** powered by a [models.dev](https://models.dev) catalog (the same provider data opencode/pi use): pick a provider (OpenAI, OpenRouter, opencode zen, Google, Groq, DeepSeek, Mistral, xAI, Moonshot, Zhipu, Together, Fireworks, Cerebras, Ollama, LM Studio, …), and the base URL and model list fill in automatically — just paste your key and pick a model. Not in the list? Use **Browse all models.dev providers…** to search the full catalog, or **Custom endpoint** for anything else OpenAI-compatible. A refresh button pulls the latest model lists from models.dev.
 
 Env vars work too (and act as fallbacks for UI settings). Examples for `OPENAI_BASE_URL`:
 
@@ -74,11 +80,37 @@ If you already use a provider through its OpenAI-compatible endpoint (the way op
 
 ## Auth
 
-Three ways to handle authentication:
+Three ways to handle authentication (plus one, below):
 
 1. **First-run setup** (default) — the first browser to hit a fresh instance sets the admin password.
 2. **`V1_PASSWORD`** — set a fixed password via env; the login screen asks for it.
 3. **`V1_AUTH_DISABLED=true`** — no auth at all. Only for localhost or networks you fully trust.
+
+### Authentik / OIDC login
+
+Sign in through your [Authentik](https://goauthentik.io) instance (or any
+other OIDC provider) as an alternative to — or instead of — the password:
+
+1. In Authentik, create an OAuth2/OpenID Connect **Provider**, then an
+   **Application** bound to it. For the provider, set the **Redirect URI** to
+   `https://your-v1-host/api/auth/oidc/callback` (the exact origin v1 is
+   served at, plus that path).
+2. Set the env vars:
+   - `V1_OIDC_ISSUER` — the provider's **Issuer URL** (found on the Authentik
+     provider page; shaped `https://auth.example.com/application/o/<slug>/`).
+   - `V1_OIDC_CLIENT_ID` and `V1_OIDC_CLIENT_SECRET` — from the provider page.
+   - `V1_OIDC_REDIRECT_URI` — the same callback URL as step 1 (auto-derived
+     from `X-Forwarded-Proto`/`Host` when omitted, which is fine behind a
+     proxy that forwards those headers).
+   - `V1_OIDC_ALLOWED_EMAILS` — optional comma list to restrict sign-in.
+3. Restart. The login screen shows **Sign in with Authentik** alongside the
+   password field. The sign-out button still ends the local session.
+
+OIDC auto-enables when `V1_AUTH_OIDC_ENABLED=true`, or when all of issuer /
+client ID / client secret / redirect URI are set. When OIDC is configured the
+first-run password setup is skipped, so it can be the only authentication
+method. The flow uses Authorization Code + PKCE and validates the ID token
+signature, issuer, audience and nonce.
 
 ## Reverse proxy
 
@@ -122,6 +154,34 @@ v1.example.com {
 ```
 
 Caddy handles WebSocket upgrades and SSE flushing automatically — no extra config needed.
+
+### Traefik (v2 / v3)
+
+Traefik passes WebSocket upgrades and SSE responses through by default — no buffering middleware is required. It also sets `X-Forwarded-Proto` automatically, which v1 needs to decide between Secure/plain cookies and to derive the OIDC redirect URI.
+
+Example with labels on the v1 container (docker-compose):
+
+```yaml
+services:
+  v1:
+    image: ghcr.io/<you>/v1:latest
+    volumes:
+      - v1-data:/data
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.v1.rule=Host(`v1.example.com`)"
+      - "traefik.http.routers.v1.entrypoints=websecure"
+      - "traefik.http.routers.v1.tls.certresolver=letsencrypt"
+      - "traefik.http.services.v1.loadbalancer.server.port=8080"
+```
+
+Notes:
+
+- The port must match `V1_PORT` (default `8080`).
+- No `traefik.http.middlewares.*` entries are needed for SSE or WebSockets — Traefik neither buffers SSE nor blocks upgrade requests.
+- For the Docker provider to see the labels, mount the Docker socket into Traefik with `providers.docker=true` and, if the container is on a separate network, add `traefik.docker.network=<network>`.
+- v1's container healthcheck calls `wget` on `/api/healthz`; you can mirror it with `traefik.http.services.v1.loadbalancer.healthcheck.path=/api/healthz` if you want Traefik to also health-check the backend.
+- If you use Authentik's forward-auth (Traefik middleware) in front of v1, note that v1 has its own login — either let v1 handle auth (skip forward-auth) or gate `/` with forward-auth and leave `/api` to v1. Do not stack both, or you'll get a double login.
 
 ## GitHub integration
 

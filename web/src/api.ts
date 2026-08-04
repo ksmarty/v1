@@ -10,8 +10,10 @@ import type {
   PreviewStatus,
   Project,
   ProjectTemplate,
+  ProviderAddResult,
   ProvidersRefreshResult,
   ProvidersResponse,
+  ProvidersSearchResult,
   PushResult,
   Settings,
 } from './types';
@@ -93,11 +95,16 @@ export const api = {
   // Settings
   getSettings: () => request<Settings>('/api/settings'),
   updateSettings: (body: SettingsUpdate) => put<void>('/api/settings', body),
-  testLLM: () => post<{ ok: boolean; error?: string }>('/api/settings/test-llm'),
+  testLLM: (opts?: { baseURL?: string; apiKey?: string; model?: string }) =>
+    post<{ ok: boolean; error?: string }>('/api/settings/test-llm', opts),
 
   // LLM providers
   getProviders: () => request<ProvidersResponse>('/api/providers'),
   refreshProviders: () => post<ProvidersRefreshResult>('/api/providers/refresh'),
+  searchProviders: (query: string) =>
+    request<ProvidersSearchResult>(`/api/providers/search?q=${encodeURIComponent(query)}`),
+  addProvider: (id: string) => post<ProviderAddResult>('/api/providers/add', { id }),
+  removeProvider: (id: string) => post<void>('/api/providers/remove', { id }),
 
   // Projects
   listProjects: () => request<Project[]>('/api/projects'),
@@ -120,6 +127,8 @@ export const api = {
 
   // Chat history (streaming lives in streamChat below)
   getMessages: (id: string) => request<ChatMessage[]>(`/api/projects/${id}/messages`),
+  truncateMessages: (id: string, messageId: number) =>
+    post<void>(`/api/projects/${id}/messages/truncate`, { id: messageId }),
 
   // Preview
   getPreviewStatus: (id: string) => request<PreviewStatus>(`/api/projects/${id}/preview/status`),
@@ -139,21 +148,22 @@ export const api = {
 };
 
 /**
- * Streams a chat response as SSE over fetch. Dispatches parsed events to
- * `onEvent`. Resolves when the stream ends (with or without a `done` event);
- * rejects on HTTP/parse-level failures and aborts.
+ * Shared SSE streaming helper: POSTs to `path` (with an optional JSON body),
+ * parses `data:` events and dispatches them to `onEvent`. Resolves when the
+ * stream ends (with or without a `done` event); rejects on HTTP/parse-level
+ * failures and aborts.
  */
-export async function streamChat(
-  projectId: string,
-  message: string,
+async function streamChatEvents(
+  path: string,
+  body: unknown,
   onEvent: (ev: ChatEvent) => void,
   signal: AbortSignal,
 ): Promise<void> {
-  const res = await fetch(`/api/projects/${projectId}/chat`, {
+  const res = await fetch(path, {
     method: 'POST',
     credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message }),
+    headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
     signal,
   });
 
@@ -205,4 +215,35 @@ export async function streamChat(
   if (buf.trim()) emit(buf);
 
   if (!gotDone) onEvent({ type: 'done' });
+}
+
+/**
+ * Streams a chat response as SSE over fetch. `message` is the user text;
+ * `model` is an optional per-turn model override; `editMessageId`, when set,
+ * edits that existing user message and rewinds the thread to it before
+ * re-running. Dispatches parsed events to `onEvent`.
+ */
+export function streamChat(
+  projectId: string,
+  message: string,
+  opts: { model?: string; editMessageId?: number } | undefined,
+  onEvent: (ev: ChatEvent) => void,
+  signal: AbortSignal,
+): Promise<void> {
+  const body: { message: string; model?: string; editMessageId?: number } = { message };
+  if (opts?.model && opts.model.trim() !== '') body.model = opts.model;
+  if (opts?.editMessageId) body.editMessageId = opts.editMessageId;
+  return streamChatEvents(`/api/projects/${projectId}/chat`, body, onEvent, signal);
+}
+
+/**
+ * Replays the last user turn as the same SSE stream. Dispatches parsed events
+ * to `onEvent`.
+ */
+export function retryChat(
+  projectId: string,
+  onEvent: (ev: ChatEvent) => void,
+  signal: AbortSignal,
+): Promise<void> {
+  return streamChatEvents(`/api/projects/${projectId}/chat/retry`, undefined, onEvent, signal);
 }

@@ -22,6 +22,20 @@ Rules:
 
 const maxRounds = 15
 
+// Usage is the token accounting attached to a finished turn.
+type Usage struct {
+	Input  int64  `json:"input"`
+	Output int64  `json:"output"`
+	Model  string `json:"model"`
+}
+
+// TurnResult carries the outcome of one chat turn so the caller can attach
+// usage (and the model actually used) to its done event.
+type TurnResult struct {
+	Usage *Usage
+	Model string
+}
+
 // ChatEvent is one SSE event sent to the chat client.
 type ChatEvent struct {
 	Type   string `json:"type"`
@@ -30,38 +44,56 @@ type ChatEvent struct {
 	Detail string `json:"detail,omitempty"`
 	OK     bool   `json:"ok,omitempty"`
 	Error  string `json:"error,omitempty"`
+	Usage  *Usage `json:"usage,omitempty"`
 }
 
 // ChatParams carries everything needed to run one chat turn.
 type ChatParams struct {
-	Store   *store.Store
-	Project *store.Project
-	Client  *llm.Client
-	Exec    *Executor
-	Message string
-	Emit    func(ChatEvent)
+	Store      *store.Store
+	Project    *store.Project
+	Client     *llm.Client
+	Exec       *Executor
+	Message    string
+	Model      string // per-turn override; empty uses p.Client.Model
+	LastUserID int64  // retry mode: >0 re-runs the existing user message
+	Emit       func(ChatEvent)
 }
 
 // RunChat persists the user message, replays history to the LLM, executes
-// tool calls (up to maxRounds rounds) and persists the transcript. The done
-// event is emitted by the caller after RunChat returns nil.
-func RunChat(ctx context.Context, p ChatParams) error {
-	if _, err := p.Store.AddMessage(p.Project.ID, "user", p.Message, ""); err != nil {
-		return err
+// tool calls (up to maxRounds rounds), persists the transcript (including the
+// model, reasoning and usage) and returns the turn's final usage. The done
+// event is emitted by the caller after RunChat returns.
+func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
+	if p.Model != "" {
+		p.Client.Model = p.Model
+	}
+	if p.LastUserID > 0 {
+		// Retry mode: the user message already exists with this ID; drop the
+		// aborted turn that followed it so history is truncated at the user.
+		if err := p.Store.DeleteMessagesAfter(p.Project.ID, p.LastUserID); err != nil {
+			return nil, err
+		}
+	} else {
+		if _, err := p.Store.AddMessage(p.Project.ID, "user", p.Message, "", p.Client.Model, "", ""); err != nil {
+			return nil, err
+		}
 	}
 	_ = p.Store.TouchProject(p.Project.ID)
 
 	stored, err := p.Store.ListMessages(p.Project.ID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	history := []llm.Message{{Role: "system", Content: systemPrompt}}
 	for _, m := range stored {
+		if p.LastUserID > 0 && m.ID > p.LastUserID {
+			continue
+		}
 		switch m.Role {
 		case "user":
 			history = append(history, llm.Message{Role: "user", Content: m.Content})
 		case "assistant":
-			msg := llm.Message{Role: "assistant", Content: m.Content}
+			msg := llm.Message{Role: "assistant", Content: m.Content, ReasoningContent: m.Reasoning}
 			if m.ToolJSON != "" {
 				var tj struct {
 					ToolCalls []llm.ToolCall `json:"tool_calls"`
@@ -85,12 +117,13 @@ func RunChat(ctx context.Context, p ChatParams) error {
 		}
 	}
 
+	var usage *Usage
 	for round := 0; round < maxRounds; round++ {
-		res, err := p.Client.ChatStream(ctx, history, tools, func(d string) {
-			p.Emit(ChatEvent{Type: "delta", Text: d})
-		})
+		res, err := p.Client.ChatStream(ctx, history, tools,
+			func(d string) { p.Emit(ChatEvent{Type: "delta", Text: d}) },
+			func(d string) { p.Emit(ChatEvent{Type: "reasoning", Text: d}) })
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		toolJSON := ""
@@ -98,13 +131,20 @@ func RunChat(ctx context.Context, p ChatParams) error {
 			b, _ := json.Marshal(map[string]any{"tool_calls": res.ToolCalls})
 			toolJSON = string(b)
 		}
-		if _, err := p.Store.AddMessage(p.Project.ID, "assistant", res.Text, toolJSON); err != nil {
-			return err
+		usageJSON := ""
+		if res.Usage != nil {
+			usage = &Usage{Input: res.Usage.PromptTokens, Output: res.Usage.CompletionTokens, Model: p.Client.Model}
+			if b, err := json.Marshal(usage); err == nil {
+				usageJSON = string(b)
+			}
 		}
-		history = append(history, llm.Message{Role: "assistant", Content: res.Text, ToolCalls: res.ToolCalls})
+		if _, err := p.Store.AddMessage(p.Project.ID, "assistant", res.Text, toolJSON, p.Client.Model, res.Reasoning, usageJSON); err != nil {
+			return nil, err
+		}
+		history = append(history, llm.Message{Role: "assistant", Content: res.Text, ReasoningContent: res.Reasoning, ToolCalls: res.ToolCalls})
 
 		if len(res.ToolCalls) == 0 {
-			return nil
+			return &TurnResult{Usage: usage, Model: p.Client.Model}, nil
 		}
 		for _, tc := range res.ToolCalls {
 			p.Emit(ChatEvent{Type: "tool_start", Name: tc.Function.Name, Detail: toolDetail(tc)})
@@ -119,8 +159,8 @@ func RunChat(ctx context.Context, p ChatParams) error {
 			}
 			p.Emit(ChatEvent{Type: "tool_end", Name: tc.Function.Name, OK: ok, Detail: summary})
 			tj, _ := json.Marshal(map[string]any{"tool_call_id": tc.ID, "name": tc.Function.Name})
-			if _, err := p.Store.AddMessage(p.Project.ID, "tool", result, string(tj)); err != nil {
-				return err
+			if _, err := p.Store.AddMessage(p.Project.ID, "tool", result, string(tj), "", "", ""); err != nil {
+				return nil, err
 			}
 			history = append(history, llm.Message{
 				Role:       "tool",
@@ -130,7 +170,7 @@ func RunChat(ctx context.Context, p ChatParams) error {
 			})
 		}
 	}
-	return nil
+	return &TurnResult{Usage: usage, Model: p.Client.Model}, nil
 }
 
 // toolDetail extracts a short human-readable detail for a tool call.

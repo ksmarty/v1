@@ -78,7 +78,52 @@ CREATE TABLE IF NOT EXISTS messages (
 );
 CREATE INDEX IF NOT EXISTS idx_messages_project_id ON messages(project_id, id);
 `)
-	return err
+	if err != nil {
+		return err
+	}
+	return migrateMessages(db)
+}
+
+// migrateMessages adds columns added after the initial schema so existing
+// databases survive upgrades. Each missing column is ALTERed onto messages.
+func migrateMessages(db *sql.DB) error {
+	want := []struct {
+		name string
+		ddl  string
+	}{
+		{"model", "ALTER TABLE messages ADD COLUMN model TEXT"},
+		{"reasoning", "ALTER TABLE messages ADD COLUMN reasoning TEXT"},
+		{"usage", "ALTER TABLE messages ADD COLUMN usage TEXT"},
+	}
+	rows, err := db.Query(`PRAGMA table_info(messages)`)
+	if err != nil {
+		return err
+	}
+	have := map[string]bool{}
+	for rows.Next() {
+		var cid, notnull, pk int
+		var name, typ string
+		var dflt sql.NullString
+		if err := rows.Scan(&cid, &name, &typ, &notnull, &dflt, &pk); err != nil {
+			rows.Close()
+			return err
+		}
+		have[name] = true
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	rows.Close()
+	for _, c := range want {
+		if have[c.name] {
+			continue
+		}
+		if _, err := db.Exec(c.ddl); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Close closes the database.
@@ -254,22 +299,81 @@ type Message struct {
 	Role      string
 	Content   string
 	ToolJSON  string
+	Model     string
+	Reasoning string
+	Usage     string
 	CreatedAt int64
 }
 
 // AddMessage appends a message to a project's history.
-func (s *Store) AddMessage(projectID, role, content, toolJSON string) (int64, error) {
-	res, err := s.db.Exec(`INSERT INTO messages (project_id, role, content, tool_json, created_at)
-		VALUES (?, ?, ?, NULLIF(?, ''), ?)`, projectID, role, content, toolJSON, now())
+func (s *Store) AddMessage(projectID, role, content, toolJSON, model, reasoning, usage string) (int64, error) {
+	res, err := s.db.Exec(`INSERT INTO messages (project_id, role, content, tool_json, model, reasoning, usage, created_at)
+		VALUES (?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?)`,
+		projectID, role, content, toolJSON, model, reasoning, usage, now())
 	if err != nil {
 		return 0, err
 	}
 	return res.LastInsertId()
 }
 
+// DeleteMessagesAfter removes every message with id greater than id. Chat
+// retry uses it to drop the aborted turn following the last user message.
+func (s *Store) DeleteMessagesAfter(projectID string, id int64) error {
+	_, err := s.db.Exec(`DELETE FROM messages WHERE project_id = ? AND id > ?`, projectID, id)
+	return err
+}
+
+// GetMessage returns the message with the given id for a project, or
+// ErrNotFound when it does not exist.
+func (s *Store) GetMessage(projectID string, id int64) (*Message, error) {
+	m, err := scanMessage(s.db.QueryRow(`SELECT id, project_id, role, content, tool_json, model, reasoning, usage, created_at
+		FROM messages WHERE project_id = ? AND id = ?`, projectID, id))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	return m, err
+}
+
+// UpdateMessageContent rewrites a message's content, or returns ErrNotFound
+// when no such message exists for the project.
+func (s *Store) UpdateMessageContent(projectID string, id int64, content string) error {
+	res, err := s.db.Exec(`UPDATE messages SET content = ? WHERE project_id = ? AND id = ?`, content, projectID, id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// LastUserMessage returns the most recent user message of a project, or
+// ErrNotFound when the project has none.
+func (s *Store) LastUserMessage(projectID string) (*Message, error) {
+	m, err := scanMessage(s.db.QueryRow(`SELECT id, project_id, role, content, tool_json, model, reasoning, usage, created_at
+		FROM messages WHERE project_id = ? AND role = 'user' ORDER BY id DESC LIMIT 1`, projectID))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	return m, err
+}
+
+func scanMessage(row scanner) (*Message, error) {
+	var m Message
+	var toolJSON, model, reasoning, usage sql.NullString
+	if err := row.Scan(&m.ID, &m.ProjectID, &m.Role, &m.Content, &toolJSON, &model, &reasoning, &usage, &m.CreatedAt); err != nil {
+		return nil, err
+	}
+	m.ToolJSON = toolJSON.String
+	m.Model = model.String
+	m.Reasoning = reasoning.String
+	m.Usage = usage.String
+	return &m, nil
+}
+
 // ListMessages returns a project's messages in insertion order.
 func (s *Store) ListMessages(projectID string) ([]*Message, error) {
-	rows, err := s.db.Query(`SELECT id, project_id, role, content, tool_json, created_at
+	rows, err := s.db.Query(`SELECT id, project_id, role, content, tool_json, model, reasoning, usage, created_at
 		FROM messages WHERE project_id = ? ORDER BY id ASC`, projectID)
 	if err != nil {
 		return nil, err
@@ -277,13 +381,11 @@ func (s *Store) ListMessages(projectID string) ([]*Message, error) {
 	defer rows.Close()
 	out := []*Message{}
 	for rows.Next() {
-		var m Message
-		var toolJSON sql.NullString
-		if err := rows.Scan(&m.ID, &m.ProjectID, &m.Role, &m.Content, &toolJSON, &m.CreatedAt); err != nil {
+		m, err := scanMessage(rows)
+		if err != nil {
 			return nil, err
 		}
-		m.ToolJSON = toolJSON.String
-		out = append(out, &m)
+		out = append(out, m)
 	}
 	return out, rows.Err()
 }

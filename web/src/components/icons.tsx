@@ -91,6 +91,14 @@ export const IconExternalLink = (p: SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
+export const IconKey = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}>
+    <circle cx="7.5" cy="15.5" r="5.5" />
+    <path d="m21 2-9.6 9.6" />
+    <path d="m15.5 7.5 3 3L22 7l-3-3" />
+  </svg>
+);
+
 export const IconPlay = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}>
     <polygon points="6 3 20 12 6 21 6 3" />
@@ -200,5 +208,34 @@ export const IconCopy = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}>
     <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
     <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+  </svg>
+);
+
+export const IconPencil = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}>
+    <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+    <path d="m15 5 4 4" />
+  </svg>
+);
+
+export const IconRewind = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}>
+    <path d="M3 9a9 9 0 1 0 3-6.7" />
+    <path d="M3 1v5h5" />
+  </svg>
+);
+
+export const IconModel = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}>
+    <rect width="16" height="16" x="4" y="4" rx="2" />
+    <rect width="6" height="6" x="9" y="9" rx="1" />
+    <path d="M9 1v3" />
+    <path d="M15 1v3" />
+    <path d="M9 20v3" />
+    <path d="M15 20v3" />
+    <path d="M20 9h3" />
+    <path d="M20 15h3" />
+    <path d="M1 9h3" />
+    <path d="M1 15h3" />
   </svg>
 );

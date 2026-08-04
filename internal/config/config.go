@@ -4,6 +4,7 @@ package config
 import (
 	"os"
 	"strconv"
+	"strings"
 )
 
 // Config holds all process configuration, read once from the environment.
@@ -17,6 +18,12 @@ type Config struct {
 	Model               string
 	GitHubToken         string
 	GitHubOAuthClientID string
+	AuthOIDCEnabled     bool
+	OIDCIssuer          string
+	OIDCClientID        string
+	OIDCClientSecret    string
+	OIDCRedirectURI     string
+	OIDCAllowedEmails   []string
 	MaxPreviews         int
 	Version             string
 }
@@ -56,6 +63,20 @@ func Load(version string) Config {
 		c.GitHubToken = os.Getenv("GITHUB_TOKEN")
 	}
 	c.GitHubOAuthClientID = os.Getenv("V1_GITHUB_OAUTH_CLIENT_ID")
+	if v := os.Getenv("V1_AUTH_OIDC_ENABLED"); v == "true" || v == "1" || v == "yes" {
+		c.AuthOIDCEnabled = true
+	}
+	c.OIDCIssuer = os.Getenv("V1_OIDC_ISSUER")
+	c.OIDCClientID = os.Getenv("V1_OIDC_CLIENT_ID")
+	c.OIDCClientSecret = os.Getenv("V1_OIDC_CLIENT_SECRET")
+	c.OIDCRedirectURI = os.Getenv("V1_OIDC_REDIRECT_URI")
+	if v := os.Getenv("V1_OIDC_ALLOWED_EMAILS"); v != "" {
+		for _, part := range strings.Split(v, ",") {
+			if e := strings.TrimSpace(part); e != "" {
+				c.OIDCAllowedEmails = append(c.OIDCAllowedEmails, e)
+			}
+		}
+	}
 	if v := os.Getenv("V1_MAX_PREVIEWS"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			c.MaxPreviews = n

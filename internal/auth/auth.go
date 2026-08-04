@@ -22,14 +22,21 @@ const sessionTTL = 30 * 24 * time.Hour
 
 // Manager handles authentication state.
 type Manager struct {
-	st       *store.Store
-	disabled bool
-	envPass  string
+	st          *store.Store
+	disabled    bool
+	envPass     string
+	oidcEnabled bool
 }
 
 // NewManager creates a Manager. When disabled is true all requests pass.
 func NewManager(st *store.Store, disabled bool, envPassword string) *Manager {
 	return &Manager{st: st, disabled: disabled, envPass: envPassword}
+}
+
+// SetOIDCEnabled marks OIDC (e.g. Authentik) login as configured; when
+// enabled, the first-run password setup is not required.
+func (m *Manager) SetOIDCEnabled(enabled bool) {
+	m.oidcEnabled = enabled
 }
 
 // HashPassword bcrypt-hashes a plaintext password.
@@ -55,6 +62,9 @@ func (m *Manager) EnsureEnvPassword() {
 // SetupRequired reports whether no password exists anywhere yet.
 func (m *Manager) SetupRequired() bool {
 	if m.disabled {
+		return false
+	}
+	if m.oidcEnabled {
 		return false
 	}
 	_, ok, _ := m.st.GetSetting(passwordHashKey)

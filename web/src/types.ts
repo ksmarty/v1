@@ -2,12 +2,14 @@ export interface AuthStatus {
   authRequired: boolean;
   authenticated: boolean;
   setupRequired: boolean;
+  oidcEnabled: boolean;
 }
 
 export interface LLMSettings {
   baseURL: string;
   model: string;
   apiKeySet: boolean;
+  models: ProviderModel[];
 }
 
 export interface GitHubSettings {
@@ -35,11 +37,23 @@ export interface Provider {
   keyHint: string;
   doc: string;
   models: ProviderModel[];
+  added?: boolean;
 }
 
 export interface ProvidersResponse {
   source: string;
   providers: Provider[];
+}
+
+export interface ProvidersSearchResult {
+  providers: Provider[];
+}
+
+export interface ProviderAddResult {
+  ok: boolean;
+  existing?: boolean;
+  provider?: Provider;
+  error?: string;
 }
 
 export interface ProvidersRefreshResult {
@@ -84,19 +98,29 @@ export interface FileEntry {
   size: number;
 }
 
+export interface ChatUsage {
+  input: number;
+  output: number;
+  model?: string;
+}
+
 export interface ChatMessage {
   id: string;
   role: string;
   content: string;
   tool?: string;
+  reasoning?: string;
+  usage?: ChatUsage;
+  model?: string;
   createdAt: string;
 }
 
 export type ChatEvent =
   | { type: 'delta'; text: string }
+  | { type: 'reasoning'; text: string }
   | { type: 'tool_start'; name: string; detail: string }
   | { type: 'tool_end'; name: string; ok: boolean; detail: string }
-  | { type: 'done' }
+  | { type: 'done'; usage?: ChatUsage }
   | { type: 'error'; error: string };
 
 export interface PreviewStatus {

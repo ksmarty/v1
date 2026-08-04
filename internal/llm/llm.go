@@ -10,17 +10,19 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
 
 // Message is a chat message in the OpenAI schema.
 type Message struct {
-	Role       string     `json:"role"`
-	Content    string     `json:"content,omitempty"`
-	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
-	ToolCallID string     `json:"tool_call_id,omitempty"`
-	Name       string     `json:"name,omitempty"`
+	Role             string     `json:"role"`
+	Content          string     `json:"content,omitempty"`
+	ReasoningContent string     `json:"reasoning_content,omitempty"`
+	ToolCalls        []ToolCall `json:"tool_calls,omitempty"`
+	ToolCallID       string     `json:"tool_call_id,omitempty"`
+	Name             string     `json:"name,omitempty"`
 }
 
 // ToolCall is a function call requested by the model.
@@ -63,33 +65,105 @@ func NewClient(baseURL, apiKey, model string) *Client {
 		BaseURL: strings.TrimSuffix(baseURL, "/"),
 		APIKey:  apiKey,
 		Model:   model,
-		HTTP:    &http.Client{},
+		// Generous so long reasoning streams are never cut off; the chat
+		// handler's own context timeout is the real backstop.
+		HTTP: &http.Client{Timeout: 15 * time.Minute},
 	}
+}
+
+// Usage is the token accounting reported in the final chunk of a stream.
+type Usage struct {
+	PromptTokens     int64
+	CompletionTokens int64
 }
 
 // StreamResult is the accumulated output of a streamed completion.
 type StreamResult struct {
 	Text      string
+	Reasoning string
 	ToolCalls []ToolCall
+	Usage     *Usage
 }
 
-// ChatStream streams a chat completion, invoking onDelta for each text chunk.
-func (c *Client) ChatStream(ctx context.Context, messages []Message, tools []Tool, onDelta func(string)) (*StreamResult, error) {
+// chatRetries is how many times the initial HTTP request is attempted
+// (network errors, 429/408 and 5xx are retried with backoff).
+const chatRetries = 3
+
+// chatBackoffBase is the first retry delay, doubled per attempt.
+const chatBackoffBase = 500 * time.Millisecond
+
+// ChatStream streams a chat completion, invoking onDelta for text chunks and
+// onReasoning for reasoning deltas. The initial request is retried up to
+// chatRetries attempts on transient failures; a HTTP 400 triggers one fallback
+// request without stream_options for providers that reject it.
+func (c *Client) ChatStream(ctx context.Context, messages []Message, tools []Tool, onDelta func(string), onReasoning func(string)) (*StreamResult, error) {
+	res := &StreamResult{}
+	streamOptions := true
+	attempt := 0
+	var lastErr error
+	for {
+		attempt++
+		if attempt > chatRetries {
+			return nil, lastErr
+		}
+		resp, retryAfter, err := c.postStream(ctx, messages, tools, streamOptions)
+		if err != nil {
+			lastErr = fmt.Errorf("LLM request failed: %w", err)
+			if err := waitBackoff(ctx, chatBackoffBase*time.Duration(1<<(attempt-1))); err != nil {
+				return nil, err
+			}
+			continue
+		}
+		if resp.StatusCode == http.StatusBadRequest && streamOptions {
+			// Older providers reject stream_options; fall back once without it.
+			_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+			resp.Body.Close()
+			streamOptions = false
+			attempt--
+			lastErr = fmt.Errorf("LLM request failed (HTTP 400)")
+			continue
+		}
+		if !(resp.StatusCode >= 200 && resp.StatusCode < 300) {
+			body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+			resp.Body.Close()
+			lastErr = llmError(resp.StatusCode, body)
+			if !isRetryableStatus(resp.StatusCode) {
+				return nil, lastErr
+			}
+			if err := waitBackoff(ctx, retryAfterDelay(retryAfter, chatBackoffBase*time.Duration(1<<(attempt-1)))); err != nil {
+				return nil, err
+			}
+			continue
+		}
+		defer resp.Body.Close()
+		if err := scanStream(resp.Body, res, onDelta, onReasoning); err != nil {
+			return nil, err
+		}
+		return res, nil
+	}
+}
+
+// postStream issues one chat completions request and returns the response and
+// any Retry-After duration for rate-limited responses.
+func (c *Client) postStream(ctx context.Context, messages []Message, tools []Tool, streamOptions bool) (*http.Response, time.Duration, error) {
 	body := map[string]any{
 		"model":    c.Model,
 		"messages": messages,
 		"stream":   true,
+	}
+	if streamOptions {
+		body["stream_options"] = map[string]any{"include_usage": true}
 	}
 	if len(tools) > 0 {
 		body["tools"] = tools
 	}
 	payload, err := json.Marshal(body)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+"/chat/completions", bytes.NewReader(payload))
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "text/event-stream")
@@ -98,23 +172,18 @@ func (c *Client) ChatStream(ctx context.Context, messages []Message, tools []Too
 	}
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		b, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		msg := strings.TrimSpace(string(b))
-		if msg == "" {
-			msg = http.StatusText(resp.StatusCode)
-		}
-		return nil, fmt.Errorf("LLM request failed (HTTP %d): %s", resp.StatusCode, msg)
-	}
+	return resp, retryAfterDuration(resp), nil
+}
 
-	res := &StreamResult{}
+// scanStream reads an SSE body, accumulating text, reasoning and tool calls
+// and capturing usage from the final chunk (present when include_usage is on).
+func scanStream(r io.Reader, res *StreamResult, onDelta func(string), onReasoning func(string)) error {
 	toolCalls := map[int]*ToolCall{}
 	var order []int
 
-	scanner := bufio.NewScanner(resp.Body)
+	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -128,8 +197,9 @@ func (c *Client) ChatStream(ctx context.Context, messages []Message, tools []Too
 		var chunk struct {
 			Choices []struct {
 				Delta struct {
-					Content   string `json:"content"`
-					ToolCalls []struct {
+					Content          string `json:"content"`
+					ReasoningContent string `json:"reasoning_content"`
+					ToolCalls        []struct {
 						Index    int    `json:"index"`
 						ID       string `json:"id"`
 						Type     string `json:"type"`
@@ -140,9 +210,19 @@ func (c *Client) ChatStream(ctx context.Context, messages []Message, tools []Too
 					} `json:"tool_calls"`
 				} `json:"delta"`
 			} `json:"choices"`
+			Usage *struct {
+				PromptTokens     int64 `json:"prompt_tokens"`
+				CompletionTokens int64 `json:"completion_tokens"`
+			} `json:"usage"`
 		}
 		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
 			continue
+		}
+		if chunk.Usage != nil {
+			res.Usage = &Usage{
+				PromptTokens:     chunk.Usage.PromptTokens,
+				CompletionTokens: chunk.Usage.CompletionTokens,
+			}
 		}
 		if len(chunk.Choices) == 0 {
 			continue
@@ -152,6 +232,12 @@ func (c *Client) ChatStream(ctx context.Context, messages []Message, tools []Too
 			res.Text += d.Content
 			if onDelta != nil {
 				onDelta(d.Content)
+			}
+		}
+		if d.ReasoningContent != "" {
+			res.Reasoning += d.ReasoningContent
+			if onReasoning != nil {
+				onReasoning(d.ReasoningContent)
 			}
 		}
 		for _, tc := range d.ToolCalls {
@@ -174,12 +260,68 @@ func (c *Client) ChatStream(ctx context.Context, messages []Message, tools []Too
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("reading LLM stream: %w", err)
+		return fmt.Errorf("reading LLM stream: %w", err)
 	}
 	for _, i := range order {
 		res.ToolCalls = append(res.ToolCalls, *toolCalls[i])
 	}
-	return res, nil
+	return nil
+}
+
+// isRetryableStatus reports whether the HTTP status warrants a retry.
+func isRetryableStatus(code int) bool {
+	switch code {
+	case http.StatusRequestTimeout, http.StatusTooManyRequests:
+		return true
+	}
+	return code >= 500 && code < 600
+}
+
+// retryAfterDuration parses a Retry-After header (seconds), capped at 2m.
+func retryAfterDuration(resp *http.Response) time.Duration {
+	ra := strings.TrimSpace(resp.Header.Get("Retry-After"))
+	if ra == "" {
+		return 0
+	}
+	if secs, err := strconv.Atoi(ra); err == nil && secs >= 0 {
+		if secs > 120 {
+			secs = 120
+		}
+		return time.Duration(secs) * time.Second
+	}
+	return 0
+}
+
+// retryAfterDelay picks the retry delay, preferring Retry-After.
+func retryAfterDelay(after, fallback time.Duration) time.Duration {
+	if after > 0 {
+		return after
+	}
+	return fallback
+}
+
+// waitBackoff sleeps for d, honoring context cancellation.
+func waitBackoff(ctx context.Context, d time.Duration) error {
+	if d <= 0 {
+		return nil
+	}
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-t.C:
+		return nil
+	}
+}
+
+// llmError builds an error from a non-2xx response.
+func llmError(code int, body []byte) error {
+	msg := strings.TrimSpace(string(body))
+	if msg == "" {
+		msg = http.StatusText(code)
+	}
+	return fmt.Errorf("LLM request failed (HTTP %d): %s", code, msg)
 }
 
 // TestModels performs GET {baseURL}/models with the configured key.

@@ -77,3 +77,156 @@ body {
   border: 2px solid transparent;
   background-clip: content-box;
 }
+
+/* Rendered markdown in assistant chat messages */
+.md {
+  font-size: 0.875rem;
+  line-height: 1.6;
+  color: var(--v1-text);
+  overflow-wrap: break-word;
+}
+.md > :first-child {
+  margin-top: 0;
+}
+.md > :last-child {
+  margin-bottom: 0;
+}
+.md h1,
+.md h2,
+.md h3,
+.md h4 {
+  margin: 1.25em 0 0.5em;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.md h1 { font-size: 1.25rem; }
+.md h2 { font-size: 1.125rem; }
+.md h3 { font-size: 1rem; }
+.md h4 { font-size: 0.9375rem; }
+.md p { margin: 0.5em 0; }
+.md ul,
+.md ol {
+  margin: 0.5em 0;
+  padding-left: 1.5em;
+}
+.md ul { list-style: disc; }
+.md ol { list-style: decimal; }
+.md li { margin: 0.2em 0; }
+.md li > ul,
+.md li > ol { margin: 0.25em 0; }
+.md a {
+  color: var(--v1-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.md blockquote {
+  margin: 0.75em 0;
+  padding-left: 1em;
+  border-left: 3px solid var(--v1-border-strong);
+  color: var(--v1-text-dim);
+}
+.md hr {
+  margin: 1.25em 0;
+  border: none;
+  border-top: 1px solid var(--v1-border);
+}
+.md code:not(pre code) {
+  padding: 0.15em 0.35em;
+  border-radius: 4px;
+  background: var(--v1-border);
+  font-family: var(--font-mono);
+  font-size: 0.8125em;
+  color: var(--v1-text);
+}
+.md pre {
+  position: relative;
+  margin: 0.75em 0;
+  border: 1px solid var(--v1-border);
+  border-radius: 8px;
+  background: var(--v1-surface);
+  overflow: hidden;
+}
+.md pre code {
+  display: block;
+  padding: 0.75em 1em;
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  color: var(--v1-text);
+}
+.md table {
+  margin: 0.75em 0;
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+.md th,
+.md td {
+  padding: 0.4em 0.6em;
+  border: 1px solid var(--v1-border);
+  text-align: left;
+}
+.md th {
+  background: var(--v1-surface);
+  font-weight: 600;
+}
+.md img {
+  max-width: 100%;
+  border-radius: 8px;
+}
+
+/* highlight.js token colors — blended with the theme text color so they
+   stay readable on both dark and light palettes */
+.md .hljs-comment,
+.md .hljs-quote {
+  color: var(--v1-text-faint);
+  font-style: italic;
+}
+.md .hljs-keyword,
+.md .hljs-selector-tag,
+.md .hljs-doctag,
+.md .hljs-meta {
+  color: color-mix(in srgb, var(--v1-accent) 72%, var(--v1-text));
+}
+.md .hljs-string,
+.md .hljs-regexp,
+.md .hljs-addition,
+.md .hljs-attr {
+  color: color-mix(in srgb, #4ade80 62%, var(--v1-text));
+}
+.md .hljs-number,
+.md .hljs-literal,
+.md .hljs-bullet,
+.md .hljs-symbol {
+  color: color-mix(in srgb, #fb923c 62%, var(--v1-text));
+}
+.md .hljs-title,
+.md .hljs-title.function_,
+.md .hljs-built_in,
+.md .hljs-type,
+.md .hljs-section {
+  color: color-mix(in srgb, #93c5fd 62%, var(--v1-text));
+}
+.md .hljs-deletion,
+.md .hljs-variable,
+.md .hljs-template-variable,
+.md .hljs-selector-attr,
+.md .hljs-attribute {
+  color: color-mix(in srgb, #fda4af 62%, var(--v1-text));
+}
+
+/* Blinking caret appended to a streaming assistant message */
+.v1-stream-cursor {
+  display: inline-block;
+  width: 7px;
+  height: 1em;
+  margin-left: 2px;
+  border-radius: 2px;
+  background: currentColor;
+  vertical-align: text-bottom;
+  animation: v1-blink 1s step-end infinite;
+}
+@keyframes v1-blink {
+  50% { opacity: 0; }
+}

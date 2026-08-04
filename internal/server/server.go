@@ -40,6 +40,10 @@ type Server struct {
 
 	oauthMu    sync.Mutex
 	oauthFlows map[string]*oauthFlow
+
+	oidcMu    sync.Mutex
+	oidcFlows map[string]*oidcFlow
+	oidc      *auth.OIDC
 }
 
 // New builds the server, its routes and middleware.
@@ -51,8 +55,19 @@ func New(cfg config.Config, st *store.Store) *Server {
 		previews:   preview.NewManager(cfg.MaxPreviews),
 		terminals:  terminal.NewManager(),
 		oauthFlows: map[string]*oauthFlow{},
+		oidcFlows:  map[string]*oidcFlow{},
+		oidc: auth.NewOIDC(auth.OIDCConfig{
+			Enabled:       cfg.AuthOIDCEnabled,
+			Issuer:        cfg.OIDCIssuer,
+			ClientID:      cfg.OIDCClientID,
+			ClientSecret:  cfg.OIDCClientSecret,
+			RedirectURI:   cfg.OIDCRedirectURI,
+			AllowedEmails: cfg.OIDCAllowedEmails,
+		}),
 	}
 	s.auth.EnsureEnvPassword()
+	s.auth.SetOIDCEnabled(s.oidcEnabled())
+	s.pruneOIDCFlows()
 	mux := http.NewServeMux()
 	s.routes(mux)
 	s.handler = s.auth.Middleware(mux)
@@ -75,6 +90,8 @@ func (s *Server) routes(m *http.ServeMux) {
 	m.HandleFunc("POST /api/auth/login", s.handleLogin)
 	m.HandleFunc("POST /api/auth/setup", s.handleSetup)
 	m.HandleFunc("POST /api/auth/logout", s.handleLogout)
+	m.HandleFunc("GET /api/auth/oidc/start", s.handleOIDCStart)
+	m.HandleFunc("GET /api/auth/oidc/callback", s.handleOIDCCallback)
 
 	m.HandleFunc("GET /api/settings", s.handleGetSettings)
 	m.HandleFunc("PUT /api/settings", s.handlePutSettings)
@@ -82,6 +99,9 @@ func (s *Server) routes(m *http.ServeMux) {
 
 	m.HandleFunc("GET /api/providers", s.handleListProviders)
 	m.HandleFunc("POST /api/providers/refresh", s.handleRefreshProviders)
+	m.HandleFunc("GET /api/providers/search", s.handleSearchProviders)
+	m.HandleFunc("POST /api/providers/add", s.handleAddProvider)
+	m.HandleFunc("POST /api/providers/remove", s.handleRemoveProvider)
 
 	m.HandleFunc("GET /api/projects", s.handleListProjects)
 	m.HandleFunc("POST /api/projects", s.handleCreateProject)
@@ -95,7 +115,9 @@ func (s *Server) routes(m *http.ServeMux) {
 	m.HandleFunc("DELETE /api/projects/{id}/file", s.handleDeleteFile)
 
 	m.HandleFunc("GET /api/projects/{id}/messages", s.handleListMessages)
+	m.HandleFunc("POST /api/projects/{id}/messages/truncate", s.handleTruncateMessages)
 	m.HandleFunc("POST /api/projects/{id}/chat", s.handleChat)
+	m.HandleFunc("POST /api/projects/{id}/chat/retry", s.handleChatRetry)
 
 	m.HandleFunc("GET /api/projects/{id}/preview/status", s.handlePreviewStatus)
 	m.HandleFunc("POST /api/projects/{id}/preview/start", s.handlePreviewStart)
@@ -164,7 +186,15 @@ const (
 	keyGitHubTokenSource   = "github_token_source"
 	keyGitHubOAuthClientID = "github_oauth_client_id"
 	keyProvidersCache      = "providers_cache"
+	keyProvidersCustom     = "providers_custom"
 )
+
+// oidcEnabled reports whether the OIDC flow is active: it needs auth enabled
+// and the flow configured (forced via V1_AUTH_OIDC_ENABLED, or fully
+// specified via the V1_OIDC_* values).
+func (s *Server) oidcEnabled() bool {
+	return !s.cfg.AuthDisabled && s.oidc != nil && s.oidc.Enabled()
+}
 
 // llmConfig resolves the effective LLM settings (sqlite overrides env).
 func (s *Server) llmConfig() (baseURL, apiKey, model string) {
@@ -219,6 +249,52 @@ func (s *Server) githubOAuthClientID() string {
 		return v
 	}
 	return s.cfg.GitHubOAuthClientID
+}
+
+// customProviders returns the providers added at runtime from models.dev
+// (persisted in settings, never part of the catalog cache).
+func (s *Server) customProviders() []llm.Provider {
+	v, ok, _ := s.st.GetSetting(keyProvidersCustom)
+	if !ok || v == "" {
+		return nil
+	}
+	var out []llm.Provider
+	if err := json.Unmarshal([]byte(v), &out); err != nil {
+		return nil
+	}
+	return out
+}
+
+func (s *Server) saveCustomProviders(providers []llm.Provider) error {
+	data, err := json.Marshal(providers)
+	if err != nil {
+		return err
+	}
+	return s.st.SetSetting(keyProvidersCustom, string(data))
+}
+
+func (s *Server) addCustomProvider(p llm.Provider) error {
+	cur := s.customProviders()
+	for _, cp := range cur {
+		if cp.ID == p.ID {
+			return nil
+		}
+	}
+	return s.saveCustomProviders(append(cur, p))
+}
+
+func (s *Server) removeCustomProvider(id string) error {
+	cur := s.customProviders()
+	out := cur[:0]
+	for _, cp := range cur {
+		if cp.ID != id {
+			out = append(out, cp)
+		}
+	}
+	if len(out) == len(cur) {
+		return nil
+	}
+	return s.saveCustomProviders(out)
 }
 
 // ---- health ----

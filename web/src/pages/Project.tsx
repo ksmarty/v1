@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import { api } from '../api';
@@ -51,6 +51,7 @@ export default function Project() {
   );
   const [previewRefreshKey, setPreviewRefreshKey] = useState(0);
   const [chatSide] = useState<'left' | 'right'>(() => getChatSide());
+  const [llmReady, setLlmReady] = useState(false);
 
   useEffect(() => {
     api
@@ -58,6 +59,17 @@ export default function Project() {
       .then(setProject)
       .catch((e) => setError(errMsg(e)));
   }, [id]);
+
+  const loadSettings = useCallback(() => {
+    api
+      .getSettings()
+      .then((s) => setLlmReady(s.llm.apiKeySet && s.llm.model.trim() !== ''))
+      .catch(() => setLlmReady(false));
+  }, []);
+
+  useEffect(() => {
+    void loadSettings();
+  }, [loadSettings]);
 
   const active: PaneName = isDesktop ? tab : mobilePane;
 
@@ -69,6 +81,11 @@ export default function Project() {
       return next;
     });
   }, [active]);
+
+  // Re-check LLM config when the chat pane becomes visible again.
+  useEffect(() => {
+    if (active === 'chat') void loadSettings();
+  }, [active, loadSettings]);
 
   if (error) {
     return (
@@ -85,7 +102,11 @@ export default function Project() {
     switch (name) {
       case 'chat':
         return (
-          <ChatPane projectId={id} onPreviewRestart={() => setPreviewRefreshKey((k) => k + 1)} />
+          <ChatPane
+              projectId={id}
+              onPreviewRestart={() => setPreviewRefreshKey((k) => k + 1)}
+              llmReady={llmReady}
+            />
         );
       case 'preview':
         return <PreviewPane projectId={id} refreshKey={previewRefreshKey} />;
