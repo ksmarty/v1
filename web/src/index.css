@@ -1,0 +1,79 @@
+@import "tailwindcss";
+
+/*
+ * Runtime-switchable theme tokens. The --v1-* variables are the single source
+ * of truth: :root holds the "v1 Dark" defaults and src/themes.ts overrides
+ * them on documentElement when a palette is selected. `@theme inline` maps
+ * Tailwind color tokens straight to the vars so utilities (bg-bg, bg-surface,
+ * bg-border, bg-border-strong, text-text, text-dim, text-subtle, text-faint,
+ * bg-accent, text-accent, text-accent-text, bg-primary, text-primary-text,
+ * border-border, border-border-strong, ...) follow the active theme.
+ */
+@theme inline {
+  --color-bg: var(--v1-bg);
+  --color-surface: var(--v1-surface);
+  --color-border: var(--v1-border);
+  --color-border-strong: var(--v1-border-strong);
+  --color-text: var(--v1-text);
+  --color-dim: var(--v1-text-dim);
+  --color-subtle: var(--v1-text-subtle);
+  --color-faint: var(--v1-text-faint);
+  --color-accent: var(--v1-accent);
+  --color-accent-text: var(--v1-accent-text);
+  --color-primary: var(--v1-primary);
+  --color-primary-text: var(--v1-primary-text);
+  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+}
+
+:root {
+  color-scheme: dark;
+  /* "v1 Dark" defaults */
+  --v1-bg: #0a0a0a;
+  --v1-surface: #171717;
+  --v1-border: #262626;
+  --v1-border-strong: #404040;
+  --v1-text: #e5e5e5;
+  --v1-text-dim: #a3a3a3;
+  --v1-text-subtle: #737373;
+  --v1-text-faint: #525252;
+  --v1-accent: #3b82f6;
+  --v1-accent-text: #ffffff;
+  --v1-primary: #ffffff;
+  --v1-primary-text: #000000;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background-color: var(--v1-bg);
+  color: var(--v1-text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Subtle scrollbars */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--v1-border);
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--v1-border-strong);
+  border: 2px solid transparent;
+  background-clip: content-box;
+}

@@ -1,0 +1,132 @@
+import {
+  useEffect,
+  type ButtonHTMLAttributes,
+  type InputHTMLAttributes,
+  type ReactNode,
+  type SelectHTMLAttributes,
+  type TextareaHTMLAttributes,
+} from 'react';
+import { IconX } from './icons';
+
+export function Spinner({ className = 'h-4 w-4' }: { className?: string }) {
+  return (
+    <div
+      className={`animate-spin rounded-full border-2 border-border-strong border-t-text ${className}`}
+    />
+  );
+}
+
+type ButtonVariant = 'primary' | 'outline' | 'ghost' | 'danger';
+
+const buttonStyles: Record<ButtonVariant, string> = {
+  primary:
+    'bg-primary text-primary-text hover:opacity-90 disabled:bg-border disabled:text-faint',
+  outline:
+    'border border-border-strong text-text hover:bg-border disabled:opacity-50',
+  ghost: 'text-text hover:bg-border disabled:opacity-50',
+  danger: 'bg-red-600/90 text-white hover:bg-red-600 disabled:opacity-50',
+};
+
+export function Button({
+  variant = 'primary',
+  className = '',
+  type = 'button',
+  ...props
+}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: ButtonVariant }) {
+  return (
+    <button
+      type={type}
+      {...props}
+      className={`inline-flex min-h-[36px] items-center justify-center gap-2 rounded-lg px-3.5 text-sm font-medium transition-colors disabled:cursor-not-allowed ${buttonStyles[variant]} ${className}`}
+    />
+  );
+}
+
+export function IconButton({
+  className = '',
+  type = 'button',
+  ...props
+}: ButtonHTMLAttributes<HTMLButtonElement>) {
+  return (
+    <button
+      type={type}
+      {...props}
+      className={`inline-flex h-11 w-11 items-center justify-center rounded-lg text-dim transition-colors hover:bg-border hover:text-text disabled:cursor-not-allowed disabled:opacity-40 md:h-9 md:w-9 ${className}`}
+    />
+  );
+}
+
+const fieldClasses =
+  'w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text outline-none transition-colors placeholder:text-faint focus:border-subtle';
+
+export function Input({ className = '', ...props }: InputHTMLAttributes<HTMLInputElement>) {
+  return <input {...props} className={`${fieldClasses} ${className}`} />;
+}
+
+export function Textarea({ className = '', ...props }: TextareaHTMLAttributes<HTMLTextAreaElement>) {
+  return <textarea {...props} className={`${fieldClasses} ${className}`} />;
+}
+
+export function Select({ className = '', ...props }: SelectHTMLAttributes<HTMLSelectElement>) {
+  return <select {...props} className={`${fieldClasses} ${className}`} />;
+}
+
+export function Dialog({
+  open,
+  onClose,
+  title,
+  children,
+}: {
+  open: boolean;
+  onClose: () => void;
+  title: string;
+  children: ReactNode;
+}) {
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end justify-center bg-bg/70 sm:items-center sm:p-4"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className="max-h-[85vh] w-full overflow-y-auto rounded-t-2xl border border-border bg-bg p-5 shadow-2xl sm:max-w-md sm:rounded-xl">
+        <div className="mb-4 flex items-center justify-between gap-2">
+          <h2 className="text-base font-semibold text-text">{title}</h2>
+          <IconButton onClick={onClose} aria-label="Close" className="-mr-1 h-8 w-8 md:h-8 md:w-8">
+            <IconX className="h-4 w-4" />
+          </IconButton>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+export function Center({ children }: { children: ReactNode }) {
+  return (
+    <div className="flex min-h-dvh items-center justify-center p-4">
+      <div className="flex flex-col items-center gap-3">{children}</div>
+    </div>
+  );
+}
+
+export function ErrorBox({ message, className = '' }: { message: string; className?: string }) {
+  return (
+    <div
+      className={`rounded-lg border border-red-900/60 bg-red-950/40 px-3 py-2 text-sm text-red-300 ${className}`}
+    >
+      {message}
+    </div>
+  );
+}

@@ -1,0 +1,346 @@
+package server
+
+import (
+	"errors"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"v1/internal/gitops"
+	"v1/internal/scaffold"
+	"v1/internal/store"
+)
+
+type projectJSON struct {
+	ID             string `json:"id"`
+	Name           string `json:"name"`
+	RepoURL        string `json:"repoUrl,omitempty"`
+	PreviewCommand string `json:"previewCommand,omitempty"`
+	CreatedAt      int64  `json:"createdAt"`
+	UpdatedAt      int64  `json:"updatedAt"`
+}
+
+func toProjectJSON(p *store.Project) projectJSON {
+	return projectJSON{
+		ID:             p.ID,
+		Name:           p.Name,
+		RepoURL:        p.RepoURL,
+		PreviewCommand: p.PreviewCommand,
+		CreatedAt:      p.CreatedAt,
+		UpdatedAt:      p.UpdatedAt,
+	}
+}
+
+func (s *Server) handleListProjects(w http.ResponseWriter, r *http.Request) {
+	projects, err := s.st.ListProjects()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	type previewInfo struct {
+		Running bool    `json:"running"`
+		URL     *string `json:"url"`
+	}
+	type item struct {
+		ID        string      `json:"id"`
+		Name      string      `json:"name"`
+		RepoURL   string      `json:"repoUrl,omitempty"`
+		Preview   previewInfo `json:"preview"`
+		UpdatedAt int64       `json:"updatedAt"`
+	}
+	out := []item{}
+	for _, p := range projects {
+		running, url, _ := s.previews.Status(p.ID)
+		out = append(out, item{
+			ID:        p.ID,
+			Name:      p.Name,
+			RepoURL:   p.RepoURL,
+			Preview:   previewInfo{Running: running, URL: url},
+			UpdatedAt: p.UpdatedAt,
+		})
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Name     string `json:"name"`
+		Template string `json:"template"`
+	}
+	if !decodeJSON(w, r, &body) {
+		return
+	}
+	name := strings.TrimSpace(body.Name)
+	if name == "" {
+		writeError(w, http.StatusBadRequest, "name is required")
+		return
+	}
+	template := body.Template
+	if template == "" {
+		template = "vite-react"
+	}
+	id := store.NewID()
+	dir := filepath.Join(s.cfg.DataDir, "projects", id)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err := scaffold.Apply(dir, template, name); err != nil {
+		os.RemoveAll(dir)
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	p := &store.Project{ID: id, Name: name, Path: dir}
+	if err := s.st.CreateProject(p); err != nil {
+		os.RemoveAll(dir)
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, toProjectJSON(p))
+}
+
+func (s *Server) handleGetProject(w http.ResponseWriter, r *http.Request) {
+	p := s.projectOr404(w, r)
+	if p == nil {
+		return
+	}
+	writeJSON(w, http.StatusOK, toProjectJSON(p))
+}
+
+func (s *Server) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
+	p := s.projectOr404(w, r)
+	if p == nil {
+		return
+	}
+	s.previews.Stop(p.ID)
+	s.terminals.KillProject(p.ID)
+	if err := s.st.DeleteProject(p.ID); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err := os.RemoveAll(p.Path); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (s *Server) handleImportProject(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		RepoURL string `json:"repoUrl"`
+		Name    string `json:"name"`
+	}
+	if !decodeJSON(w, r, &body) {
+		return
+	}
+	repoURL := strings.TrimSpace(body.RepoURL)
+	if repoURL == "" {
+		writeError(w, http.StatusBadRequest, "repoUrl is required")
+		return
+	}
+	name := strings.TrimSpace(body.Name)
+	if name == "" {
+		name = repoNameFromURL(repoURL)
+	}
+	id := store.NewID()
+	dir := filepath.Join(s.cfg.DataDir, "projects", id)
+	if err := gitops.Clone(r.Context(), repoURL, s.githubToken(), dir); err != nil {
+		os.RemoveAll(dir)
+		writeError(w, http.StatusBadRequest, "clone failed: "+err.Error())
+		return
+	}
+	p := &store.Project{ID: id, Name: name, Path: dir, RepoURL: repoURL}
+	if err := s.st.CreateProject(p); err != nil {
+		os.RemoveAll(dir)
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, toProjectJSON(p))
+}
+
+func repoNameFromURL(repoURL string) string {
+	repoURL = strings.TrimSuffix(strings.TrimRight(repoURL, "/"), ".git")
+	if i := strings.LastIndex(repoURL, "/"); i >= 0 {
+		repoURL = repoURL[i+1:]
+	}
+	if repoURL == "" {
+		return "imported-project"
+	}
+	return repoURL
+}
+
+// ---- project files ----
+
+var errPathTraversal = errors.New("path escapes the project directory")
+
+// safeJoin resolves rel against root, rejecting paths that escape root.
+func safeJoin(root, rel string) (string, error) {
+	root = filepath.Clean(root)
+	if rel == "" || rel == "." || rel == "/" {
+		return root, nil
+	}
+	clean := filepath.Clean("/" + rel)
+	full := filepath.Join(root, clean)
+	if full != root && !strings.HasPrefix(full, root+string(filepath.Separator)) {
+		return "", errPathTraversal
+	}
+	return full, nil
+}
+
+var skipListNames = map[string]bool{"node_modules": true, ".git": true, "dist": true}
+
+func (s *Server) handleListFiles(w http.ResponseWriter, r *http.Request) {
+	p := s.projectOr404(w, r)
+	if p == nil {
+		return
+	}
+	rel := r.URL.Query().Get("path")
+	full, err := safeJoin(p.Path, rel)
+	if errors.Is(err, errPathTraversal) {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	dirents, err := os.ReadDir(full)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "cannot read directory: "+err.Error())
+		return
+	}
+	type entry struct {
+		Name string `json:"name"`
+		Path string `json:"path"`
+		Type string `json:"type"`
+		Size int64  `json:"size"`
+	}
+	out := []entry{}
+	base := strings.Trim(filepath.ToSlash(filepath.Clean("/"+rel)), "/")
+	for _, de := range dirents {
+		if skipListNames[de.Name()] {
+			continue
+		}
+		e := entry{Name: de.Name(), Type: "file"}
+		if base != "" {
+			e.Path = base + "/" + de.Name()
+		} else {
+			e.Path = de.Name()
+		}
+		if de.IsDir() {
+			e.Type = "dir"
+		} else if info, err := de.Info(); err == nil {
+			e.Size = info.Size()
+		}
+		out = append(out, e)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"entries": out})
+}
+
+func (s *Server) handleReadFile(w http.ResponseWriter, r *http.Request) {
+	p := s.projectOr404(w, r)
+	if p == nil {
+		return
+	}
+	full, err := safeJoin(p.Path, r.URL.Query().Get("path"))
+	if errors.Is(err, errPathTraversal) {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	info, err := os.Stat(full)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "file not found")
+		return
+	}
+	if info.IsDir() {
+		writeError(w, http.StatusBadRequest, "path is a directory")
+		return
+	}
+	if info.Size() > 1<<20 {
+		writeError(w, http.StatusBadRequest, "file too large (>1MB)")
+		return
+	}
+	data, err := os.ReadFile(full)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if strings.Contains(string(data), "\x00") {
+		writeError(w, http.StatusBadRequest, "binary file")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"content": string(data)})
+}
+
+func (s *Server) handleWriteFile(w http.ResponseWriter, r *http.Request) {
+	p := s.projectOr404(w, r)
+	if p == nil {
+		return
+	}
+	var body struct {
+		Path    string `json:"path"`
+		Content string `json:"content"`
+	}
+	if !decodeJSON(w, r, &body) {
+		return
+	}
+	if body.Path == "" {
+		writeError(w, http.StatusBadRequest, "path is required")
+		return
+	}
+	full, err := safeJoin(p.Path, body.Path)
+	if errors.Is(err, errPathTraversal) {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err := os.WriteFile(full, []byte(body.Content), 0o644); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	_ = s.st.TouchProject(p.ID)
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (s *Server) handleDeleteFile(w http.ResponseWriter, r *http.Request) {
+	p := s.projectOr404(w, r)
+	if p == nil {
+		return
+	}
+	rel := r.URL.Query().Get("path")
+	if rel == "" {
+		writeError(w, http.StatusBadRequest, "path is required")
+		return
+	}
+	full, err := safeJoin(p.Path, rel)
+	if errors.Is(err, errPathTraversal) {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if full == filepath.Clean(p.Path) {
+		writeError(w, http.StatusBadRequest, "cannot delete the project root")
+		return
+	}
+	if err := os.RemoveAll(full); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	_ = s.st.TouchProject(p.ID)
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}

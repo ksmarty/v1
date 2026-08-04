@@ -1,0 +1,23 @@
+# VCS / CI metadata
+.git
+.github
+
+# Dependencies — installed fresh inside the image
+**/node_modules
+
+# Build outputs — rebuilt inside the image
+# (web/dist is rebuilt in the web stage; internal/server/dist is
+#  populated from the web stage before `go build`)
+**/dist
+
+# Local runtime data / artifacts
+data
+bin
+*.local
+
+# Not needed for the build
+Dockerfile
+.dockerignore
+docker-compose.yml
+README.md
+Makefile

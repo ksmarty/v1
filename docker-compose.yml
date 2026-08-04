@@ -1,0 +1,27 @@
+# Convenience only — the same container runs with plain `docker run`.
+#
+#   docker compose up -d
+#
+services:
+  v1:
+    # Replace <owner> with the GitHub user/org that publishes the image,
+    # e.g. ghcr.io/acme/v1:latest
+    image: ghcr.io/<owner>/v1:latest
+    # Or build locally instead of pulling:
+    # build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      - v1-data:/data
+    restart: unless-stopped
+    # Uncomment and fill in as needed:
+    # environment:
+    #   V1_PASSWORD: change-me               # password-protect the UI
+    #   OPENAI_API_KEY: sk-...               # any OpenAI-compatible API key
+    #   OPENAI_BASE_URL: https://api.openai.com/v1
+    #   V1_MODEL: gpt-4o
+    #   V1_GITHUB_TOKEN: ghp_...             # GitHub integration (repo scope)
+    #   V1_AUTH_DISABLED: "true"             # local-only: no auth at all
+
+volumes:
+  v1-data:
