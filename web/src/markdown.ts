@@ -73,6 +73,9 @@ const CURSOR_MARKER = '\u200b\u200bV1CURSOR\u200b\u200b';
 const CURSOR_SPAN = '<span class="v1-stream-cursor" />';
 
 export function renderMarkdown(src: string, streaming = false): string {
-  const html = marked.parse(streaming ? src + CURSOR_MARKER : src, { async: false });
+  // Only append the blinking caret while there is actual text on screen — an
+  // empty assistant bubble (e.g. between tool steps) should not blink.
+  const withCursor = streaming && src.trim() !== '';
+  const html = marked.parse(withCursor ? src + CURSOR_MARKER : src, { async: false });
   return html.replaceAll(CURSOR_MARKER, CURSOR_SPAN);
 }
