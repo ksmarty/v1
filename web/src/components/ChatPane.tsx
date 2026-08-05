@@ -369,9 +369,10 @@ export default function ChatPane({
     return [...byId.values()];
   }, [catalog, selectedProvider]);
 
-  // A model is "custom" when there is no provider or it isn't in the catalog.
-  const customActive =
-    !selectedProvider || (model !== '' && !catalogModels.some((m) => m.id === model));
+  // A provider-backed model shows as a searchable combobox (free text is also
+  // allowed there); only the "Custom" provider gets the plain input. Keeping
+  // the element stable while typing prevents focus loss.
+  const showFreeText = providerId === '';
 
   const persistSelection = useCallback(
     (pid: string, m: string) => {
@@ -755,7 +756,7 @@ export default function ChatPane({
               ))}
               <option value="">Custom</option>
             </select>
-            {customActive ? (
+            {showFreeText ? (
               <input
                 value={model}
                 onChange={(e) => changeModel(e.target.value)}
@@ -772,6 +773,18 @@ export default function ChatPane({
                   className="h-8! rounded-md! px-2! py-1! font-mono! text-xs!"
                 />
               </div>
+            )}
+            {streaming && (
+              <span
+                className="flex shrink-0 items-center gap-1.5 rounded-full bg-border px-2 py-1 text-[11px] text-subtle"
+                title={`Working with ${model || (selectedProvider?.name ?? 'provider')}`}
+              >
+                <span className="relative flex h-2 w-2">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent opacity-60" />
+                  <span className="relative inline-flex h-2 w-2 rounded-full bg-accent" />
+                </span>
+                Working…
+              </span>
             )}
           </div>
         </div>
@@ -875,15 +888,17 @@ export default function ChatPane({
                         >
                           <IconPencil className="h-3.5 w-3.5" />
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => void rewindTo(it.key)}
-                          aria-label="Rewind to here"
-                          title="Rewind to here (delete everything after)"
-                          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-dim transition-colors hover:bg-surface hover:text-text"
-                        >
-                          <IconRewind className="h-3.5 w-3.5" />
-                        </button>
+                        {!isLastMsg && (
+                          <button
+                            type="button"
+                            onClick={() => void rewindTo(it.key)}
+                            aria-label="Rewind to here"
+                            title="Rewind to here (delete everything after)"
+                            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-dim transition-colors hover:bg-surface hover:text-text"
+                          >
+                            <IconRewind className="h-3.5 w-3.5" />
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>
@@ -928,15 +943,17 @@ export default function ChatPane({
                           <IconRefresh className="h-3.5 w-3.5" />
                         </button>
                       )}
-                      <button
-                        type="button"
-                        onClick={() => void rewindTo(it.key)}
-                        aria-label="Rewind to here"
-                        title="Rewind to here (delete this response and everything after)"
-                        className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-dim transition-colors hover:bg-border hover:text-text"
-                      >
-                        <IconRewind className="h-3.5 w-3.5" />
-                      </button>
+                      {!isLastMsg && (
+                        <button
+                          type="button"
+                          onClick={() => void rewindTo(it.key)}
+                          aria-label="Rewind to here"
+                          title="Rewind to here (delete this response and everything after)"
+                          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-dim transition-colors hover:bg-border hover:text-text"
+                        >
+                          <IconRewind className="h-3.5 w-3.5" />
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>

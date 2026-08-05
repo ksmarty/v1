@@ -452,13 +452,14 @@ export default function Settings() {
       </header>
 
       <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-4 p-4 md:p-6">
-        <Section title="LLM" description="The OpenAI-compatible endpoint v1 uses to generate apps.">
+        <Section title="LLM" description="The OpenAI-compatible endpoint v1 uses to generate apps. The model is picked per project in the chat.">
           <form onSubmit={(e) => void saveLLM(e)} className="flex flex-col gap-3">
             <ProviderSelector
               baseURL={baseURL}
               model={model}
               onBaseURLChange={setBaseURL}
               onModelChange={setModel}
+              hideModel
             >
               <Field label="API key">
                 <Input

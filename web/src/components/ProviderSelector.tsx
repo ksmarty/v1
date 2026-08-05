@@ -14,12 +14,14 @@ export default function ProviderSelector({
   model,
   onBaseURLChange,
   onModelChange,
+  hideModel = false,
   children,
 }: {
   baseURL: string;
   model: string;
   onBaseURLChange: (v: string) => void;
   onModelChange: (v: string) => void;
+  hideModel?: boolean;
   children?: ReactNode;
 }) {
   const [providers, setProviders] = useState<Provider[] | null>(null);
@@ -287,18 +289,20 @@ export default function ProviderSelector({
 
       {children}
 
-      <label className="block">
-        <span className="mb-1 block text-xs text-subtle">Model</span>
-        {active && active.models.length > 0 ? (
-          <ModelCombobox models={active.models} value={model} onChange={onModelChange} />
-        ) : (
-          <Input
-            value={model}
-            onChange={(e) => onModelChange(e.target.value)}
-            placeholder="gpt-4o"
-          />
-        )}
-      </label>
+      {!hideModel && (
+        <label className="block">
+          <span className="mb-1 block text-xs text-subtle">Model</span>
+          {active && active.models.length > 0 ? (
+            <ModelCombobox models={active.models} value={model} onChange={onModelChange} />
+          ) : (
+            <Input
+              value={model}
+              onChange={(e) => onModelChange(e.target.value)}
+              placeholder="gpt-4o"
+            />
+          )}
+        </label>
+      )}
     </div>
   );
 }

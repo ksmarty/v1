@@ -63,7 +63,7 @@ export default function Project() {
   const loadSettings = useCallback(() => {
     api
       .getSettings()
-      .then((s) => setLlmReady(s.llm.apiKeySet && s.llm.model.trim() !== ''))
+      .then((s) => setLlmReady(s.llm.apiKeySet))
       .catch(() => setLlmReady(false));
   }, []);
 
