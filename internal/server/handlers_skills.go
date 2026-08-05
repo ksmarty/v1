@@ -1,0 +1,161 @@
+package server
+
+import (
+	"encoding/json"
+	"net/http"
+	"os"
+	"path/filepath"
+
+	"v1/internal/gitops"
+	"v1/internal/skills"
+)
+
+// ---- installed skills (skillsmp) ----
+
+// skillsRoot is the directory where installed skills live.
+func (s *Server) skillsRoot() string {
+	return filepath.Join(s.cfg.DataDir, "skills")
+}
+
+// installedSkills returns the persisted list of installed skills.
+func (s *Server) installedSkills() []skills.Skill {
+	v, ok, _ := s.st.GetSetting(keySkills)
+	if !ok || v == "" {
+		return nil
+	}
+	var out []skills.Skill
+	if err := json.Unmarshal([]byte(v), &out); err != nil {
+		return nil
+	}
+	return out
+}
+
+func (s *Server) saveSkills(list []skills.Skill) error {
+	if list == nil {
+		list = []skills.Skill{}
+	}
+	raw, err := json.Marshal(list)
+	if err != nil {
+		return err
+	}
+	return s.st.SetSetting(keySkills, string(raw))
+}
+
+// skillsSystemPrompt renders the SKILL.md contents of enabled installed skills.
+func (s *Server) skillsSystemPrompt() string {
+	return skills.SystemPrompt(s.skillsRoot(), s.installedSkills())
+}
+
+// handleSkillsSearch queries the SkillsMP marketplace.
+func (s *Server) handleSkillsSearch(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Query string `json:"query"`
+	}
+	if !decodeJSON(w, r, &body) {
+		return
+	}
+	results, err := skills.Search(r.Context(), body.Query, 20)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"skills": results})
+}
+
+// handleSkillsInstall downloads a marketplace skill into the skills dir and
+// adds it to the persisted list (enabled by default).
+func (s *Server) handleSkillsInstall(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Skill skills.Skill `json:"skill"`
+	}
+	if !decodeJSON(w, r, &body) {
+		return
+	}
+	if body.Skill.Name == "" || body.Skill.Owner == "" {
+		writeError(w, http.StatusBadRequest, "skill is missing name or source")
+		return
+	}
+	installed, err := skills.Install(r.Context(), s.ghForSkills(), body.Skill, s.skillsRoot())
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "install failed: "+err.Error())
+		return
+	}
+	cur := s.installedSkills()
+	out := make([]skills.Skill, 0, len(cur)+1)
+	for _, sk := range cur {
+		if sk.ID != installed.ID && sk.Dir != installed.Dir {
+			out = append(out, sk)
+		}
+	}
+	out = append(out, installed)
+	if err := s.saveSkills(out); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"skills": out, "installed": installed})
+}
+
+// handleSkillsRemove deletes an installed skill and its files.
+func (s *Server) handleSkillsRemove(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		ID string `json:"id"`
+	}
+	if !decodeJSON(w, r, &body) {
+		return
+	}
+	cur := s.installedSkills()
+	out := make([]skills.Skill, 0, len(cur))
+	removed := false
+	for _, sk := range cur {
+		if sk.ID == body.ID || sk.Dir == body.ID {
+			_ = os.RemoveAll(filepath.Join(s.skillsRoot(), sk.Dir))
+			removed = true
+			continue
+		}
+		out = append(out, sk)
+	}
+	if !removed {
+		writeError(w, http.StatusNotFound, "skill not found")
+		return
+	}
+	if err := s.saveSkills(out); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"skills": out})
+}
+
+// handleSkillsToggle enables or disables an installed skill.
+func (s *Server) handleSkillsToggle(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		ID      string `json:"id"`
+		Enabled bool   `json:"enabled"`
+	}
+	if !decodeJSON(w, r, &body) {
+		return
+	}
+	cur := s.installedSkills()
+	found := false
+	for i := range cur {
+		if cur[i].ID == body.ID || cur[i].Dir == body.ID {
+			cur[i].Enabled = body.Enabled
+			found = true
+			break
+		}
+	}
+	if !found {
+		writeError(w, http.StatusNotFound, "skill not found")
+		return
+	}
+	if err := s.saveSkills(cur); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"skills": cur})
+}
+
+// ghForSkills returns a GitHub client (token optional) for public-repo raw
+// downloads during skill install.
+func (s *Server) ghForSkills() *gitops.GHClient {
+	return gitops.NewGHClient(s.githubToken())
+}

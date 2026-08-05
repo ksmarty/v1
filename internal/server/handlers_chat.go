@@ -230,6 +230,11 @@ func (s *Server) streamChatTurn(w http.ResponseWriter, r *http.Request, p *store
 		emit(agent.ChatEvent{Type: "error", Error: err.Error()})
 		return
 	}
+	// Sync MCP servers (cheap when already connected) and load enabled skills
+	// into the system prompt before the turn starts.
+	mcpTools, _ := s.mcp.Sync(ctx)
+	params.ExtraTools = mcpTools
+	params.SkillsPrompt = s.skillsSystemPrompt()
 	params.Emit = emit
 	params.Exec = &agent.Executor{
 		Root:           root,
@@ -237,6 +242,8 @@ func (s *Server) streamChatTurn(w http.ResponseWriter, r *http.Request, p *store
 		PreviewCommand: p.PreviewCommand,
 		Previews:       s.previews,
 		Store:          s.st,
+		MCP:            s.mcp,
+		Perm:           &turnPerm{s: s, emit: emit},
 		OnTodos: func(t []store.Todo) {
 			emit(agent.ChatEvent{Type: "todos", Todos: t})
 		},

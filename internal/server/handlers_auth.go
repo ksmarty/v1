@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"v1/internal/llm"
+	"v1/internal/mcp"
 	"v1/internal/store"
 )
 
@@ -108,8 +109,11 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 			"oauthClientId": s.githubOAuthClientID(),
 			"source":        s.githubTokenSource(),
 		},
-		"auth":    map[string]any{"disabled": s.cfg.AuthDisabled},
-		"version": s.cfg.Version,
+		"auth":       map[string]any{"disabled": s.cfg.AuthDisabled},
+		"mcp":        s.mcpServers(),
+		"skills":     s.installedSkills(),
+		"toolPolicy": s.toolPolicy(),
+		"version":    s.cfg.Version,
 	})
 }
 
@@ -122,9 +126,11 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 			Providers        *[]llmProviderRecord `json:"providers"`
 			ActiveProviderID *string             `json:"activeProviderId"`
 		} `json:"llm"`
-		GitHubToken         *string `json:"githubToken"`
-		GitHubOAuthClientID *string `json:"githubOAuthClientId"`
-		Password            *string `json:"password"`
+		GitHubToken         *string             `json:"githubToken"`
+		GitHubOAuthClientID *string             `json:"githubOAuthClientId"`
+		Password            *string             `json:"password"`
+		MCP                 *[]mcp.ServerConfig `json:"mcp"`
+		ToolPolicy          *map[string]string  `json:"toolPolicy"`
 	}
 	if !decodeJSON(w, r, &body) {
 		return
@@ -237,6 +243,23 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	if err := set(keyGitHubOAuthClientID, body.GitHubOAuthClientID); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	if body.MCP != nil {
+		if err := s.saveMCPServers(*body.MCP); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+	if body.ToolPolicy != nil {
+		raw, err := json.Marshal(*body.ToolPolicy)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if err := s.st.SetSetting(keyToolPolicy, string(raw)); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
 	}
 	if body.Password != nil && *body.Password != "" {
 		if err := s.auth.SetPassword(*body.Password); err != nil {

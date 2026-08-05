@@ -39,26 +39,30 @@ type TurnResult struct {
 
 // ChatEvent is one SSE event sent to the chat client.
 type ChatEvent struct {
-	Type   string      `json:"type"`
-	Text   string      `json:"text,omitempty"`
-	Name   string      `json:"name,omitempty"`
-	Detail string      `json:"detail,omitempty"`
-	OK     bool        `json:"ok,omitempty"`
-	Error  string      `json:"error,omitempty"`
-	Usage  *Usage      `json:"usage,omitempty"`
-	Todos  []store.Todo `json:"todos,omitempty"`
+	Type      string       `json:"type"`
+	Text      string       `json:"text,omitempty"`
+	Name      string       `json:"name,omitempty"`
+	Detail    string       `json:"detail,omitempty"`
+	OK        bool         `json:"ok,omitempty"`
+	Error     string       `json:"error,omitempty"`
+	Usage     *Usage       `json:"usage,omitempty"`
+	Todos     []store.Todo `json:"todos,omitempty"`
+	RequestID string       `json:"requestId,omitempty"`
+	Tool      string       `json:"tool,omitempty"`
 }
 
 // ChatParams carries everything needed to run one chat turn.
 type ChatParams struct {
-	Store      *store.Store
-	Project    *store.Project
-	Client     *llm.Client
-	Exec       *Executor
-	Message    string
-	Model      string // per-turn override; empty uses p.Client.Model
-	LastUserID int64  // retry mode: >0 re-runs the existing user message
-	Emit       func(ChatEvent)
+	Store        *store.Store
+	Project      *store.Project
+	Client       *llm.Client
+	Exec         *Executor
+	Message      string
+	Model        string      // per-turn override; empty uses p.Client.Model
+	LastUserID   int64       // retry mode: >0 re-runs the existing user message
+	ExtraTools   []llm.Tool  // dynamically added tools (e.g. MCP), namespaced
+	SkillsPrompt string      // enabled skills' SKILL.md content for the system prompt
+	Emit         func(ChatEvent)
 }
 
 // RunChat persists the user message, replays history to the LLM, executes
@@ -86,7 +90,11 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	history := []llm.Message{{Role: "system", Content: systemPrompt}}
+	system := systemPrompt
+	if p.SkillsPrompt != "" {
+		system += "\n\n" + p.SkillsPrompt
+	}
+	history := []llm.Message{{Role: "system", Content: system}}
 	for _, m := range stored {
 		if p.LastUserID > 0 && m.ID > p.LastUserID {
 			continue
@@ -121,7 +129,11 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 
 	var usage *Usage
 	for round := 0; round < maxRounds; round++ {
-		res, err := p.Client.ChatStream(ctx, history, tools,
+		allTools := tools
+		if len(p.ExtraTools) > 0 {
+			allTools = append(append([]llm.Tool{}, tools...), p.ExtraTools...)
+		}
+		res, err := p.Client.ChatStream(ctx, history, allTools,
 			func(d string) { p.Emit(ChatEvent{Type: "delta", Text: d}) },
 			func(d string) { p.Emit(ChatEvent{Type: "reasoning", Text: d}) })
 		if err != nil {
@@ -150,7 +162,7 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 		}
 		for _, tc := range res.ToolCalls {
 			p.Emit(ChatEvent{Type: "tool_start", Name: tc.Function.Name, Detail: toolDetail(tc)})
-			result, execErr := p.Exec.Execute(tc.Function.Name, tc.Function.Arguments)
+			result, execErr := p.Exec.Execute(ctx, tc.Function.Name, tc.Function.Arguments)
 			ok := execErr == nil
 			if !ok {
 				result = "error: " + execErr.Error()

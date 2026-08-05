@@ -32,6 +32,9 @@ export interface Settings {
   llm: LLMSettings;
   github: GitHubSettings;
   auth: { disabled: boolean };
+  mcp: MCPServer[];
+  skills: InstalledSkill[];
+  toolPolicy: Record<string, string>;
   version: string;
 }
 
@@ -136,8 +139,45 @@ export type ChatEvent =
   | { type: 'tool_start'; name: string; detail: string }
   | { type: 'tool_end'; name: string; ok: boolean; detail: string }
   | { type: 'todos'; todos: Todo[] }
+  | { type: 'permission_request'; requestId: string; tool: string; detail: string }
   | { type: 'done'; usage?: ChatUsage }
   | { type: 'error'; error: string };
+
+export interface MCPServer {
+  id: string;
+  name: string;
+  command: string;
+  args: string[];
+}
+
+export interface MCPServerStatus {
+  id: string;
+  name: string;
+  connected: boolean;
+  toolCount: number;
+}
+
+export interface InstalledSkill {
+  id: string;
+  name: string;
+  author: string;
+  description: string;
+  githubUrl: string;
+  dir: string;
+  enabled: boolean;
+}
+
+export interface SkillSearchResult {
+  id: string;
+  name: string;
+  author: string;
+  description: string;
+  githubUrl: string;
+  branch: string;
+  sourcePath: string;
+  owner: string;
+  repo: string;
+}
 
 export interface PreviewStatus {
   running: boolean;

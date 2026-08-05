@@ -1,7 +1,11 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api';
-import type { Settings as SettingsType } from '../types';
+import type {
+  MCPServer,
+  Settings as SettingsType,
+  SkillSearchResult,
+} from '../types';
 import { errMsg, getChatSide, setChatSide, type ChatSide } from '../utils';
 import {
   applyTheme,
@@ -191,6 +195,32 @@ export default function Settings() {
   const [pwSaved, setPwSaved] = useState(false);
   const [pwError, setPwError] = useState<string | null>(null);
 
+  // MCP servers
+  const [mcpName, setMcpName] = useState('');
+  const [mcpCommand, setMcpCommand] = useState('');
+  const [mcpTesting, setMcpTesting] = useState(false);
+  const [mcpSaving, setMcpSaving] = useState(false);
+  const [mcpError, setMcpError] = useState<string | null>(null);
+  const [mcpTestResult, setMcpTestResult] = useState<{
+    ok: boolean;
+    tools?: { name: string; description: string }[];
+    error?: string;
+  } | null>(null);
+
+  // Skills (skillsmp)
+  const [skillQuery, setSkillQuery] = useState('');
+  const [skillResults, setSkillResults] = useState<SkillSearchResult[]>([]);
+  const [skillBusy, setSkillBusy] = useState(false);
+  const [skillBusyId, setSkillBusyId] = useState<string | null>(null);
+  const [skillError, setSkillError] = useState<string | null>(null);
+
+  // Tool permissions
+  const [policy, setPolicy] = useState<Record<string, string>>({});
+  const [newToolKey, setNewToolKey] = useState('');
+  const [policySaving, setPolicySaving] = useState(false);
+  const [policySaved, setPolicySaved] = useState(false);
+  const [policyError, setPolicyError] = useState<string | null>(null);
+
   const reloadSettings = () => {
     api
       .getSettings()
@@ -201,6 +231,7 @@ export default function Settings() {
         setOauthClientId(s.github.oauthClientId);
         setProviders(s.llm.providers ?? []);
         setActiveProviderId(s.llm.activeProviderId ?? '');
+        setPolicy(s.toolPolicy ?? {});
       })
       .catch((e) => setLoadError(errMsg(e)));
   };
@@ -413,6 +444,149 @@ export default function Settings() {
     window.location.href = '/login';
   };
 
+  const parseMCP = (): MCPServer => {
+    const parts = mcpCommand.trim().split(/\s+/).filter(Boolean);
+    return {
+      id: crypto.randomUUID(),
+      name: mcpName.trim() || parts[0] || 'server',
+      command: parts[0] ?? '',
+      args: parts.slice(1),
+    };
+  };
+
+  const testMCP = async () => {
+    if (!mcpCommand.trim()) {
+      setMcpError('Enter a command line to test.');
+      return;
+    }
+    setMcpTesting(true);
+    setMcpTestResult(null);
+    setMcpError(null);
+    try {
+      const srv = parseMCP();
+      setMcpTestResult(await api.mcpTest(srv));
+    } catch (err) {
+      setMcpTestResult({ ok: false, error: errMsg(err) });
+    } finally {
+      setMcpTesting(false);
+    }
+  };
+
+  const addMCP = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!mcpCommand.trim()) {
+      setMcpError('Enter a command line.');
+      return;
+    }
+    setMcpSaving(true);
+    setMcpError(null);
+    try {
+      const srv = parseMCP();
+      await api.updateSettings({ mcp: [...(settings?.mcp ?? []), srv] });
+      setMcpName('');
+      setMcpCommand('');
+      setMcpTestResult(null);
+      reloadSettings();
+    } catch (err) {
+      setMcpError(errMsg(err));
+    } finally {
+      setMcpSaving(false);
+    }
+  };
+
+  const removeMCP = async (id: string) => {
+    setMcpError(null);
+    try {
+      await api.updateSettings({ mcp: (settings?.mcp ?? []).filter((s) => s.id !== id) });
+      reloadSettings();
+    } catch (err) {
+      setMcpError(errMsg(err));
+    }
+  };
+
+  const searchSkills = async (e?: FormEvent) => {
+    e?.preventDefault();
+    const q = skillQuery.trim();
+    if (!q) return;
+    setSkillBusy(true);
+    setSkillError(null);
+    try {
+      const r = await api.skillSearch(q);
+      setSkillResults(r.skills ?? []);
+    } catch (err) {
+      setSkillError(errMsg(err));
+    } finally {
+      setSkillBusy(false);
+    }
+  };
+
+  const installSkill = async (skill: SkillSearchResult) => {
+    setSkillBusyId(skill.id);
+    setSkillError(null);
+    try {
+      const r = await api.skillInstall(skill);
+      setSkillResults([]);
+      setSkillQuery('');
+      setSettings((prev) => (prev ? { ...prev, skills: r.skills } : prev));
+    } catch (err) {
+      setSkillError(errMsg(err));
+    } finally {
+      setSkillBusyId(null);
+    }
+  };
+
+  const removeSkill = async (id: string) => {
+    setSkillError(null);
+    try {
+      const r = await api.skillRemove(id);
+      setSettings((prev) => (prev ? { ...prev, skills: r.skills } : prev));
+    } catch (err) {
+      setSkillError(errMsg(err));
+    }
+  };
+
+  const toggleSkill = async (id: string, enabled: boolean) => {
+    setSkillError(null);
+    try {
+      const r = await api.skillToggle(id, enabled);
+      setSettings((prev) => (prev ? { ...prev, skills: r.skills } : prev));
+    } catch (err) {
+      setSkillError(errMsg(err));
+    }
+  };
+
+  const setPolicyEntry = (tool: string, value: string) => {
+    setPolicy((prev) => {
+      const next = { ...prev };
+      if (value === 'allow') delete next[tool]; // allow is the default — drop the entry
+      else next[tool] = value;
+      return next;
+    });
+  };
+
+  const addPolicyKey = () => {
+    const key = newToolKey.trim();
+    if (!key) return;
+    setPolicy((prev) => (prev[key] ? prev : { ...prev, [key]: 'ask' }));
+    setNewToolKey('');
+  };
+
+  const savePolicy = async (e: FormEvent) => {
+    e.preventDefault();
+    setPolicySaving(true);
+    setPolicySaved(false);
+    setPolicyError(null);
+    try {
+      await api.updateSettings({ toolPolicy: policy });
+      setPolicySaved(true);
+      reloadSettings();
+    } catch (err) {
+      setPolicyError(errMsg(err));
+    } finally {
+      setPolicySaving(false);
+    }
+  };
+
   if (loadError) {
     return (
       <Center>
@@ -437,6 +611,11 @@ export default function Settings() {
       connected{settings.github.source ? ` via ${settings.github.source}` : ''}
     </span>
   ) : null;
+
+  const policyKeys = ['run_command', 'mcp.*', '*'];
+  for (const k of Object.keys(policy)) {
+    if (!policyKeys.includes(k)) policyKeys.push(k);
+  }
 
   return (
     <div className="flex min-h-dvh flex-col">
@@ -670,6 +849,259 @@ export default function Settings() {
                 />
               }
             />
+          </form>
+        </Section>
+
+        <Section
+          title="MCP servers"
+          description="Model Context Protocol servers expose extra tools to the agent. Each server is connected on demand when a chat starts; remove and re-add to change a config."
+        >
+          {settings.mcp && settings.mcp.length > 0 && (
+            <ul className="flex flex-col gap-1.5">
+              {settings.mcp.map((srv) => (
+                <li
+                  key={srv.id}
+                  className="flex items-center gap-2 rounded-lg border border-border px-3 py-2"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm text-text">{srv.name}</div>
+                    <div className="truncate font-mono text-[11px] text-faint">
+                      {srv.command} {srv.args.join(' ')}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    aria-label={`Remove MCP server ${srv.name}`}
+                    title="Remove server"
+                    onClick={() => void removeMCP(srv.id)}
+                    className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-dim transition-colors hover:bg-border hover:text-red-400"
+                  >
+                    <IconX className="h-3.5 w-3.5" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <form onSubmit={(e) => void addMCP(e)} className="flex flex-col gap-3">
+            <Field label="Name (optional)">
+              <Input
+                value={mcpName}
+                onChange={(e) => setMcpName(e.target.value)}
+                placeholder="e.g. filesystem"
+                autoComplete="off"
+              />
+            </Field>
+            <Field label="Command line">
+              <Input
+                value={mcpCommand}
+                onChange={(e) => setMcpCommand(e.target.value)}
+                placeholder="npx -y @modelcontextprotocol/server-filesystem /tmp"
+                autoComplete="off"
+              />
+            </Field>
+            <p className="text-xs leading-relaxed text-subtle">
+              The command line is split on whitespace — the first token is the executable, the
+              rest are arguments.
+            </p>
+            <SaveRow
+              saving={mcpSaving}
+              saved={false}
+              error={mcpError}
+              extra={
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => void testMCP()}
+                  disabled={mcpTesting}
+                >
+                  {mcpTesting ? <Spinner className="h-4 w-4" /> : 'Test'}
+                </Button>
+              }
+            />
+            {mcpTestResult &&
+              (mcpTestResult.ok ? (
+                <p className="flex items-start gap-1.5 text-xs text-emerald-500">
+                  <IconCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  <span>
+                    Connected — {mcpTestResult.tools?.length ?? 0} tool
+                    {(mcpTestResult.tools?.length ?? 0) === 1 ? '' : 's'}
+                    {mcpTestResult.tools && mcpTestResult.tools.length > 0 && (
+                      <span className="text-faint">
+                        {' '}
+                        ({mcpTestResult.tools
+                          .slice(0, 5)
+                          .map((t) => t.name)
+                          .join(', ')}
+                        {mcpTestResult.tools.length > 5
+                          ? ` +${mcpTestResult.tools.length - 5} more`
+                          : ''}
+                        )
+                      </span>
+                    )}
+                  </span>
+                </p>
+              ) : (
+                <p className="flex items-start gap-1.5 text-xs text-red-400">
+                  <IconX className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  <span>{mcpTestResult.error || 'Connection failed'}</span>
+                </p>
+              ))}
+          </form>
+        </Section>
+
+        <Section
+          title="Skills"
+          description="Install agent skills from the SkillsMP marketplace. Enabled skills are added to the agent's instructions."
+        >
+          <form onSubmit={(e) => void searchSkills(e)} className="flex items-end gap-2">
+            <div className="flex-1">
+              <Field label="Search SkillsMP">
+                <Input
+                  value={skillQuery}
+                  onChange={(e) => setSkillQuery(e.target.value)}
+                  placeholder="e.g. react, security, postgres"
+                  autoComplete="off"
+                />
+              </Field>
+            </div>
+            <Button type="submit" variant="outline" disabled={skillBusy}>
+              {skillBusy ? <Spinner className="h-4 w-4" /> : 'Search'}
+            </Button>
+          </form>
+
+          {skillResults.length > 0 && (
+            <ul className="flex flex-col gap-1.5">
+              {skillResults.map((sk) => (
+                <li
+                  key={sk.id}
+                  className="flex items-center gap-2 rounded-lg border border-border px-3 py-2"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm text-text">{sk.name}</div>
+                    <div className="truncate text-[11px] text-faint">
+                      {sk.author}
+                      {sk.description ? ` · ${sk.description}` : ''}
+                    </div>
+                  </div>
+                  <Button
+                    variant="outline"
+                    className="h-7 shrink-0 px-2 text-xs"
+                    disabled={skillBusyId === sk.id}
+                    onClick={() => void installSkill(sk)}
+                  >
+                    {skillBusyId === sk.id ? <Spinner className="h-3.5 w-3.5" /> : 'Install'}
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {skillError && <p className="text-xs text-red-400">{skillError}</p>}
+
+          {settings.skills && settings.skills.length > 0 && (
+            <div className="border-t border-border pt-3">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-xs text-subtle">Installed</span>
+                <span className="text-[11px] text-faint">{settings.skills.length}</span>
+              </div>
+              <ul className="flex flex-col gap-1.5">
+                {settings.skills.map((sk) => (
+                  <li
+                    key={sk.id}
+                    className="flex items-center gap-2 rounded-lg border border-border px-3 py-2"
+                  >
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={sk.enabled}
+                      aria-label={`Toggle skill ${sk.name}`}
+                      title={sk.enabled ? 'Disable skill' : 'Enable skill'}
+                      onClick={() => void toggleSkill(sk.id, !sk.enabled)}
+                      className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${
+                        sk.enabled ? 'bg-accent' : 'bg-border'
+                      }`}
+                    >
+                      <span
+                        className={`absolute top-0.5 h-4 w-4 rounded-full bg-bg transition-all ${
+                          sk.enabled ? 'left-[18px]' : 'left-0.5'
+                        }`}
+                      />
+                    </button>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className="truncate text-sm text-text">{sk.name}</span>
+                        {!sk.enabled && (
+                          <span className="rounded-full bg-border px-1.5 py-0.5 text-[10px] text-dim">
+                            disabled
+                          </span>
+                        )}
+                      </div>
+                      <div className="truncate text-[11px] text-faint">
+                        {sk.author}
+                        {sk.description ? ` · ${sk.description}` : ''}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      aria-label={`Remove skill ${sk.name}`}
+                      title="Remove skill"
+                      onClick={() => void removeSkill(sk.id)}
+                      className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-dim transition-colors hover:bg-border hover:text-red-400"
+                    >
+                      <IconX className="h-3.5 w-3.5" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </Section>
+
+        <Section
+          title="Tool permissions"
+          description="Controls which tools the agent may run without asking. 'Ask' pauses the chat and prompts you to allow or deny."
+        >
+          <form onSubmit={(e) => void savePolicy(e)} className="flex flex-col gap-2">
+            {policyKeys.map((tool) => (
+              <div
+                key={tool}
+                className="flex items-center gap-2 rounded-lg border border-border px-3 py-2"
+              >
+                <code className="min-w-0 flex-1 truncate font-mono text-xs text-text">{tool}</code>
+                <select
+                  value={policy[tool] ?? 'allow'}
+                  onChange={(e) => setPolicyEntry(tool, e.target.value)}
+                  className="h-8 shrink-0 rounded-md border border-border bg-surface px-2 text-xs text-text outline-none focus:border-accent"
+                >
+                  <option value="allow">Allow</option>
+                  <option value="ask">Ask</option>
+                  <option value="deny">Deny</option>
+                </select>
+              </div>
+            ))}
+            <div className="flex items-end gap-2">
+              <div className="flex-1">
+                <Field label="Add tool key">
+                  <Input
+                    value={newToolKey}
+                    onChange={(e) => setNewToolKey(e.target.value)}
+                    placeholder="e.g. mcp.filesystem.read_file"
+                    autoComplete="off"
+                  />
+                </Field>
+              </div>
+              <Button type="button" variant="outline" onClick={addPolicyKey}>
+                Add
+              </Button>
+            </div>
+            <SaveRow saving={policySaving} saved={policySaved} error={policyError} />
+            <p className="text-xs leading-relaxed text-subtle">
+              Keys: <code className="font-mono">run_command</code> for shell commands,{' '}
+              <code className="font-mono">mcp.&lt;server&gt;.&lt;tool&gt;</code> for individual MCP
+              tools, <code className="font-mono">mcp.*</code> for all MCP tools, and{' '}
+              <code className="font-mono">*</code> for everything. The default is Allow.
+            </p>
           </form>
         </Section>
 

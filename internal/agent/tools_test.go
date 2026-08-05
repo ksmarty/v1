@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -29,7 +30,7 @@ func TestResolveRejectsTraversal(t *testing.T) {
 
 func TestWriteReadEditFile(t *testing.T) {
 	e := newTestExecutor(t)
-	if _, err := e.Execute("write_file", `{"path":"sub/dir/a.txt","content":"hello world"}`); err != nil {
+	if _, err := e.Execute(context.Background(), "write_file", `{"path":"sub/dir/a.txt","content":"hello world"}`); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(filepath.Join(e.Root, "sub/dir/a.txt"))
@@ -37,12 +38,12 @@ func TestWriteReadEditFile(t *testing.T) {
 		t.Fatalf("file content = %q, err=%v", data, err)
 	}
 
-	res, err := e.Execute("read_file", `{"path":"sub/dir/a.txt"}`)
+	res, err := e.Execute(context.Background(), "read_file", `{"path":"sub/dir/a.txt"}`)
 	if err != nil || !strings.Contains(res, "hello world") {
 		t.Fatalf("read_file = %q, err=%v", res, err)
 	}
 
-	if _, err := e.Execute("edit_file", `{"path":"sub/dir/a.txt","old_string":"world","new_string":"v1"}`); err != nil {
+	if _, err := e.Execute(context.Background(), "edit_file", `{"path":"sub/dir/a.txt","old_string":"world","new_string":"v1"}`); err != nil {
 		t.Fatal(err)
 	}
 	data, _ = os.ReadFile(filepath.Join(e.Root, "sub/dir/a.txt"))
@@ -50,7 +51,7 @@ func TestWriteReadEditFile(t *testing.T) {
 		t.Fatalf("after edit content = %q", data)
 	}
 
-	if _, err := e.Execute("edit_file", `{"path":"sub/dir/a.txt","old_string":"nope","new_string":"x"}`); err == nil {
+	if _, err := e.Execute(context.Background(), "edit_file", `{"path":"sub/dir/a.txt","old_string":"nope","new_string":"x"}`); err == nil {
 		t.Fatal("edit_file with missing old_string should fail")
 	}
 }
@@ -58,10 +59,10 @@ func TestWriteReadEditFile(t *testing.T) {
 func TestReadFileTruncates(t *testing.T) {
 	e := newTestExecutor(t)
 	big := strings.Repeat("x", 60*1024)
-	if _, err := e.Execute("write_file", `{"path":"big.txt","content":`+jsonString(big)+`}`); err != nil {
+	if _, err := e.Execute(context.Background(), "write_file", `{"path":"big.txt","content":`+jsonString(big)+`}`); err != nil {
 		t.Fatal(err)
 	}
-	res, err := e.Execute("read_file", `{"path":"big.txt"}`)
+	res, err := e.Execute(context.Background(), "read_file", `{"path":"big.txt"}`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +78,7 @@ func jsonString(s string) string {
 
 func TestRunCommandExitCodeAndOutput(t *testing.T) {
 	e := newTestExecutor(t)
-	res, err := e.Execute("run_command", `{"command":"echo out && echo err >&2 && exit 3"}`)
+	res, err := e.Execute(context.Background(), "run_command", `{"command":"echo out && echo err >&2 && exit 3"}`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,7 +100,7 @@ func TestRunCommandExitCodeAndOutput(t *testing.T) {
 func TestRunCommandTimeoutKills(t *testing.T) {
 	e := newTestExecutor(t)
 	start := time.Now()
-	res, err := e.Execute("run_command", `{"command":"sleep 30","timeout_seconds":1}`)
+	res, err := e.Execute(context.Background(), "run_command", `{"command":"sleep 30","timeout_seconds":1}`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +118,7 @@ func TestListFilesSkipsAndCaps(t *testing.T) {
 	os.MkdirAll(filepath.Join(e.Root, "src"), 0o755)
 	os.WriteFile(filepath.Join(e.Root, "node_modules/dep/x.js"), []byte("x"), 0o644)
 	os.WriteFile(filepath.Join(e.Root, "src/a.ts"), []byte("x"), 0o644)
-	res, err := e.Execute("list_files", `{}`)
+	res, err := e.Execute(context.Background(), "list_files", `{}`)
 	if err != nil {
 		t.Fatal(err)
 	}

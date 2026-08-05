@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"v1/internal/mcp"
 	"v1/internal/store"
 )
 
@@ -31,10 +33,12 @@ type Executor struct {
 	Store          *store.Store
 	OnTodos        func([]store.Todo)
 	OnFileChange   func()
+	MCP            *mcp.Manager // optional: namespaced mcp_<server>_<tool> tools
+	Perm           Resolver     // optional: gates tool calls via allow/deny/ask
 }
 
 // Execute runs one tool call and returns the result string fed back to the LLM.
-func (e *Executor) Execute(name, argsJSON string) (string, error) {
+func (e *Executor) Execute(ctx context.Context, name, argsJSON string) (string, error) {
 	switch name {
 	case "list_files":
 		return e.listFiles(argsJSON)
@@ -45,14 +49,50 @@ func (e *Executor) Execute(name, argsJSON string) (string, error) {
 	case "edit_file":
 		return e.editFile(argsJSON)
 	case "run_command":
-		return e.runCommand(argsJSON)
+		return e.runCommand(ctx, argsJSON)
 	case "restart_preview":
 		return e.restartPreview()
 	case "set_todos":
 		return e.setTodos(argsJSON)
 	default:
+		if strings.HasPrefix(name, "mcp_") {
+			return e.mcpCall(ctx, name, argsJSON)
+		}
 		return "", fmt.Errorf("unknown tool %q", name)
 	}
+}
+
+// mcpCall routes a namespaced MCP tool (mcp_<server>_<tool>) to the matching
+// server, gated by the permission policy.
+func (e *Executor) mcpCall(ctx context.Context, name, argsJSON string) (string, error) {
+	rest := strings.TrimPrefix(name, "mcp_")
+	idx := strings.Index(rest, "_")
+	if idx <= 0 || idx == len(rest)-1 {
+		return "", fmt.Errorf("malformed MCP tool name %q", name)
+	}
+	serverID, toolName := rest[:idx], rest[idx+1:]
+	detail := toolName
+	var args map[string]any
+	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
+		return "", fmt.Errorf("invalid arguments: %w", err)
+	}
+	if e.Perm != nil {
+		ok, err := e.Perm.Request(ctx, "mcp."+serverID+"."+toolName, detail)
+		if err != nil {
+			return "", err
+		}
+		if !ok {
+			return "", fmt.Errorf("tool %q was not allowed", name)
+		}
+	}
+	if e.MCP == nil {
+		return "", fmt.Errorf("MCP support is unavailable")
+	}
+	result, err := e.MCP.CallTool(ctx, serverID, toolName, args)
+	if err != nil {
+		return "", err
+	}
+	return result, nil
 }
 
 // setTodos replaces the project's task list. The agent is expected to pass the
@@ -285,7 +325,7 @@ func (w *limitWriter) String() string {
 	return string(w.buf)
 }
 
-func (e *Executor) runCommand(argsJSON string) (string, error) {
+func (e *Executor) runCommand(ctx context.Context, argsJSON string) (string, error) {
 	var args struct {
 		Command        string   `json:"command"`
 		TimeoutSeconds *float64 `json:"timeout_seconds"`
@@ -295,6 +335,15 @@ func (e *Executor) runCommand(argsJSON string) (string, error) {
 	}
 	if args.Command == "" {
 		return "", fmt.Errorf("command is required")
+	}
+	if e.Perm != nil {
+		ok, err := e.Perm.Request(ctx, "run_command", args.Command)
+		if err != nil {
+			return "", err
+		}
+		if !ok {
+			return "", fmt.Errorf("command was not allowed")
+		}
 	}
 	timeout := 120 * time.Second
 	if args.TimeoutSeconds != nil && *args.TimeoutSeconds > 0 {

@@ -284,6 +284,11 @@ export default function ChatPane({
   const [catalog, setCatalog] = useState<Provider[]>([]);
   const [todos, setTodos] = useState<Todo[]>([]);
   const [todosOpen, setTodosOpen] = useState(true);
+  const [permPrompt, setPermPrompt] = useState<{
+    requestId: string;
+    tool: string;
+    detail: string;
+  } | null>(null);
   const navigate = useNavigate();
 
   const itemsRef = useRef<Item[]>([]);
@@ -482,6 +487,7 @@ export default function ChatPane({
     setStreaming(false);
     abortRef.current = null;
     assistantKeyRef.current = null;
+    setPermPrompt(null);
     update((prev) =>
       prev.map((it) => (it.kind === 'msg' && it.streaming ? { ...it, streaming: false } : it)),
     );
@@ -578,6 +584,10 @@ export default function ChatPane({
         case 'todos': {
           setTodos(ev.todos);
           setTodosOpen(true);
+          break;
+        }
+        case 'permission_request': {
+          setPermPrompt({ requestId: ev.requestId, tool: ev.tool, detail: ev.detail });
           break;
         }
         case 'done': {
@@ -730,6 +740,20 @@ export default function ChatPane({
 
   const stop = () => abortRef.current?.abort();
 
+  const respondPerm = useCallback(
+    async (allow: boolean, remember: boolean) => {
+      const p = permPrompt;
+      if (!p) return;
+      try {
+        await api.permissionRespond(projectId, p.requestId, allow, remember);
+      } catch {
+        // 404 — already answered; treat as resolved
+      }
+      setPermPrompt(null);
+    },
+    [permPrompt, projectId],
+  );
+
   const lastMsgIdx = useMemo(() => {
     for (let i = items.length - 1; i >= 0; i--) {
       if (items[i].kind === 'msg') return i;
@@ -845,6 +869,53 @@ export default function ChatPane({
                 ))}
               </ul>
             )}
+          </div>
+        )}
+        {permPrompt && streaming && (
+          <div className="mx-auto mb-3 w-full max-w-2xl rounded-lg border border-amber-900/60 bg-amber-950/30 p-3 text-sm">
+            <div className="flex items-start gap-2">
+              <IconWrench className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
+              <div className="min-w-0 flex-1">
+                <p className="text-text">
+                  Allow the agent to run <code className="font-mono">{permPrompt.tool}</code>?
+                </p>
+                {permPrompt.detail && (
+                  <pre className="mt-1 max-h-24 overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-subtle">
+                    {permPrompt.detail}
+                  </pre>
+                )}
+              </div>
+            </div>
+            <div className="mt-2.5 flex flex-wrap gap-1.5">
+              <Button
+                variant="outline"
+                className="h-8 px-3 text-xs"
+                onClick={() => void respondPerm(true, false)}
+              >
+                Allow
+              </Button>
+              <Button
+                variant="outline"
+                className="h-8 px-3 text-xs"
+                onClick={() => void respondPerm(false, false)}
+              >
+                Deny
+              </Button>
+              <Button
+                variant="ghost"
+                className="h-8 px-3 text-xs"
+                onClick={() => void respondPerm(true, true)}
+              >
+                Always allow
+              </Button>
+              <Button
+                variant="ghost"
+                className="h-8 px-3 text-xs"
+                onClick={() => void respondPerm(false, true)}
+              >
+                Always deny
+              </Button>
+            </div>
           </div>
         )}
         {!loading && !loadError && items.length === 0 && (

@@ -21,6 +21,7 @@ import (
 	"v1/internal/auth"
 	"v1/internal/config"
 	"v1/internal/llm"
+	"v1/internal/mcp"
 	"v1/internal/preview"
 	"v1/internal/store"
 	"v1/internal/terminal"
@@ -37,6 +38,9 @@ type Server struct {
 	previews  *preview.Manager
 	terminals *terminal.Manager
 	handler   http.Handler
+
+	mcp  *mcp.Manager
+	perm permRegistry
 
 	oauthMu    sync.Mutex
 	oauthFlows map[string]*oauthFlow
@@ -64,7 +68,9 @@ func New(cfg config.Config, st *store.Store) *Server {
 			RedirectURI:   cfg.OIDCRedirectURI,
 			AllowedEmails: cfg.OIDCAllowedEmails,
 		}),
+		perm: permRegistry{reqs: map[string]*permRequest{}},
 	}
+	s.mcp = mcp.NewManager(s.mcpServers)
 	s.auth.EnsureEnvPassword()
 	s.auth.SetOIDCEnabled(s.oidcEnabled())
 	s.pruneOIDCFlows()
@@ -77,10 +83,11 @@ func New(cfg config.Config, st *store.Store) *Server {
 // Handler returns the root HTTP handler (with auth middleware applied).
 func (s *Server) Handler() http.Handler { return s.handler }
 
-// Shutdown stops all previews and terminals.
+// Shutdown stops all previews, terminals and MCP servers.
 func (s *Server) Shutdown() {
 	s.previews.StopAll()
 	s.terminals.KillAll()
+	s.mcp.Shutdown()
 }
 
 func (s *Server) routes(m *http.ServeMux) {
@@ -139,6 +146,15 @@ func (s *Server) routes(m *http.ServeMux) {
 	m.HandleFunc("POST /api/projects/{id}/git/branch", s.handleGitBranch)
 	m.HandleFunc("POST /api/projects/{id}/git/checkout", s.handleGitCheckout)
 	m.HandleFunc("POST /api/projects/{id}/git/revert", s.handleGitRevert)
+	m.HandleFunc("POST /api/projects/{id}/chat/permission", s.handlePermission)
+
+	m.HandleFunc("GET /api/mcp/status", s.handleMCPStatus)
+	m.HandleFunc("POST /api/mcp/test", s.handleMCPTest)
+
+	m.HandleFunc("POST /api/skills/search", s.handleSkillsSearch)
+	m.HandleFunc("POST /api/skills/install", s.handleSkillsInstall)
+	m.HandleFunc("POST /api/skills/remove", s.handleSkillsRemove)
+	m.HandleFunc("POST /api/skills/toggle", s.handleSkillsToggle)
 
 	// The preview proxy handles all common HTTP methods (incl. WS upgrades
 	// via GET). Methods are enumerated so the patterns don't conflict with
@@ -196,6 +212,9 @@ const (
 	keyGitHubOAuthClientID = "github_oauth_client_id"
 	keyProvidersCache      = "providers_cache"
 	keyProvidersCustom     = "providers_custom"
+	keyMCP                 = "mcp_servers"
+	keySkills              = "skills_installed"
+	keyToolPolicy          = "tool_policy"
 )
 
 // oidcEnabled reports whether the OIDC flow is active: it needs auth enabled

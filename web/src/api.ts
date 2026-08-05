@@ -8,6 +8,9 @@ import type {
   GitHubRepo,
   GitStatus,
   GitInfo,
+  InstalledSkill,
+  MCPServer,
+  MCPServerStatus,
   PreviewStatus,
   Project,
   ProjectTemplate,
@@ -17,6 +20,7 @@ import type {
   ProvidersSearchResult,
   PushResult,
   Settings,
+  SkillSearchResult,
   Todo,
 } from './types';
 
@@ -99,6 +103,8 @@ export interface SettingsUpdate {
   githubToken?: string;
   githubOAuthClientId?: string;
   password?: string;
+  mcp?: MCPServer[];
+  toolPolicy?: Record<string, string>;
 }
 
 export const api = {
@@ -172,6 +178,27 @@ export const api = {
   oauthDeviceStart: () => post<DeviceFlowStart>('/api/github/oauth/device/start'),
   oauthDevicePoll: (flowId: string) =>
     post<DeviceFlowPoll>('/api/github/oauth/device/poll', { flowId }),
+
+  // MCP
+  mcpStatus: () => request<{ servers: MCPServerStatus[] }>('/api/mcp/status'),
+  mcpTest: (srv: MCPServer) =>
+    post<{ ok: boolean; tools?: { name: string; description: string }[]; error?: string }>(
+      '/api/mcp/test',
+      srv,
+    ),
+
+  // Skills (skillsmp)
+  skillSearch: (query: string) =>
+    post<{ skills: SkillSearchResult[] }>('/api/skills/search', { query }),
+  skillInstall: (skill: SkillSearchResult) =>
+    post<{ skills: InstalledSkill[] }>('/api/skills/install', { skill }),
+  skillRemove: (id: string) => post<{ skills: InstalledSkill[] }>('/api/skills/remove', { id }),
+  skillToggle: (id: string, enabled: boolean) =>
+    post<{ skills: InstalledSkill[] }>('/api/skills/toggle', { id, enabled }),
+
+  // Chat permissions
+  permissionRespond: (projectId: string, requestId: string, allow: boolean, remember: boolean) =>
+    post<void>(`/api/projects/${projectId}/chat/permission`, { requestId, allow, remember }),
 };
 
 /**
