@@ -4,12 +4,13 @@ import type { FileEntry } from '../types';
 import { errMsg, formatBytes } from '../utils';
 import { useMediaQuery } from '../hooks/useMediaQuery';
 import { Button, ErrorBox, IconButton, Spinner } from './ui';
+import CodeEditor from './CodeEditor';
+import FileIcon from './FileIcon';
 import {
   IconArrowLeft,
   IconCheck,
   IconChevronDown,
   IconChevronRight,
-  IconFile,
   IconFolder,
   IconFolderOpen,
   IconRefresh,
@@ -95,7 +96,7 @@ function TreeView({
               ) : (
                 <>
                   <span className="w-3.5 shrink-0" />
-                  <IconFile className="h-4 w-4 shrink-0 text-faint" />
+                  <FileIcon name={n.entry.name} className="h-4 w-4 shrink-0" />
                 </>
               )}
               <span className="truncate">{n.entry.name}</span>
@@ -301,6 +302,7 @@ export default function FilesPane({ projectId }: { projectId: string }) {
             <IconArrowLeft className="h-4 w-4" />
           </IconButton>
         )}
+        {selected && <FileIcon name={selected.path} className="h-3.5 w-3.5 shrink-0" />}
         <span className="min-w-0 flex-1 truncate font-mono text-xs text-dim">
           {selected?.path}
         </span>
@@ -332,18 +334,16 @@ export default function FilesPane({ projectId }: { projectId: string }) {
             <ErrorBox message={fileError} />
           </div>
         ) : (
-          <textarea
+          <CodeEditor
             value={content}
-            onChange={(e) => setContent(e.target.value)}
+            onChange={setContent}
+            path={selected?.path}
             onKeyDown={(e) => {
               if ((e.metaKey || e.ctrlKey) && e.key === 's') {
                 e.preventDefault();
                 void save();
               }
             }}
-            spellCheck={false}
-            className="h-full w-full resize-none bg-transparent p-3 font-mono text-[13px] leading-5 text-text outline-none"
-            style={{ whiteSpace: 'pre', overflowWrap: 'normal', overflowX: 'auto' }}
           />
         )}
       </div>

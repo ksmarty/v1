@@ -11,7 +11,8 @@ import { api, retryChat, streamChat } from '../api';
 import type { ChatEvent, ChatUsage, Provider, ProviderModel, SavedProvider, Todo } from '../types';
 import { errMsg } from '../utils';
 import { renderMarkdown } from '../markdown';
-import { Button, ErrorBox, IconButton, Spinner } from './ui';
+import { Button, Dialog, ErrorBox, IconButton, Spinner } from './ui';
+import ToolSettings from './ToolSettings';
 import { ModelCombobox } from './ModelCombobox';
 import {
   IconArrowUp,
@@ -28,6 +29,14 @@ import {
 } from './icons';
 
 type ToolCall = { name: string; detail: string };
+
+const WORKING_PHRASES = [
+  'Thinking…',
+  'Writing code…',
+  'Checking files…',
+  'Running commands…',
+  'Polishing…',
+];
 
 type MsgItem = {
   kind: 'msg';
@@ -284,6 +293,8 @@ export default function ChatPane({
   const [catalog, setCatalog] = useState<Provider[]>([]);
   const [todos, setTodos] = useState<Todo[]>([]);
   const [todosOpen, setTodosOpen] = useState(true);
+  const [toolsOpen, setToolsOpen] = useState(false);
+  const [workPhrase, setWorkPhrase] = useState(0);
   const [permPrompt, setPermPrompt] = useState<{
     requestId: string;
     tool: string;
@@ -482,6 +493,13 @@ export default function ChatPane({
       el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
     }
   }, [input]);
+
+  // Cycle the "working" phrase while a generation is streaming.
+  useEffect(() => {
+    if (!streaming) return;
+    const t = setInterval(() => setWorkPhrase((i) => (i + 1) % WORKING_PHRASES.length), 2500);
+    return () => clearInterval(t);
+  }, [streaming]);
 
   const finish = useCallback(() => {
     setStreaming(false);
@@ -1036,7 +1054,19 @@ export default function ChatPane({
 
       {llmReady ? (
         <div className="shrink-0 border-t border-border p-2.5 md:p-3">
-          <div className="mx-auto flex max-w-2xl items-end gap-2 rounded-xl border border-border-strong bg-surface p-2 transition-colors focus-within:border-subtle">
+          <div
+            className={`mx-auto flex max-w-2xl items-end gap-2 rounded-xl border border-border-strong bg-surface p-2 transition-colors focus-within:border-subtle ${
+              streaming ? 'v1-working' : ''
+            }`}
+          >
+            <IconButton
+              onClick={() => setToolsOpen(true)}
+              aria-label="Tools, skills & permissions"
+              title="Tools, skills & permissions"
+              className="h-9 w-9 shrink-0 md:h-9 md:w-9"
+            >
+              <IconWrench className="h-4 w-4" />
+            </IconButton>
             <textarea
               ref={taRef}
               rows={1}
@@ -1051,6 +1081,16 @@ export default function ChatPane({
               }}
               className="max-h-40 min-h-[36px] flex-1 resize-none bg-transparent px-1.5 py-1.5 text-sm text-text outline-none placeholder:text-faint"
             />
+            {streaming && (
+              <span className="flex shrink-0 items-center gap-1.5 pr-1 text-xs text-dim">
+                {WORKING_PHRASES[workPhrase]}
+                <span className="flex items-center gap-0.5 text-accent">
+                  <span className="v1-dot" />
+                  <span className="v1-dot" />
+                  <span className="v1-dot" />
+                </span>
+              </span>
+            )}
             {streaming ? (
               <IconButton
                 onClick={stop}
@@ -1077,12 +1117,24 @@ export default function ChatPane({
             <p className="text-sm text-text">
               No AI provider configured — set an API key and model in Settings to start building.
             </p>
-            <Button onClick={() => navigate('/settings')} className="min-h-11 md:min-h-9">
+            <Button
+              onClick={() => navigate('/settings', { state: { from: `/project/${projectId}` } })}
+              className="min-h-11 md:min-h-9"
+            >
               Open Settings
             </Button>
           </div>
         </div>
       )}
+
+      <Dialog
+        open={toolsOpen}
+        onClose={() => setToolsOpen(false)}
+        title="Tools & permissions"
+        wide
+      >
+        <ToolSettings />
+      </Dialog>
     </div>
   );
 }

@@ -71,7 +71,12 @@ export default function ChatPanel({
           )}
         </div>
         <GitHubMenu projectId={projectId} projectName={project?.name ?? ''} repoUrl={project?.repoUrl ?? ''} />
-        <Link to="/settings" aria-label="Settings" className={iconLinkClass}>
+        <Link
+          to="/settings"
+          state={{ from: `/project/${projectId}` }}
+          aria-label="Settings"
+          className={iconLinkClass}
+        >
           <IconSettings className="h-5 w-5" />
         </Link>
         {showCollapse && (

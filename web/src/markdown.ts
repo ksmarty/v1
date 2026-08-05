@@ -1,25 +1,81 @@
 import hljs from 'highlight.js/lib/core';
 import bash from 'highlight.js/lib/languages/bash';
 import css from 'highlight.js/lib/languages/css';
+import dockerfile from 'highlight.js/lib/languages/dockerfile';
+import go from 'highlight.js/lib/languages/go';
+import ini from 'highlight.js/lib/languages/ini';
 import javascript from 'highlight.js/lib/languages/javascript';
 import json from 'highlight.js/lib/languages/json';
 import markdown from 'highlight.js/lib/languages/markdown';
+import python from 'highlight.js/lib/languages/python';
+import rust from 'highlight.js/lib/languages/rust';
+import scss from 'highlight.js/lib/languages/scss';
+import sql from 'highlight.js/lib/languages/sql';
 import typescript from 'highlight.js/lib/languages/typescript';
 import xml from 'highlight.js/lib/languages/xml';
+import yaml from 'highlight.js/lib/languages/yaml';
 import { Marked, Renderer, type Tokens } from 'marked';
 
-// Only a handful of common languages are registered to keep the bundle small.
+// A handful of common languages are registered to keep the bundle small.
 hljs.registerLanguage('bash', bash);
 hljs.registerLanguage('shell', bash);
 hljs.registerLanguage('css', css);
+hljs.registerLanguage('dockerfile', dockerfile);
+hljs.registerLanguage('go', go);
 hljs.registerLanguage('html', xml);
+hljs.registerLanguage('ini', ini);
 hljs.registerLanguage('javascript', javascript);
 hljs.registerLanguage('json', json);
 hljs.registerLanguage('markdown', markdown);
 hljs.registerLanguage('md', markdown);
+hljs.registerLanguage('python', python);
+hljs.registerLanguage('rust', rust);
+hljs.registerLanguage('scss', scss);
+hljs.registerLanguage('sql', sql);
 hljs.registerLanguage('tsx', typescript);
 hljs.registerLanguage('typescript', typescript);
 hljs.registerLanguage('xml', xml);
+hljs.registerLanguage('yaml', yaml);
+
+const EXT_LANGS: Record<string, string> = {
+  bash: 'bash',
+  cjs: 'javascript',
+  css: 'css',
+  dockerfile: 'dockerfile',
+  go: 'go',
+  htm: 'html',
+  html: 'html',
+  ini: 'ini',
+  js: 'javascript',
+  json: 'json',
+  jsonc: 'json',
+  jsx: 'javascript',
+  mjs: 'javascript',
+  md: 'markdown',
+  markdown: 'markdown',
+  py: 'python',
+  rs: 'rust',
+  scss: 'scss',
+  sh: 'bash',
+  shell: 'bash',
+  sql: 'sql',
+  svg: 'xml',
+  ts: 'typescript',
+  tsx: 'typescript',
+  xml: 'xml',
+  yaml: 'yaml',
+  yml: 'yaml',
+  zsh: 'bash',
+};
+
+/** Resolves the highlight.js language id for a file path, or null. */
+export function fileLanguage(path: string): string | null {
+  const base = path.split('/').pop() ?? '';
+  if (/^dockerfile$/i.test(base)) return 'dockerfile';
+  const dot = base.lastIndexOf('.');
+  if (dot <= 0) return null;
+  return EXT_LANGS[base.slice(dot + 1).toLowerCase()] ?? null;
+}
 
 function escapeHtml(s: string): string {
   return s

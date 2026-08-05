@@ -6,7 +6,7 @@ import {
   type SelectHTMLAttributes,
   type TextareaHTMLAttributes,
 } from 'react';
-import { IconX } from './icons';
+import { IconCheck, IconX } from './icons';
 
 export function Spinner({ className = 'h-4 w-4' }: { className?: string }) {
   return (
@@ -76,11 +76,13 @@ export function Dialog({
   onClose,
   title,
   children,
+  wide = false,
 }: {
   open: boolean;
   onClose: () => void;
   title: string;
   children: ReactNode;
+  wide?: boolean;
 }) {
   useEffect(() => {
     if (!open) return;
@@ -100,7 +102,11 @@ export function Dialog({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="max-h-[85vh] w-full overflow-y-auto rounded-t-2xl border border-border bg-bg p-5 shadow-2xl sm:max-w-md sm:rounded-xl">
+      <div
+        className={`max-h-[85vh] w-full overflow-y-auto rounded-t-2xl border border-border bg-bg p-5 shadow-2xl sm:rounded-xl ${
+          wide ? 'sm:max-w-xl' : 'sm:max-w-md'
+        }`}
+      >
         <div className="mb-4 flex items-center justify-between gap-2">
           <h2 className="text-base font-semibold text-text">{title}</h2>
           <IconButton onClick={onClose} aria-label="Close" className="-mr-1 h-8 w-8 md:h-8 md:w-8">
@@ -109,6 +115,65 @@ export function Dialog({
         </div>
         {children}
       </div>
+    </div>
+  );
+}
+
+export function Section({
+  title,
+  description,
+  badge,
+  children,
+}: {
+  title: string;
+  description?: string;
+  badge?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <section className="rounded-xl border border-border bg-bg p-4 md:p-5">
+      <div className="flex items-center gap-2">
+        <h2 className="text-sm font-semibold text-text">{title}</h2>
+        {badge}
+      </div>
+      {description && <p className="mt-1 text-xs text-subtle">{description}</p>}
+      <div className="mt-4 flex flex-col gap-3">{children}</div>
+    </section>
+  );
+}
+
+export function Field({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <label className="block">
+      <span className="mb-1 block text-xs text-subtle">{label}</span>
+      {children}
+    </label>
+  );
+}
+
+export function SaveRow({
+  saving,
+  saved,
+  error,
+  extra,
+}: {
+  saving: boolean;
+  saved: boolean;
+  error: string | null;
+  extra?: ReactNode;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <Button type="submit" variant="outline" disabled={saving}>
+        {saving ? <Spinner className="h-4 w-4" /> : 'Save'}
+      </Button>
+      {extra}
+      {saved && !saving && (
+        <span className="flex items-center gap-1 text-xs text-emerald-500">
+          <IconCheck className="h-3.5 w-3.5" /> Saved
+        </span>
+      )}
+      {error && <span className="text-xs text-red-400">{error}</span>}
     </div>
   );
 }
