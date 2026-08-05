@@ -131,6 +131,7 @@ func (s *Server) routes(m *http.ServeMux) {
 	m.HandleFunc("POST /api/github/oauth/device/start", s.handleOAuthDeviceStart)
 	m.HandleFunc("POST /api/github/oauth/device/poll", s.handleOAuthDevicePoll)
 	m.HandleFunc("POST /api/projects/{id}/github/create", s.handleGitHubCreate)
+	m.HandleFunc("POST /api/projects/{id}/github/link", s.handleGitHubLink)
 	m.HandleFunc("POST /api/projects/{id}/github/push", s.handleGitHubPush)
 	m.HandleFunc("GET /api/projects/{id}/git/status", s.handleGitStatus)
 

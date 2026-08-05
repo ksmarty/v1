@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { api } from '../api';
-import type { GitStatus, PushResult } from '../types';
+import type { GitStatus, GitHubRepo, PushResult } from '../types';
 import { errMsg } from '../utils';
 import { Button, Dialog, ErrorBox, IconButton, Input, Spinner, Textarea } from './ui';
 import { IconExternalLink, IconGitBranch, IconGitHub } from './icons';
@@ -199,6 +199,140 @@ function CreateRepoDialog({
   );
 }
 
+function LinkRepoDialog({
+  open,
+  onClose,
+  projectId,
+  onDone,
+}: {
+  open: boolean;
+  onClose: () => void;
+  projectId: string;
+  onDone: () => void;
+}) {
+  const [repos, setRepos] = useState<GitHubRepo[] | null>(null);
+  const [query, setQuery] = useState('');
+  const [url, setUrl] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setQuery('');
+    setUrl('');
+    setBusy(false);
+    setDone(false);
+    setError(null);
+    api
+      .listGitHubRepos()
+      .then((list) => {
+        setRepos(list);
+        setError(null);
+      })
+      .catch((e) => {
+        setRepos(null);
+        setError(errMsg(e));
+      });
+  }, [open]);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const list = repos ?? [];
+    if (!q) return list;
+    return list.filter((r) => r.fullName.toLowerCase().includes(q));
+  }, [repos, query]);
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    const repoUrl = url.trim();
+    if (!repoUrl) {
+      setError('Select a repository or paste a URL.');
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await api.githubLink(projectId, repoUrl);
+      setDone(true);
+      onDone();
+    } catch (err) {
+      setError(errMsg(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onClose={onClose} title="Link existing GitHub repo">
+      {done ? (
+        <div>
+          <p className="text-sm text-text">Repository linked and files imported.</p>
+          <div className="mt-4 flex justify-end">
+            <Button onClick={onClose}>Done</Button>
+          </div>
+        </div>
+      ) : (
+        <form onSubmit={(e) => void submit(e)}>
+          <p className="mb-3 text-xs text-subtle">
+            Replaces the current project files with the repository's contents.
+          </p>
+          <label className="mb-1 block text-xs text-subtle">Search your repos</label>
+          <Input
+            autoFocus
+            placeholder="owner/repo…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+          <div className="mt-2 max-h-44 overflow-auto rounded-lg border border-border">
+            {repos === null && !error && (
+              <div className="flex justify-center py-4">
+                <Spinner className="h-4 w-4" />
+              </div>
+            )}
+            {repos !== null && filtered.length === 0 && (
+              <p className="px-3 py-3 text-xs text-dim">No repositories found.</p>
+            )}
+            {filtered.map((r) => (
+              <button
+                key={r.fullName}
+                type="button"
+                onClick={() => {
+                  setUrl(r.url);
+                  setQuery(r.fullName);
+                }}
+                className={`flex w-full items-center justify-between gap-2 border-b border-border px-3 py-2 text-left text-sm last:border-b-0 hover:bg-surface ${
+                  url === r.url ? 'text-accent' : 'text-text'
+                }`}
+              >
+                <span className="truncate font-mono">{r.fullName}</span>
+                <span className="shrink-0 text-xs text-faint">
+                  {r.private ? 'private' : 'public'}
+                </span>
+              </button>
+            ))}
+          </div>
+          <label className="mt-3 mb-1 block text-xs text-subtle">Or paste a repo URL</label>
+          <Input
+            placeholder="https://github.com/owner/repo"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+          />
+          {error && <ErrorBox message={error} className="mt-3" />}
+          <div className="mt-4 flex justify-end gap-2">
+            <Button variant="ghost" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={busy || !url.trim()}>
+              {busy ? <Spinner className="h-4 w-4" /> : 'Link repo'}
+            </Button>
+          </div>
+        </form>
+      )}
+    </Dialog>
+  );
+}
+
 export default function GitHubMenu({
   projectId,
   projectName,
@@ -211,7 +345,7 @@ export default function GitHubMenu({
   const [open, setOpen] = useState(false);
   const [status, setStatus] = useState<GitStatus | null>(null);
   const [statusError, setStatusError] = useState<string | null>(null);
-  const [dialog, setDialog] = useState<'push' | 'create' | null>(null);
+  const [dialog, setDialog] = useState<'push' | 'create' | 'link' | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
   const loadStatus = useCallback(() => {
@@ -302,6 +436,18 @@ export default function GitHubMenu({
                 Create repo & push
               </Button>
             )}
+            {!effectiveRepoUrl && (
+              <Button
+                variant="outline"
+                className="w-full justify-start"
+                onClick={() => {
+                  setOpen(false);
+                  setDialog('link');
+                }}
+              >
+                Link existing repo…
+              </Button>
+            )}
           </div>
         </div>
       )}
@@ -317,6 +463,12 @@ export default function GitHubMenu({
         onClose={() => setDialog(null)}
         projectId={projectId}
         projectName={projectName}
+        onDone={loadStatus}
+      />
+      <LinkRepoDialog
+        open={dialog === 'link'}
+        onClose={() => setDialog(null)}
+        projectId={projectId}
         onDone={loadStatus}
       />
     </div>

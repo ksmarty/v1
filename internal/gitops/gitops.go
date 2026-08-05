@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -175,6 +177,30 @@ func Clone(ctx context.Context, repoURL, token, dest string) error {
 	}
 	_, err := git.PlainCloneContext(ctx, dest, false, opts)
 	return err
+}
+
+// LinkRepo replaces the contents of dest with a fresh clone of repoURL, so the
+// project becomes a working checkout of the linked repository (origin is set,
+// so subsequent pushes target it).
+func LinkRepo(ctx context.Context, repoURL, token, dest string) error {
+	tmp, err := os.MkdirTemp("", "v1-link-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(tmp)
+	if err := Clone(ctx, repoURL, token, tmp); err != nil {
+		return err
+	}
+	entries, err := os.ReadDir(dest)
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		if err := os.RemoveAll(filepath.Join(dest, e.Name())); err != nil {
+			return err
+		}
+	}
+	return os.Rename(tmp, dest)
 }
 
 // Status summarizes the git state of a project directory.

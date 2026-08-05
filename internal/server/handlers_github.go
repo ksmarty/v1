@@ -2,6 +2,7 @@ package server
 
 import (
 	"net/http"
+	"strings"
 
 	"v1/internal/gitops"
 )
@@ -116,6 +117,35 @@ func (s *Server) handleGitHubPush(w http.ResponseWriter, r *http.Request) {
 		"pushed":    pushed,
 		"summary":   summary,
 	})
+}
+
+func (s *Server) handleGitHubLink(w http.ResponseWriter, r *http.Request) {
+	p := s.projectOr404(w, r)
+	if p == nil {
+		return
+	}
+	var body struct {
+		RepoURL string `json:"repoUrl"`
+	}
+	if !decodeJSON(w, r, &body) {
+		return
+	}
+	repoURL := strings.TrimSpace(body.RepoURL)
+	if repoURL == "" {
+		writeError(w, http.StatusBadRequest, "repoUrl is required")
+		return
+	}
+	if err := gitops.LinkRepo(r.Context(), repoURL, s.githubToken(), p.Path); err != nil {
+		writeError(w, http.StatusBadGateway, "link failed: "+err.Error())
+		return
+	}
+	if err := s.st.SetProjectRepoURL(p.ID, repoURL); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	s.previews.TouchRevision(p.ID)
+	_ = s.st.TouchProject(p.ID)
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "repoUrl": repoURL})
 }
 
 func (s *Server) handleGitStatus(w http.ResponseWriter, r *http.Request) {

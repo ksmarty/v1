@@ -141,6 +141,8 @@ export const api = {
   listGitHubRepos: () => request<GitHubRepo[]>('/api/github/repos'),
   githubCreate: (id: string, name: string, isPrivate: boolean) =>
     post<void>(`/api/projects/${id}/github/create`, { name, private: isPrivate }),
+  githubLink: (id: string, repoUrl: string) =>
+    post<void>(`/api/projects/${id}/github/link`, { repoUrl }),
   githubPush: (id: string, message: string) =>
     post<PushResult>(`/api/projects/${id}/github/push`, { message }),
   gitStatus: (id: string) => request<GitStatus>(`/api/projects/${id}/git/status`),
