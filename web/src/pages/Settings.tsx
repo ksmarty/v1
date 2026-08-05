@@ -416,7 +416,7 @@ export default function Settings() {
   ) : null;
 
   return (
-    <div className="flex min-h-dvh flex-col">
+    <div className="flex h-dvh flex-col">
       <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-3 md:h-12 md:px-5">
         <Link
           to={backTo}

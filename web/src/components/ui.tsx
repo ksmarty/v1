@@ -78,6 +78,7 @@ export function Dialog({
   children,
   wide = false,
   fixedBody = false,
+  align = 'center',
 }: {
   open: boolean;
   onClose: () => void;
@@ -86,6 +87,8 @@ export function Dialog({
   wide?: boolean;
   /** Keep the header fixed and scroll only the body (used by chat tools dialog). */
   fixedBody?: boolean;
+  /** Anchor the dialog at a fixed distance from the top instead of centering. */
+  align?: 'center' | 'top';
 }) {
   useEffect(() => {
     if (!open) return;
@@ -100,14 +103,16 @@ export function Dialog({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-bg/70 sm:items-center sm:p-4"
+      className={`fixed inset-0 z-50 flex items-end justify-center bg-bg/70 sm:p-4 ${
+        align === 'top' ? 'sm:items-start sm:pt-[12vh]' : 'sm:items-center'
+      }`}
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
       <div
         className={`max-h-[85vh] w-full rounded-t-2xl border border-border bg-bg p-5 shadow-2xl sm:rounded-xl ${
-          wide ? 'sm:max-w-xl' : 'sm:max-w-md'
+          wide ? 'sm:max-w-2xl' : 'sm:max-w-md'
         } ${fixedBody ? 'flex flex-col' : 'overflow-y-auto'}`}
       >
         <div

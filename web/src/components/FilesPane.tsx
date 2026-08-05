@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import { api } from '../api';
 import type { FileEntry } from '../types';
 import { errMsg, formatBytes } from '../utils';
 import { useMediaQuery } from '../hooks/useMediaQuery';
-import { Button, ErrorBox, IconButton, Spinner } from './ui';
+import { ErrorBox, IconButton, Spinner } from './ui';
 import CodeEditor from './CodeEditor';
 import FileIcon from './FileIcon';
 import {
@@ -315,14 +316,14 @@ export default function FilesPane({ projectId }: { projectId: string }) {
           </span>
         )}
         {dirty && <span className="h-2 w-2 shrink-0 rounded-full bg-amber-500" title="Unsaved" />}
-        <Button
-          variant="outline"
+        <button
+          type="button"
           onClick={() => void save()}
           disabled={!dirty || saving || fileLoading}
-          className="min-h-[30px] shrink-0 px-2.5 py-1 text-xs"
+          className="h-7 shrink-0 rounded-md border border-border-strong px-2.5 text-xs text-text transition-colors hover:bg-border disabled:cursor-not-allowed disabled:opacity-50"
         >
           {saving ? <Spinner className="h-3.5 w-3.5" /> : 'Save'}
-        </Button>
+        </button>
       </div>
       <div className="min-h-0 flex-1">
         {fileLoading ? (
@@ -356,17 +357,22 @@ export default function FilesPane({ projectId }: { projectId: string }) {
   }
 
   return (
-    <div className="flex h-full min-h-0">
-      <div className="w-60 shrink-0 border-r border-border">{tree}</div>
-      <div className="min-w-0 flex-1">
-        {selected ? (
-          editor
-        ) : (
-          <div className="flex h-full items-center justify-center">
-            <p className="text-sm text-faint">Select a file to view or edit</p>
-          </div>
-        )}
-      </div>
+    <div className="h-full min-h-0">
+      <PanelGroup direction="horizontal" autoSaveId={`v1-files-${projectId}`}>
+        <Panel defaultSize={28} minSize={18} maxSize={55} className="min-h-0">
+          {tree}
+        </Panel>
+        <PanelResizeHandle className="w-1 bg-border transition-colors hover:bg-accent data-[resize-handle-state=drag]:bg-accent" />
+        <Panel minSize={30} className="min-h-0">
+          {selected ? (
+            editor
+          ) : (
+            <div className="flex h-full items-center justify-center">
+              <p className="text-sm text-faint">Select a file to view or edit</p>
+            </div>
+          )}
+        </Panel>
+      </PanelGroup>
     </div>
   );
 }

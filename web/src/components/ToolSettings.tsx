@@ -516,7 +516,7 @@ function ToolSettings({ variant = 'tabs' }: { variant?: 'tabs' | 'stacked' }) {
 
   return (
     <div className="flex flex-col">
-      <div className="sticky top-0 z-10 -mx-1 flex gap-0.5 border-b border-border bg-bg px-1">
+      <div className="sticky top-0 z-10 flex gap-0.5 border-b border-border bg-bg">
         {TABS.map((t) => (
           <button
             key={t.id}

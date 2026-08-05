@@ -1138,6 +1138,7 @@ export default function ChatPane({
         title="Tools & permissions"
         wide
         fixedBody
+        align="top"
       >
         <ToolSettings />
       </Dialog>
