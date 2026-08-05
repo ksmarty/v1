@@ -109,11 +109,11 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 			"oauthClientId": s.githubOAuthClientID(),
 			"source":        s.githubTokenSource(),
 		},
-		"auth":       map[string]any{"disabled": s.cfg.AuthDisabled},
-		"mcp":        s.mcpServers(),
-		"skills":     s.installedSkills(),
-		"toolPolicy": s.toolPolicy(),
-		"version":    s.cfg.Version,
+		"auth":           map[string]any{"disabled": s.cfg.AuthDisabled},
+		"mcp":            s.mcpServers(),
+		"skills":         s.installedSkills(),
+		"permissionMode": s.permissionMode(),
+		"version":        s.cfg.Version,
 	})
 }
 
@@ -130,7 +130,7 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		GitHubOAuthClientID *string             `json:"githubOAuthClientId"`
 		Password            *string             `json:"password"`
 		MCP                 *[]mcp.ServerConfig `json:"mcp"`
-		ToolPolicy          *map[string]string  `json:"toolPolicy"`
+		PermissionMode      *string             `json:"permissionMode"`
 	}
 	if !decodeJSON(w, r, &body) {
 		return
@@ -250,13 +250,8 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if body.ToolPolicy != nil {
-		raw, err := json.Marshal(*body.ToolPolicy)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-		if err := s.st.SetSetting(keyToolPolicy, string(raw)); err != nil {
+	if body.PermissionMode != nil {
+		if err := set(keyPermissionMode, body.PermissionMode); err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}

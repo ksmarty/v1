@@ -214,7 +214,7 @@ const (
 	keyProvidersCustom     = "providers_custom"
 	keyMCP                 = "mcp_servers"
 	keySkills              = "skills_installed"
-	keyToolPolicy          = "tool_policy"
+	keyPermissionMode      = "permission_mode"
 )
 
 // oidcEnabled reports whether the OIDC flow is active: it needs auth enabled

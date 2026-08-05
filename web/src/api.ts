@@ -11,6 +11,7 @@ import type {
   InstalledSkill,
   MCPServer,
   MCPServerStatus,
+  PermissionMode,
   PreviewStatus,
   Project,
   ProjectTemplate,
@@ -104,7 +105,7 @@ export interface SettingsUpdate {
   githubOAuthClientId?: string;
   password?: string;
   mcp?: MCPServer[];
-  toolPolicy?: Record<string, string>;
+  permissionMode?: PermissionMode;
 }
 
 export const api = {
@@ -197,8 +198,8 @@ export const api = {
     post<{ skills: InstalledSkill[] }>('/api/skills/toggle', { id, enabled }),
 
   // Chat permissions
-  permissionRespond: (projectId: string, requestId: string, allow: boolean, remember: boolean) =>
-    post<void>(`/api/projects/${projectId}/chat/permission`, { requestId, allow, remember }),
+  permissionRespond: (projectId: string, requestId: string, allow: boolean) =>
+    post<void>(`/api/projects/${projectId}/chat/permission`, { requestId, allow }),
 };
 
 /**

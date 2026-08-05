@@ -22,13 +22,34 @@ import {
 import {
   IconArrowLeft,
   IconCheck,
+  IconDots,
   IconExternalLink,
+  IconGitHub,
+  IconLock,
   IconLogout,
+  IconModel,
+  IconSettings,
+  IconWrench,
   IconX,
 } from '../components/icons';
 import ProviderSelector from '../components/ProviderSelector';
 import GitHubConnect from '../components/GitHubConnect';
 import ToolSettings from '../components/ToolSettings';
+
+const NAV = [
+  { id: 'llm', label: 'LLM & providers', icon: <IconModel className="h-4 w-4" /> },
+  { id: 'github', label: 'GitHub', icon: <IconGitHub className="h-4 w-4" /> },
+  { id: 'tools', label: 'Tools & permissions', icon: <IconWrench className="h-4 w-4" /> },
+  { id: 'appearance', label: 'Appearance', icon: <IconSettings className="h-4 w-4" /> },
+  { id: 'auth', label: 'Auth', icon: <IconLock className="h-4 w-4" /> },
+  { id: 'about', label: 'About', icon: <IconDots className="h-4 w-4" /> },
+] as const;
+type NavId = (typeof NAV)[number]['id'];
+
+const navItemClass = (active: boolean) =>
+  `flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors ${
+    active ? 'bg-border text-text' : 'text-subtle hover:bg-border/60 hover:text-text'
+  }`;
 
 function ThemePicker() {
   const [selected, setSelected] = useState<string>(() => getStoredTheme());
@@ -145,6 +166,7 @@ export default function Settings() {
   const location = useLocation();
   const from = (location.state as { from?: string } | null)?.from;
   const backTo = from && from.startsWith('/') ? from : '/';
+  const [page, setPage] = useState<NavId>('llm');
 
   const reloadSettings = () => {
     api
@@ -406,8 +428,38 @@ export default function Settings() {
         <h1 className="text-sm font-semibold text-text">Settings</h1>
       </header>
 
-      <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-4 p-4 md:p-6">
-        <Section title="LLM" description="The OpenAI-compatible endpoint v1 uses to generate apps. The model is picked per project in the chat.">
+      <div className="flex min-h-0 flex-1 flex-col md:flex-row">
+        <nav className="flex shrink-0 gap-1 overflow-x-auto border-b border-border px-2 py-1.5 md:hidden">
+          {NAV.map((n) => (
+            <button
+              key={n.id}
+              type="button"
+              onClick={() => setPage(n.id)}
+              className={`shrink-0 ${navItemClass(page === n.id)}`}
+            >
+              {n.icon}
+              {n.label}
+            </button>
+          ))}
+        </nav>
+        <nav className="hidden w-52 shrink-0 flex-col gap-1 border-r border-border p-3 md:flex">
+          {NAV.map((n) => (
+            <button
+              key={n.id}
+              type="button"
+              onClick={() => setPage(n.id)}
+              className={navItemClass(page === n.id)}
+            >
+              {n.icon}
+              {n.label}
+            </button>
+          ))}
+        </nav>
+
+        <main className="min-h-0 flex-1 overflow-y-auto">
+          <div className="mx-auto flex w-full max-w-2xl flex-col gap-4 p-4 md:p-6">
+            <div className={page === 'llm' ? '' : 'hidden'}>
+              <Section title="LLM" description="The OpenAI-compatible endpoint v1 uses to generate apps. The model is picked per project in the chat.">
           <form onSubmit={(e) => void saveLLM(e)} className="flex flex-col gap-3">
             <ProviderSelector
               baseURL={baseURL}
@@ -544,8 +596,10 @@ export default function Settings() {
             </div>
           )}
         </Section>
+            </div>
 
-        <Section
+            <div className={page === 'github' ? '' : 'hidden'}>
+              <Section
           title="GitHub"
           description="Used for repo import, create, and push."
           badge={ghBadge}
@@ -628,9 +682,14 @@ export default function Settings() {
           </form>
         </Section>
 
-        <ToolSettings />
+            </div>
 
-        <Section title="Appearance" description="Theme applies instantly and is remembered.">
+            <div className={page === 'tools' ? '' : 'hidden'}>
+              <ToolSettings />
+            </div>
+
+            <div className={page === 'appearance' ? '' : 'hidden'}>
+              <Section title="Appearance" description="Theme applies instantly and is remembered.">
           <div>
             <span className="mb-1 block text-xs text-subtle">Chat side (desktop)</span>
             <ChatSideControl />
@@ -640,8 +699,10 @@ export default function Settings() {
             <ThemePicker />
           </div>
         </Section>
+            </div>
 
-        <Section title="Auth">
+            <div className={page === 'auth' ? '' : 'hidden'}>
+              <Section title="Auth">
           {settings.auth.disabled ? (
             <p className="text-sm text-dim">
               Password authentication is disabled for this instance.
@@ -673,13 +734,18 @@ export default function Settings() {
             </form>
           )}
         </Section>
+            </div>
 
-        <Section title="About">
+            <div className={page === 'about' ? '' : 'hidden'}>
+              <Section title="About">
           <p className="text-sm text-dim">
             v1 <span className="font-mono text-subtle">{settings.version || 'dev'}</span>
           </p>
         </Section>
-      </main>
+            </div>
+          </div>
+        </main>
+      </div>
     </div>
   );
 }

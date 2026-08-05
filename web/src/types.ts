@@ -28,13 +28,15 @@ export interface GitHubSettings {
   source: 'oauth' | 'pat' | 'env' | null;
 }
 
+export type PermissionMode = 'ask' | 'auto' | 'yolo';
+
 export interface Settings {
   llm: LLMSettings;
   github: GitHubSettings;
   auth: { disabled: boolean };
   mcp: MCPServer[];
   skills: InstalledSkill[];
-  toolPolicy: Record<string, string>;
+  permissionMode: PermissionMode;
   version: string;
 }
 

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
 
@@ -75,52 +74,22 @@ func (s *Server) handleMCPStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"servers": s.mcp.Status()})
 }
 
-// ---- permission policy (allow / deny / ask) ----
+// ---- permission mode (ask / auto / yolo) ----
 
-// toolPolicy returns the tool permission policy map. Keys are exact tool
-// names ("run_command", "mcp.<server>.<tool>"), with "mcp.*" and "*" as
-// wildcards. The built-in default is "allow".
-func (s *Server) toolPolicy() map[string]string {
-	v, ok, _ := s.st.GetSetting(keyToolPolicy)
+// permissionMode returns the agent's tool approval mode. "ask" pauses the
+// chat and prompts the user for each tool call; "auto" and "yolo" approve
+// everything without prompting. The default is "ask".
+func (s *Server) permissionMode() string {
+	v, ok, _ := s.st.GetSetting(keyPermissionMode)
 	if !ok || v == "" {
-		return map[string]string{}
+		return "ask"
 	}
-	var out map[string]string
-	if err := json.Unmarshal([]byte(v), &out); err != nil {
-		return map[string]string{}
-	}
-	return out
-}
-
-func (s *Server) setToolPolicy(tool, policy string) error {
-	p := s.toolPolicy()
-	switch policy {
-	case "allow", "deny", "ask":
-		p[tool] = policy
-	case "":
-		delete(p, tool)
-	}
-	raw, err := json.Marshal(p)
-	if err != nil {
-		return err
-	}
-	return s.st.SetSetting(keyToolPolicy, string(raw))
-}
-
-func (s *Server) toolPolicyFor(tool string) string {
-	p := s.toolPolicy()
-	if v, ok := p[tool]; ok && v != "" {
+	switch v {
+	case "ask", "auto", "yolo":
 		return v
+	default:
+		return "ask"
 	}
-	if strings.HasPrefix(tool, "mcp.") {
-		if v, ok := p["mcp.*"]; ok && v != "" {
-			return v
-		}
-	}
-	if v, ok := p["*"]; ok && v != "" {
-		return v
-	}
-	return "allow"
 }
 
 // permRequest is a pending "ask" decision.
@@ -156,17 +125,15 @@ func (r *permRegistry) resolve(id string, allow bool) *permRequest {
 }
 
 // turnPerm implements agent.Resolver for one chat stream: it reads the
-// policy from settings, and surfaces "ask" decisions as SSE events answered
-// through the permission endpoint.
+// permission mode from settings and surfaces "ask" decisions as SSE events
+// answered through the permission endpoint.
 type turnPerm struct {
 	s    *Server
 	emit func(agent.ChatEvent)
 }
 
 func (t *turnPerm) Request(ctx context.Context, tool, detail string) (bool, error) {
-	switch t.s.toolPolicyFor(tool) {
-	case "deny":
-		return false, fmt.Errorf("permission denied: %s is blocked by policy", tool)
+	switch t.s.permissionMode() {
 	case "ask":
 		id := store.NewID()
 		pr := t.s.perm.register(id, tool)
@@ -185,12 +152,12 @@ func (t *turnPerm) Request(ctx context.Context, tool, detail string) (bool, erro
 			return false, ctx.Err()
 		}
 	default:
+		// auto / yolo — everything is approved without prompting.
 		return true, nil
 	}
 }
 
-// handlePermission answers a pending permission request. When remember is
-// set, the decision is persisted as the tool's policy.
+// handlePermission answers a pending permission request.
 func (s *Server) handlePermission(w http.ResponseWriter, r *http.Request) {
 	if s.projectOr404(w, r) == nil {
 		return
@@ -198,7 +165,6 @@ func (s *Server) handlePermission(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		RequestID string `json:"requestId"`
 		Allow     bool   `json:"allow"`
-		Remember  bool   `json:"remember"`
 	}
 	if !decodeJSON(w, r, &body) {
 		return
@@ -211,16 +177,6 @@ func (s *Server) handlePermission(w http.ResponseWriter, r *http.Request) {
 	if pr == nil {
 		writeError(w, http.StatusNotFound, "no pending permission request with that id")
 		return
-	}
-	if body.Remember {
-		policy := "deny"
-		if body.Allow {
-			policy = "allow"
-		}
-		if err := s.setToolPolicy(pr.tool, policy); err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }

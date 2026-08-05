@@ -1,100 +1,346 @@
-type TypeSpec = { bg: string; fg: string; label: string };
+import type { IconType } from 'react-icons';
+import {
+  SiAngular,
+  SiApache,
+  SiArchlinux,
+  SiAstro,
+  SiBabel,
+  SiBitbucket,
+  SiBun,
+  SiC,
+  SiCaddy,
+  SiClojure,
+  SiCplusplus,
+  SiDart,
+  SiDeno,
+  SiDjango,
+  SiDocker,
+  SiDotenv,
+  SiDotnet,
+  SiDuckdb,
+  SiElixir,
+  SiErlang,
+  SiEslint,
+  SiFigma,
+  SiFlutter,
+  SiGithub,
+  SiGithubactions,
+  SiGitlab,
+  SiGnubash,
+  SiGo,
+  SiGodotengine,
+  SiGradle,
+  SiGraphql,
+  SiHaskell,
+  SiHtml5,
+  SiJavascript,
+  SiJest,
+  SiJson,
+  SiJulia,
+  SiJupyter,
+  SiKotlin,
+  SiLatex,
+  SiLess,
+  SiLua,
+  SiMarkdown,
+  SiNextdotjs,
+  SiNginx,
+  SiNodedotjs,
+  SiNpm,
+  SiOpenjdk,
+  SiPerl,
+  SiPhp,
+  SiPnpm,
+  SiPostcss,
+  SiPostgresql,
+  SiPrettier,
+  SiPrisma,
+  SiPrometheus,
+  SiPulumi,
+  SiPython,
+  SiR,
+  SiRuby,
+  SiRust,
+  SiSass,
+  SiScala,
+  SiShell,
+  SiSolidity,
+  SiSqlite,
+  SiStorybook,
+  SiSvelte,
+  SiSvg,
+  SiSwift,
+  SiTailwindcss,
+  SiTauri,
+  SiTerraform,
+  SiToml,
+  SiTraefikproxy,
+  SiTypescript,
+  SiVercel,
+  SiVim,
+  SiVite,
+  SiVitest,
+  SiVuedotjs,
+  SiWebpack,
+  SiXml,
+  SiYaml,
+  SiYarn,
+  SiZig,
+} from 'react-icons/si';
+import {
+  VscFile,
+  VscFileBinary,
+  VscFileCode,
+  VscFileMedia,
+  VscFilePdf,
+  VscFileSubmodule,
+  VscFileZip,
+  VscSettingsGear,
+  VscSymbolColor,
+} from 'react-icons/vsc';
 
-const TYPES: Record<string, TypeSpec> = {
+type Spec = { icon: IconType; color?: string };
+
+// Colors default to the brand color; a few brands are near-black and get a
+// lighter tint so they stay visible on dark surfaces.
+const TYPES: Record<string, Spec> = {
   // Scripting / web
-  js: { bg: '#f7df1e', fg: '#1e1e1e', label: 'JS' },
-  mjs: { bg: '#f7df1e', fg: '#1e1e1e', label: 'JS' },
-  cjs: { bg: '#f7df1e', fg: '#1e1e1e', label: 'JS' },
-  jsx: { bg: '#61dafb', fg: '#1e1e1e', label: 'JSX' },
-  ts: { bg: '#3178c6', fg: '#ffffff', label: 'TS' },
-  tsx: { bg: '#3178c6', fg: '#ffffff', label: 'TSX' },
-  json: { bg: '#cbcb41', fg: '#1e1e1e', label: '{}' },
-  jsonc: { bg: '#cbcb41', fg: '#1e1e1e', label: '{}' },
+  ts: { icon: SiTypescript, color: '#3178c6' },
+  mts: { icon: SiTypescript, color: '#3178c6' },
+  cts: { icon: SiTypescript, color: '#3178c6' },
+  tsx: { icon: SiTypescript, color: '#3178c6' },
+  js: { icon: SiJavascript, color: '#f7df1e' },
+  mjs: { icon: SiJavascript, color: '#f7df1e' },
+  cjs: { icon: SiJavascript, color: '#f7df1e' },
+  jsx: { icon: SiJavascript, color: '#f7df1e' },
+  json: { icon: SiJson, color: '#cbcb41' },
+  jsonc: { icon: SiJson, color: '#cbcb41' },
+  webmanifest: { icon: SiJson, color: '#cbcb41' },
   // Styles
-  css: { bg: '#42a5f5', fg: '#ffffff', label: '#' },
-  scss: { bg: '#cd6799', fg: '#ffffff', label: '#' },
-  sass: { bg: '#cd6799', fg: '#ffffff', label: '#' },
+  css: { icon: VscSymbolColor, color: '#42a5f5' },
+  scss: { icon: SiSass, color: '#cc6699' },
+  sass: { icon: SiSass, color: '#cc6699' },
+  less: { icon: SiLess, color: '#5d87b9' },
   // Markup
-  html: { bg: '#e44d26', fg: '#ffffff', label: '</>' },
-  htm: { bg: '#e44d26', fg: '#ffffff', label: '</>' },
-  xml: { bg: '#ff9800', fg: '#1e1e1e', label: '</>' },
-  svg: { bg: '#ff9800', fg: '#1e1e1e', label: '</>' },
+  html: { icon: SiHtml5, color: '#e34f26' },
+  htm: { icon: SiHtml5, color: '#e34f26' },
+  xml: { icon: SiXml, color: '#ff9800' },
+  svg: { icon: SiSvg, color: '#ffb13b' },
   // Docs / config
-  md: { bg: '#519aba', fg: '#ffffff', label: 'M↓' },
-  markdown: { bg: '#519aba', fg: '#ffffff', label: 'M↓' },
-  yml: { bg: '#cb171e', fg: '#ffffff', label: 'Y' },
-  yaml: { bg: '#cb171e', fg: '#ffffff', label: 'Y' },
-  toml: { bg: '#9c4221', fg: '#ffffff', label: 'T' },
-  ini: { bg: '#75715e', fg: '#ffffff', label: 'INI' },
-  env: { bg: '#75715e', fg: '#ffffff', label: 'ENV' },
-  sql: { bg: '#e38c00', fg: '#ffffff', label: 'DB' },
+  md: { icon: SiMarkdown, color: '#519aba' },
+  markdown: { icon: SiMarkdown, color: '#519aba' },
+  mdx: { icon: SiMarkdown, color: '#519aba' },
+  yml: { icon: SiYaml, color: '#cb171e' },
+  yaml: { icon: SiYaml, color: '#cb171e' },
+  toml: { icon: SiToml, color: '#9c4221' },
+  ini: { icon: VscSettingsGear, color: '#75715e' },
+  cfg: { icon: VscSettingsGear, color: '#75715e' },
+  conf: { icon: VscSettingsGear, color: '#75715e' },
+  env: { icon: SiDotenv, color: '#ecd53f' },
+  sql: { icon: VscFileCode, color: '#e38c00' },
+  db: { icon: VscFileCode, color: '#e38c00' },
+  sqlite: { icon: SiSqlite, color: '#2f9cd6' },
+  sqlite3: { icon: SiSqlite, color: '#2f9cd6' },
+  pgsql: { icon: SiPostgresql, color: '#4169e1' },
+  duckdb: { icon: SiDuckdb, color: '#fff000' },
   // Languages
-  py: { bg: '#3776ab', fg: '#ffd43b', label: 'PY' },
-  go: { bg: '#00add8', fg: '#1e1e1e', label: 'GO' },
-  rs: { bg: '#dea584', fg: '#1e1e1e', label: 'RS' },
-  sh: { bg: '#89e051', fg: '#1e1e1e', label: '>_' },
-  bash: { bg: '#89e051', fg: '#1e1e1e', label: '>_' },
-  zsh: { bg: '#89e051', fg: '#1e1e1e', label: '>_' },
-  // Tooling
-  dockerfile: { bg: '#2496ed', fg: '#ffffff', label: 'D' },
-  gitignore: { bg: '#f05033', fg: '#ffffff', label: 'GIT' },
-  gitattributes: { bg: '#f05033', fg: '#ffffff', label: 'GIT' },
+  py: { icon: SiPython, color: '#3776ab' },
+  pyi: { icon: SiPython, color: '#3776ab' },
+  pyw: { icon: SiPython, color: '#3776ab' },
+  go: { icon: SiGo, color: '#00add8' },
+  rs: { icon: SiRust, color: '#e5e5e5' },
+  sh: { icon: SiShell, color: '#4eaa25' },
+  bash: { icon: SiGnubash, color: '#4eaa25' },
+  zsh: { icon: SiShell, color: '#4eaa25' },
+  ksh: { icon: SiShell, color: '#4eaa25' },
+  fish: { icon: SiShell, color: '#4eaa25' },
+  c: { icon: SiC, color: '#a8b9cc' },
+  h: { icon: SiC, color: '#a8b9cc' },
+  cpp: { icon: SiCplusplus, color: '#659ad2' },
+  cc: { icon: SiCplusplus, color: '#659ad2' },
+  cxx: { icon: SiCplusplus, color: '#659ad2' },
+  hpp: { icon: SiCplusplus, color: '#659ad2' },
+  hh: { icon: SiCplusplus, color: '#659ad2' },
+  cs: { icon: SiDotnet, color: '#512bd4' },
+  java: { icon: SiOpenjdk, color: '#5382a1' },
+  class: { icon: SiOpenjdk, color: '#5382a1' },
+  jar: { icon: SiOpenjdk, color: '#5382a1' },
+  kt: { icon: SiKotlin, color: '#7f52ff' },
+  kts: { icon: SiKotlin, color: '#7f52ff' },
+  swift: { icon: SiSwift, color: '#f05138' },
+  rb: { icon: SiRuby, color: '#cc342d' },
+  php: { icon: SiPhp, color: '#777bb4' },
+  lua: { icon: SiLua, color: '#9093f0' },
+  r: { icon: SiR, color: '#276dc3' },
+  scala: { icon: SiScala, color: '#dc322f' },
+  hs: { icon: SiHaskell, color: '#8f80bd' },
+  lhs: { icon: SiHaskell, color: '#8f80bd' },
+  ex: { icon: SiElixir, color: '#9a6ac8' },
+  exs: { icon: SiElixir, color: '#9a6ac8' },
+  erl: { icon: SiErlang, color: '#a90533' },
+  hrl: { icon: SiErlang, color: '#a90533' },
+  clj: { icon: SiClojure, color: '#5881d8' },
+  cljs: { icon: SiClojure, color: '#5881d8' },
+  cljc: { icon: SiClojure, color: '#5881d8' },
+  jl: { icon: SiJulia, color: '#9558b2' },
+  pl: { icon: SiPerl, color: '#8b9fd8' },
+  pm: { icon: SiPerl, color: '#8b9fd8' },
+  dart: { icon: SiDart, color: '#0175c2' },
+  sol: { icon: SiSolidity, color: '#a0a6ad' },
+  zig: { icon: SiZig, color: '#f7a41d' },
+  vue: { icon: SiVuedotjs, color: '#4fc08d' },
+  svelte: { icon: SiSvelte, color: '#ff3e00' },
+  astro: { icon: SiAstro, color: '#ff5d01' },
+  ipynb: { icon: SiJupyter, color: '#f37626' },
+  tex: { icon: SiLatex, color: '#008080' },
+  bib: { icon: SiLatex, color: '#008080' },
+  fig: { icon: SiFigma, color: '#f24e1e' },
+  // Frameworks / tooling
+  prisma: { icon: SiPrisma, color: '#9aa3b2' },
+  graphql: { icon: SiGraphql, color: '#e10098' },
+  gql: { icon: SiGraphql, color: '#e10098' },
+  tf: { icon: SiTerraform, color: '#844fba' },
+  tfvars: { icon: SiTerraform, color: '#844fba' },
+  tfstate: { icon: SiTerraform, color: '#844fba' },
+  hcl: { icon: SiTerraform, color: '#844fba' },
+  vim: { icon: SiVim, color: '#019733' },
+  // Scripts / plain text
+  bat: { icon: VscFileCode },
+  cmd: { icon: VscFileCode },
+  ps1: { icon: VscFileCode },
+  csv: { icon: VscFileCode },
+  tsv: { icon: VscFileCode },
+  txt: { icon: VscFile },
+  log: { icon: VscFile },
+  sum: { icon: VscFileCode },
+  lock: { icon: VscFileCode },
+  map: { icon: VscFileCode },
+  // Archives / binaries / media
+  pdf: { icon: VscFilePdf, color: '#e7403d' },
+  zip: { icon: VscFileZip, color: '#b8b8b8' },
+  gz: { icon: VscFileZip, color: '#b8b8b8' },
+  tar: { icon: VscFileZip, color: '#b8b8b8' },
+  tgz: { icon: VscFileZip, color: '#b8b8b8' },
+  bz2: { icon: VscFileZip, color: '#b8b8b8' },
+  '7z': { icon: VscFileZip, color: '#b8b8b8' },
+  rar: { icon: VscFileZip, color: '#b8b8b8' },
+  exe: { icon: VscFileBinary, color: '#9aa0a6' },
+  dll: { icon: VscFileBinary, color: '#9aa0a6' },
+  so: { icon: VscFileBinary, color: '#9aa0a6' },
+  dylib: { icon: VscFileBinary, color: '#9aa0a6' },
+  bin: { icon: VscFileBinary, color: '#9aa0a6' },
+  wasm: { icon: VscFileBinary, color: '#9aa0a6' },
+  pyc: { icon: VscFileBinary, color: '#9aa0a6' },
+  png: { icon: VscFileMedia, color: '#42a5f5' },
+  jpg: { icon: VscFileMedia, color: '#42a5f5' },
+  jpeg: { icon: VscFileMedia, color: '#42a5f5' },
+  gif: { icon: VscFileMedia, color: '#42a5f5' },
+  webp: { icon: VscFileMedia, color: '#42a5f5' },
+  ico: { icon: VscFileMedia, color: '#42a5f5' },
+  avif: { icon: VscFileMedia, color: '#42a5f5' },
+  bmp: { icon: VscFileMedia, color: '#42a5f5' },
+  tif: { icon: VscFileMedia, color: '#42a5f5' },
+  tiff: { icon: VscFileMedia, color: '#42a5f5' },
+  mp3: { icon: VscFileMedia, color: '#42a5f5' },
+  wav: { icon: VscFileMedia, color: '#42a5f5' },
+  flac: { icon: VscFileMedia, color: '#42a5f5' },
+  ogg: { icon: VscFileMedia, color: '#42a5f5' },
+  mp4: { icon: VscFileMedia, color: '#42a5f5' },
+  mov: { icon: VscFileMedia, color: '#42a5f5' },
+  webm: { icon: VscFileMedia, color: '#42a5f5' },
+  avi: { icon: VscFileMedia, color: '#42a5f5' },
+  mkv: { icon: VscFileMedia, color: '#42a5f5' },
+  eot: { icon: VscFileMedia, color: '#42a5f5' },
+  ttf: { icon: VscFileMedia, color: '#42a5f5' },
+  woff: { icon: VscFileMedia, color: '#42a5f5' },
+  woff2: { icon: VscFileMedia, color: '#42a5f5' },
+  otf: { icon: VscFileMedia, color: '#42a5f5' },
 };
 
-const FILE_PATTERNS: { re: RegExp; spec: TypeSpec }[] = [
-  { re: /^dockerfile$/i, spec: TYPES.dockerfile },
-  { re: /^makefile$/i, spec: { bg: '#e37933', fg: '#ffffff', label: 'MK' } },
-  { re: /^\.gitignore$/, spec: TYPES.gitignore },
-  { re: /^\.gitattributes$/, spec: TYPES.gitattributes },
-  { re: /^readme/i, spec: TYPES.md },
-  { re: /^license$/i, spec: { bg: '#8e44ad', fg: '#ffffff', label: 'LIC' } },
+// Whole-file patterns run before the extension map so names like
+// "Dockerfile" or ".gitignore" win over their (dotless) extension lookup.
+// Patterns test the basename, falling back to the full path for directory
+// layouts (e.g. .github/workflows/*.yml).
+const FILE_PATTERNS: { re: RegExp; spec: Spec }[] = [
+  { re: /^dockerfile(\.|$)/i, spec: { icon: SiDocker, color: '#2496ed' } },
+  { re: /^compose(\.ya?ml)?$/i, spec: { icon: SiDocker, color: '#2496ed' } },
+  { re: /^makefile$/i, spec: { icon: VscFileCode, color: '#e37933' } },
+  { re: /^\.gitignore$/, spec: { icon: SiGithub, color: '#f05032' } },
+  { re: /^\.gitattributes$/, spec: { icon: SiGithub, color: '#f05032' } },
+  { re: /^\.gitmodules$/, spec: { icon: VscFileSubmodule, color: '#f05032' } },
+  { re: /^\.env(\.|$)/, spec: { icon: SiDotenv, color: '#ecd53f' } },
+  { re: /^\.editorconfig$/, spec: { icon: VscSettingsGear, color: '#9aa0a6' } },
+  { re: /^readme/i, spec: { icon: SiMarkdown, color: '#519aba' } },
+  { re: /^changelog/i, spec: { icon: SiMarkdown, color: '#519aba' } },
+  { re: /^contributing/i, spec: { icon: SiMarkdown, color: '#519aba' } },
+  { re: /^license$/i, spec: { icon: VscFile, color: '#8e44ad' } },
+  // Package managers
+  { re: /^package\.json$/, spec: { icon: SiNpm, color: '#cb3837' } },
+  { re: /^package-lock\.json$/, spec: { icon: SiNpm, color: '#cb3837' } },
+  { re: /^pnpm-lock\.ya?ml$/, spec: { icon: SiPnpm, color: '#f69220' } },
+  { re: /^yarn\.lock$/, spec: { icon: SiYarn, color: '#2c8ebb' } },
+  { re: /^bun\.lockb$|^bun\.lock$/, spec: { icon: SiBun, color: '#f2dfb4' } },
+  { re: /^\.npmrc$/, spec: { icon: SiNpm, color: '#cb3837' } },
+  { re: /^\.yarnrc$/, spec: { icon: SiYarn, color: '#2c8ebb' } },
+  { re: /^deno\.json$|^deno\.lock$/, spec: { icon: SiDeno, color: '#70ffaf' } },
+  { re: /^\.node-version$|^\.nvmrc$/, spec: { icon: SiNodedotjs, color: '#5fa04e' } },
+  { re: /^go\.(mod|sum)$/, spec: { icon: SiGo, color: '#00add8' } },
+  { re: /^requirements.*\.txt$/, spec: { icon: SiPython, color: '#3776ab' } },
+  { re: /^Gemfile|^Rakefile$/, spec: { icon: SiRuby, color: '#cc342d' } },
+  // Build tools
+  { re: /^tsconfig.*\.json$/, spec: { icon: SiTypescript, color: '#3178c6' } },
+  { re: /^vite\.config/, spec: { icon: SiVite, color: '#646cff' } },
+  { re: /^vitest\.config/, spec: { icon: SiVitest, color: '#6e9f18' } },
+  { re: /^jest\.config|^jest\.setup/, spec: { icon: SiJest, color: '#c21325' } },
+  { re: /^next\.config/, spec: { icon: SiNextdotjs, color: '#ffffff' } },
+  { re: /^webpack\.config/, spec: { icon: SiWebpack, color: '#8dd6f9' } },
+  { re: /^tailwind\.config/, spec: { icon: SiTailwindcss, color: '#38bdf8' } },
+  { re: /^postcss\.config/, spec: { icon: SiPostcss, color: '#dd3a0a' } },
+  { re: /^eslint\.config|^\.eslintrc|^\.eslintignore/, spec: { icon: SiEslint, color: '#8078d8' } },
+  { re: /^\.prettierrc|^prettier\.config|^\.prettierignore/, spec: { icon: SiPrettier, color: '#f7b93e' } },
+  { re: /^\.babelrc|^babel\.config/, spec: { icon: SiBabel, color: '#f9dc3e' } },
+  { re: /^angular\.json$/, spec: { icon: SiAngular, color: '#dd0031' } },
+  { re: /^svelte\.config/, spec: { icon: SiSvelte, color: '#ff3e00' } },
+  { re: /^astro\.config/, spec: { icon: SiAstro, color: '#ff5d01' } },
+  { re: /^tauri\.conf\.json$/, spec: { icon: SiTauri, color: '#ffc131' } },
+  { re: /^build\.gradle|^settings\.gradle|^gradlew/, spec: { icon: SiGradle, color: '#3fb0ac' } },
+  { re: /^pubspec\.ya?ml$/, spec: { icon: SiFlutter, color: '#38a0e0' } },
+  { re: /^manage\.py$/, spec: { icon: SiDjango, color: '#57a773' } },
+  { re: /^project\.godot$/, spec: { icon: SiGodotengine, color: '#478cbf' } },
+  { re: /^PKGBUILD$/, spec: { icon: SiArchlinux, color: '#1793d1' } },
+  { re: /^\.vimrc$|^\.gvimrc$|^vimrc$/, spec: { icon: SiVim, color: '#019733' } },
+  { re: /^\.bashrc$|^\.bash_profile$|^\.profile$/, spec: { icon: SiGnubash, color: '#4eaa25' } },
+  { re: /^\.zshrc$/, spec: { icon: SiShell, color: '#4eaa25' } },
+  // Infra
+  { re: /^nginx.*\.conf$/, spec: { icon: SiNginx, color: '#009639' } },
+  { re: /^Caddyfile$/, spec: { icon: SiCaddy, color: '#1f88c0' } },
+  { re: /^\.htaccess$/, spec: { icon: SiApache, color: '#d22128' } },
+  { re: /^traefik\./, spec: { icon: SiTraefikproxy, color: '#24a1c1' } },
+  { re: /^prometheus\./, spec: { icon: SiPrometheus, color: '#e6522c' } },
+  { re: /^Pulumi\.ya?ml$/, spec: { icon: SiPulumi, color: '#8a3391' } },
+  // VCS / CI
+  { re: /^gitlab-ci\.ya?ml$/, spec: { icon: SiGitlab, color: '#fc6d26' } },
+  { re: /^bitbucket-pipelines\.ya?ml$/, spec: { icon: SiBitbucket, color: '#4d94ff' } },
+  { re: /^\.storybook\//, spec: { icon: SiStorybook, color: '#ff4785' } },
+  { re: /^\.github\/workflows\//, spec: { icon: SiGithubactions, color: '#2088ff' } },
+  { re: /^vercel\.json$/, spec: { icon: SiVercel, color: '#ffffff' } },
 ];
 
-function specFor(name: string): TypeSpec | null {
+function specFor(name: string): Spec | null {
   const base = name.split('/').pop() ?? name;
   for (const { re, spec } of FILE_PATTERNS) {
-    if (re.test(base)) return spec;
+    if (re.test(base) || (name !== base && re.test(name))) return spec;
   }
   const dot = base.lastIndexOf('.');
   if (dot <= 0) return null;
   return TYPES[base.slice(dot + 1).toLowerCase()] ?? null;
 }
 
-/** VSCode-extension-style colored file badge, or a plain document icon. */
+/** Brand-glyph file icon (Simple Icons + VSCode codicons), or a generic document. */
 export default function FileIcon({ name, className = '' }: { name: string; className?: string }) {
-  const spec = specFor(name);
-  if (!spec) {
-    return (
-      <svg
-        viewBox="0 0 24 24"
-        className={className}
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={1.8}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" />
-        <path d="M14 2v4a2 2 0 0 0 2 2h4" />
-      </svg>
-    );
-  }
-  const fs = spec.label.length <= 2 ? 8 : spec.label.length === 3 ? 6.5 : 5.5;
+  const spec = specFor(name) ?? { icon: VscFile };
+  const Icon = spec.icon;
   return (
-    <svg viewBox="0 0 16 16" className={className} aria-label={`${name} file icon`} role="img">
-      <rect x="1" y="1" width="14" height="14" rx="3" fill={spec.bg} />
-      <text
-        x="8"
-        y="8.6"
-        textAnchor="middle"
-        dominantBaseline="central"
-        fontSize={fs}
-        fontWeight="700"
-        fontFamily="var(--font-sans)"
-        fill={spec.fg}
-      >
-        {spec.label}
-      </text>
-    </svg>
+    <Icon className={className} color={spec.color} role="img" aria-label={`${name} file icon`} />
   );
 }

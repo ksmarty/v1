@@ -759,11 +759,11 @@ export default function ChatPane({
   const stop = () => abortRef.current?.abort();
 
   const respondPerm = useCallback(
-    async (allow: boolean, remember: boolean) => {
+    async (allow: boolean) => {
       const p = permPrompt;
       if (!p) return;
       try {
-        await api.permissionRespond(projectId, p.requestId, allow, remember);
+        await api.permissionRespond(projectId, p.requestId, allow);
       } catch {
         // 404 — already answered; treat as resolved
       }
@@ -908,30 +908,16 @@ export default function ChatPane({
               <Button
                 variant="outline"
                 className="h-8 px-3 text-xs"
-                onClick={() => void respondPerm(true, false)}
+                onClick={() => void respondPerm(true)}
               >
                 Allow
               </Button>
               <Button
-                variant="outline"
+                variant="ghost"
                 className="h-8 px-3 text-xs"
-                onClick={() => void respondPerm(false, false)}
+                onClick={() => void respondPerm(false)}
               >
                 Deny
-              </Button>
-              <Button
-                variant="ghost"
-                className="h-8 px-3 text-xs"
-                onClick={() => void respondPerm(true, true)}
-              >
-                Always allow
-              </Button>
-              <Button
-                variant="ghost"
-                className="h-8 px-3 text-xs"
-                onClick={() => void respondPerm(false, true)}
-              >
-                Always deny
               </Button>
             </div>
           </div>
