@@ -80,7 +80,7 @@ export default function Project() {
   );
 
   return (
-    <div className="flex h-dvh flex-col overflow-hidden">
+    <div className="v1-safe-top flex h-dvh flex-col overflow-hidden">
       {isDesktop ? (
         chatCollapsed ? (
           <div className="flex min-h-0 flex-1">

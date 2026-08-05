@@ -310,7 +310,7 @@ export default function Projects() {
   };
 
   return (
-    <div className="flex min-h-dvh flex-col">
+    <div className="v1-safe-top flex min-h-dvh flex-col">
       <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-3 md:h-12 md:px-5">
         <Link to="/" className="text-base font-semibold tracking-tight text-text">
           v1

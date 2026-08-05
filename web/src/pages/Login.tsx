@@ -96,7 +96,7 @@ export default function Login({ mode }: { mode: 'login' | 'setup' }) {
   const isSetup = mode === 'setup';
 
   return (
-    <div className="flex min-h-dvh items-center justify-center p-4">
+    <div className="v1-safe-top flex min-h-dvh items-center justify-center p-4">
       <div className="w-full max-w-sm">
         <div className="mb-6 flex flex-col items-center text-center">
           <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-primary text-lg font-bold tracking-tight text-primary-text">

@@ -503,7 +503,7 @@ export default function Settings() {
   const oauthReady = settings.vercel.oauthClientId !== '' && settings.vercel.clientSecretSet;
 
   return (
-    <div className="flex h-dvh flex-col">
+    <div className="v1-safe-top flex h-dvh flex-col">
       <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-3 md:h-12 md:px-5">
         <Link
           to={backTo}

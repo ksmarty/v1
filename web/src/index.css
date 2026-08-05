@@ -294,6 +294,13 @@ body {
   text-decoration: underline;
 }
 
+/* iOS standalone PWA: keep app chrome clear of the notch / Dynamic Island.
+   env(safe-area-inset-top) is 0 in regular browsers, so this is a no-op
+   outside standalone mode. */
+.v1-safe-top {
+  padding-top: env(safe-area-inset-top);
+}
+
 /* Skip layout/paint of off-screen chat rows and modal content so scrolling a
    long thread stays cheap. The browser remembers each element's last size. */
 .v1-cv {

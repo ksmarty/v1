@@ -192,7 +192,7 @@ export function SaveRow({
 
 export function Center({ children }: { children: ReactNode }) {
   return (
-    <div className="flex min-h-dvh items-center justify-center p-4">
+    <div className="v1-safe-top flex min-h-dvh items-center justify-center p-4">
       <div className="flex flex-col items-center gap-3">{children}</div>
     </div>
   );
