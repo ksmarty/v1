@@ -162,6 +162,21 @@ export interface GitStatus {
   repoUrl?: string;
 }
 
+export interface GitCommit {
+  hash: string;
+  short: string;
+  message: string;
+  author: string;
+  time: number;
+}
+
+export interface GitInfo {
+  isRepo: boolean;
+  branch?: string;
+  branches?: string[];
+  commits?: GitCommit[];
+}
+
 export interface PushResult {
   committed: boolean;
   pushed: boolean;

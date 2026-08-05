@@ -7,6 +7,7 @@ import type {
   FileEntry,
   GitHubRepo,
   GitStatus,
+  GitInfo,
   PreviewStatus,
   Project,
   ProjectTemplate,
@@ -160,6 +161,14 @@ export const api = {
   githubPush: (id: string, message: string) =>
     post<PushResult>(`/api/projects/${id}/github/push`, { message }),
   gitStatus: (id: string) => request<GitStatus>(`/api/projects/${id}/git/status`),
+  gitInfo: (id: string) => request<GitInfo>(`/api/projects/${id}/git/info`),
+  gitInit: (id: string) => post<void>(`/api/projects/${id}/git/init`),
+  gitBranch: (id: string, name: string) =>
+    post<void>(`/api/projects/${id}/git/branch`, { name }),
+  gitCheckout: (id: string, branch: string) =>
+    post<void>(`/api/projects/${id}/git/checkout`, { branch }),
+  gitRevert: (id: string, commit: string) =>
+    post<void>(`/api/projects/${id}/git/revert`, { commit }),
   oauthDeviceStart: () => post<DeviceFlowStart>('/api/github/oauth/device/start'),
   oauthDevicePoll: (flowId: string) =>
     post<DeviceFlowPoll>('/api/github/oauth/device/poll', { flowId }),

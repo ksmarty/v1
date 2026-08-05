@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { api } from '../api';
 import type { PreviewStatus } from '../types';
 import { errMsg } from '../utils';
@@ -12,6 +12,14 @@ import {
   IconRefresh,
   IconSquare,
 } from './icons';
+
+const BREAKPOINTS: { label: string; width: string }[] = [
+  { label: 'Full', width: '' },
+  { label: 'Desktop', width: '1280px' },
+  { label: 'Laptop', width: '1024px' },
+  { label: 'Tablet', width: '768px' },
+  { label: 'Mobile', width: '390px' },
+];
 
 export default function PreviewPane({
   projectId,
@@ -27,7 +35,13 @@ export default function PreviewPane({
   const [error, setError] = useState<string | null>(null);
   const [logsOpen, setLogsOpen] = useState(false);
   const [iframeKey, setIframeKey] = useState(0);
+  const [bp, setBp] = useState('');
   const lastRevRef = useRef(0);
+  const frameRef = useRef<HTMLIFrameElement>(null);
+
+  const previewUrl = `/preview/${projectId}/`;
+  const [barUrl, setBarUrl] = useState(previewUrl);
+  const [iframeUrl, setIframeUrl] = useState(previewUrl);
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -123,8 +137,45 @@ export default function PreviewPane({
     void fetchStatus();
   };
 
+  // Navigate the iframe from the URL bar. Relative paths resolve against the
+  // current frame URL (kept inside the preview proxy), absolute URLs go out.
+  const go = (e?: FormEvent) => {
+    e?.preventDefault();
+    const raw = barUrl.trim();
+    if (!raw) return;
+    let next = raw;
+    try {
+      next = new URL(raw, window.location.origin + iframeUrl).href;
+    } catch {
+      // keep as typed
+    }
+    setIframeUrl(next);
+    setBarUrl(next);
+  };
+
+  // Keep the URL bar in sync with in-frame navigation (same-origin through
+  // the proxy, so the location is readable; external pages are skipped).
+  const onFrameLoad = () => {
+    try {
+      const href = frameRef.current?.contentWindow?.location.href;
+      if (href && href.startsWith(window.location.origin)) setBarUrl(href);
+    } catch {
+      // cross-origin — ignore
+    }
+  };
+
   const running = status?.running ?? false;
-  const previewUrl = `/preview/${projectId}/`;
+
+  const frame = (className: string) => (
+    <iframe
+      key={iframeKey}
+      ref={frameRef}
+      src={iframeUrl}
+      onLoad={onFrameLoad}
+      title="App preview"
+      className={className}
+    />
+  );
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -159,6 +210,19 @@ export default function PreviewPane({
           {running ? 'Running' : starting ? 'Starting' : 'Stopped'}
         </span>
         <div className="flex-1" />
+        <select
+          value={bp}
+          onChange={(e) => setBp(e.target.value)}
+          aria-label="Preview width"
+          title="Preview width"
+          className="shrink-0 rounded-md border border-border bg-surface px-2 py-1 text-xs text-subtle outline-none transition-colors focus:border-subtle"
+        >
+          {BREAKPOINTS.map((b) => (
+            <option key={b.label} value={b.width}>
+              {b.label}
+            </option>
+          ))}
+        </select>
         <button
           type="button"
           onClick={() => setLogsOpen((o) => !o)}
@@ -181,13 +245,36 @@ export default function PreviewPane({
         </IconButton>
         <IconButton
           aria-label="Open preview in new tab"
-          onClick={() => window.open(previewUrl, '_blank', 'noopener')}
+          onClick={() => window.open(iframeUrl, '_blank', 'noopener')}
           disabled={!running}
           className="h-9 w-9 md:h-8 md:w-8"
         >
           <IconExternalLink className="h-4 w-4" />
         </IconButton>
       </div>
+
+      <form
+        onSubmit={go}
+        className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-2"
+      >
+        <IconMonitor className="h-3.5 w-3.5 shrink-0 text-faint" />
+        <input
+          value={barUrl}
+          onChange={(e) => setBarUrl(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') go();
+          }}
+          spellCheck={false}
+          aria-label="Preview URL"
+          className="h-7 min-w-0 flex-1 rounded-md border border-border bg-surface px-2 font-mono text-xs text-text outline-none transition-colors focus:border-subtle"
+        />
+        <button
+          type="submit"
+          className="shrink-0 rounded-md px-2 py-1 text-xs text-subtle transition-colors hover:bg-border hover:text-text"
+        >
+          Go
+        </button>
+      </form>
 
       {logsOpen && (
         <div className="max-h-44 shrink-0 overflow-auto border-b border-border bg-bg p-3">
@@ -203,12 +290,15 @@ export default function PreviewPane({
             <Spinner className="h-5 w-5" />
           </div>
         ) : running ? (
-          <iframe
-            key={iframeKey}
-            src={previewUrl}
-            title="App preview"
-            className="h-full w-full border-0 bg-bg"
-          />
+          bp ? (
+            <div className="flex h-full min-h-0 justify-center overflow-auto bg-border/40">
+              <div className="h-full shrink-0 border-x border-border bg-bg" style={{ width: bp }}>
+                {frame('h-full w-full border-0')}
+              </div>
+            </div>
+          ) : (
+            frame('h-full w-full border-0 bg-bg')
+          )
         ) : (
           <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
             <IconMonitor className="h-10 w-10 text-border-strong" />
