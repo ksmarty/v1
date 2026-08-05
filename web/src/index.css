@@ -176,44 +176,122 @@ body {
   border-radius: 8px;
 }
 
-/* highlight.js token colors — blended with the theme text color so they
-   stay readable on both dark and light palettes */
+/* highlight.js token colors — fixed editor palettes (GitHub Dark / GitHub
+   Light inspired), not blended with the active theme, so code keeps a proper
+   scheme. Dark applies everywhere; `.v1-theme-light` (set on <body> for light
+   palettes) switches to the light scheme. */
 .hljs-comment,
 .hljs-quote {
-  color: var(--v1-text-faint);
+  color: #8b949e;
   font-style: italic;
 }
 .hljs-keyword,
-.hljs-selector-tag,
 .hljs-doctag,
-.hljs-meta {
-  color: color-mix(in srgb, var(--v1-accent) 72%, var(--v1-text));
+.hljs-formula {
+  color: #ff7b72;
+}
+.hljs-selector-tag,
+.hljs-selector-class,
+.hljs-selector-id {
+  color: #7ee787;
 }
 .hljs-string,
 .hljs-regexp,
 .hljs-addition,
 .hljs-attr {
-  color: color-mix(in srgb, #4ade80 62%, var(--v1-text));
+  color: #a5d6ff;
 }
 .hljs-number,
 .hljs-literal,
-.hljs-bullet,
-.hljs-symbol {
-  color: color-mix(in srgb, #fb923c 62%, var(--v1-text));
+.hljs-symbol,
+.hljs-bullet {
+  color: #79c0ff;
 }
 .hljs-title,
 .hljs-title.function_,
+.hljs-section {
+  color: #d2a8ff;
+}
 .hljs-built_in,
 .hljs-type,
-.hljs-section {
-  color: color-mix(in srgb, #93c5fd 62%, var(--v1-text));
+.hljs-class .hljs-title {
+  color: #ffa657;
 }
-.hljs-deletion,
 .hljs-variable,
 .hljs-template-variable,
-.hljs-selector-attr,
-.hljs-attribute {
-  color: color-mix(in srgb, #fda4af 62%, var(--v1-text));
+.hljs-attribute,
+.hljs-selector-attr {
+  color: #ffa657;
+}
+.hljs-deletion {
+  color: #ffdcd7;
+}
+.hljs-meta {
+  color: #79c0ff;
+}
+.hljs-link {
+  color: #79c0ff;
+  text-decoration: underline;
+}
+.hljs-emphasis {
+  font-style: italic;
+}
+.hljs-strong {
+  font-weight: 600;
+}
+
+.v1-theme-light .hljs-comment,
+.v1-theme-light .hljs-quote {
+  color: #6e7781;
+  font-style: italic;
+}
+.v1-theme-light .hljs-keyword,
+.v1-theme-light .hljs-doctag,
+.v1-theme-light .hljs-formula {
+  color: #cf222e;
+}
+.v1-theme-light .hljs-selector-tag,
+.v1-theme-light .hljs-selector-class,
+.v1-theme-light .hljs-selector-id {
+  color: #116329;
+}
+.v1-theme-light .hljs-string,
+.v1-theme-light .hljs-regexp,
+.v1-theme-light .hljs-addition,
+.v1-theme-light .hljs-attr {
+  color: #0a3069;
+}
+.v1-theme-light .hljs-number,
+.v1-theme-light .hljs-literal,
+.v1-theme-light .hljs-symbol,
+.v1-theme-light .hljs-bullet {
+  color: #0550ae;
+}
+.v1-theme-light .hljs-title,
+.v1-theme-light .hljs-title.function_,
+.v1-theme-light .hljs-section {
+  color: #8250df;
+}
+.v1-theme-light .hljs-built_in,
+.v1-theme-light .hljs-type,
+.v1-theme-light .hljs-class .hljs-title {
+  color: #953800;
+}
+.v1-theme-light .hljs-variable,
+.v1-theme-light .hljs-template-variable,
+.v1-theme-light .hljs-attribute,
+.v1-theme-light .hljs-selector-attr {
+  color: #953800;
+}
+.v1-theme-light .hljs-deletion {
+  color: #82071e;
+}
+.v1-theme-light .hljs-meta {
+  color: #0550ae;
+}
+.v1-theme-light .hljs-link {
+  color: #0550ae;
+  text-decoration: underline;
 }
 
 /* Skip layout/paint of off-screen chat rows and modal content so scrolling a

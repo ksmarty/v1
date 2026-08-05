@@ -195,6 +195,8 @@ export function applyTheme(name: string): void {
   }
   // Keep native form controls / scrollbars in sync with the theme brightness.
   style.colorScheme = luminance(tokens.bg) < 0.5 ? 'dark' : 'light';
+  // Marks light palettes so code blocks can switch to the light syntax scheme.
+  document.body.classList.toggle('v1-theme-light', luminance(tokens.bg) >= 0.5);
 }
 
 export function getStoredTheme(): string {
