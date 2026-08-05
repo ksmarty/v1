@@ -457,7 +457,7 @@ export default function Settings() {
         </nav>
 
         <main className="min-h-0 flex-1 overflow-y-auto">
-          <div className="mx-auto flex w-full max-w-2xl flex-col gap-4 p-4 md:p-6">
+          <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 p-4 md:p-6">
             <div className={page === 'llm' ? '' : 'hidden'}>
               <Section title="LLM" description="The OpenAI-compatible endpoint v1 uses to generate apps. The model is picked per project in the chat.">
           <form onSubmit={(e) => void saveLLM(e)} className="flex flex-col gap-3">
@@ -532,7 +532,6 @@ export default function Settings() {
                       </div>
                       <div className="truncate font-mono text-[11px] text-faint">
                         {p.baseURL || '(no base URL)'}
-                        {p.model ? ` · ${p.model}` : ''}
                       </div>
                     </div>
                     {!p.apiKeySet && (

@@ -77,12 +77,15 @@ export function Dialog({
   title,
   children,
   wide = false,
+  fixedBody = false,
 }: {
   open: boolean;
   onClose: () => void;
   title: string;
   children: ReactNode;
   wide?: boolean;
+  /** Keep the header fixed and scroll only the body (used by chat tools dialog). */
+  fixedBody?: boolean;
 }) {
   useEffect(() => {
     if (!open) return;
@@ -103,17 +106,21 @@ export function Dialog({
       }}
     >
       <div
-        className={`max-h-[85vh] w-full overflow-y-auto rounded-t-2xl border border-border bg-bg p-5 shadow-2xl sm:rounded-xl ${
+        className={`max-h-[85vh] w-full rounded-t-2xl border border-border bg-bg p-5 shadow-2xl sm:rounded-xl ${
           wide ? 'sm:max-w-xl' : 'sm:max-w-md'
-        }`}
+        } ${fixedBody ? 'flex flex-col' : 'overflow-y-auto'}`}
       >
-        <div className="mb-4 flex items-center justify-between gap-2">
+        <div
+          className={`mb-4 flex items-center justify-between gap-2 ${
+            fixedBody ? 'shrink-0' : ''
+          }`}
+        >
           <h2 className="text-base font-semibold text-text">{title}</h2>
           <IconButton onClick={onClose} aria-label="Close" className="-mr-1 h-8 w-8 md:h-8 md:w-8">
             <IconX className="h-4 w-4" />
           </IconButton>
         </div>
-        {children}
+        {fixedBody ? <div className="min-h-0 flex-1 overflow-y-auto">{children}</div> : children}
       </div>
     </div>
   );
@@ -131,7 +138,7 @@ export function Section({
   children: ReactNode;
 }) {
   return (
-    <section className="rounded-xl border border-border bg-bg p-4 md:p-5">
+    <section className="rounded-xl border border-border bg-surface p-4 md:p-5">
       <div className="flex items-center gap-2">
         <h2 className="text-sm font-semibold text-text">{title}</h2>
         {badge}

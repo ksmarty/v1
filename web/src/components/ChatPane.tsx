@@ -20,9 +20,7 @@ import {
   IconChevronDown,
   IconChevronRight,
   IconModel,
-  IconPencil,
   IconRefresh,
-  IconRewind,
   IconSquare,
   IconWrench,
   IconX,
@@ -949,29 +947,26 @@ export default function ChatPane({
                 return (
                   <div
                     key={it.key}
-                    className="ml-auto max-w-[85%] rounded-2xl bg-border px-3.5 py-2 text-sm text-text"
+                    className="group ml-auto max-w-[85%] rounded-2xl bg-border px-3.5 py-2 text-sm text-text"
                   >
                     <div className="whitespace-pre-wrap break-words">{it.content}</div>
                     {persisted(it.key) && !streaming && (
-                      <div className="mt-1 flex justify-end gap-1">
+                      <div className="mt-1 flex justify-end gap-1 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100">
                         <button
                           type="button"
                           onClick={() => setItemEditing(it.key, true)}
-                          aria-label="Edit and resend"
-                          title="Edit and resend"
-                          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-dim transition-colors hover:bg-surface hover:text-text"
+                          className="text-[11px] text-faint transition-colors hover:text-text"
                         >
-                          <IconPencil className="h-3.5 w-3.5" />
+                          Edit
                         </button>
                         {!isLastMsg && (
                           <button
                             type="button"
                             onClick={() => void rewindTo(it.key)}
-                            aria-label="Rewind to here"
                             title="Rewind to here (delete everything after)"
-                            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-dim transition-colors hover:bg-surface hover:text-text"
+                            className="text-[11px] text-faint transition-colors hover:text-text"
                           >
-                            <IconRewind className="h-3.5 w-3.5" />
+                            Rewind
                           </button>
                         )}
                       </div>
@@ -1005,30 +1000,17 @@ export default function ChatPane({
                   {it.toolResults &&
                     it.toolResults.map((tr, j) => <ToolResultBlock key={j} {...tr} />)}
                   {it.usage && <div className="text-[10px] text-faint">{formatUsage(it.usage, it.model)}</div>}
-                  {persisted(it.key) && !streaming && (
+                  {persisted(it.key) && !streaming && isLastMsg && (
                     <div className="flex gap-1">
-                      {isLastMsg && (
-                        <button
-                          type="button"
-                          onClick={regenerate}
-                          aria-label="Regenerate response"
-                          title="Retry with the same prompt"
-                          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-dim transition-colors hover:bg-border hover:text-text"
-                        >
-                          <IconRefresh className="h-3.5 w-3.5" />
-                        </button>
-                      )}
-                      {!isLastMsg && (
-                        <button
-                          type="button"
-                          onClick={() => void rewindTo(it.key)}
-                          aria-label="Rewind to here"
-                          title="Rewind to here (delete this response and everything after)"
-                          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-dim transition-colors hover:bg-border hover:text-text"
-                        >
-                          <IconRewind className="h-3.5 w-3.5" />
-                        </button>
-                      )}
+                      <button
+                        type="button"
+                        onClick={regenerate}
+                        aria-label="Regenerate response"
+                        title="Retry with the same prompt"
+                        className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-dim transition-colors hover:bg-border hover:text-text"
+                      >
+                        <IconRefresh className="h-3.5 w-3.5" />
+                      </button>
                     </div>
                   )}
                 </div>
@@ -1118,6 +1100,7 @@ export default function ChatPane({
         onClose={() => setToolsOpen(false)}
         title="Tools & permissions"
         wide
+        fixedBody
       >
         <ToolSettings />
       </Dialog>
