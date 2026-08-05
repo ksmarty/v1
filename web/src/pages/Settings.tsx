@@ -684,7 +684,7 @@ export default function Settings() {
             </div>
 
             <div className={page === 'tools' ? '' : 'hidden'}>
-              <ToolSettings />
+              <ToolSettings variant="stacked" />
             </div>
 
             <div className={page === 'appearance' ? '' : 'hidden'}>

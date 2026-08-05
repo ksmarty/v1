@@ -216,6 +216,13 @@ body {
   color: color-mix(in srgb, #fda4af 62%, var(--v1-text));
 }
 
+/* Skip layout/paint of off-screen chat rows and modal content so scrolling a
+   long thread stays cheap. The browser remembers each element's last size. */
+.v1-cv {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 120px;
+}
+
 /* Blinking caret appended to a streaming assistant message */
 .v1-stream-cursor {
   display: inline-block;

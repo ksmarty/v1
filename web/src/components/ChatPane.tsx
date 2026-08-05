@@ -1,4 +1,5 @@
 import {
+  memo,
   useCallback,
   useEffect,
   useMemo,
@@ -103,7 +104,7 @@ function persisted(key: string): boolean {
 function ToolRow({ item }: { item: ToolItem }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="rounded-lg border border-border/80 bg-surface/50 text-xs">
+    <div className="v1-cv rounded-lg border border-border/80 bg-surface/50 text-xs">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
@@ -270,6 +271,106 @@ function EditUserBubble({
     </div>
   );
 }
+
+const MessageRow = memo(function MessageRow({
+  item,
+  isLast,
+  streaming,
+  onEdit,
+  onRewind,
+  onRegenerate,
+  onEditStart,
+}: {
+  item: Item;
+  isLast: boolean;
+  streaming: boolean;
+  onEdit: (key: string, text: string) => void;
+  onRewind: (key: string) => void;
+  onRegenerate: () => void;
+  onEditStart: (key: string, editing: boolean) => void;
+}) {
+  if (item.kind === 'tool') return <ToolRow item={item} />;
+  if (item.role === 'user') {
+    if (item.editing) {
+      return (
+        <EditUserBubble
+          initial={item.content}
+          onSubmit={(text) => onEdit(item.key, text)}
+          onCancel={() => onEditStart(item.key, false)}
+        />
+      );
+    }
+    return (
+      <div className="v1-cv group ml-auto max-w-[85%] rounded-2xl bg-border px-3.5 py-2 text-sm text-text">
+        <div className="whitespace-pre-wrap break-words">{item.content}</div>
+        {persisted(item.key) && !streaming && (
+          <div className="mt-1 flex justify-end gap-1 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100">
+            <button
+              type="button"
+              onClick={() => onEditStart(item.key, true)}
+              className="text-[11px] text-faint transition-colors hover:text-text"
+            >
+              Edit
+            </button>
+            {!isLast && (
+              <button
+                type="button"
+                onClick={() => void onRewind(item.key)}
+                title="Rewind to here (delete everything after)"
+                className="text-[11px] text-faint transition-colors hover:text-text"
+              >
+                Rewind
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
+  if (item.role === 'error') {
+    return (
+      <div className="v1-cv whitespace-pre-wrap break-words text-sm text-red-400">
+        {item.content}
+      </div>
+    );
+  }
+  return (
+    <div
+      className={`v1-cv flex min-w-0 flex-col gap-1.5 ${item.stale ? 'opacity-45' : ''}`}
+    >
+      {item.reasoning && (
+        <ReasoningBlock text={item.reasoning} autoOpen={item.streaming ?? false} />
+      )}
+      <div className="min-w-0">
+        <Markdown text={item.content} streaming={item.streaming} />
+      </div>
+      {item.toolCalls && item.toolCalls.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {item.toolCalls.map((tc, j) => (
+            <ToolChip key={j} {...tc} />
+          ))}
+        </div>
+      )}
+      {item.toolResults && item.toolResults.map((tr, j) => <ToolResultBlock key={j} {...tr} />)}
+      {item.usage && (
+        <div className="text-[10px] text-faint">{formatUsage(item.usage, item.model)}</div>
+      )}
+      {persisted(item.key) && !streaming && isLast && (
+        <div className="flex gap-1">
+          <button
+            type="button"
+            onClick={onRegenerate}
+            aria-label="Regenerate response"
+            title="Retry with the same prompt"
+            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-dim transition-colors hover:bg-border hover:text-text"
+          >
+            <IconRefresh className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
+    </div>
+  );
+});
 
 export default function ChatPane({
   projectId,
@@ -477,10 +578,16 @@ export default function ChatPane({
       });
   }, [projectId]);
 
-  // Auto-scroll on new content.
+  // Auto-scroll on new content, but only while the user is already at (or near)
+  // the bottom — otherwise reading history during a stream gets yanked around.
+  const nearBottomRef = useRef(true);
+  const onScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (el) nearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+  }, []);
   useEffect(() => {
     const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
+    if (el && nearBottomRef.current) el.scrollTop = el.scrollHeight;
   }, [items]);
 
   // Auto-grow the input textarea.
@@ -830,7 +937,11 @@ export default function ChatPane({
         </div>
       )}
 
-      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-3 py-4 md:px-4">
+      <div
+        ref={scrollRef}
+        onScroll={onScroll}
+        className="min-h-0 flex-1 overflow-y-auto px-3 py-4 md:px-4"
+      >
         {loading && (
           <div className="flex justify-center py-10">
             <Spinner className="h-5 w-5" />
@@ -930,92 +1041,18 @@ export default function ChatPane({
         )}
         {!loading && !loadError && items.length > 0 && (
           <div className="mx-auto flex max-w-2xl flex-col gap-3">
-            {items.map((it, i) => {
-              const isLastMsg = i === lastMsgIdx;
-              if (it.kind === 'tool') return <ToolRow key={it.key} item={it} />;
-              if (it.role === 'user') {
-                if (it.editing) {
-                  return (
-                    <EditUserBubble
-                      key={it.key}
-                      initial={it.content}
-                      onSubmit={(text) => editUserMessage(it.key, text)}
-                      onCancel={() => setItemEditing(it.key, false)}
-                    />
-                  );
-                }
-                return (
-                  <div
-                    key={it.key}
-                    className="group ml-auto max-w-[85%] rounded-2xl bg-border px-3.5 py-2 text-sm text-text"
-                  >
-                    <div className="whitespace-pre-wrap break-words">{it.content}</div>
-                    {persisted(it.key) && !streaming && (
-                      <div className="mt-1 flex justify-end gap-1 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100">
-                        <button
-                          type="button"
-                          onClick={() => setItemEditing(it.key, true)}
-                          className="text-[11px] text-faint transition-colors hover:text-text"
-                        >
-                          Edit
-                        </button>
-                        {!isLastMsg && (
-                          <button
-                            type="button"
-                            onClick={() => void rewindTo(it.key)}
-                            title="Rewind to here (delete everything after)"
-                            className="text-[11px] text-faint transition-colors hover:text-text"
-                          >
-                            Rewind
-                          </button>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                );
-              }
-              if (it.role === 'error') {
-                return (
-                  <div key={it.key} className="whitespace-pre-wrap break-words text-sm text-red-400">
-                    {it.content}
-                  </div>
-                );
-              }
-              return (
-                <div
-                  key={it.key}
-                  className={`flex min-w-0 flex-col gap-1.5 ${it.stale ? 'opacity-45' : ''}`}
-                >
-                  {it.reasoning && <ReasoningBlock text={it.reasoning} autoOpen={it.streaming ?? false} />}
-                  <div className="min-w-0">
-                    <Markdown text={it.content} streaming={it.streaming} />
-                  </div>
-                  {it.toolCalls && it.toolCalls.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5">
-                      {it.toolCalls.map((tc, j) => (
-                        <ToolChip key={j} {...tc} />
-                      ))}
-                    </div>
-                  )}
-                  {it.toolResults &&
-                    it.toolResults.map((tr, j) => <ToolResultBlock key={j} {...tr} />)}
-                  {it.usage && <div className="text-[10px] text-faint">{formatUsage(it.usage, it.model)}</div>}
-                  {persisted(it.key) && !streaming && isLastMsg && (
-                    <div className="flex gap-1">
-                      <button
-                        type="button"
-                        onClick={regenerate}
-                        aria-label="Regenerate response"
-                        title="Retry with the same prompt"
-                        className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-dim transition-colors hover:bg-border hover:text-text"
-                      >
-                        <IconRefresh className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+            {items.map((it, i) => (
+              <MessageRow
+                key={it.key}
+                item={it}
+                isLast={i === lastMsgIdx}
+                streaming={streaming}
+                onEdit={editUserMessage}
+                onRewind={rewindTo}
+                onRegenerate={regenerate}
+                onEditStart={setItemEditing}
+              />
+            ))}
           </div>
         )}
       </div>
