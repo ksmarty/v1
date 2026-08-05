@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { SiVercel } from 'react-icons/si';
 import { api, type SettingsUpdate } from '../api';
 import type { Settings as SettingsType } from '../types';
@@ -23,6 +23,7 @@ import {
 import {
   IconArrowLeft,
   IconCheck,
+  IconChevronDown,
   IconDots,
   IconExternalLink,
   IconGitHub,
@@ -178,7 +179,11 @@ export default function Settings() {
   const location = useLocation();
   const from = (location.state as { from?: string } | null)?.from;
   const backTo = from && from.startsWith('/') ? from : '/';
-  const [page, setPage] = useState<NavId>('llm');
+  const [params] = useSearchParams();
+  const initialPage = params.get('page');
+  const [page, setPage] = useState<NavId>(
+    NAV.some((n) => n.id === initialPage) ? (initialPage as NavId) : 'llm',
+  );
 
   const reloadSettings = () => {
     api
@@ -500,18 +505,22 @@ export default function Settings() {
       </header>
 
       <div className="flex min-h-0 flex-1 flex-col md:flex-row">
-        <nav className="grid shrink-0 grid-cols-2 gap-1 border-b border-border px-2 py-2 md:hidden">
-          {NAV.map((n) => (
-            <button
-              key={n.id}
-              type="button"
-              onClick={() => setPage(n.id)}
-              className={navItemClass(page === n.id)}
+        <nav className="border-b border-border p-2 md:hidden">
+          <div className="relative">
+            <select
+              value={page}
+              onChange={(e) => setPage(e.target.value as NavId)}
+              aria-label="Settings section"
+              className="w-full appearance-none rounded-lg border border-border bg-surface px-3 py-2 pr-8 text-sm text-text outline-none transition-colors focus:border-subtle"
             >
-              {n.icon}
-              {n.label}
-            </button>
-          ))}
+              {NAV.map((n) => (
+                <option key={n.id} value={n.id}>
+                  {n.label}
+                </option>
+              ))}
+            </select>
+            <IconChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-dim" />
+          </div>
         </nav>
         <nav className="hidden w-52 shrink-0 flex-col gap-1 border-r border-border p-3 md:flex">
           {NAV.map((n) => (

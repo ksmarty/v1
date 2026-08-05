@@ -176,7 +176,9 @@ export default function VercelMenu({
               <Button
                 variant="outline"
                 className="min-h-[30px] px-2.5 text-xs"
-                onClick={() => navigate('/settings', { state: { from: `/project/${projectId}` } })}
+                onClick={() =>
+                  navigate('/settings?page=vercel', { state: { from: `/project/${projectId}` } })
+                }
               >
                 Connect Vercel
               </Button>

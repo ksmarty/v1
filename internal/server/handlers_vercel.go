@@ -79,7 +79,7 @@ func (s *Server) handleVercelOAuthStart(w http.ResponseWriter, r *http.Request) 
 // an error page.
 func (s *Server) handleVercelOAuthCallback(w http.ResponseWriter, r *http.Request) {
 	fail := func() {
-		http.Redirect(w, r, "/settings?vercel=error", http.StatusFound)
+		http.Redirect(w, r, "/settings?page=vercel&vercel=error", http.StatusFound)
 	}
 	q := r.URL.Query()
 	if q.Get("error") != "" || q.Get("state") == "" || q.Get("code") == "" {
@@ -122,7 +122,7 @@ func (s *Server) handleVercelOAuthCallback(w http.ResponseWriter, r *http.Reques
 	if err := s.st.SetSetting(keyVercelTokenSource, "oauth"); err != nil {
 		log.Printf("vercel: storing token source: %v", err)
 	}
-	http.Redirect(w, r, "/settings", http.StatusFound)
+	http.Redirect(w, r, "/settings?page=vercel", http.StatusFound)
 }
 
 // handleVercelUser reports whether a token is configured and, when possible,
