@@ -6,6 +6,7 @@ import FilesPane from './FilesPane';
 import TerminalPane from './TerminalPane';
 import GitPane from './GitPane';
 import GitHubMenu from './GitHubMenu';
+import VercelMenu from './VercelMenu';
 import {
   IconArrowLeft,
   IconChat,
@@ -71,6 +72,7 @@ export default function ChatPanel({
           )}
         </div>
         <GitHubMenu projectId={projectId} projectName={project?.name ?? ''} repoUrl={project?.repoUrl ?? ''} />
+        <VercelMenu projectId={projectId} projectName={project?.name ?? ''} />
         <Link
           to="/settings"
           state={{ from: `/project/${projectId}` }}

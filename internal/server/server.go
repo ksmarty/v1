@@ -25,6 +25,7 @@ import (
 	"v1/internal/preview"
 	"v1/internal/store"
 	"v1/internal/terminal"
+	"v1/internal/vercel"
 )
 
 //go:embed all:dist
@@ -48,18 +49,24 @@ type Server struct {
 	oidcMu    sync.Mutex
 	oidcFlows map[string]*oidcFlow
 	oidc      *auth.OIDC
+
+	vercelMu      sync.Mutex
+	vercelFlows   map[string]*vercelFlow
+	vercelDeploys map[string]*deployState
 }
 
 // New builds the server, its routes and middleware.
 func New(cfg config.Config, st *store.Store) *Server {
 	s := &Server{
-		cfg:        cfg,
-		st:         st,
-		auth:       auth.NewManager(st, cfg.AuthDisabled, cfg.Password),
-		previews:   preview.NewManager(cfg.MaxPreviews),
-		terminals:  terminal.NewManager(),
-		oauthFlows: map[string]*oauthFlow{},
-		oidcFlows:  map[string]*oidcFlow{},
+		cfg:           cfg,
+		st:            st,
+		auth:          auth.NewManager(st, cfg.AuthDisabled, cfg.Password),
+		previews:      preview.NewManager(cfg.MaxPreviews),
+		terminals:     terminal.NewManager(),
+		oauthFlows:    map[string]*oauthFlow{},
+		oidcFlows:     map[string]*oidcFlow{},
+		vercelFlows:   map[string]*vercelFlow{},
+		vercelDeploys: map[string]*deployState{},
 		oidc: auth.NewOIDC(auth.OIDCConfig{
 			Enabled:       cfg.AuthOIDCEnabled,
 			Issuer:        cfg.OIDCIssuer,
@@ -74,6 +81,7 @@ func New(cfg config.Config, st *store.Store) *Server {
 	s.auth.EnsureEnvPassword()
 	s.auth.SetOIDCEnabled(s.oidcEnabled())
 	s.pruneOIDCFlows()
+	s.pruneVercelFlows()
 	mux := http.NewServeMux()
 	s.routes(mux)
 	s.handler = s.auth.Middleware(mux)
@@ -99,6 +107,8 @@ func (s *Server) routes(m *http.ServeMux) {
 	m.HandleFunc("POST /api/auth/logout", s.handleLogout)
 	m.HandleFunc("GET /api/auth/oidc/start", s.handleOIDCStart)
 	m.HandleFunc("GET /api/auth/oidc/callback", s.handleOIDCCallback)
+	m.HandleFunc("GET /api/auth/vercel/oauth/start", s.handleVercelOAuthStart)
+	m.HandleFunc("GET /api/auth/vercel/oauth/callback", s.handleVercelOAuthCallback)
 
 	m.HandleFunc("GET /api/settings", s.handleGetSettings)
 	m.HandleFunc("PUT /api/settings", s.handlePutSettings)
@@ -150,6 +160,10 @@ func (s *Server) routes(m *http.ServeMux) {
 
 	m.HandleFunc("GET /api/mcp/status", s.handleMCPStatus)
 	m.HandleFunc("POST /api/mcp/test", s.handleMCPTest)
+
+	m.HandleFunc("GET /api/vercel/user", s.handleVercelUser)
+	m.HandleFunc("POST /api/projects/{id}/vercel/deploy", s.handleVercelDeploy)
+	m.HandleFunc("GET /api/projects/{id}/vercel/deployments", s.handleVercelDeployments)
 
 	m.HandleFunc("POST /api/skills/search", s.handleSkillsSearch)
 	m.HandleFunc("POST /api/skills/install", s.handleSkillsInstall)
@@ -210,6 +224,11 @@ const (
 	keyGitHubToken         = "github_token"
 	keyGitHubTokenSource   = "github_token_source"
 	keyGitHubOAuthClientID = "github_oauth_client_id"
+	keyVercelToken         = "vercel_token"
+	keyVercelTokenSource   = "vercel_token_source"
+	keyVercelRefreshToken  = "vercel_refresh_token"
+	keyVercelOAuthClientID = "vercel_oauth_client_id"
+	keyVercelClientSecret  = "vercel_oauth_client_secret"
 	keyProvidersCache      = "providers_cache"
 	keyProvidersCustom     = "providers_custom"
 	keyMCP                 = "mcp_servers"
@@ -321,6 +340,64 @@ func (s *Server) githubOAuthClientID() string {
 		return v
 	}
 	return s.cfg.GitHubOAuthClientID
+}
+
+// vercelToken resolves the effective Vercel token (sqlite overrides env).
+func (s *Server) vercelToken() string {
+	if v, ok, _ := s.st.GetSetting(keyVercelToken); ok && v != "" {
+		return v
+	}
+	return s.cfg.VercelToken
+}
+
+// vercelTokenSource reports how the current token got configured:
+// "oauth"/"pat" for a settings-stored token, "env" for an env-only token,
+// or nil when no token exists.
+func (s *Server) vercelTokenSource() *string {
+	if v, ok, _ := s.st.GetSetting(keyVercelToken); ok && v != "" {
+		src, ok, _ := s.st.GetSetting(keyVercelTokenSource)
+		if !ok || (src != "oauth" && src != "pat") {
+			src = "pat"
+		}
+		return &src
+	}
+	if s.cfg.VercelToken != "" {
+		src := "env"
+		return &src
+	}
+	return nil
+}
+
+func (s *Server) vercelRefreshToken() string {
+	v, _, _ := s.st.GetSetting(keyVercelRefreshToken)
+	return v
+}
+
+// vercelOAuthClientID resolves the OAuth app client id (sqlite overrides env).
+func (s *Server) vercelOAuthClientID() string {
+	if v, ok, _ := s.st.GetSetting(keyVercelOAuthClientID); ok && v != "" {
+		return v
+	}
+	return s.cfg.VercelClientID
+}
+
+// vercelOAuthClientSecret resolves the OAuth app client secret (sqlite
+// overrides env).
+func (s *Server) vercelOAuthClientSecret() string {
+	if v, ok, _ := s.st.GetSetting(keyVercelClientSecret); ok && v != "" {
+		return v
+	}
+	return s.cfg.VercelClientSecret
+}
+
+// vercelClient builds a Vercel API client from the effective settings.
+func (s *Server) vercelClient() *vercel.Client {
+	return &vercel.Client{
+		Token:        s.vercelToken(),
+		RefreshToken: s.vercelRefreshToken(),
+		ClientID:     s.vercelOAuthClientID(),
+		ClientSecret: s.vercelOAuthClientSecret(),
+	}
 }
 
 // customProviders returns the providers added at runtime from models.dev

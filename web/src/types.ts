@@ -33,11 +33,45 @@ export type PermissionMode = 'ask' | 'auto' | 'yolo';
 export interface Settings {
   llm: LLMSettings;
   github: GitHubSettings;
+  vercel: VercelSettings;
   auth: { disabled: boolean };
   mcp: MCPServer[];
   skills: InstalledSkill[];
   permissionMode: PermissionMode;
   version: string;
+}
+
+export interface VercelSettings {
+  tokenSet: boolean;
+  oauthClientId: string;
+  clientSecretSet: boolean;
+  source: 'oauth' | 'pat' | 'env' | null;
+}
+
+export interface VercelDeployment {
+  id: string;
+  state: string; // readyState: READY / BUILDING / ERROR / ...
+  url: string;
+  createdAt: number; // unix ms
+  production: boolean;
+}
+
+export type VercelActiveDeploy =
+  | (VercelDeployment & { error?: string })
+  | { state: string; error?: string }
+  | null;
+
+export interface VercelDeploymentsResponse {
+  connected: boolean;
+  active: VercelActiveDeploy;
+  recent: VercelDeployment[];
+  error?: string;
+}
+
+export interface VercelUserInfo {
+  connected: boolean;
+  login?: string;
+  error?: string;
 }
 
 export interface ProviderModel {

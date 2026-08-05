@@ -202,6 +202,23 @@ Paste a PAT into Settings → GitHub (or set `V1_GITHUB_TOKEN`). Required scopes
 - **Classic PAT** — the **`repo`** scope (full repository access). This covers clone, push, and creating repos.
 - **Fine-grained PAT** — Repository access: your repos; Permissions: **Contents: Read & write** (Metadata: Read is automatic). Note: fine-grained tokens **cannot create new repositories** via the API, so the "create repo & push" flow needs a classic PAT or OAuth.
 
+## Vercel integration
+
+Deploy any v1 project to Vercel from the project page — the ⚡ button next to GitHub in the header. Two ways to connect (either enables **deploy preview** and **deploy to production** for any project):
+
+### OAuth (recommended)
+
+1. Create an OAuth app at <https://console.vercel.co> → **Settings → OAuth** (or <https://vercel.com/account/settings/oauth>). Add the callback URL
+   `<your-origin>/api/auth/vercel/oauth/callback` (see the exact value on the Settings → Vercel page; it's derived from the request host and honors `X-Forwarded-Proto`, so it works behind a reverse proxy — set `V1_VERCEL_REDIRECT_URI` if you'd rather pin it).
+2. Paste the **Client ID** and **Client Secret** into Settings → Vercel in v1 (or set `V1_VERCEL_CLIENT_ID` / `V1_VERCEL_CLIENT_SECRET`) and save.
+3. Click **Connect with Vercel** and authorize. Access tokens expire after an hour; v1 refreshes them automatically with the refresh token.
+
+### Personal access token
+
+Paste a token from <https://vercel.com/account/tokens> into Settings → Vercel (or set `V1_VERCEL_TOKEN`). A manual token needs the **`deployment`** and **`user`** scopes.
+
+Deploys are made from the project's current files on disk (`.git`, `node_modules`, `.vercel`, `.next`, `.cache` are excluded) — the framework is auto-detected by Vercel, exactly like v0. Direct uploads are capped at ~35 MB of files; larger projects should be pushed to GitHub and deployed from there.
+
 ## Local development
 
 Requires Go 1.23+ and Node 22+.

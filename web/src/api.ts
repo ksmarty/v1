@@ -23,6 +23,8 @@ import type {
   Settings,
   SkillSearchResult,
   Todo,
+  VercelDeploymentsResponse,
+  VercelUserInfo,
 } from './types';
 
 export class ApiError extends Error {
@@ -103,6 +105,9 @@ export interface SettingsUpdate {
   };
   githubToken?: string;
   githubOAuthClientId?: string;
+  vercelToken?: string;
+  vercelOAuthClientId?: string;
+  vercelOAuthClientSecret?: string;
   password?: string;
   mcp?: MCPServer[];
   permissionMode?: PermissionMode;
@@ -179,6 +184,13 @@ export const api = {
   oauthDeviceStart: () => post<DeviceFlowStart>('/api/github/oauth/device/start'),
   oauthDevicePoll: (flowId: string) =>
     post<DeviceFlowPoll>('/api/github/oauth/device/poll', { flowId }),
+
+  // Vercel
+  vercelUser: () => request<VercelUserInfo>('/api/vercel/user'),
+  vercelDeploy: (id: string, target?: 'production') =>
+    post<{ started: boolean }>(`/api/projects/${id}/vercel/deploy`, target ? { target } : {}),
+  vercelDeployments: (id: string) =>
+    request<VercelDeploymentsResponse>(`/api/projects/${id}/vercel/deployments`),
 
   // MCP
   mcpStatus: () => request<{ servers: MCPServerStatus[] }>('/api/mcp/status'),

@@ -18,6 +18,10 @@ type Config struct {
 	Model               string
 	GitHubToken         string
 	GitHubOAuthClientID string
+	VercelToken         string
+	VercelClientID      string
+	VercelClientSecret  string
+	VercelRedirectURI   string
 	AuthOIDCEnabled     bool
 	OIDCIssuer          string
 	OIDCClientID        string
@@ -63,6 +67,10 @@ func Load(version string) Config {
 		c.GitHubToken = os.Getenv("GITHUB_TOKEN")
 	}
 	c.GitHubOAuthClientID = os.Getenv("V1_GITHUB_OAUTH_CLIENT_ID")
+	c.VercelToken = os.Getenv("V1_VERCEL_TOKEN")
+	c.VercelClientID = os.Getenv("V1_VERCEL_CLIENT_ID")
+	c.VercelClientSecret = os.Getenv("V1_VERCEL_CLIENT_SECRET")
+	c.VercelRedirectURI = os.Getenv("V1_VERCEL_REDIRECT_URI")
 	if v := os.Getenv("V1_AUTH_OIDC_ENABLED"); v == "true" || v == "1" || v == "yes" {
 		c.AuthOIDCEnabled = true
 	}

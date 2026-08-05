@@ -109,6 +109,12 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 			"oauthClientId": s.githubOAuthClientID(),
 			"source":        s.githubTokenSource(),
 		},
+		"vercel": map[string]any{
+			"tokenSet":        s.vercelToken() != "",
+			"oauthClientId":   s.vercelOAuthClientID(),
+			"clientSecretSet": s.vercelOAuthClientSecret() != "",
+			"source":          s.vercelTokenSource(),
+		},
 		"auth":           map[string]any{"disabled": s.cfg.AuthDisabled},
 		"mcp":            s.mcpServers(),
 		"skills":         s.installedSkills(),
@@ -120,14 +126,17 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		LLM *struct {
-			BaseURL          *string             `json:"baseURL"`
-			APIKey           *string             `json:"apiKey"`
-			Model            *string             `json:"model"`
+			BaseURL          *string              `json:"baseURL"`
+			APIKey           *string              `json:"apiKey"`
+			Model            *string              `json:"model"`
 			Providers        *[]llmProviderRecord `json:"providers"`
-			ActiveProviderID *string             `json:"activeProviderId"`
+			ActiveProviderID *string              `json:"activeProviderId"`
 		} `json:"llm"`
 		GitHubToken         *string             `json:"githubToken"`
 		GitHubOAuthClientID *string             `json:"githubOAuthClientId"`
+		VercelToken         *string             `json:"vercelToken"`
+		VercelOAuthClientID *string             `json:"vercelOAuthClientId"`
+		VercelClientSecret  *string             `json:"vercelOAuthClientSecret"`
 		Password            *string             `json:"password"`
 		MCP                 *[]mcp.ServerConfig `json:"mcp"`
 		PermissionMode      *string             `json:"permissionMode"`
@@ -241,6 +250,34 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if err := set(keyGitHubOAuthClientID, body.GitHubOAuthClientID); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if body.VercelToken != nil {
+		if *body.VercelToken == "" {
+			// Clearing the token also clears its refresh token and source.
+			for _, key := range []string{keyVercelToken, keyVercelRefreshToken, keyVercelTokenSource} {
+				if err := s.st.DeleteSetting(key); err != nil {
+					writeError(w, http.StatusInternalServerError, err.Error())
+					return
+				}
+			}
+		} else {
+			if err := s.st.SetSetting(keyVercelToken, *body.VercelToken); err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+			if err := s.st.SetSetting(keyVercelTokenSource, "pat"); err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+		}
+	}
+	if err := set(keyVercelOAuthClientID, body.VercelOAuthClientID); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err := set(keyVercelClientSecret, body.VercelClientSecret); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}

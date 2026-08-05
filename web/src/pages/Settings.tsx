@@ -1,6 +1,7 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { api } from '../api';
+import { SiVercel } from 'react-icons/si';
+import { api, type SettingsUpdate } from '../api';
 import type { Settings as SettingsType } from '../types';
 import { errMsg, getChatSide, setChatSide, type ChatSide } from '../utils';
 import {
@@ -39,6 +40,7 @@ import ToolSettings from '../components/ToolSettings';
 const NAV = [
   { id: 'llm', label: 'LLM & providers', icon: <IconModel className="h-4 w-4" /> },
   { id: 'github', label: 'GitHub', icon: <IconGitHub className="h-4 w-4" /> },
+  { id: 'vercel', label: 'Vercel', icon: <SiVercel className="h-4 w-4" /> },
   { id: 'tools', label: 'Tools & permissions', icon: <IconWrench className="h-4 w-4" /> },
   { id: 'appearance', label: 'Appearance', icon: <IconSettings className="h-4 w-4" /> },
   { id: 'auth', label: 'Auth', icon: <IconLock className="h-4 w-4" /> },
@@ -156,6 +158,16 @@ export default function Settings() {
   const [cidSaved, setCidSaved] = useState(false);
   const [cidError, setCidError] = useState<string | null>(null);
 
+  // Vercel
+  const [vercelToken, setVercelToken] = useState('');
+  const [vercelClientId, setVercelClientId] = useState('');
+  const [vercelClientSecret, setVercelClientSecret] = useState('');
+  const [vercelSaving, setVercelSaving] = useState(false);
+  const [vercelSaved, setVercelSaved] = useState(false);
+  const [vercelError, setVercelError] = useState<string | null>(null);
+  const [vercelUser, setVercelUser] = useState<string | null>(null);
+  const [vercelUserError, setVercelUserError] = useState<string | null>(null);
+
   // Auth
   const [pw, setPw] = useState('');
   const [pw2, setPw2] = useState('');
@@ -176,15 +188,27 @@ export default function Settings() {
         setBaseURL(s.llm.baseURL);
         setModel(s.llm.model);
         setOauthClientId(s.github.oauthClientId);
+        setVercelClientId(s.vercel.oauthClientId);
         setProviders(s.llm.providers ?? []);
         setActiveProviderId(s.llm.activeProviderId ?? '');
       })
       .catch((e) => setLoadError(errMsg(e)));
   };
 
+  const loadVercelUser = useCallback(() => {
+    api
+      .vercelUser()
+      .then((u) => {
+        setVercelUser(u.connected && u.login ? u.login : null);
+        setVercelUserError(u.connected ? null : (u.error ?? null));
+      })
+      .catch((e) => setVercelUserError(errMsg(e)));
+  }, []);
+
   useEffect(() => {
     reloadSettings();
-  }, []);
+    void loadVercelUser();
+  }, [loadVercelUser]);
 
   const saveLLM = async (e: FormEvent) => {
     e.preventDefault();
@@ -356,6 +380,44 @@ export default function Settings() {
     }
   };
 
+  const saveVercel = async (e: FormEvent) => {
+    e.preventDefault();
+    setVercelSaving(true);
+    setVercelSaved(false);
+    setVercelError(null);
+    try {
+      const upd: SettingsUpdate = {};
+      if (vercelToken.trim()) upd.vercelToken = vercelToken.trim();
+      if (vercelClientId.trim()) upd.vercelOAuthClientId = vercelClientId.trim();
+      if (vercelClientSecret.trim()) upd.vercelOAuthClientSecret = vercelClientSecret.trim();
+      await api.updateSettings(upd);
+      setVercelSaved(true);
+      setVercelToken('');
+      setVercelClientSecret('');
+      reloadSettings();
+      void loadVercelUser();
+    } catch (err) {
+      setVercelError(errMsg(err));
+    } finally {
+      setVercelSaving(false);
+    }
+  };
+
+  const disconnectVercel = async () => {
+    setVercelSaving(true);
+    setVercelError(null);
+    try {
+      await api.updateSettings({ vercelToken: '' });
+      setVercelSaved(true);
+      setVercelUser(null);
+      reloadSettings();
+    } catch (err) {
+      setVercelError(errMsg(err));
+    } finally {
+      setVercelSaving(false);
+    }
+  };
+
   const savePassword = async (e: FormEvent) => {
     e.preventDefault();
     setPwSaved(false);
@@ -414,6 +476,15 @@ export default function Settings() {
       connected{settings.github.source ? ` via ${settings.github.source}` : ''}
     </span>
   ) : null;
+
+  const vercelBadge = settings.vercel.tokenSet ? (
+    <span className="rounded-full bg-emerald-950 px-2 py-0.5 text-xs text-emerald-400">
+      connected{settings.vercel.source ? ` via ${settings.vercel.source}` : ''}
+      {vercelUser ? ` as @${vercelUser}` : ''}
+    </span>
+  ) : null;
+
+  const oauthReady = settings.vercel.oauthClientId !== '' && settings.vercel.clientSecretSet;
 
   return (
     <div className="flex h-dvh flex-col">
@@ -681,6 +752,126 @@ export default function Settings() {
           </form>
         </Section>
 
+            </div>
+
+            <div className={page === 'vercel' ? '' : 'hidden'}>
+              <Section
+                title="Vercel"
+                description="Deploy this instance's projects to Vercel."
+                badge={vercelBadge}
+              >
+          <form onSubmit={(e) => void saveVercel(e)} className="flex flex-col gap-3">
+            <Field label={settings.vercel.tokenSet ? 'Access token (a token is set)' : 'Access token'}>
+              <Input
+                type="password"
+                value={vercelToken}
+                onChange={(e) => setVercelToken(e.target.value)}
+                placeholder={
+                  settings.vercel.tokenSet ? '•••••••• (set — enter to replace)' : 'vercel_…'
+                }
+                autoComplete="off"
+              />
+            </Field>
+            <details className="text-xs text-subtle">
+              <summary className="cursor-pointer select-none text-faint hover:text-dim">
+                Required token scopes
+              </summary>
+              <p className="mt-1.5 leading-relaxed">
+                A manual token needs the <code className="font-mono text-dim">deployment</code>{' '}
+                and <code className="font-mono text-dim">user</code> scopes. The OAuth flow
+                requests them automatically.
+              </p>
+            </details>
+            <p className="text-xs text-subtle">
+              <a
+                href="https://vercel.com/account/tokens"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-0.5 text-accent hover:underline"
+              >
+                Create a token <IconExternalLink className="h-3 w-3" />
+              </a>
+            </p>
+            <SaveRow
+              saving={vercelSaving}
+              saved={vercelSaved}
+              error={vercelError}
+              extra={
+                settings.vercel.tokenSet ? (
+                  <Button variant="ghost" onClick={() => void disconnectVercel()}>
+                    Disconnect
+                  </Button>
+                ) : undefined
+              }
+            />
+          </form>
+
+          <div className="my-1 flex items-center gap-3 text-xs text-faint">
+            <div className="h-px flex-1 bg-border" />
+            or connect with OAuth
+            <div className="h-px flex-1 bg-border" />
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <Field label="OAuth Client ID">
+              <Input
+                value={vercelClientId}
+                onChange={(e) => setVercelClientId(e.target.value)}
+                placeholder="Client ID"
+                autoComplete="off"
+              />
+            </Field>
+            <Field label="OAuth Client Secret">
+              <Input
+                type="password"
+                value={vercelClientSecret}
+                onChange={(e) => setVercelClientSecret(e.target.value)}
+                placeholder={
+                  settings.vercel.clientSecretSet
+                    ? '•••••••• (set — enter to replace)'
+                    : 'Client secret'
+                }
+                autoComplete="off"
+              />
+            </Field>
+          </div>
+          <p className="text-xs leading-relaxed text-subtle">
+            Create an OAuth app at{' '}
+            <a
+              href="https://console.vercel.co"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-accent hover:underline"
+            >
+              console.vercel.co
+            </a>{' '}
+            (Settings → OAuth) with callback URL{' '}
+            <code className="font-mono text-dim">
+              {window.location.origin}/api/auth/vercel/oauth/callback
+            </code>
+            , then save the Client ID and Secret above and hit Save. Access tokens
+            expire after an hour; v1 refreshes them automatically.
+          </p>
+          <div className="flex items-center gap-2">
+            {oauthReady ? (
+              <a
+                href="/api/auth/vercel/oauth/start"
+                className="inline-flex min-h-[36px] items-center justify-center gap-2 rounded-lg border border-border-strong px-3.5 text-sm font-medium text-text transition-colors hover:bg-border"
+              >
+                <SiVercel className="h-4 w-4" /> Connect with Vercel
+              </a>
+            ) : (
+              <Button
+                variant="outline"
+                disabled
+                title="Save an OAuth Client ID and secret first"
+              >
+                <SiVercel className="h-4 w-4" /> Connect with Vercel
+              </Button>
+            )}
+            {vercelUserError && <span className="text-xs text-red-400">{vercelUserError}</span>}
+          </div>
+        </Section>
             </div>
 
             <div className={page === 'tools' ? '' : 'hidden'}>
