@@ -79,8 +79,22 @@ function put<T>(path: string, body: unknown): Promise<T> {
   });
 }
 
+export interface SavedProviderInput {
+  id?: string;
+  name: string;
+  baseURL: string;
+  model: string;
+  apiKey?: string;
+}
+
 export interface SettingsUpdate {
-  llm?: { baseURL?: string; apiKey?: string; model?: string };
+  llm?: {
+    baseURL?: string;
+    apiKey?: string;
+    model?: string;
+    providers?: SavedProviderInput[];
+    activeProviderId?: string;
+  };
   githubToken?: string;
   githubOAuthClientId?: string;
   password?: string;
@@ -230,13 +244,16 @@ async function streamChatEvents(
 export function streamChat(
   projectId: string,
   message: string,
-  opts: { model?: string; editMessageId?: number } | undefined,
+  opts: { model?: string; editMessageId?: number; providerId?: string } | undefined,
   onEvent: (ev: ChatEvent) => void,
   signal: AbortSignal,
 ): Promise<void> {
-  const body: { message: string; model?: string; editMessageId?: number } = { message };
+  const body: { message: string; model?: string; editMessageId?: number; providerId?: string } = {
+    message,
+  };
   if (opts?.model && opts.model.trim() !== '') body.model = opts.model;
   if (opts?.editMessageId) body.editMessageId = opts.editMessageId;
+  if (opts?.providerId) body.providerId = opts.providerId;
   return streamChatEvents(`/api/projects/${projectId}/chat`, body, onEvent, signal);
 }
 

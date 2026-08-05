@@ -8,10 +8,11 @@ import {
 } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, retryChat, streamChat } from '../api';
-import type { ChatEvent, ChatUsage, ProviderModel, Todo } from '../types';
+import type { ChatEvent, ChatUsage, Provider, ProviderModel, SavedProvider, Todo } from '../types';
 import { errMsg } from '../utils';
 import { renderMarkdown } from '../markdown';
 import { Button, ErrorBox, IconButton, Spinner } from './ui';
+import { ModelCombobox } from './ModelCombobox';
 import {
   IconArrowUp,
   IconCheck,
@@ -278,9 +279,9 @@ export default function ChatPane({
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
   const [model, setModel] = useState('');
-  const [customModel, setCustomModel] = useState(false);
-  const [llmModels, setLlmModels] = useState<ProviderModel[]>([]);
-  const [storedModel, setStoredModel] = useState('');
+  const [providerId, setProviderId] = useState(''); // '' = custom (no saved provider)
+  const [providers, setProviders] = useState<SavedProvider[]>([]);
+  const [catalog, setCatalog] = useState<Provider[]>([]);
   const [todos, setTodos] = useState<Todo[]>([]);
   const [todosOpen, setTodosOpen] = useState(true);
   const navigate = useNavigate();
@@ -300,36 +301,103 @@ export default function ChatPane({
     setItems(itemsRef.current);
   }, []);
 
-  // Model catalog for the chat header.
+  // Load the per-project chat selection (localStorage), the saved providers
+  // and the models.dev catalog. The model shows as a plain selection whenever
+  // it exists in the selected provider's catalog — never as "custom" — and as
+  // a free-text id when it does not (i.e. it was custom before).
   useEffect(() => {
+    let active = true;
+    const selKey = `v1.chatModel.${projectId}`;
+    let persisted: { providerId: string; model: string } | null = null;
+    try {
+      persisted = JSON.parse(localStorage.getItem(selKey) ?? 'null');
+    } catch {
+      persisted = null;
+    }
     api
       .getSettings()
       .then((s) => {
-        setLlmModels(s.llm.models);
-        setStoredModel(s.llm.model);
-        if (s.llm.model) setModel(s.llm.model);
+        if (!active) return;
+        const saved = s.llm.providers ?? [];
+        setProviders(saved);
+        const sel = persisted ?? { providerId: s.llm.activeProviderId ?? '', model: s.llm.model };
+        // A persisted provider that was deleted falls back to the active one.
+        if (sel.providerId === '' || saved.some((p) => p.id === sel.providerId)) {
+          setProviderId(sel.providerId);
+        } else {
+          setProviderId(s.llm.activeProviderId ?? '');
+        }
+        setModel(sel.model);
+        try {
+          localStorage.setItem(selKey, JSON.stringify(sel));
+        } catch {
+          // storage unavailable — ignore
+        }
       })
       .catch(() => {
-        // header falls back to the free-text option
+        // header falls back to the custom model input
       });
-  }, []);
+    api
+      .getProviders()
+      .then((r) => {
+        if (active) setCatalog(r.providers);
+      })
+      .catch(() => {
+        // catalog unavailable — model input falls back to free text
+      });
+    return () => {
+      active = false;
+    };
+  }, [projectId]);
 
-  // With no stored model and no catalog, surface the free-text input directly.
-  useEffect(() => {
-    if (storedModel === '' && llmModels.length === 0) setCustomModel(true);
-  }, [storedModel, llmModels]);
+  const selectedProvider = useMemo(
+    () => providers.find((p) => p.id === providerId) ?? null,
+    [providers, providerId],
+  );
 
-  const modelOptions = useMemo(() => {
-    const opts: { id: string; name: string }[] = llmModels.map((m) => ({ id: m.id, name: m.name }));
-    if (storedModel && !llmModels.some((m) => m.id === storedModel)) {
-      opts.push({ id: storedModel, name: `${storedModel} (stored)` });
+  // Model list for the selected provider, unioned across catalog entries that
+  // share the same base URL.
+  const catalogModels = useMemo(() => {
+    if (!selectedProvider) return [] as ProviderModel[];
+    const byId = new Map<string, ProviderModel>();
+    for (const p of catalog) {
+      if (p.baseURL !== selectedProvider.baseURL) continue;
+      for (const m of p.models) {
+        if (!byId.has(m.id)) byId.set(m.id, m);
+      }
     }
-    return opts;
-  }, [llmModels, storedModel]);
+    return [...byId.values()];
+  }, [catalog, selectedProvider]);
 
-  const customActive = customModel || (model !== '' && !modelOptions.some((m) => m.id === model));
-  const selectValue = customActive ? 'custom' : model;
+  // A model is "custom" when there is no provider or it isn't in the catalog.
+  const customActive =
+    !selectedProvider || (model !== '' && !catalogModels.some((m) => m.id === model));
+
+  const persistSelection = useCallback(
+    (pid: string, m: string) => {
+      try {
+        localStorage.setItem(`v1.chatModel.${projectId}`, JSON.stringify({ providerId: pid, model: m }));
+      } catch {
+        // storage unavailable — ignore
+      }
+    },
+    [projectId],
+  );
+
+  const changeProvider = (pid: string) => {
+    setProviderId(pid);
+    const nextModel = pid === '' ? '' : providers.find((p) => p.id === pid)?.model ?? '';
+    setModel(nextModel);
+    persistSelection(pid, nextModel);
+  };
+
+  const changeModel = (m: string) => {
+    setModel(m);
+    persistSelection(providerId, m);
+  };
+
   const modelOverride = model.trim() || undefined;
+  const providerOverride = providerId || undefined;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -575,9 +643,11 @@ export default function ChatPane({
         ...prev,
         { kind: 'msg', key: `u${++counterRef.current}`, role: 'user', content: trimmed },
       ]);
-      void run((signal) => streamChat(projectId, trimmed, { model: modelOverride }, handleEvent, signal));
+      void run((signal) =>
+        streamChat(projectId, trimmed, { model: modelOverride, providerId: providerOverride }, handleEvent, signal),
+      );
     },
-    [streaming, llmReady, projectId, modelOverride, handleEvent, run, update],
+    [streaming, llmReady, projectId, modelOverride, providerOverride, handleEvent, run, update],
   );
 
   const send = useCallback(() => sendText(input), [input, sendText]);
@@ -635,10 +705,10 @@ export default function ChatPane({
       toolStackRef.current = {};
       assistantKeyRef.current = null;
       void run((signal) =>
-        streamChat(projectId, trimmed, { model: modelOverride, editMessageId: id }, handleEvent, signal),
+        streamChat(projectId, trimmed, { model: modelOverride, providerId: providerOverride, editMessageId: id }, handleEvent, signal),
       );
     },
-    [streaming, llmReady, projectId, modelOverride, handleEvent, run, update],
+    [streaming, llmReady, projectId, modelOverride, providerOverride, handleEvent, run, update],
   );
 
   // Rewind/revert: cut the thread back to a chosen message (drops everything
@@ -673,35 +743,35 @@ export default function ChatPane({
           <div className="mx-auto flex max-w-2xl items-center gap-2">
             <IconModel className="h-3.5 w-3.5 shrink-0 text-dim" />
             <select
-              value={selectValue}
-              onChange={(e) => {
-                const v = e.target.value;
-                if (v === 'custom') {
-                  setCustomModel(true);
-                  setModel('');
-                } else {
-                  setCustomModel(false);
-                  setModel(v);
-                }
-              }}
-              aria-label="Model"
-              className="min-w-0 flex-1 rounded-md border border-border bg-surface px-2 py-1 font-mono text-xs text-text outline-none transition-colors focus:border-subtle"
+              value={providerId}
+              onChange={(e) => changeProvider(e.target.value)}
+              aria-label="Provider"
+              className="max-w-[45%] shrink-0 rounded-md border border-border bg-surface px-2 py-1 font-mono text-xs text-text outline-none transition-colors focus:border-subtle"
             >
-              {modelOptions.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.name}
+              {providers.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
                 </option>
               ))}
-              <option value="custom">Custom…</option>
+              <option value="">Custom</option>
             </select>
-            {customActive && (
+            {customActive ? (
               <input
                 value={model}
-                onChange={(e) => setModel(e.target.value)}
+                onChange={(e) => changeModel(e.target.value)}
                 placeholder="model id"
                 spellCheck={false}
                 className="min-w-0 flex-1 rounded-md border border-border bg-surface px-2 py-1 font-mono text-xs text-text outline-none transition-colors placeholder:text-faint focus:border-subtle"
               />
+            ) : (
+              <div className="min-w-0 flex-1">
+                <ModelCombobox
+                  models={catalogModels}
+                  value={model}
+                  onChange={changeModel}
+                  className="h-8! rounded-md! px-2! py-1! font-mono! text-xs!"
+                />
+              </div>
             )}
           </div>
         </div>

@@ -163,6 +163,15 @@ export default function Settings() {
     baseURL: string;
   } | null>(null);
 
+  // Saved providers
+  const [providers, setProviders] = useState<SettingsType['llm']['providers']>([]);
+  const [activeProviderId, setActiveProviderId] = useState('');
+  const [provName, setProvName] = useState('');
+  const [provBusyId, setProvBusyId] = useState<string | null>(null);
+  const [provSaving, setProvSaving] = useState(false);
+  const [provSaved, setProvSaved] = useState(false);
+  const [provError, setProvError] = useState<string | null>(null);
+
   // GitHub PAT
   const [token, setToken] = useState('');
   const [ghSaving, setGhSaving] = useState(false);
@@ -190,6 +199,8 @@ export default function Settings() {
         setBaseURL(s.llm.baseURL);
         setModel(s.llm.model);
         setOauthClientId(s.github.oauthClientId);
+        setProviders(s.llm.providers ?? []);
+        setActiveProviderId(s.llm.activeProviderId ?? '');
       })
       .catch((e) => setLoadError(errMsg(e)));
   };
@@ -204,27 +215,111 @@ export default function Settings() {
     setLlmSaved(false);
     setLlmError(null);
     try {
-      await api.updateSettings({
-        llm: {
-          baseURL,
-          model,
-          ...(apiKey ? { apiKey } : {}),
-        },
-      });
+      const active = providers.find((p) => p.id === activeProviderId) ?? null;
+      if (providers.length === 0) {
+        // No saved providers yet — plain single-configuration save.
+        await api.updateSettings({
+          llm: { baseURL, model, ...(apiKey ? { apiKey } : {}) },
+        });
+      } else if (active) {
+        // Save into the active provider and keep it active.
+        const list = providers.map((p) =>
+          p.id === active.id
+            ? { id: p.id, name: p.name, baseURL, model, ...(apiKey ? { apiKey } : {}) }
+            : { id: p.id, name: p.name, baseURL: p.baseURL, model: p.model },
+        );
+        await api.updateSettings({ llm: { providers: list, activeProviderId: active.id } });
+      } else {
+        // Providers exist but none is active — create one from the form.
+        const newId = crypto.randomUUID();
+        let host = '';
+        try {
+          host = new URL(baseURL).hostname;
+        } catch {
+          host = '';
+        }
+        const name = provName.trim() || host || 'Provider';
+        const list = providers.map((p) => ({
+          id: p.id,
+          name: p.name,
+          baseURL: p.baseURL,
+          model: p.model,
+        }));
+        list.push({ id: newId, name, baseURL, model, ...(apiKey ? { apiKey } : {}) });
+        await api.updateSettings({ llm: { providers: list, activeProviderId: newId } });
+      }
       setLlmSaved(true);
       setApiKey('');
-      setSettings((prev) =>
-        prev
-          ? {
-              ...prev,
-              llm: { ...prev.llm, baseURL, model, apiKeySet: prev.llm.apiKeySet || !!apiKey },
-            }
-          : prev,
-      );
+      reloadSettings();
     } catch (err) {
       setLlmError(errMsg(err));
     } finally {
       setLlmSaving(false);
+    }
+  };
+
+  const saveAsProvider = async (e: FormEvent) => {
+    e.preventDefault();
+    const name = provName.trim();
+    if (!name) {
+      setProvError('Enter a provider name.');
+      return;
+    }
+    setProvSaving(true);
+    setProvSaved(false);
+    setProvError(null);
+    try {
+      const newId = crypto.randomUUID();
+      const list = providers.map((p) => ({
+        id: p.id,
+        name: p.name,
+        baseURL: p.baseURL,
+        model: p.model,
+      }));
+      list.push({ id: newId, name, baseURL, model, ...(apiKey ? { apiKey } : {}) });
+      await api.updateSettings({ llm: { providers: list, activeProviderId: newId } });
+      setProvSaved(true);
+      setProvName('');
+      setApiKey('');
+      reloadSettings();
+    } catch (err) {
+      setProvError(errMsg(err));
+    } finally {
+      setProvSaving(false);
+    }
+  };
+
+  const useProvider = async (id: string) => {
+    setProvBusyId(id);
+    setProvError(null);
+    try {
+      await api.updateSettings({ llm: { activeProviderId: id } });
+      reloadSettings();
+    } catch (err) {
+      setProvError(errMsg(err));
+    } finally {
+      setProvBusyId(null);
+    }
+  };
+
+  const deleteProvider = async (id: string) => {
+    setProvBusyId(id);
+    setProvError(null);
+    try {
+      const rest = providers.filter((p) => p.id !== id);
+      const nextActive =
+        rest.length > 0 ? (activeProviderId === id ? rest[0].id : activeProviderId) : '';
+      await api.updateSettings({
+        llm: {
+          providers: rest.map((p) => ({ id: p.id, name: p.name, baseURL: p.baseURL, model: p.model })),
+          activeProviderId: nextActive,
+        },
+      });
+      reloadSettings();
+    } catch (err) {
+      setProvError(errMsg(err));
+    } finally {
+      setProvBusyId(null);
     }
   };
 
@@ -403,6 +498,95 @@ export default function Settings() {
                 </p>
               ))}
           </form>
+
+          {providers.length > 0 && (
+            <div className="border-t border-border pt-3">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-xs text-subtle">Saved providers</span>
+                <span className="text-[11px] text-faint">{providers.length}</span>
+              </div>
+              <ul className="flex flex-col gap-1.5">
+                {providers.map((p) => (
+                  <li
+                    key={p.id}
+                    className={`flex items-center gap-2 rounded-lg border border-border px-3 py-2 ${
+                      p.id === activeProviderId ? 'bg-surface' : ''
+                    }`}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className="truncate text-sm text-text">{p.name}</span>
+                        {p.id === activeProviderId && (
+                          <span className="rounded-full bg-emerald-950 px-1.5 py-0.5 text-[10px] text-emerald-400">
+                            active
+                          </span>
+                        )}
+                      </div>
+                      <div className="truncate font-mono text-[11px] text-faint">
+                        {p.baseURL || '(no base URL)'}
+                        {p.model ? ` · ${p.model}` : ''}
+                      </div>
+                    </div>
+                    {!p.apiKeySet && (
+                      <span className="shrink-0 text-[10px] text-red-400">no key</span>
+                    )}
+                    <div className="flex shrink-0 items-center gap-1">
+                      {p.id !== activeProviderId && (
+                        <Button
+                          variant="outline"
+                          className="h-7 px-2 text-xs"
+                          disabled={provBusyId === p.id}
+                          onClick={() => void useProvider(p.id)}
+                        >
+                          {provBusyId === p.id ? (
+                            <Spinner className="h-3.5 w-3.5" />
+                          ) : (
+                            'Use'
+                          )}
+                        </Button>
+                      )}
+                      <button
+                        type="button"
+                        aria-label={`Delete provider ${p.name}`}
+                        title="Delete provider"
+                        disabled={provBusyId === p.id}
+                        onClick={() => void deleteProvider(p.id)}
+                        className="inline-flex h-7 w-7 items-center justify-center rounded-md text-dim transition-colors hover:bg-border hover:text-red-400 disabled:opacity-40"
+                      >
+                        <IconX className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          <form onSubmit={(e) => void saveAsProvider(e)} className="flex items-end gap-2">
+            <div className="flex-1">
+              <Field label="Save current config as provider">
+                <Input
+                  value={provName}
+                  onChange={(e) => setProvName(e.target.value)}
+                  placeholder="e.g. opencode"
+                  autoComplete="off"
+                />
+              </Field>
+            </div>
+            <Button type="submit" variant="outline" disabled={provSaving}>
+              {provSaving ? <Spinner className="h-4 w-4" /> : 'Save as provider'}
+            </Button>
+          </form>
+          {(provError || provSaved) && (
+            <div className="flex items-center gap-2 text-xs">
+              {provSaved && (
+                <span className="flex items-center gap-1 text-emerald-500">
+                  <IconCheck className="h-3.5 w-3.5" /> Provider saved
+                </span>
+              )}
+              {provError && <span className="text-red-400">{provError}</span>}
+            </div>
+          )}
         </Section>
 
         <Section

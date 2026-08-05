@@ -184,6 +184,8 @@ const (
 	keyLLMBaseURL          = "llm_base_url"
 	keyLLMAPIKey           = "llm_api_key"
 	keyLLMModel            = "llm_model"
+	keyLLMProviders        = "llm_providers"
+	keyLLMActiveProvider   = "llm_active_provider"
 	keyGitHubToken         = "github_token"
 	keyGitHubTokenSource   = "github_token_source"
 	keyGitHubOAuthClientID = "github_oauth_client_id"
@@ -216,6 +218,50 @@ func (s *Server) llmConfig() (baseURL, apiKey, model string) {
 func (s *Server) llmClient() *llm.Client {
 	baseURL, apiKey, model := s.llmConfig()
 	return llm.NewClient(baseURL, apiKey, model)
+}
+
+// llmProviderRecord is one saved LLM provider. APIKey is only ever written
+// and used server-side; responses expose just apiKeySet.
+type llmProviderRecord struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	BaseURL string `json:"baseURL"`
+	APIKey  string `json:"apiKey,omitempty"`
+	Model   string `json:"model"`
+}
+
+// llmProviders loads the saved provider list (nil when none are saved).
+func (s *Server) llmProviders() []llmProviderRecord {
+	v, ok, _ := s.st.GetSetting(keyLLMProviders)
+	if !ok || v == "" {
+		return nil
+	}
+	var out []llmProviderRecord
+	if err := json.Unmarshal([]byte(v), &out); err != nil {
+		return nil
+	}
+	return out
+}
+
+func (s *Server) findLLMProvider(id string) *llmProviderRecord {
+	if id == "" {
+		return nil
+	}
+	for _, p := range s.llmProviders() {
+		if p.ID == id {
+			return &p
+		}
+	}
+	return nil
+}
+
+// llmClientFor builds a client for a saved provider id, falling back to the
+// legacy single-provider settings when the id is empty or unknown.
+func (s *Server) llmClientFor(providerID string) *llm.Client {
+	if p := s.findLLMProvider(providerID); p != nil {
+		return llm.NewClient(p.BaseURL, p.APIKey, p.Model)
+	}
+	return s.llmClient()
 }
 
 // githubToken resolves the effective GitHub token (sqlite overrides env).

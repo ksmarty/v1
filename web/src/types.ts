@@ -5,11 +5,21 @@ export interface AuthStatus {
   oidcEnabled: boolean;
 }
 
+export interface SavedProvider {
+  id: string;
+  name: string;
+  baseURL: string;
+  model: string;
+  apiKeySet: boolean;
+}
+
 export interface LLMSettings {
   baseURL: string;
   model: string;
   apiKeySet: boolean;
   models: ProviderModel[];
+  providers: SavedProvider[];
+  activeProviderId: string;
 }
 
 export interface GitHubSettings {

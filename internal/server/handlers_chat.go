@@ -83,9 +83,10 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Message        string `json:"message"`
-		Model          string `json:"model"`
-		EditMessageID  int64  `json:"editMessageId"`
+		Message       string `json:"message"`
+		Model         string `json:"model"`
+		ProviderID    string `json:"providerId"`
+		EditMessageID int64  `json:"editMessageId"`
 	}
 	if !decodeJSON(w, r, &body) {
 		return
@@ -95,7 +96,17 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, apiKey, _ := s.llmConfig(); apiKey == "" {
+	if body.ProviderID != "" {
+		prov := s.findLLMProvider(body.ProviderID)
+		if prov == nil {
+			writeError(w, http.StatusBadRequest, "unknown_provider")
+			return
+		}
+		if prov.APIKey == "" {
+			writeError(w, http.StatusBadRequest, "no_api_key")
+			return
+		}
+	} else if _, apiKey, _ := s.llmConfig(); apiKey == "" {
 		writeError(w, http.StatusBadRequest, "no_api_key")
 		return
 	}
@@ -103,7 +114,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	params := agent.ChatParams{
 		Store:   s.st,
 		Project: p,
-		Client:  s.llmClient(),
+		Client:  s.llmClientFor(body.ProviderID),
 		Message: body.Message,
 		Model:   body.Model,
 	}

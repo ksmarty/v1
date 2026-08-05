@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"v1/internal/llm"
+	"v1/internal/store"
 )
 
 // ---- auth ----
@@ -81,12 +82,26 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 	if models == nil {
 		models = []llm.ProviderModel{}
 	}
+	providers := s.llmProviders()
+	providerJSON := make([]map[string]any, 0, len(providers))
+	for _, p := range providers {
+		providerJSON = append(providerJSON, map[string]any{
+			"id":        p.ID,
+			"name":      p.Name,
+			"baseURL":   p.BaseURL,
+			"model":     p.Model,
+			"apiKeySet": p.APIKey != "",
+		})
+	}
+	activeProviderID, _, _ := s.st.GetSetting(keyLLMActiveProvider)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"llm": map[string]any{
-			"baseURL":   baseURL,
-			"model":     model,
-			"apiKeySet": apiKey != "",
-			"models":    models,
+			"baseURL":          baseURL,
+			"model":            model,
+			"apiKeySet":        apiKey != "",
+			"models":           models,
+			"providers":        providerJSON,
+			"activeProviderId": activeProviderID,
 		},
 		"github": map[string]any{
 			"tokenSet":      s.githubToken() != "",
@@ -101,9 +116,11 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		LLM *struct {
-			BaseURL *string `json:"baseURL"`
-			APIKey  *string `json:"apiKey"`
-			Model   *string `json:"model"`
+			BaseURL          *string             `json:"baseURL"`
+			APIKey           *string             `json:"apiKey"`
+			Model            *string             `json:"model"`
+			Providers        *[]llmProviderRecord `json:"providers"`
+			ActiveProviderID *string             `json:"activeProviderId"`
 		} `json:"llm"`
 		GitHubToken         *string `json:"githubToken"`
 		GitHubOAuthClientID *string `json:"githubOAuthClientId"`
@@ -123,6 +140,67 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		return s.st.SetSetting(key, *v)
 	}
 	if body.LLM != nil {
+		// 1. Merge the saved provider list. Incoming records without an id get a
+		// fresh one; an empty apiKey keeps the stored key of an existing record,
+		// or inherits the legacy key for a brand-new record (the settings form
+		// never shows the stored key back).
+		if body.LLM.Providers != nil {
+			_, legacyKey, _ := s.llmConfig()
+			merged := make([]llmProviderRecord, 0, len(*body.LLM.Providers))
+			for _, inc := range *body.LLM.Providers {
+				if inc.ID == "" {
+					inc.ID = store.NewID()
+				}
+				if inc.APIKey == "" {
+					if cur := s.findLLMProvider(inc.ID); cur != nil {
+						inc.APIKey = cur.APIKey
+					} else if legacyKey != "" {
+						inc.APIKey = legacyKey
+					}
+				}
+				merged = append(merged, inc)
+			}
+			raw, err := json.Marshal(merged)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+			if err := s.st.SetSetting(keyLLMProviders, string(raw)); err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+		}
+		// 2. Activate a provider: mirrors it into the legacy single-provider
+		// keys so every existing code path (chat gating, retries, test) works.
+		if body.LLM.ActiveProviderID != nil {
+			if *body.LLM.ActiveProviderID == "" {
+				if err := s.st.DeleteSetting(keyLLMActiveProvider); err != nil {
+					writeError(w, http.StatusInternalServerError, err.Error())
+					return
+				}
+			} else {
+				p := s.findLLMProvider(*body.LLM.ActiveProviderID)
+				if p == nil {
+					writeError(w, http.StatusBadRequest, "unknown provider id")
+					return
+				}
+				for key, v := range map[string]string{
+					keyLLMBaseURL: p.BaseURL,
+					keyLLMAPIKey:  p.APIKey,
+					keyLLMModel:   p.Model,
+				} {
+					if err := s.st.SetSetting(key, v); err != nil {
+						writeError(w, http.StatusInternalServerError, err.Error())
+						return
+					}
+				}
+				if err := s.st.SetSetting(keyLLMActiveProvider, p.ID); err != nil {
+					writeError(w, http.StatusInternalServerError, err.Error())
+					return
+				}
+			}
+		}
+		// 3. Legacy single-provider fields (empty clears).
 		for key, v := range map[string]*string{
 			keyLLMBaseURL: body.LLM.BaseURL,
 			keyLLMAPIKey:  body.LLM.APIKey,
