@@ -11,11 +11,13 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
 	git "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
+	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 )
@@ -387,4 +389,186 @@ func InitAndPush(ctx context.Context, path, remoteURL, token, message, authorLog
 		summary = fmt.Sprintf("push failed: %v", err)
 	}
 	return committed, pushed, summary, nil
+}
+
+// CommitInfo is a single commit in a project's history.
+type CommitInfo struct {
+	Hash    string `json:"hash"`
+	Short   string `json:"short"`
+	Message string `json:"message"`
+	Author  string `json:"author"`
+	Time    int64  `json:"time"`
+}
+
+// History returns the commit log of the repo at path, newest first.
+func History(path string) ([]CommitInfo, error) {
+	repo, err := git.PlainOpen(path)
+	if err != nil {
+		return nil, err
+	}
+	iter, err := repo.Log(&git.LogOptions{})
+	if err != nil {
+		return nil, err
+	}
+	defer iter.Close()
+	out := []CommitInfo{}
+	err = iter.ForEach(func(c *object.Commit) error {
+		author := c.Author.Name
+		if author == "" {
+			author = "unknown"
+		}
+		out = append(out, CommitInfo{
+			Hash:    c.Hash.String(),
+			Short:   c.Hash.String()[:8],
+			Message: c.Message,
+			Author:  author,
+			Time:    c.Author.When.Unix(),
+		})
+		return nil
+	})
+	return out, err
+}
+
+// Branches returns the current branch name and the sorted list of all local
+// branches in the repo at path.
+func Branches(path string) (current string, branches []string, err error) {
+	repo, err := git.PlainOpen(path)
+	if err != nil {
+		return "", nil, err
+	}
+	head, err := repo.Head()
+	if err == nil {
+		current = head.Name().Short()
+	}
+	iter, err := repo.Branches()
+	if err != nil {
+		return current, nil, err
+	}
+	defer iter.Close()
+	branches = []string{}
+	err = iter.ForEach(func(b *plumbing.Reference) error {
+		branches = append(branches, b.Name().Short())
+		return nil
+	})
+	sort.Strings(branches)
+	return current, branches, err
+}
+
+// projectIgnore is written on git init so node_modules and other generated
+// output never get committed.
+const projectIgnore = "node_modules/\ndist/\nbuild/\n*.log\n.env\n.v1/\n"
+
+// InitRepo turns path into a git repository if it is not already one. An
+// existing repository is left untouched. A brand-new repository gets an
+// initial commit so time-travel has a starting point.
+func InitRepo(path, authorLogin string) error {
+	if _, err := git.PlainOpen(path); err == nil {
+		return nil
+	}
+	ignorePath := filepath.Join(path, ".gitignore")
+	if _, err := os.Stat(ignorePath); os.IsNotExist(err) {
+		if err := os.WriteFile(ignorePath, []byte(projectIgnore), 0o644); err != nil {
+			return err
+		}
+	}
+	repo, err := git.PlainInit(path, false)
+	if err != nil {
+		return err
+	}
+	if _, err := repo.Head(); err == nil {
+		return nil // already has commits
+	}
+	w, err := repo.Worktree()
+	if err != nil {
+		return err
+	}
+	if err := stageAll(w); err != nil {
+		return err
+	}
+	_, err = w.Commit("Initial commit from v1", &git.CommitOptions{
+		Author:            authorSignature(authorLogin),
+		AllowEmptyCommits: true,
+	})
+	return err
+}
+
+// CreateBranch creates and checks out a new branch named name.
+func CreateBranch(path, name string) error {
+	repo, err := git.PlainOpen(path)
+	if err != nil {
+		return err
+	}
+	w, err := repo.Worktree()
+	if err != nil {
+		return err
+	}
+	return w.Checkout(&git.CheckoutOptions{
+		Branch: plumbing.NewBranchReferenceName(name),
+		Create: true,
+	})
+}
+
+// CheckoutBranch switches the working tree to an existing branch, keeping any
+// local modifications.
+func CheckoutBranch(path, name string) error {
+	repo, err := git.PlainOpen(path)
+	if err != nil {
+		return err
+	}
+	w, err := repo.Worktree()
+	if err != nil {
+		return err
+	}
+	return w.Checkout(&git.CheckoutOptions{
+		Branch: plumbing.NewBranchReferenceName(name),
+		Keep:   true,
+	})
+}
+
+// RevertTo hard-resets the working tree at path to the given commit, dropping
+// every change made after it. This is the "rewind that actually changes the
+// repo" operation.
+func RevertTo(path, commit string) error {
+	repo, err := git.PlainOpen(path)
+	if err != nil {
+		return err
+	}
+	h, err := repo.ResolveRevision(plumbing.Revision(commit))
+	if err != nil {
+		return err
+	}
+	w, err := repo.Worktree()
+	if err != nil {
+		return err
+	}
+	return w.Reset(&git.ResetOptions{Commit: *h, Mode: git.HardReset})
+}
+
+// CommitIfRepo stages and commits any changes at path when it is a git
+// repository. It returns whether a commit was made, and never fails when path
+// is not a repo (no error, no commit).
+func CommitIfRepo(path, message, authorLogin string) (bool, error) {
+	repo, err := git.PlainOpen(path)
+	if err != nil {
+		return false, nil
+	}
+	w, err := repo.Worktree()
+	if err != nil {
+		return false, err
+	}
+	if err := stageAll(w); err != nil {
+		return false, err
+	}
+	dirty, err := hasStagedChanges(w)
+	if err != nil {
+		return false, err
+	}
+	if !dirty {
+		return false, nil
+	}
+	if strings.TrimSpace(message) == "" {
+		message = "Update from v1"
+	}
+	_, err = w.Commit(message, &git.CommitOptions{Author: authorSignature(authorLogin)})
+	return err == nil, err
 }

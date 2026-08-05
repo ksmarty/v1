@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"v1/internal/agent"
+	"v1/internal/gitops"
 	"v1/internal/store"
 )
 
@@ -245,6 +246,12 @@ func (s *Server) streamChatTurn(w http.ResponseWriter, r *http.Request, p *store
 	if err != nil {
 		emit(agent.ChatEvent{Type: "error", Error: err.Error()})
 		return
+	}
+	// Snapshot each finished turn as a git commit when the project is
+	// repo-backed, so time-travel always has a checkpoint to return to.
+	// Edits/retries rewind the thread, so they skip the snapshot.
+	if params.LastUserID <= 0 {
+		_, _ = gitops.CommitIfRepo(root, params.Message, "")
 	}
 	emit(agent.ChatEvent{Type: "done", Usage: turn.Usage})
 }

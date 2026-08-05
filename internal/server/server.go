@@ -134,6 +134,11 @@ func (s *Server) routes(m *http.ServeMux) {
 	m.HandleFunc("POST /api/projects/{id}/github/link", s.handleGitHubLink)
 	m.HandleFunc("POST /api/projects/{id}/github/push", s.handleGitHubPush)
 	m.HandleFunc("GET /api/projects/{id}/git/status", s.handleGitStatus)
+	m.HandleFunc("GET /api/projects/{id}/git/info", s.handleGitInfo)
+	m.HandleFunc("POST /api/projects/{id}/git/init", s.handleGitInit)
+	m.HandleFunc("POST /api/projects/{id}/git/branch", s.handleGitBranch)
+	m.HandleFunc("POST /api/projects/{id}/git/checkout", s.handleGitCheckout)
+	m.HandleFunc("POST /api/projects/{id}/git/revert", s.handleGitRevert)
 
 	// The preview proxy handles all common HTTP methods (incl. WS upgrades
 	// via GET). Methods are enumerated so the patterns don't conflict with
