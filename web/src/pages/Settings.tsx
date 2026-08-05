@@ -500,13 +500,13 @@ export default function Settings() {
       </header>
 
       <div className="flex min-h-0 flex-1 flex-col md:flex-row">
-        <nav className="flex shrink-0 gap-1 overflow-x-auto border-b border-border px-2 py-1.5 md:hidden">
+        <nav className="grid shrink-0 grid-cols-2 gap-1 border-b border-border px-2 py-2 md:hidden">
           {NAV.map((n) => (
             <button
               key={n.id}
               type="button"
               onClick={() => setPage(n.id)}
-              className={`shrink-0 ${navItemClass(page === n.id)}`}
+              className={navItemClass(page === n.id)}
             >
               {n.icon}
               {n.label}
