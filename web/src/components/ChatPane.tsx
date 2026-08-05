@@ -301,10 +301,12 @@ const MessageRow = memo(function MessageRow({
       );
     }
     return (
-      <div className="v1-cv group ml-auto max-w-[85%] rounded-2xl bg-border px-3.5 py-2 text-sm text-text">
-        <div className="whitespace-pre-wrap break-words">{item.content}</div>
+      <div className="v1-cv ml-auto flex max-w-[85%] flex-col items-end gap-1">
+        <div className="w-full rounded-2xl bg-border px-3.5 py-2 text-sm text-text">
+          <div className="whitespace-pre-wrap break-words">{item.content}</div>
+        </div>
         {persisted(item.key) && !streaming && (
-          <div className="mt-1 flex justify-end gap-1 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100">
+          <div className="flex gap-2 pr-1">
             <button
               type="button"
               onClick={() => onEditStart(item.key, true)}
