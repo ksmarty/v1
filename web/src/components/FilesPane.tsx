@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../api';
 import type { FileEntry } from '../types';
 import { errMsg, formatBytes } from '../utils';
@@ -127,6 +127,7 @@ export default function FilesPane({ projectId }: { projectId: string }) {
   const [fileError, setFileError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
+  const expandedRef = useRef<Set<string>>(new Set());
 
   const dirty = content !== savedContent;
 
@@ -144,14 +145,46 @@ export default function FilesPane({ projectId }: { projectId: string }) {
     void loadRoot();
   }, [loadRoot]);
 
+  // Re-fetch the root and every expanded directory in the background so newly
+  // written files appear without a manual refresh. Selected-file content is
+  // left untouched to avoid clobbering an in-progress edit.
+  const refreshTree = useCallback(async () => {
+    try {
+      const res = await api.listFiles(projectId, '');
+      let nodes = sortEntries(res.entries).map(toNode);
+      for (const path of Array.from(expandedRef.current)) {
+        try {
+          const r = await api.listFiles(projectId, path);
+          nodes = updateTree(nodes, path, (n) => ({
+            ...n,
+            children: sortEntries(r.entries).map(toNode),
+            expanded: true,
+          }));
+        } catch {
+          // the directory may have been removed — leave it collapsed
+        }
+      }
+      setRoot(nodes);
+    } catch {
+      // transient failure — keep the previous tree
+    }
+  }, [projectId]);
+
+  useEffect(() => {
+    const t = setInterval(() => void refreshTree(), 4000);
+    return () => clearInterval(t);
+  }, [refreshTree]);
+
   const toggleDir = async (node: TreeNode) => {
     if (node.expanded) {
+      expandedRef.current.delete(node.entry.path);
       setRoot((prev) =>
         prev ? updateTree(prev, node.entry.path, (n) => ({ ...n, expanded: false })) : prev,
       );
       return;
     }
     if (node.children !== null) {
+      expandedRef.current.add(node.entry.path);
       setRoot((prev) =>
         prev ? updateTree(prev, node.entry.path, (n) => ({ ...n, expanded: true })) : prev,
       );
@@ -162,6 +195,7 @@ export default function FilesPane({ projectId }: { projectId: string }) {
     );
     try {
       const res = await api.listFiles(projectId, node.entry.path);
+      expandedRef.current.add(node.entry.path);
       setRoot((prev) =>
         prev
           ? updateTree(prev, node.entry.path, (n) => ({
@@ -222,7 +256,7 @@ export default function FilesPane({ projectId }: { projectId: string }) {
         </span>
         <IconButton
           aria-label="Refresh file tree"
-          onClick={() => void loadRoot()}
+          onClick={() => void refreshTree()}
           className="h-7 w-7 md:h-7 md:w-7"
         >
           <IconRefresh className="h-3.5 w-3.5" />
