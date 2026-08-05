@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { SiVercel } from 'react-icons/si';
 import { api, type SettingsUpdate } from '../api';
@@ -184,6 +184,17 @@ export default function Settings() {
   const [page, setPage] = useState<NavId>(
     NAV.some((n) => n.id === initialPage) ? (initialPage as NavId) : 'llm',
   );
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const ddRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const onDoc = (e: MouseEvent) => {
+      if (ddRef.current && !ddRef.current.contains(e.target as Node)) setMobileOpen(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [mobileOpen]);
 
   const reloadSettings = () => {
     api
@@ -505,22 +516,50 @@ export default function Settings() {
       </header>
 
       <div className="flex min-h-0 flex-1 flex-col md:flex-row">
-        <nav className="border-b border-border p-2 md:hidden">
-          <div className="relative">
-            <select
-              value={page}
-              onChange={(e) => setPage(e.target.value as NavId)}
-              aria-label="Settings section"
-              className="w-full appearance-none rounded-lg border border-border bg-surface px-3 py-2 pr-8 text-sm text-text outline-none transition-colors focus:border-subtle"
+        <nav className="relative border-b border-border p-2 md:hidden" ref={ddRef}>
+          <button
+            type="button"
+            onClick={() => setMobileOpen((o) => !o)}
+            aria-haspopup="listbox"
+            aria-expanded={mobileOpen}
+            className="flex w-full items-center gap-2.5 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text transition-colors focus:border-subtle"
+          >
+            {NAV.find((n) => n.id === page)?.icon}
+            <span className="flex-1 text-left">{NAV.find((n) => n.id === page)?.label}</span>
+            <IconChevronDown
+              className={`h-4 w-4 shrink-0 text-dim transition-transform ${
+                mobileOpen ? 'rotate-180' : ''
+              }`}
+            />
+          </button>
+          {mobileOpen && (
+            <div
+              role="listbox"
+              className="absolute inset-x-2 top-full z-40 mt-1 max-h-[60vh] overflow-y-auto rounded-xl border border-border bg-bg p-1.5 shadow-2xl"
             >
               {NAV.map((n) => (
-                <option key={n.id} value={n.id}>
-                  {n.label}
-                </option>
+                <button
+                  key={n.id}
+                  type="button"
+                  role="option"
+                  aria-selected={page === n.id}
+                  onClick={() => {
+                    setPage(n.id);
+                    setMobileOpen(false);
+                  }}
+                  className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm transition-colors ${
+                    page === n.id
+                      ? 'bg-border text-text'
+                      : 'text-dim hover:bg-surface hover:text-text'
+                  }`}
+                >
+                  {n.icon}
+                  <span className="flex-1 text-left">{n.label}</span>
+                  {page === n.id && <IconCheck className="h-4 w-4 shrink-0 text-accent" />}
+                </button>
               ))}
-            </select>
-            <IconChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-dim" />
-          </div>
+            </div>
+          )}
         </nav>
         <nav className="hidden w-52 shrink-0 flex-col gap-1 border-r border-border p-3 md:flex">
           {NAV.map((n) => (
