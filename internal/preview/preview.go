@@ -117,6 +117,7 @@ type Manager struct {
 	mu      sync.Mutex
 	items   map[string]*Preview
 	startMu sync.Mutex
+	revs    map[string]int64
 }
 
 // NewManager creates a Manager allowing up to max concurrent previews.
@@ -124,7 +125,23 @@ func NewManager(max int) *Manager {
 	if max <= 0 {
 		max = 3
 	}
-	return &Manager{max: max, items: map[string]*Preview{}}
+	return &Manager{max: max, items: map[string]*Preview{}, revs: map[string]int64{}}
+}
+
+// TouchRevision bumps a project's file-revision counter. Every write to a
+// project's files (agent tools and the file API) calls this so the preview
+// pane can reload the iframe when the workspace changes.
+func (m *Manager) TouchRevision(projectID string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.revs[projectID]++
+}
+
+// Revision returns the current file-revision counter for a project.
+func (m *Manager) Revision(projectID string) int64 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.revs[projectID]
 }
 
 // Start starts (or returns the existing) preview for a project and returns

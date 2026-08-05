@@ -310,6 +310,7 @@ func (s *Server) handleWriteFile(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	s.previews.TouchRevision(p.ID)
 	_ = s.st.TouchProject(p.ID)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
@@ -341,6 +342,7 @@ func (s *Server) handleDeleteFile(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	s.previews.TouchRevision(p.ID)
 	_ = s.st.TouchProject(p.ID)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }

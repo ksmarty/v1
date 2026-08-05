@@ -27,12 +27,14 @@ export default function PreviewPane({
   const [error, setError] = useState<string | null>(null);
   const [logsOpen, setLogsOpen] = useState(false);
   const [iframeKey, setIframeKey] = useState(0);
+  const lastRevRef = useRef(0);
 
   const fetchStatus = useCallback(async () => {
     try {
       const s = await api.getPreviewStatus(projectId);
       setStatus(s);
       if (s.running) setStarting(false);
+      lastRevRef.current = s.revision;
       setError(null);
     } catch (e) {
       setError(errMsg(e));
@@ -59,6 +61,27 @@ export default function PreviewPane({
     }, 2000);
     return () => clearInterval(t);
   }, [starting, fetchStatus]);
+
+  // While running, poll status and auto-reload the iframe whenever the
+  // project's file revision changes (the agent wrote/edited files).
+  useEffect(() => {
+    if (!status?.running) return;
+    const t = setInterval(async () => {
+      let s: PreviewStatus | null = null;
+      try {
+        s = await api.getPreviewStatus(projectId);
+      } catch {
+        return; // transient — try again next tick
+      }
+      setStatus(s);
+      if (!s.running) return;
+      if (s.revision !== lastRevRef.current) {
+        lastRevRef.current = s.revision;
+        setIframeKey((k) => k + 1);
+      }
+    }, 2000);
+    return () => clearInterval(t);
+  }, [projectId, status?.running]);
 
   // External refresh request (e.g. the restart_preview tool finished ok).
   const firstRefresh = useRef(true);

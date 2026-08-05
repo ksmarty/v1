@@ -228,6 +228,7 @@ func (s *Server) streamChatTurn(w http.ResponseWriter, r *http.Request, p *store
 		OnTodos: func(t []store.Todo) {
 			emit(agent.ChatEvent{Type: "todos", Todos: t})
 		},
+		OnFileChange: func() { s.previews.TouchRevision(p.ID) },
 	}
 	turn, err := agent.RunChat(ctx, params)
 	if err != nil {
@@ -246,9 +247,10 @@ func (s *Server) handlePreviewStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	running, url, logs := s.previews.Status(p.ID)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"running": running,
-		"url":     url,
-		"logs":    logs,
+		"running":  running,
+		"url":      url,
+		"logs":     logs,
+		"revision": s.previews.Revision(p.ID),
 	})
 }
 

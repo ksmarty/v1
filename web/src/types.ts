@@ -133,6 +133,7 @@ export interface PreviewStatus {
   running: boolean;
   url: string;
   logs: string;
+  revision: number;
 }
 
 export interface GitHubRepo {
