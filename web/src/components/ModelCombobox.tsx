@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ProviderModel } from '../types';
 import { Input } from './ui';
+import { IconPaperclip } from './icons';
 
 export function ModelCombobox({
   models,
@@ -71,6 +72,14 @@ export function ModelCombobox({
               className="flex w-full min-h-[44px] items-baseline gap-2 px-3 py-2.5 text-left transition-colors hover:bg-surface md:min-h-0 md:py-2"
             >
               <span className="min-w-0 flex-1 truncate text-sm text-text">{m.name}</span>
+              {m.imageInput && (
+                <span
+                  title="Supports image uploads"
+                  className="shrink-0 self-center text-accent"
+                >
+                  <IconPaperclip className="h-3.5 w-3.5" />
+                </span>
+              )}
               <span className="shrink-0 font-mono text-xs text-faint">{m.id}</span>
             </button>
           ))}

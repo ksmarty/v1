@@ -77,6 +77,8 @@ export interface VercelUserInfo {
 export interface ProviderModel {
   id: string;
   name: string;
+  /** Model accepts image input (vision) per models.dev. */
+  imageInput?: boolean;
 }
 
 export interface Provider {

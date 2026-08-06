@@ -16,10 +16,12 @@ import (
 //go:embed providers.json
 var embeddedCatalog []byte
 
-// ProviderModel is one model entry of a provider.
+// ProviderModel is one model entry of a provider. ImageInput reports whether
+// the model accepts image input (vision) according to models.dev.
 type ProviderModel struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	ImageInput bool   `json:"imageInput,omitempty"`
 }
 
 // Provider is one LLM provider in the catalog.
@@ -158,8 +160,11 @@ type modelsDevDoc struct {
 	Env    []string `json:"env"`
 	Doc    string   `json:"doc"`
 	Models map[string]struct {
-		Name     string `json:"name"`
-		ToolCall bool   `json:"tool_call"`
+		Name       string `json:"name"`
+		ToolCall   bool   `json:"tool_call"`
+		Modalities struct {
+			Input []string `json:"input"`
+		} `json:"modalities"`
 	} `json:"models"`
 }
 
@@ -243,9 +248,29 @@ func modelSubset(fp modelsDevDoc) []ProviderModel {
 		if name == "" {
 			name = id
 		}
-		models = append(models, ProviderModel{ID: id, Name: name})
+		image := false
+		for _, in := range m.Modalities.Input {
+			if in == "image" {
+				image = true
+				break
+			}
+		}
+		models = append(models, ProviderModel{ID: id, Name: name, ImageInput: image})
 	}
 	return models
+}
+
+// CatalogHasVision reports whether any model in the catalog carries image-input
+// metadata — used to detect stale caches built before the field existed.
+func CatalogHasVision(c *Catalog) bool {
+	for _, p := range c.Providers {
+		for _, m := range p.Models {
+			if m.ImageInput {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // applyFresh overlays name/keyHint/doc/models from a models.dev entry onto a

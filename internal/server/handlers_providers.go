@@ -9,9 +9,18 @@ import (
 
 // handleListProviders serves the provider catalog: the settings-cached copy
 // when present, otherwise the embedded snapshot; runtime-added providers and
-// the custom entry are appended.
+// the custom entry are appended. Caches built before image-input metadata
+// existed are refreshed lazily so the model lists carry vision flags.
 func (s *Server) handleListProviders(w http.ResponseWriter, r *http.Request) {
 	cat := s.providerCatalog()
+	if cat == nil || !llm.CatalogHasVision(cat) {
+		if fresh, err := llm.RefreshCatalog(r.Context()); err == nil {
+			cat = fresh
+			if data, err := json.Marshal(fresh); err == nil {
+				_ = s.st.SetSetting(keyProvidersCache, string(data))
+			}
+		}
+	}
 	if cat == nil {
 		writeError(w, http.StatusInternalServerError, "provider catalog unavailable")
 		return
