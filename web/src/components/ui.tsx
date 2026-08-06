@@ -107,8 +107,8 @@ export function Dialog({
 
   if (!open) return null;
 
-  const pad = translucent ? 'p-6' : 'p-5';
-  const desktopPad = translucent ? 'sm:pt-6 sm:pb-6' : 'sm:pt-5 sm:pb-5';
+  const pad = translucent ? 'p-8' : 'p-5';
+  const desktopPad = translucent ? 'sm:pt-8 sm:pb-8' : 'sm:pt-5 sm:pb-5';
 
   return (
     <div
@@ -124,7 +124,7 @@ export function Dialog({
           translucent ? 'bg-bg/85 backdrop-blur-md' : 'bg-bg'
         } ${
           fullScreen
-            ? `h-dvh max-h-dvh rounded-t-none ${pad} pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] sm:h-auto sm:max-h-[85vh] ${desktopPad}`
+            ? `h-[calc(100dvh-1.5rem)] max-h-dvh rounded-2xl ${pad} pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] mx-3 mb-3 sm:mx-0 sm:mb-0 sm:h-auto sm:max-h-[85vh] ${desktopPad}`
             : `max-h-[85vh] rounded-t-2xl ${pad} pb-5`
         } ${wide ? 'sm:max-w-2xl' : 'sm:max-w-md'} ${
           fixedBody ? 'flex flex-col' : 'overflow-y-auto'
