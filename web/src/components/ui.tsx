@@ -116,7 +116,7 @@ export function Dialog({
       <div
         className={`w-full border border-border bg-bg shadow-2xl sm:rounded-xl ${
           fullScreen
-            ? 'h-dvh max-h-dvh rounded-t-none pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:h-auto sm:max-h-[85vh] sm:pb-5'
+            ? 'h-dvh max-h-dvh rounded-t-none pt-[max(1.25rem,env(safe-area-inset-top))] pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:h-auto sm:max-h-[85vh] sm:pt-5 sm:pb-5'
             : 'max-h-[85vh] rounded-t-2xl pb-5'
         } p-5 ${wide ? 'sm:max-w-2xl' : 'sm:max-w-md'} ${
           fixedBody ? 'flex flex-col' : 'overflow-y-auto'
