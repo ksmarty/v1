@@ -80,6 +80,7 @@ export function Dialog({
   fixedBody = false,
   align = 'center',
   fullScreen = false,
+  translucent = false,
 }: {
   open: boolean;
   onClose: () => void;
@@ -92,6 +93,8 @@ export function Dialog({
   align?: 'center' | 'top';
   /** Fill the viewport on mobile (bottom sheet becomes a full screen). */
   fullScreen?: boolean;
+  /** Semi-transparent, blurred panel with extra padding (tools dialog). */
+  translucent?: boolean;
 }) {
   useEffect(() => {
     if (!open) return;
@@ -104,6 +107,9 @@ export function Dialog({
 
   if (!open) return null;
 
+  const pad = translucent ? 'p-6' : 'p-5';
+  const desktopPad = translucent ? 'sm:pt-6 sm:pb-6' : 'sm:pt-5 sm:pb-5';
+
   return (
     <div
       className={`fixed inset-0 z-50 flex items-end justify-center bg-bg/70 sm:p-4 ${
@@ -114,11 +120,13 @@ export function Dialog({
       }}
     >
       <div
-        className={`w-full border border-border bg-bg shadow-2xl sm:rounded-xl ${
+        className={`w-full border border-border shadow-2xl sm:rounded-xl ${
+          translucent ? 'bg-bg/85 backdrop-blur-md' : 'bg-bg'
+        } ${
           fullScreen
-            ? 'h-dvh max-h-dvh rounded-t-none pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] sm:h-auto sm:max-h-[85vh] sm:pt-5 sm:pb-5'
-            : 'max-h-[85vh] rounded-t-2xl pb-5'
-        } p-5 ${wide ? 'sm:max-w-2xl' : 'sm:max-w-md'} ${
+            ? `h-dvh max-h-dvh rounded-t-none ${pad} pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] sm:h-auto sm:max-h-[85vh] ${desktopPad}`
+            : `max-h-[85vh] rounded-t-2xl ${pad} pb-5`
+        } ${wide ? 'sm:max-w-2xl' : 'sm:max-w-md'} ${
           fixedBody ? 'flex flex-col' : 'overflow-y-auto'
         }`}
       >

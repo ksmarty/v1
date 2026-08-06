@@ -1150,6 +1150,7 @@ export default function ChatPane({
         fixedBody
         align="top"
         fullScreen
+        translucent
       >
         <ToolSettings />
       </Dialog>
