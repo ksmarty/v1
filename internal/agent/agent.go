@@ -58,10 +58,11 @@ type ChatParams struct {
 	Client       *llm.Client
 	Exec         *Executor
 	Message      string
-	Model        string      // per-turn override; empty uses p.Client.Model
-	LastUserID   int64       // retry mode: >0 re-runs the existing user message
-	ExtraTools   []llm.Tool  // dynamically added tools (e.g. MCP), namespaced
-	SkillsPrompt string      // enabled skills' SKILL.md content for the system prompt
+	Attachments  []Attachment // files attached to this user turn
+	Model        string       // per-turn override; empty uses p.Client.Model
+	LastUserID   int64        // retry mode: >0 re-runs the existing user message
+	ExtraTools   []llm.Tool   // dynamically added tools (e.g. MCP), namespaced
+	SkillsPrompt string       // enabled skills' SKILL.md content for the system prompt
 	Emit         func(ChatEvent)
 }
 
@@ -80,7 +81,7 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 			return nil, err
 		}
 	} else {
-		if _, err := p.Store.AddMessage(p.Project.ID, "user", p.Message, "", p.Client.Model, "", ""); err != nil {
+		if _, err := p.Store.AddMessage(p.Project.ID, "user", p.Message, "", p.Client.Model, "", "", MarshalAttachments(p.Attachments)); err != nil {
 			return nil, err
 		}
 	}
@@ -101,7 +102,11 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 		}
 		switch m.Role {
 		case "user":
-			history = append(history, llm.Message{Role: "user", Content: m.Content})
+			if m.Attachments != "" {
+				history = append(history, userMessage(m.Content, ParseAttachments(m.Attachments)))
+			} else {
+				history = append(history, llm.Message{Role: "user", Content: m.Content})
+			}
 		case "assistant":
 			msg := llm.Message{Role: "assistant", Content: m.Content, ReasoningContent: m.Reasoning}
 			if m.ToolJSON != "" {
@@ -128,6 +133,7 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 	}
 
 	var usage *Usage
+	vision := hasImageParts(history)
 	for round := 0; round < maxRounds; round++ {
 		allTools := tools
 		if len(p.ExtraTools) > 0 {
@@ -136,6 +142,15 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 		res, err := p.Client.ChatStream(ctx, history, allTools,
 			func(d string) { p.Emit(ChatEvent{Type: "delta", Text: d}) },
 			func(d string) { p.Emit(ChatEvent{Type: "reasoning", Text: d}) })
+		// Models that don't support vision reject image parts; retry once with
+		// the images replaced by a text note.
+		if err != nil && round == 0 && vision {
+			history = stripImageParts(history)
+			vision = false
+			res, err = p.Client.ChatStream(ctx, history, allTools,
+				func(d string) { p.Emit(ChatEvent{Type: "delta", Text: d}) },
+				func(d string) { p.Emit(ChatEvent{Type: "reasoning", Text: d}) })
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -152,7 +167,7 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 				usageJSON = string(b)
 			}
 		}
-		if _, err := p.Store.AddMessage(p.Project.ID, "assistant", res.Text, toolJSON, p.Client.Model, res.Reasoning, usageJSON); err != nil {
+		if _, err := p.Store.AddMessage(p.Project.ID, "assistant", res.Text, toolJSON, p.Client.Model, res.Reasoning, usageJSON, ""); err != nil {
 			return nil, err
 		}
 		history = append(history, llm.Message{Role: "assistant", Content: res.Text, ReasoningContent: res.Reasoning, ToolCalls: res.ToolCalls})
@@ -173,7 +188,7 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 			}
 			p.Emit(ChatEvent{Type: "tool_end", Name: tc.Function.Name, OK: ok, Detail: summary})
 			tj, _ := json.Marshal(map[string]any{"tool_call_id": tc.ID, "name": tc.Function.Name})
-			if _, err := p.Store.AddMessage(p.Project.ID, "tool", result, string(tj), "", "", ""); err != nil {
+			if _, err := p.Store.AddMessage(p.Project.ID, "tool", result, string(tj), "", "", "", ""); err != nil {
 				return nil, err
 			}
 			history = append(history, llm.Message{

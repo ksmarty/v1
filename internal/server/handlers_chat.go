@@ -18,6 +18,45 @@ import (
 // can run long, so it is generous.
 const chatTimeout = 15 * time.Minute
 
+// Attachment size caps keep a single turn's request and stored message sane.
+const (
+	maxAttachmentsPerMsg = 6
+	maxImageAttachment   = 3 << 20 // base64 string (≈2.2 MB decoded)
+	maxTextAttachment    = 200 << 10
+	maxTotalAttachments  = 8 << 20
+)
+
+// validateAttachments returns an error message for invalid attachment lists,
+// or "" when the list is fine.
+func validateAttachments(atts []agent.Attachment) string {
+	if len(atts) > maxAttachmentsPerMsg {
+		return fmt.Sprintf("too many attachments (max %d)", maxAttachmentsPerMsg)
+	}
+	total := 0
+	for _, a := range atts {
+		if a.Name == "" {
+			return "attachment name is required"
+		}
+		switch a.Kind {
+		case "image":
+			if len(a.Content) > maxImageAttachment {
+				return fmt.Sprintf("image attachment %q is too large (max ~2 MB)", a.Name)
+			}
+		case "text":
+			if len(a.Content) > maxTextAttachment {
+				return fmt.Sprintf("text attachment %q is too large (max 200 KB)", a.Name)
+			}
+		default:
+			return fmt.Sprintf("unsupported attachment kind %q (use text or image)", a.Kind)
+		}
+		total += len(a.Content)
+	}
+	if total > maxTotalAttachments {
+		return "attachments are too large in total (max ~6 MB)"
+	}
+	return ""
+}
+
 // ---- messages ----
 
 func (s *Server) handleListMessages(w http.ResponseWriter, r *http.Request) {
@@ -35,15 +74,22 @@ func (s *Server) handleListMessages(w http.ResponseWriter, r *http.Request) {
 		Output int64  `json:"output"`
 		Model  string `json:"model"`
 	}
+	type attachmentMeta struct {
+		Name string `json:"name"`
+		MIME string `json:"mime"`
+		Kind string `json:"kind"`
+		Size int    `json:"size"`
+	}
 	type messageJSON struct {
-		ID        int64           `json:"id"`
-		Role      string          `json:"role"`
-		Content   string          `json:"content"`
-		Tool      json.RawMessage `json:"tool,omitempty"`
-		Model     string          `json:"model,omitempty"`
-		Reasoning string          `json:"reasoning,omitempty"`
-		Usage     *usageJSON      `json:"usage,omitempty"`
-		CreatedAt int64           `json:"createdAt"`
+		ID          int64            `json:"id"`
+		Role        string           `json:"role"`
+		Content     string           `json:"content"`
+		Tool        json.RawMessage  `json:"tool,omitempty"`
+		Model       string           `json:"model,omitempty"`
+		Reasoning   string           `json:"reasoning,omitempty"`
+		Usage       *usageJSON       `json:"usage,omitempty"`
+		Attachments []attachmentMeta `json:"attachments,omitempty"`
+		CreatedAt   int64            `json:"createdAt"`
 	}
 	out := []messageJSON{}
 	for _, m := range msgs {
@@ -55,6 +101,16 @@ func (s *Server) handleListMessages(w http.ResponseWriter, r *http.Request) {
 			var u usageJSON
 			if json.Unmarshal([]byte(m.Usage), &u) == nil {
 				mj.Usage = &u
+			}
+		}
+		if m.Attachments != "" {
+			var atts []agent.Attachment
+			if json.Unmarshal([]byte(m.Attachments), &atts) == nil {
+				meta := make([]attachmentMeta, 0, len(atts))
+				for _, a := range atts {
+					meta = append(meta, attachmentMeta{Name: a.Name, MIME: a.MIME, Kind: a.Kind, Size: len(a.Content)})
+				}
+				mj.Attachments = meta
 			}
 		}
 		out = append(out, mj)
@@ -84,16 +140,21 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Message       string `json:"message"`
-		Model         string `json:"model"`
-		ProviderID    string `json:"providerId"`
-		EditMessageID int64  `json:"editMessageId"`
+		Message       string             `json:"message"`
+		Model         string             `json:"model"`
+		ProviderID    string             `json:"providerId"`
+		EditMessageID int64              `json:"editMessageId"`
+		Attachments   []agent.Attachment `json:"attachments"`
 	}
 	if !decodeJSON(w, r, &body) {
 		return
 	}
 	if body.Message == "" {
 		writeError(w, http.StatusBadRequest, "message is required")
+		return
+	}
+	if msg := validateAttachments(body.Attachments); msg != "" {
+		writeError(w, http.StatusBadRequest, msg)
 		return
 	}
 
@@ -113,11 +174,12 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	params := agent.ChatParams{
-		Store:   s.st,
-		Project: p,
-		Client:  s.llmClientFor(body.ProviderID),
-		Message: body.Message,
-		Model:   body.Model,
+		Store:       s.st,
+		Project:     p,
+		Client:      s.llmClientFor(body.ProviderID),
+		Message:     body.Message,
+		Attachments: body.Attachments,
+		Model:       body.Model,
 	}
 	// Editing an existing user message rewinds the thread to it and re-runs
 	// from the edited text: update its content, then run with LastUserID set so
@@ -191,12 +253,13 @@ func (s *Server) handleChatRetry(w http.ResponseWriter, r *http.Request) {
 	// Re-run the last user turn with its stored model, falling back to the
 	// current client model when the stored message has none.
 	s.streamChatTurn(w, r, p, agent.ChatParams{
-		Store:      s.st,
-		Project:    p,
-		Client:     s.llmClient(),
-		Message:    last.Content,
-		Model:      last.Model,
-		LastUserID: last.ID,
+		Store:       s.st,
+		Project:     p,
+		Client:      s.llmClient(),
+		Message:     last.Content,
+		Attachments: agent.ParseAttachments(last.Attachments),
+		Model:       last.Model,
+		LastUserID:  last.ID,
 	})
 }
 

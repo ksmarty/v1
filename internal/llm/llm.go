@@ -15,10 +15,11 @@ import (
 	"time"
 )
 
-// Message is a chat message in the OpenAI schema.
+// Message is a chat message in the OpenAI schema. Content is either a plain
+// string or an array of content parts ({type:"text"} / {type:"image_url"}).
 type Message struct {
 	Role             string     `json:"role"`
-	Content          string     `json:"content,omitempty"`
+	Content          any        `json:"content,omitempty"`
 	ReasoningContent string     `json:"reasoning_content,omitempty"`
 	ToolCalls        []ToolCall `json:"tool_calls,omitempty"`
 	ToolCallID       string     `json:"tool_call_id,omitempty"`

@@ -158,6 +158,13 @@ export interface Todo {
   done: boolean;
 }
 
+export interface ChatAttachmentMeta {
+  name: string;
+  mime: string;
+  kind: 'text' | 'image';
+  size: number;
+}
+
 export interface ChatMessage {
   id: string;
   role: string;
@@ -166,6 +173,7 @@ export interface ChatMessage {
   reasoning?: string;
   usage?: ChatUsage;
   model?: string;
+  attachments?: ChatAttachmentMeta[];
   createdAt: string;
 }
 

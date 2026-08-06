@@ -8,8 +8,16 @@ import {
   type MouseEvent,
 } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api, retryChat, streamChat } from '../api';
-import type { ChatEvent, ChatUsage, Provider, ProviderModel, SavedProvider, Todo } from '../types';
+import { api, retryChat, streamChat, type ChatAttachmentInput } from '../api';
+import type {
+  ChatAttachmentMeta,
+  ChatEvent,
+  ChatUsage,
+  Provider,
+  ProviderModel,
+  SavedProvider,
+  Todo,
+} from '../types';
 import { errMsg } from '../utils';
 import { renderMarkdown } from '../markdown';
 import { Button, Dialog, ErrorBox, IconButton, Spinner } from './ui';
@@ -21,6 +29,7 @@ import {
   IconChevronDown,
   IconChevronRight,
   IconModel,
+  IconPaperclip,
   IconRefresh,
   IconSquare,
   IconWrench,
@@ -42,6 +51,7 @@ type MsgItem = {
   key: string;
   role: 'user' | 'assistant' | 'error';
   content: string;
+  attachments?: ChatAttachmentMeta[];
   reasoning?: string;
   usage?: ChatUsage;
   model?: string;
@@ -99,6 +109,50 @@ function formatUsage(usage: ChatUsage, msgModel?: string): string {
 /** True when a message key is a persisted row id (not a live/synthetic key). */
 function persisted(key: string): boolean {
   return Number.isFinite(Number(key));
+}
+
+const MAX_ATTACHMENTS = 6;
+const MAX_ATTACHMENT_BYTES = 2 << 20;
+
+// readAttachment classifies a picked file: images are read as base64 (sent to
+// vision-capable models), everything else is read as text (code, config, logs).
+function readAttachment(file: File): Promise<{ value: ChatAttachmentInput } | { error: string }> {
+  if (file.size > MAX_ATTACHMENT_BYTES) {
+    return Promise.resolve({ error: `${file.name} is too large (max 2 MB).` });
+  }
+  if (file.type.startsWith('image/')) {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const dataUrl = String(reader.result ?? '');
+        resolve({
+          value: {
+            name: file.name,
+            mime: file.type || 'image/png',
+            kind: 'image',
+            content: dataUrl.slice(dataUrl.indexOf(',') + 1),
+          },
+        });
+      };
+      reader.onerror = () => resolve({ error: `Could not read ${file.name}.` });
+      reader.readAsDataURL(file);
+    });
+  }
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const text = String(reader.result ?? '');
+      if (text.includes('\u0000')) {
+        resolve({ error: `${file.name} is a binary file — only images and text files can be attached.` });
+        return;
+      }
+      resolve({
+        value: { name: file.name, mime: file.type || 'text/plain', kind: 'text', content: text },
+      });
+    };
+    reader.onerror = () => resolve({ error: `Could not read ${file.name}.` });
+    reader.readAsText(file);
+  });
 }
 
 function ToolRow({ item }: { item: ToolItem }) {
@@ -304,6 +358,19 @@ const MessageRow = memo(function MessageRow({
       <div className="v1-cv ml-auto flex max-w-[85%] flex-col items-end gap-1">
         <div className="w-full rounded-2xl bg-border px-3.5 py-2 text-sm text-text">
           <div className="whitespace-pre-wrap break-words">{item.content}</div>
+          {item.attachments && item.attachments.length > 0 && (
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {item.attachments.map((a, i) => (
+                <span
+                  key={i}
+                  className="flex items-center gap-1 rounded-md bg-surface px-1.5 py-0.5 text-[10px] text-dim"
+                >
+                  <IconPaperclip className="h-3 w-3 shrink-0 text-faint" />
+                  <span className="max-w-[140px] truncate">{a.name}</span>
+                </span>
+              ))}
+            </div>
+          )}
         </div>
         {persisted(item.key) && !streaming && (
           <div className="flex gap-2 pr-1">
@@ -388,6 +455,8 @@ export default function ChatPane({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
+  const [attachments, setAttachments] = useState<ChatAttachmentInput[]>([]);
+  const [attachError, setAttachError] = useState<string | null>(null);
   const [model, setModel] = useState('');
   const [providerId, setProviderId] = useState(''); // '' = custom (no saved provider)
   const [providers, setProviders] = useState<SavedProvider[]>([]);
@@ -410,6 +479,7 @@ export default function ChatPane({
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
   const restartRef = useRef(onPreviewRestart);
   restartRef.current = onPreviewRestart;
 
@@ -552,7 +622,13 @@ export default function ChatPane({
           if (calls) item.toolCalls = calls;
           mapped.push(item);
         } else if (m.role === 'user') {
-          mapped.push({ kind: 'msg', key: m.id, role: 'user', content: m.content });
+          mapped.push({
+            kind: 'msg',
+            key: m.id,
+            role: 'user',
+            content: m.content,
+            attachments: m.attachments,
+          });
         } else {
           mapped.push({ kind: 'msg', key: m.id, role: 'error', content: m.content });
         }
@@ -783,16 +859,59 @@ export default function ChatPane({
       const trimmed = text.trim();
       if (!trimmed || streaming || !llmReady) return;
       setInput('');
+      const atts = attachments.length > 0 ? [...attachments] : undefined;
+      setAttachments([]);
+      setAttachError(null);
       update((prev) => [
         ...prev,
-        { kind: 'msg', key: `u${++counterRef.current}`, role: 'user', content: trimmed },
+        {
+          kind: 'msg',
+          key: `u${++counterRef.current}`,
+          role: 'user',
+          content: trimmed,
+          attachments: atts?.map((a) => ({
+            name: a.name,
+            mime: a.mime,
+            kind: a.kind,
+            size: a.content.length,
+          })),
+        },
       ]);
       void run((signal) =>
-        streamChat(projectId, trimmed, { model: modelOverride, providerId: providerOverride }, handleEvent, signal),
+        streamChat(
+          projectId,
+          trimmed,
+          { model: modelOverride, providerId: providerOverride, attachments: atts },
+          handleEvent,
+          signal,
+        ),
       );
     },
-    [streaming, llmReady, projectId, modelOverride, providerOverride, handleEvent, run, update],
+    [streaming, llmReady, projectId, modelOverride, providerOverride, handleEvent, run, update, attachments],
   );
+
+  const addFiles = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    setAttachError(null);
+    const results = await Promise.all(Array.from(files).map(readAttachment));
+    setAttachments((prev) => {
+      const next = [...prev];
+      let firstError: string | null = null;
+      for (const r of results) {
+        if ('error' in r) {
+          firstError ??= r.error;
+          continue;
+        }
+        if (next.length >= MAX_ATTACHMENTS) {
+          firstError ??= `Too many attachments (max ${MAX_ATTACHMENTS}).`;
+          break;
+        }
+        next.push(r.value);
+      }
+      if (firstError) setAttachError(firstError);
+      return next;
+    });
+  };
 
   const send = useCallback(() => sendText(input), [input, sendText]);
 
@@ -1069,11 +1188,34 @@ export default function ChatPane({
 
       {llmReady ? (
         <div className="shrink-0 border-t border-border p-2.5 md:p-3">
-          <div
-            className={`mx-auto flex max-w-2xl items-end gap-2 rounded-xl border border-border-strong bg-surface p-2 transition-colors focus-within:border-subtle ${
-              streaming ? 'v1-working' : ''
-            }`}
-          >
+          <div className="mx-auto flex max-w-2xl flex-col gap-2">
+            {(attachments.length > 0 || attachError) && (
+              <div className="flex flex-wrap items-center gap-1.5">
+                {attachments.map((a, i) => (
+                  <span
+                    key={i}
+                    className="flex items-center gap-1.5 rounded-md border border-border bg-surface px-2 py-1 text-xs text-dim"
+                  >
+                    <IconPaperclip className="h-3 w-3 shrink-0 text-faint" />
+                    <span className="max-w-[140px] truncate">{a.name}</span>
+                    <button
+                      type="button"
+                      aria-label={`Remove ${a.name}`}
+                      onClick={() => setAttachments((prev) => prev.filter((_, j) => j !== i))}
+                      className="text-faint transition-colors hover:text-text"
+                    >
+                      <IconX className="h-3 w-3" />
+                    </button>
+                  </span>
+                ))}
+                {attachError && <span className="text-xs text-red-400">{attachError}</span>}
+              </div>
+            )}
+            <div
+              className={`flex items-end gap-2 rounded-xl border border-border-strong bg-surface p-2 transition-colors focus-within:border-subtle ${
+                streaming ? 'v1-working' : ''
+              }`}
+            >
             <IconButton
               onClick={() => setToolsOpen(true)}
               aria-label="Tools, skills & permissions"
@@ -1082,6 +1224,24 @@ export default function ChatPane({
             >
               <IconWrench className="h-4 w-4" />
             </IconButton>
+            <IconButton
+              onClick={() => fileRef.current?.click()}
+              aria-label="Attach a file"
+              title="Attach a file (image or text)"
+              className="h-9 w-9 shrink-0 md:h-9 md:w-9"
+            >
+              <IconPaperclip className="h-4 w-4" />
+            </IconButton>
+            <input
+              ref={fileRef}
+              type="file"
+              multiple
+              className="hidden"
+              onChange={(e) => {
+                void addFiles(e.target.files);
+                e.target.value = '';
+              }}
+            />
             <textarea
               ref={taRef}
               rows={1}
@@ -1124,6 +1284,7 @@ export default function ChatPane({
                 <IconArrowUp className="h-4 w-4" />
               </IconButton>
             )}
+            </div>
           </div>
         </div>
       ) : (

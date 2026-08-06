@@ -95,6 +95,7 @@ func migrateMessages(db *sql.DB) error {
 		{"model", "ALTER TABLE messages ADD COLUMN model TEXT"},
 		{"reasoning", "ALTER TABLE messages ADD COLUMN reasoning TEXT"},
 		{"usage", "ALTER TABLE messages ADD COLUMN usage TEXT"},
+		{"attachments", "ALTER TABLE messages ADD COLUMN attachments TEXT"},
 	}
 	rows, err := db.Query(`PRAGMA table_info(messages)`)
 	if err != nil {
@@ -329,24 +330,27 @@ func (s *Store) SetProjectRepoURL(id, repoURL string) error {
 
 // ---- messages ----
 
-// Message is a row of the messages table.
+// Message is a row of the messages table. Attachments holds the JSON-encoded
+// attachment list of a user message (see agent.Attachment) — always empty for
+// assistant and tool rows.
 type Message struct {
-	ID        int64
-	ProjectID string
-	Role      string
-	Content   string
-	ToolJSON  string
-	Model     string
-	Reasoning string
-	Usage     string
-	CreatedAt int64
+	ID          int64
+	ProjectID   string
+	Role        string
+	Content     string
+	ToolJSON    string
+	Model       string
+	Reasoning   string
+	Usage       string
+	Attachments string
+	CreatedAt   int64
 }
 
 // AddMessage appends a message to a project's history.
-func (s *Store) AddMessage(projectID, role, content, toolJSON, model, reasoning, usage string) (int64, error) {
-	res, err := s.db.Exec(`INSERT INTO messages (project_id, role, content, tool_json, model, reasoning, usage, created_at)
-		VALUES (?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?)`,
-		projectID, role, content, toolJSON, model, reasoning, usage, now())
+func (s *Store) AddMessage(projectID, role, content, toolJSON, model, reasoning, usage, attachments string) (int64, error) {
+	res, err := s.db.Exec(`INSERT INTO messages (project_id, role, content, tool_json, model, reasoning, usage, attachments, created_at)
+		VALUES (?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?)`,
+		projectID, role, content, toolJSON, model, reasoning, usage, attachments, now())
 	if err != nil {
 		return 0, err
 	}
@@ -363,7 +367,7 @@ func (s *Store) DeleteMessagesAfter(projectID string, id int64) error {
 // GetMessage returns the message with the given id for a project, or
 // ErrNotFound when it does not exist.
 func (s *Store) GetMessage(projectID string, id int64) (*Message, error) {
-	m, err := scanMessage(s.db.QueryRow(`SELECT id, project_id, role, content, tool_json, model, reasoning, usage, created_at
+	m, err := scanMessage(s.db.QueryRow(`SELECT id, project_id, role, content, tool_json, model, reasoning, usage, attachments, created_at
 		FROM messages WHERE project_id = ? AND id = ?`, projectID, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
@@ -387,7 +391,7 @@ func (s *Store) UpdateMessageContent(projectID string, id int64, content string)
 // LastUserMessage returns the most recent user message of a project, or
 // ErrNotFound when the project has none.
 func (s *Store) LastUserMessage(projectID string) (*Message, error) {
-	m, err := scanMessage(s.db.QueryRow(`SELECT id, project_id, role, content, tool_json, model, reasoning, usage, created_at
+	m, err := scanMessage(s.db.QueryRow(`SELECT id, project_id, role, content, tool_json, model, reasoning, usage, attachments, created_at
 		FROM messages WHERE project_id = ? AND role = 'user' ORDER BY id DESC LIMIT 1`, projectID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
@@ -397,20 +401,21 @@ func (s *Store) LastUserMessage(projectID string) (*Message, error) {
 
 func scanMessage(row scanner) (*Message, error) {
 	var m Message
-	var toolJSON, model, reasoning, usage sql.NullString
-	if err := row.Scan(&m.ID, &m.ProjectID, &m.Role, &m.Content, &toolJSON, &model, &reasoning, &usage, &m.CreatedAt); err != nil {
+	var toolJSON, model, reasoning, usage, attachments sql.NullString
+	if err := row.Scan(&m.ID, &m.ProjectID, &m.Role, &m.Content, &toolJSON, &model, &reasoning, &usage, &attachments, &m.CreatedAt); err != nil {
 		return nil, err
 	}
 	m.ToolJSON = toolJSON.String
 	m.Model = model.String
 	m.Reasoning = reasoning.String
 	m.Usage = usage.String
+	m.Attachments = attachments.String
 	return &m, nil
 }
 
 // ListMessages returns a project's messages in insertion order.
 func (s *Store) ListMessages(projectID string) ([]*Message, error) {
-	rows, err := s.db.Query(`SELECT id, project_id, role, content, tool_json, model, reasoning, usage, created_at
+	rows, err := s.db.Query(`SELECT id, project_id, role, content, tool_json, model, reasoning, usage, attachments, created_at
 		FROM messages WHERE project_id = ? ORDER BY id ASC`, projectID)
 	if err != nil {
 		return nil, err

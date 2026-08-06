@@ -284,6 +284,14 @@ async function streamChatEvents(
   if (!gotDone) onEvent({ type: 'done' });
 }
 
+/** One file attached to a chat turn (sent to the backend for the LLM). */
+export interface ChatAttachmentInput {
+  name: string;
+  mime: string;
+  kind: 'text' | 'image';
+  content: string; // file text, or base64 data for images
+}
+
 /**
  * Streams a chat response as SSE over fetch. `message` is the user text;
  * `model` is an optional per-turn model override; `editMessageId`, when set,
@@ -293,16 +301,26 @@ async function streamChatEvents(
 export function streamChat(
   projectId: string,
   message: string,
-  opts: { model?: string; editMessageId?: number; providerId?: string } | undefined,
+  opts: {
+    model?: string;
+    editMessageId?: number;
+    providerId?: string;
+    attachments?: ChatAttachmentInput[];
+  } | undefined,
   onEvent: (ev: ChatEvent) => void,
   signal: AbortSignal,
 ): Promise<void> {
-  const body: { message: string; model?: string; editMessageId?: number; providerId?: string } = {
-    message,
-  };
+  const body: {
+    message: string;
+    model?: string;
+    editMessageId?: number;
+    providerId?: string;
+    attachments?: ChatAttachmentInput[];
+  } = { message };
   if (opts?.model && opts.model.trim() !== '') body.model = opts.model;
   if (opts?.editMessageId) body.editMessageId = opts.editMessageId;
   if (opts?.providerId) body.providerId = opts.providerId;
+  if (opts?.attachments && opts.attachments.length > 0) body.attachments = opts.attachments;
   return streamChatEvents(`/api/projects/${projectId}/chat`, body, onEvent, signal);
 }
 
