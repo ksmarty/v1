@@ -15,6 +15,7 @@ RUN --mount=type=cache,target=/root/.npm npm run build
 FROM --platform=$BUILDPLATFORM golang:1.23-alpine AS build
 ARG TARGETOS TARGETARCH
 ARG VERSION=dev
+ARG COMMIT=unknown
 WORKDIR /src
 
 COPY go.mod go.sum ./
@@ -28,7 +29,7 @@ COPY --from=web /app/web/dist ./internal/server/dist
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
-    go build -ldflags "-s -w -X main.version=${VERSION}" -o /out/v1 ./cmd/v1
+    go build -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${COMMIT}" -o /out/v1 ./cmd/v1
 
 # ---------- Stage 3: runtime ----------
 # The container runs generated user apps, so it needs node + npm + pnpm,

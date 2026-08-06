@@ -120,6 +120,7 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 		"skills":         s.installedSkills(),
 		"permissionMode": s.permissionMode(),
 		"version":        s.cfg.Version,
+		"commit":         s.cfg.Commit,
 	})
 }
 

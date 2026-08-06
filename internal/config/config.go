@@ -30,10 +30,11 @@ type Config struct {
 	OIDCAllowedEmails   []string
 	MaxPreviews         int
 	Version             string
+	Commit              string
 }
 
 // Load reads configuration from environment variables.
-func Load(version string) Config {
+func Load(version, commit string) Config {
 	c := Config{
 		Port:        8080,
 		DataDir:     "./data",
@@ -41,6 +42,7 @@ func Load(version string) Config {
 		Model:       "gpt-4o",
 		MaxPreviews: 3,
 		Version:     version,
+		Commit:      commit,
 	}
 	if v := os.Getenv("V1_PORT"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 && n < 65536 {

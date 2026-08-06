@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"syscall"
 	"time"
 
@@ -17,11 +18,32 @@ import (
 	"v1/internal/store"
 )
 
-// version is overridden at build time via -ldflags "-X main.version=...".
-var version = "dev"
+// version and commit are overridden at build time via -ldflags
+// "-X main.version=... -X main.commit=...".
+var (
+	version = "dev"
+	commit  = "dev"
+)
+
+// init falls back to the VCS revision stamped into the binary by the Go
+// toolchain (present when building from a git checkout), so plain `go build`
+// and `go run` still report a useful commit.
+func init() {
+	if commit != "dev" {
+		return
+	}
+	if bi, ok := debug.ReadBuildInfo(); ok {
+		for _, s := range bi.Settings {
+			if s.Key == "vcs.revision" && len(s.Value) >= 7 {
+				commit = s.Value[:7]
+				break
+			}
+		}
+	}
+}
 
 func main() {
-	cfg := config.Load(version)
+	cfg := config.Load(version, commit)
 
 	st, err := store.Open(cfg.DataDir)
 	if err != nil {
@@ -38,7 +60,7 @@ func main() {
 	defer stop()
 
 	go func() {
-		log.Printf("v1 %s listening on :%d (data dir: %s)", version, cfg.Port, cfg.DataDir)
+		log.Printf("v1 %s (%s) listening on :%d (data dir: %s)", version, commit, cfg.Port, cfg.DataDir)
 		if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("http server: %v", err)
 		}

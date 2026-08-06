@@ -976,10 +976,19 @@ export default function Settings() {
 
             <div className={page === 'about' ? '' : 'hidden'}>
               <Section title="About">
-          <p className="text-sm text-dim">
-            v1 <span className="font-mono text-subtle">{settings.version || 'dev'}</span>
-          </p>
-        </Section>
+                <div className="flex flex-col gap-1">
+                  <p className="text-sm text-dim">
+                    v1{' '}
+                    <span className="font-mono text-subtle">{settings.version || 'dev'}</span>
+                  </p>
+                  <p className="text-xs text-faint">
+                    commit{' '}
+                    <span className="font-mono text-subtle">
+                      {settings.commit ? settings.commit.slice(0, 7) : 'dev'}
+                    </span>
+                  </p>
+                </div>
+              </Section>
             </div>
           </div>
         </main>

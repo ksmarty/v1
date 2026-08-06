@@ -21,8 +21,8 @@ build:
 	cd web && npm ci && npm run build
 	mkdir -p internal/server/dist
 	cp -R web/dist/. internal/server/dist/
-	go build -o bin/v1 ./cmd/v1
+	go build -ldflags "-X main.version=$(VERSION) -X main.commit=$(shell git rev-parse --short HEAD)" -o bin/v1 ./cmd/v1
 
 # Local docker build (multi-arch + push is handled by the release workflow)
 docker:
-	docker build --build-arg VERSION=$(VERSION) -t v1:local .
+	docker build --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(shell git rev-parse --short HEAD) -t v1:local .

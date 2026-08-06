@@ -39,6 +39,7 @@ export interface Settings {
   skills: InstalledSkill[];
   permissionMode: PermissionMode;
   version: string;
+  commit: string;
 }
 
 export interface VercelSettings {
