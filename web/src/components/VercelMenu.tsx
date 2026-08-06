@@ -169,18 +169,18 @@ export default function VercelMenu({
           )}
 
           {data && !data.connected && !err && (
-            <div className="mb-2 flex flex-col items-center gap-2 rounded-lg border border-border p-3 text-center">
-              <p className="text-xs text-dim">
+            <div className="mb-2 flex flex-col gap-2.5 rounded-lg border border-border p-3">
+              <p className="text-xs leading-relaxed text-dim">
                 Connect your Vercel account in Settings to deploy this project.
               </p>
               <Button
                 variant="outline"
-                className="min-h-[30px] px-2.5 text-xs"
+                className="w-full"
                 onClick={() =>
                   navigate('/settings?page=vercel', { state: { from: `/project/${projectId}` } })
                 }
               >
-                Connect Vercel
+                Connect
               </Button>
             </div>
           )}

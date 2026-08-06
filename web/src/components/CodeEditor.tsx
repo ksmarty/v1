@@ -32,9 +32,10 @@ export default function CodeEditor({
 
   const html = useMemo(() => {
     const lang = path ? fileLanguage(path) : null;
-    if (!lang || !value) return escapeHtml(value);
+    if (!value) return escapeHtml(value);
     try {
-      return hljs.highlight(value, { language: lang }).value;
+      if (lang) return hljs.highlight(value, { language: lang }).value;
+      return hljs.highlightAuto(value).value;
     } catch {
       return escapeHtml(value);
     }

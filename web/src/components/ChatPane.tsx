@@ -589,7 +589,15 @@ export default function ChatPane({
   }, []);
   useEffect(() => {
     const el = scrollRef.current;
-    if (el && nearBottomRef.current) el.scrollTop = el.scrollHeight;
+    if (el && nearBottomRef.current) {
+      el.scrollTop = el.scrollHeight;
+      // content-visibility rows start with estimated heights, so scrollHeight
+      // can grow after first layout — re-pin on the next frame so the last
+      // message doesn't sit above a phantom gap.
+      requestAnimationFrame(() => {
+        if (el && nearBottomRef.current) el.scrollTop = el.scrollHeight;
+      });
+    }
   }, [items]);
 
   // Auto-grow the input textarea.
@@ -1141,6 +1149,7 @@ export default function ChatPane({
         wide
         fixedBody
         align="top"
+        fullScreen
       >
         <ToolSettings />
       </Dialog>

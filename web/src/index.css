@@ -226,6 +226,15 @@ body {
 .hljs-deletion {
   color: #ffdcd7;
 }
+.hljs-property {
+  color: #79c0ff;
+}
+.hljs-operator {
+  color: #ff7b72;
+}
+.hljs-char.escape_ {
+  color: #a5d6ff;
+}
 .hljs-meta {
   color: #79c0ff;
 }
@@ -285,6 +294,15 @@ body {
 }
 .v1-theme-light .hljs-deletion {
   color: #82071e;
+}
+.v1-theme-light .hljs-property {
+  color: #0550ae;
+}
+.v1-theme-light .hljs-operator {
+  color: #cf222e;
+}
+.v1-theme-light .hljs-char.escape_ {
+  color: #0a3069;
 }
 .v1-theme-light .hljs-meta {
   color: #0550ae;

@@ -48,35 +48,47 @@ import { Marked, Renderer, type Tokens } from 'marked';
 // Register the languages that actually show up in generated apps. highlight.js
 // core ships ~200 grammars; importing them one by one keeps the bundle small.
 // Svelte/Vue fall back to XML (script/style blocks still colorize) and TOML to
-// INI — close enough syntactically.
+// INI — close enough syntactically. Extra names are registered as aliases for
+// common fence tags and file extensions so model output highlights even when
+// it tags a block loosely (e.g. ```jsx or ```py).
 hljs.registerLanguage('bash', bash);
 hljs.registerLanguage('shell', bash);
 hljs.registerLanguage('c', c);
+hljs.registerLanguage('cjs', javascript);
+hljs.registerLanguage('clj', clojure);
 hljs.registerLanguage('clojure', clojure);
 hljs.registerLanguage('cpp', cpp);
+hljs.registerLanguage('cs', csharp);
 hljs.registerLanguage('csharp', csharp);
 hljs.registerLanguage('css', css);
 hljs.registerLanguage('dart', dart);
 hljs.registerLanguage('diff', diff);
 hljs.registerLanguage('dockerfile', dockerfile);
 hljs.registerLanguage('elixir', elixir);
+hljs.registerLanguage('erl', erlang);
 hljs.registerLanguage('erlang', erlang);
+hljs.registerLanguage('ex', elixir);
 hljs.registerLanguage('go', go);
 hljs.registerLanguage('gradle', gradle);
 hljs.registerLanguage('graphql', graphql);
 hljs.registerLanguage('haskell', haskell);
 hljs.registerLanguage('html', xml);
+hljs.registerLanguage('hs', haskell);
 hljs.registerLanguage('http', http);
 hljs.registerLanguage('ini', ini);
 hljs.registerLanguage('java', java);
 hljs.registerLanguage('javascript', javascript);
+hljs.registerLanguage('js', javascript);
 hljs.registerLanguage('json', json);
+hljs.registerLanguage('jsx', javascript);
 hljs.registerLanguage('kotlin', kotlin);
+hljs.registerLanguage('kt', kotlin);
 hljs.registerLanguage('less', less);
 hljs.registerLanguage('lua', lua);
 hljs.registerLanguage('makefile', makefile);
 hljs.registerLanguage('markdown', markdown);
 hljs.registerLanguage('md', markdown);
+hljs.registerLanguage('mjs', javascript);
 hljs.registerLanguage('nginx', nginx);
 hljs.registerLanguage('objectivec', objectivec);
 hljs.registerLanguage('perl', perl);
@@ -84,8 +96,11 @@ hljs.registerLanguage('php', php);
 hljs.registerLanguage('plaintext', plaintext);
 hljs.registerLanguage('powershell', powershell);
 hljs.registerLanguage('properties', properties);
+hljs.registerLanguage('py', python);
 hljs.registerLanguage('python', python);
 hljs.registerLanguage('r', r);
+hljs.registerLanguage('rb', ruby);
+hljs.registerLanguage('rs', rust);
 hljs.registerLanguage('ruby', ruby);
 hljs.registerLanguage('rust', rust);
 hljs.registerLanguage('scala', scala);
@@ -94,12 +109,16 @@ hljs.registerLanguage('sql', sql);
 hljs.registerLanguage('stylus', stylus);
 hljs.registerLanguage('svelte', xml);
 hljs.registerLanguage('swift', swift);
+hljs.registerLanguage('text', plaintext);
 hljs.registerLanguage('toml', ini);
+hljs.registerLanguage('ts', typescript);
 hljs.registerLanguage('tsx', typescript);
 hljs.registerLanguage('typescript', typescript);
+hljs.registerLanguage('txt', plaintext);
 hljs.registerLanguage('vue', xml);
 hljs.registerLanguage('xml', xml);
 hljs.registerLanguage('yaml', yaml);
+hljs.registerLanguage('yml', yaml);
 
 const EXT_LANGS: Record<string, string> = {
   bash: 'bash',
@@ -201,13 +220,16 @@ const renderer = new Renderer();
 renderer.code = ({ text, lang, escaped }: Tokens.Code): string => {
   let body = text;
   if (!escaped) {
-    if (lang && hljs.getLanguage(lang)) {
-      try {
+    const known = lang && hljs.getLanguage(lang);
+    try {
+      if (known) {
         body = hljs.highlight(text, { language: lang }).value;
-      } catch {
-        body = escapeHtml(text);
+      } else {
+        // No language tag (or an unknown one) — let highlight.js detect it so
+        // code blocks still get full token colors.
+        body = hljs.highlightAuto(text).value;
       }
-    } else {
+    } catch {
       body = escapeHtml(text);
     }
   }

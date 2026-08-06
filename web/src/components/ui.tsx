@@ -79,6 +79,7 @@ export function Dialog({
   wide = false,
   fixedBody = false,
   align = 'center',
+  fullScreen = false,
 }: {
   open: boolean;
   onClose: () => void;
@@ -89,6 +90,8 @@ export function Dialog({
   fixedBody?: boolean;
   /** Anchor the dialog at a fixed distance from the top instead of centering. */
   align?: 'center' | 'top';
+  /** Fill the viewport on mobile (bottom sheet becomes a full screen). */
+  fullScreen?: boolean;
 }) {
   useEffect(() => {
     if (!open) return;
@@ -111,9 +114,13 @@ export function Dialog({
       }}
     >
       <div
-        className={`max-h-[85vh] w-full rounded-t-2xl border border-border bg-bg p-5 shadow-2xl sm:rounded-xl ${
-          wide ? 'sm:max-w-2xl' : 'sm:max-w-md'
-        } ${fixedBody ? 'flex flex-col' : 'overflow-y-auto'}`}
+        className={`w-full border border-border bg-bg shadow-2xl sm:rounded-xl ${
+          fullScreen
+            ? 'h-dvh max-h-dvh rounded-t-none pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:h-auto sm:max-h-[85vh] sm:pb-5'
+            : 'max-h-[85vh] rounded-t-2xl pb-5'
+        } p-5 ${wide ? 'sm:max-w-2xl' : 'sm:max-w-md'} ${
+          fixedBody ? 'flex flex-col' : 'overflow-y-auto'
+        }`}
       >
         <div
           className={`mb-4 flex items-center justify-between gap-2 ${
