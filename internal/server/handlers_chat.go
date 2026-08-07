@@ -2,11 +2,13 @@ package server
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"v1/internal/agent"
@@ -116,6 +118,56 @@ func (s *Server) handleListMessages(w http.ResponseWriter, r *http.Request) {
 		out = append(out, mj)
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// handleMessageAttachment serves one stored attachment's raw content. Images
+// are decoded from base64 and served with their MIME type so the chat UI can
+// use the URL directly as an <img> source.
+func (s *Server) handleMessageAttachment(w http.ResponseWriter, r *http.Request) {
+	p := s.projectOr404(w, r)
+	if p == nil {
+		return
+	}
+	msgID, err := strconv.ParseInt(r.PathValue("msgId"), 10, 64)
+	if err != nil || msgID <= 0 {
+		writeError(w, http.StatusBadRequest, "invalid message id")
+		return
+	}
+	idx, err := strconv.Atoi(r.PathValue("idx"))
+	if err != nil || idx < 0 {
+		writeError(w, http.StatusBadRequest, "invalid attachment index")
+		return
+	}
+	m, err := s.st.GetMessage(p.ID, msgID)
+	if errors.Is(err, store.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "message not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	atts := agent.ParseAttachments(m.Attachments)
+	if idx >= len(atts) {
+		writeError(w, http.StatusNotFound, "attachment not found")
+		return
+	}
+	a := atts[idx]
+	w.Header().Set("Cache-Control", "private, max-age=3600")
+	if a.Kind == "image" {
+		data, err := base64.StdEncoding.DecodeString(a.Content)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "invalid image data")
+			return
+		}
+		w.Header().Set("Content-Type", a.MIME)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(data)
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(a.Content))
 }
 
 // handleGetTodos returns the project's agent-maintained todo list.

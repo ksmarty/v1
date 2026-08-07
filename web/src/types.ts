@@ -210,6 +210,7 @@ export interface InstalledSkill {
   author: string;
   description: string;
   githubUrl: string;
+  skillsmpUrl?: string;
   dir: string;
   enabled: boolean;
 }
@@ -220,6 +221,7 @@ export interface SkillSearchResult {
   author: string;
   description: string;
   githubUrl: string;
+  skillsmpUrl?: string;
   branch: string;
   sourcePath: string;
   owner: string;

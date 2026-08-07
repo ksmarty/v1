@@ -160,9 +160,17 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 			b, _ := json.Marshal(map[string]any{"tool_calls": res.ToolCalls})
 			toolJSON = string(b)
 		}
+		// Every LLM call in a turn bills its full prompt (the replayed history
+		// grows with each round), so the turn total is the sum across rounds —
+		// not the last round's numbers, which is what a naive overwrite gives.
 		usageJSON := ""
 		if res.Usage != nil {
-			usage = &Usage{Input: res.Usage.PromptTokens, Output: res.Usage.CompletionTokens, Model: p.Client.Model}
+			if usage == nil {
+				usage = &Usage{Model: p.Client.Model}
+			}
+			usage.Input += res.Usage.PromptTokens
+			usage.Output += res.Usage.CompletionTokens
+			usage.Model = p.Client.Model
 			if b, err := json.Marshal(usage); err == nil {
 				usageJSON = string(b)
 			}

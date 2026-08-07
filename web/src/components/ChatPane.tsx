@@ -8,11 +8,12 @@ import {
   type MouseEvent,
 } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api, retryChat, streamChat, type ChatAttachmentInput } from '../api';
+import { api, messageAttachmentUrl, retryChat, streamChat, type ChatAttachmentInput } from '../api';
 import type {
   ChatAttachmentMeta,
   ChatEvent,
   ChatUsage,
+  PermissionMode,
   Provider,
   ProviderModel,
   SavedProvider,
@@ -20,14 +21,16 @@ import type {
 } from '../types';
 import { errMsg } from '../utils';
 import { renderMarkdown } from '../markdown';
+import { permissionMeta } from '../permissions';
 import { Button, Dialog, ErrorBox, IconButton, Spinner } from './ui';
-import ToolSettings from './ToolSettings';
-import { ModelCombobox } from './ModelCombobox';
+import ToolSettings, { type ToolsTab } from './ToolSettings';
+import ModelPicker from './ModelPicker';
 import {
   IconArrowUp,
   IconCheck,
   IconChevronDown,
   IconChevronRight,
+  IconLock,
   IconModel,
   IconPaperclip,
   IconRefresh,
@@ -38,23 +41,17 @@ import {
 
 type ToolCall = { name: string; detail: string };
 
-const WORKING_PHRASES = [
-  'Thinking…',
-  'Writing code…',
-  'Checking files…',
-  'Running commands…',
-  'Polishing…',
-];
+// AttachmentView adds a display URL to the stored metadata: a data URL for
+// just-sent images, or the attachment endpoint URL for persisted ones.
+type AttachmentView = ChatAttachmentMeta & { url?: string };
 
 type MsgItem = {
   kind: 'msg';
   key: string;
   role: 'user' | 'assistant' | 'error';
   content: string;
-  attachments?: ChatAttachmentMeta[];
+  attachments?: AttachmentView[];
   reasoning?: string;
-  usage?: ChatUsage;
-  model?: string;
   toolCalls?: ToolCall[];
   toolResults?: ToolCall[];
   streaming?: boolean;
@@ -97,13 +94,6 @@ function parseToolName(tool: string): string {
   } catch {
     return 'tool';
   }
-}
-
-function formatUsage(usage: ChatUsage, msgModel?: string): string {
-  const parts = [`${usage.input.toLocaleString()} in · ${usage.output.toLocaleString()} out`];
-  const m = msgModel ?? usage.model;
-  if (m) parts.push(m);
-  return parts.join(' · ');
 }
 
 /** True when a message key is a persisted row id (not a live/synthetic key). */
@@ -278,6 +268,48 @@ function Markdown({ text, streaming }: { text: string; streaming?: boolean }) {
   return <div className="md" onClick={onCopy} dangerouslySetInnerHTML={{ __html: html }} />;
 }
 
+function ImageLightbox({
+  url,
+  name,
+  onClose,
+}: {
+  url: string;
+  name: string;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-bg/90 p-4 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <img
+        src={url}
+        alt={name}
+        className="max-h-full max-w-full rounded-lg object-contain shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      />
+      <button
+        type="button"
+        onClick={onClose}
+        aria-label="Close image preview"
+        className="absolute right-3 top-3 inline-flex h-10 w-10 items-center justify-center rounded-lg bg-surface/80 text-dim transition-colors hover:bg-border hover:text-text"
+      >
+        <IconX className="h-5 w-5" />
+      </button>
+      <span className="absolute inset-x-0 bottom-3 mx-auto max-w-[80vw] truncate text-center text-xs text-dim">
+        {name}
+      </span>
+    </div>
+  );
+}
+
 function EditUserBubble({
   initial,
   onSubmit,
@@ -334,6 +366,7 @@ const MessageRow = memo(function MessageRow({
   onRewind,
   onRegenerate,
   onEditStart,
+  onImageClick,
 }: {
   item: Item;
   isLast: boolean;
@@ -342,6 +375,7 @@ const MessageRow = memo(function MessageRow({
   onRewind: (key: string) => void;
   onRegenerate: () => void;
   onEditStart: (key: string, editing: boolean) => void;
+  onImageClick: (url: string, name: string) => void;
 }) {
   if (item.kind === 'tool') return <ToolRow item={item} />;
   if (item.role === 'user') {
@@ -359,16 +393,28 @@ const MessageRow = memo(function MessageRow({
         <div className="w-full rounded-2xl bg-border px-3.5 py-2 text-sm text-text">
           <div className="whitespace-pre-wrap break-words">{item.content}</div>
           {item.attachments && item.attachments.length > 0 && (
-            <div className="mt-1.5 flex flex-wrap gap-1.5">
-              {item.attachments.map((a, i) => (
-                <span
-                  key={i}
-                  className="flex items-center gap-1 rounded-md bg-surface px-1.5 py-0.5 text-[10px] text-dim"
-                >
-                  <IconPaperclip className="h-3 w-3 shrink-0 text-faint" />
-                  <span className="max-w-[140px] truncate">{a.name}</span>
-                </span>
-              ))}
+            <div className="mt-1.5 flex flex-wrap justify-end gap-1.5">
+              {item.attachments.map((a, i) =>
+                a.kind === 'image' && a.url ? (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => onImageClick(a.url as string, a.name)}
+                    title={`View ${a.name}`}
+                    className="overflow-hidden rounded-lg border border-border-strong/60 transition-opacity hover:opacity-80"
+                  >
+                    <img src={a.url} alt={a.name} loading="lazy" className="h-28 w-28 object-cover" />
+                  </button>
+                ) : (
+                  <span
+                    key={i}
+                    className="flex items-center gap-1 rounded-md bg-surface px-1.5 py-0.5 text-[10px] text-dim"
+                  >
+                    <IconPaperclip className="h-3 w-3 shrink-0 text-faint" />
+                    <span className="max-w-[140px] truncate">{a.name}</span>
+                  </span>
+                ),
+              )}
             </div>
           )}
         </div>
@@ -421,9 +467,6 @@ const MessageRow = memo(function MessageRow({
         </div>
       )}
       {item.toolResults && item.toolResults.map((tr, j) => <ToolResultBlock key={j} {...tr} />)}
-      {item.usage && (
-        <div className="text-[10px] text-faint">{formatUsage(item.usage, item.model)}</div>
-      )}
       {persisted(item.key) && !streaming && isLast && (
         <div className="flex gap-1">
           <button
@@ -464,7 +507,15 @@ export default function ChatPane({
   const [todos, setTodos] = useState<Todo[]>([]);
   const [todosOpen, setTodosOpen] = useState(true);
   const [toolsOpen, setToolsOpen] = useState(false);
-  const [workPhrase, setWorkPhrase] = useState(0);
+  const [toolsTab, setToolsTab] = useState<ToolsTab>('mcp');
+  const openTools = (tab: ToolsTab) => {
+    setToolsTab(tab);
+    setToolsOpen(true);
+  };
+  const [modelPickerOpen, setModelPickerOpen] = useState(false);
+  const [usageTotal, setUsageTotal] = useState<ChatUsage | null>(null);
+  const [lightbox, setLightbox] = useState<{ url: string; name: string } | null>(null);
+  const [permissionMode, setPermissionMode] = useState<PermissionMode>('ask');
   const [permPrompt, setPermPrompt] = useState<{
     requestId: string;
     tool: string;
@@ -482,6 +533,8 @@ export default function ChatPane({
   const fileRef = useRef<HTMLInputElement>(null);
   const restartRef = useRef(onPreviewRestart);
   restartRef.current = onPreviewRestart;
+
+  const openLightbox = useCallback((url: string, name: string) => setLightbox({ url, name }), []);
 
   const update = useCallback((fn: (prev: Item[]) => Item[]) => {
     itemsRef.current = fn(itemsRef.current);
@@ -507,6 +560,7 @@ export default function ChatPane({
         if (!active) return;
         const saved = s.llm.providers ?? [];
         setProviders(saved);
+        setPermissionMode(s.permissionMode ?? 'ask');
         const sel = persisted ?? { providerId: s.llm.activeProviderId ?? '', model: s.llm.model };
         // A persisted provider that was deleted falls back to the active one.
         if (sel.providerId === '' || saved.some((p) => p.id === sel.providerId)) {
@@ -561,6 +615,17 @@ export default function ChatPane({
   // the element stable while typing prevents focus loss.
   const showFreeText = providerId === '';
 
+  const selectedModelMeta = useMemo(
+    () => catalogModels.find((m) => m.id === model) ?? null,
+    [catalogModels, model],
+  );
+
+  // The attach button only makes sense for vision-capable models; for custom
+  // or uncatalogued ids the capability is unknown, so keep it visible.
+  const canAttach = showFreeText || selectedModelMeta === null || selectedModelMeta.imageInput === true;
+
+  const modelLabel = selectedModelMeta?.name || model || 'Select model';
+
   const persistSelection = useCallback(
     (pid: string, m: string) => {
       try {
@@ -586,6 +651,7 @@ export default function ChatPane({
 
   const modelOverride = model.trim() || undefined;
   const providerOverride = providerId || undefined;
+  const hasModel = modelOverride !== undefined;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -615,8 +681,6 @@ export default function ChatPane({
             role: 'assistant',
             content: m.content,
             reasoning: m.reasoning,
-            usage: m.usage,
-            model: m.model,
           };
           const calls = m.tool ? parseToolCalls(m.tool) : null;
           if (calls) item.toolCalls = calls;
@@ -627,7 +691,10 @@ export default function ChatPane({
             key: m.id,
             role: 'user',
             content: m.content,
-            attachments: m.attachments,
+            attachments: m.attachments?.map((a, i) => ({
+              ...a,
+              url: a.kind === 'image' ? messageAttachmentUrl(projectId, m.id, i) : undefined,
+            })),
           });
         } else {
           mapped.push({ kind: 'msg', key: m.id, role: 'error', content: m.content });
@@ -684,13 +751,6 @@ export default function ChatPane({
       el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
     }
   }, [input]);
-
-  // Cycle the "working" phrase while a generation is streaming.
-  useEffect(() => {
-    if (!streaming) return;
-    const t = setInterval(() => setWorkPhrase((i) => (i + 1) % WORKING_PHRASES.length), 2500);
-    return () => clearInterval(t);
-  }, [streaming]);
 
   const finish = useCallback(() => {
     setStreaming(false);
@@ -801,15 +861,12 @@ export default function ChatPane({
         }
         case 'done': {
           if (ev.usage) {
-            const k = assistantKeyRef.current;
-            if (k) {
-              const ck = k;
-              update((prev) =>
-                prev.map((it) =>
-                  it.kind === 'msg' && it.key === ck ? { ...it, usage: ev.usage } : it,
-                ),
-              );
-            }
+            const u = ev.usage;
+            setUsageTotal((prev) => ({
+              input: (prev?.input ?? 0) + u.input,
+              output: (prev?.output ?? 0) + u.output,
+              model: u.model || prev?.model,
+            }));
           }
           finish();
           break;
@@ -857,7 +914,7 @@ export default function ChatPane({
   const sendText = useCallback(
     (text: string) => {
       const trimmed = text.trim();
-      if (!trimmed || streaming || !llmReady) return;
+      if (!trimmed || streaming || !llmReady || !modelOverride) return;
       setInput('');
       const atts = attachments.length > 0 ? [...attachments] : undefined;
       setAttachments([]);
@@ -874,6 +931,7 @@ export default function ChatPane({
             mime: a.mime,
             kind: a.kind,
             size: a.content.length,
+            url: a.kind === 'image' ? `data:${a.mime};base64,${a.content}` : undefined,
           })),
         },
       ]);
@@ -959,7 +1017,6 @@ export default function ChatPane({
           content: trimmed,
           editing: false,
           stale: false,
-          usage: undefined,
           toolCalls: undefined,
           toolResults: undefined,
         };
@@ -1017,39 +1074,30 @@ export default function ChatPane({
     <div className="flex h-full min-h-0 flex-col">
       {llmReady && (
         <div className="shrink-0 border-b border-border px-3 py-1.5 md:px-4">
-          <div className="mx-auto flex max-w-2xl items-center gap-2">
-            <IconModel className="h-3.5 w-3.5 shrink-0 text-dim" />
-            <select
-              value={providerId}
-              onChange={(e) => changeProvider(e.target.value)}
-              aria-label="Provider"
-              className="max-w-[45%] shrink-0 rounded-md border border-border bg-surface px-2 py-1 font-mono text-xs text-text outline-none transition-colors focus:border-subtle"
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setModelPickerOpen(true)}
+              aria-label="Choose model"
+              title={`Model: ${modelLabel}`}
+              className="flex min-h-[36px] min-w-0 flex-1 items-center gap-2 rounded-md border border-border bg-surface px-2.5 py-1 text-left transition-colors focus:border-subtle"
             >
-              {providers.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-              <option value="">Custom</option>
-            </select>
-            {showFreeText ? (
-              <input
-                value={model}
-                onChange={(e) => changeModel(e.target.value)}
-                placeholder="model id"
-                spellCheck={false}
-                className="min-w-0 flex-1 rounded-md border border-border bg-surface px-2 py-1 font-mono text-xs text-text outline-none transition-colors placeholder:text-faint focus:border-subtle"
-              />
-            ) : (
-              <div className="min-w-0 flex-1">
-                <ModelCombobox
-                  models={catalogModels}
-                  value={model}
-                  onChange={changeModel}
-                  className="h-8! rounded-md! px-2! py-1! font-mono! text-xs!"
-                />
-              </div>
-            )}
+              <IconModel className="h-3.5 w-3.5 shrink-0 text-dim" />
+              <span className="min-w-0 flex-1 truncate font-mono text-xs text-text">
+                {modelLabel}
+              </span>
+              <IconChevronDown className="h-3.5 w-3.5 shrink-0 text-faint" />
+            </button>
+            <button
+              type="button"
+              onClick={() => openTools('perms')}
+              aria-label="Permission mode"
+              title={`${permissionMeta(permissionMode).title} — click to change`}
+              className={`flex min-h-[36px] shrink-0 items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors hover:text-text ${permissionMeta(permissionMode).badge}`}
+            >
+              <IconLock className="h-3.5 w-3.5 shrink-0" />
+              {permissionMeta(permissionMode).short}
+            </button>
             {streaming && (
               <span
                 className="flex shrink-0 items-center gap-1.5 rounded-full bg-border px-2 py-1 text-[11px] text-subtle"
@@ -1180,15 +1228,24 @@ export default function ChatPane({
                 onRewind={rewindTo}
                 onRegenerate={regenerate}
                 onEditStart={setItemEditing}
+                onImageClick={openLightbox}
               />
             ))}
+          </div>
+        )}
+        {!streaming && usageTotal && (
+          <div className="mx-auto mt-3 flex max-w-2xl justify-center">
+            <span className="text-[10px] text-faint">
+              {usageTotal.input.toLocaleString()} in · {usageTotal.output.toLocaleString()} out
+              {usageTotal.model ? ` · ${usageTotal.model}` : ''}
+            </span>
           </div>
         )}
       </div>
 
       {llmReady ? (
-        <div className="shrink-0 border-t border-border p-2.5 md:p-3">
-          <div className="mx-auto flex max-w-2xl flex-col gap-2">
+        <div className="shrink-0 border-t border-border p-2 md:p-3">
+          <div className="flex flex-col gap-2">
             {(attachments.length > 0 || attachError) && (
               <div className="flex flex-wrap items-center gap-1.5">
                 {attachments.map((a, i) => (
@@ -1212,26 +1269,29 @@ export default function ChatPane({
               </div>
             )}
             <div
-              className={`flex items-end gap-2 rounded-xl border border-border-strong bg-surface p-2 transition-colors focus-within:border-subtle ${
+              className={`flex min-w-0 items-end gap-1.5 overflow-hidden rounded-xl border border-border-strong bg-surface p-1.5 transition-colors focus-within:border-subtle md:gap-2 md:p-2 ${
                 streaming ? 'v1-working' : ''
               }`}
             >
             <IconButton
-              onClick={() => setToolsOpen(true)}
+              onClick={() => openTools('mcp')}
               aria-label="Tools, skills & permissions"
               title="Tools, skills & permissions"
-              className="h-9 w-9 shrink-0 md:h-9 md:w-9"
+              className="h-8! w-8! shrink-0 md:h-9! md:w-9!"
             >
               <IconWrench className="h-4 w-4" />
             </IconButton>
-            <IconButton
-              onClick={() => fileRef.current?.click()}
-              aria-label="Attach a file"
-              title="Attach a file (image or text)"
-              className="h-9 w-9 shrink-0 md:h-9 md:w-9"
-            >
-              <IconPaperclip className="h-4 w-4" />
-            </IconButton>
+            {canAttach && (
+              <IconButton
+                onClick={() => fileRef.current?.click()}
+                disabled={!hasModel}
+                aria-label="Attach a file"
+                title={hasModel ? 'Attach a file (image or text)' : 'Select a model first'}
+                className="h-8! w-8! shrink-0 md:h-9! md:w-9!"
+              >
+                <IconPaperclip className="h-4 w-4" />
+              </IconButton>
+            )}
             <input
               ref={fileRef}
               type="file"
@@ -1254,32 +1314,23 @@ export default function ChatPane({
                   void send();
                 }
               }}
-              className="max-h-40 min-h-[36px] flex-1 resize-none bg-transparent px-1.5 py-1.5 text-sm text-text outline-none placeholder:text-faint"
+              className="max-h-40 min-h-[32px] min-w-0 flex-1 resize-none bg-transparent px-1.5 py-1 text-base text-text outline-none placeholder:text-faint sm:text-sm md:min-h-[36px] md:py-1.5"
             />
-            {streaming && (
-              <span className="flex shrink-0 items-center gap-1.5 pr-1 text-xs text-dim">
-                {WORKING_PHRASES[workPhrase]}
-                <span className="flex items-center gap-0.5 text-accent">
-                  <span className="v1-dot" />
-                  <span className="v1-dot" />
-                  <span className="v1-dot" />
-                </span>
-              </span>
-            )}
             {streaming ? (
               <IconButton
                 onClick={stop}
                 aria-label="Stop generating"
-                className="h-9 w-9 shrink-0 md:h-9 md:w-9"
+                className="h-8! w-8! shrink-0 md:h-9! md:w-9!"
               >
                 <IconSquare className="h-4 w-4" />
               </IconButton>
             ) : (
               <IconButton
                 onClick={() => void send()}
-                disabled={!input.trim()}
+                disabled={!input.trim() || !hasModel}
                 aria-label="Send message"
-                className="h-9 w-9 shrink-0 bg-primary text-primary-text hover:opacity-90 hover:text-primary-text disabled:bg-border disabled:text-faint md:h-9 md:w-9"
+                title={hasModel ? 'Send message' : 'Select a model first'}
+                className="h-8! w-8! shrink-0 bg-primary text-primary-text hover:opacity-90 hover:text-primary-text disabled:bg-border disabled:text-faint md:h-9! md:w-9!"
               >
                 <IconArrowUp className="h-4 w-4" />
               </IconButton>
@@ -1313,8 +1364,29 @@ export default function ChatPane({
         fullScreen
         translucent
       >
-        <ToolSettings />
+        <ToolSettings
+          initialTab={toolsTab}
+          onPermissionSaved={(m) => {
+            setPermissionMode(m);
+            setToolsOpen(false);
+          }}
+        />
       </Dialog>
+
+      <ModelPicker
+        open={modelPickerOpen}
+        onClose={() => setModelPickerOpen(false)}
+        providers={providers}
+        providerId={providerId}
+        model={model}
+        models={catalogModels}
+        onProviderChange={changeProvider}
+        onModelChange={changeModel}
+      />
+
+      {lightbox && (
+        <ImageLightbox url={lightbox.url} name={lightbox.name} onClose={() => setLightbox(null)} />
+      )}
     </div>
   );
 }

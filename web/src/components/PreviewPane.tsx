@@ -13,12 +13,15 @@ import {
   IconSquare,
 } from './icons';
 
-const BREAKPOINTS: { label: string; width: string }[] = [
-  { label: 'Full', width: '' },
-  { label: 'Desktop', width: '1280px' },
-  { label: 'Laptop', width: '1024px' },
-  { label: 'Tablet', width: '768px' },
-  { label: 'Mobile', width: '390px' },
+// Device presets render the iframe at exact device dimensions so media
+// queries and layout match the real thing; the stage scales the frame down
+// when the pane is smaller than the device.
+const DEVICES: { label: string; w: number; h: number }[] = [
+  { label: 'Full', w: 0, h: 0 },
+  { label: 'Desktop', w: 1280, h: 800 },
+  { label: 'Laptop', w: 1024, h: 640 },
+  { label: 'Tablet', w: 768, h: 1024 },
+  { label: 'Mobile', w: 390, h: 844 },
 ];
 
 export default function PreviewPane({
@@ -35,9 +38,13 @@ export default function PreviewPane({
   const [error, setError] = useState<string | null>(null);
   const [logsOpen, setLogsOpen] = useState(false);
   const [iframeKey, setIframeKey] = useState(0);
-  const [bp, setBp] = useState('');
+  const [deviceIdx, setDeviceIdx] = useState(0);
+  const [scale, setScale] = useState(1);
   const lastRevRef = useRef(0);
   const frameRef = useRef<HTMLIFrameElement>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
+
+  const device = DEVICES[deviceIdx] ?? DEVICES[0];
 
   const previewUrl = `/preview/${projectId}/`;
   const [barUrl, setBarUrl] = useState(previewUrl);
@@ -166,6 +173,26 @@ export default function PreviewPane({
 
   const running = status?.running ?? false;
 
+  // Fit the device frame into the stage: scale down (never up) when the pane
+  // is smaller than the device, so the preview keeps true device pixels.
+  useEffect(() => {
+    const el = stageRef.current;
+    if (!el || device.w === 0) {
+      setScale(1);
+      return;
+    }
+    const fit = () => {
+      // 32 = stage padding (p-4), rest = the dimension label row below.
+      setScale(
+        Math.min(1, (el.clientWidth - 32) / device.w, (el.clientHeight - 56) / device.h),
+      );
+    };
+    fit();
+    const ro = new ResizeObserver(fit);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [device, running]);
+
   const frame = (className: string) => (
     <iframe
       key={iframeKey}
@@ -211,15 +238,15 @@ export default function PreviewPane({
         </span>
         <div className="flex-1" />
         <select
-          value={bp}
-          onChange={(e) => setBp(e.target.value)}
-          aria-label="Preview width"
-          title="Preview width"
+          value={deviceIdx}
+          onChange={(e) => setDeviceIdx(Number(e.target.value))}
+          aria-label="Preview device size"
+          title="Preview device size"
           className="shrink-0 rounded-md border border-border bg-surface px-2 py-1 text-xs text-subtle outline-none transition-colors focus:border-subtle"
         >
-          {BREAKPOINTS.map((b) => (
-            <option key={b.label} value={b.width}>
-              {b.label}
+          {DEVICES.map((d, i) => (
+            <option key={d.label} value={i}>
+              {d.w ? `${d.label} ${d.w}×${d.h}` : d.label}
             </option>
           ))}
         </select>
@@ -290,11 +317,26 @@ export default function PreviewPane({
             <Spinner className="h-5 w-5" />
           </div>
         ) : running ? (
-          bp ? (
-            <div className="flex h-full min-h-0 justify-center overflow-auto bg-border/40">
-              <div className="h-full shrink-0 border-x border-border bg-bg" style={{ width: bp }}>
-                {frame('h-full w-full border-0')}
+          device.w > 0 ? (
+            <div
+              ref={stageRef}
+              className="flex h-full min-h-0 flex-col items-center justify-center gap-2 overflow-hidden bg-border/40 p-4"
+            >
+              <div
+                className="shrink-0"
+                style={{ width: device.w * scale, height: device.h * scale }}
+              >
+                <div
+                  className="origin-top-left overflow-hidden rounded-xl border border-border-strong bg-bg shadow-2xl"
+                  style={{ width: device.w, height: device.h, transform: `scale(${scale})` }}
+                >
+                  {frame('h-full w-full border-0')}
+                </div>
               </div>
+              <span className="shrink-0 text-[11px] text-faint">
+                {device.label} · {device.w}×{device.h}
+                {scale < 1 && ` · scaled to ${Math.round(scale * 100)}%`}
+              </span>
             </div>
           ) : (
             frame('h-full w-full border-0 bg-bg')

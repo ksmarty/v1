@@ -57,7 +57,7 @@ export function IconButton({
 }
 
 const fieldClasses =
-  'w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text outline-none transition-colors placeholder:text-faint focus:border-subtle';
+  'w-full min-w-0 rounded-lg border border-border bg-surface px-3 py-2 text-base text-text outline-none transition-colors placeholder:text-faint focus:border-subtle sm:text-sm';
 
 export function Input({ className = '', ...props }: InputHTMLAttributes<HTMLInputElement>) {
   return <input {...props} className={`${fieldClasses} ${className}`} />;
@@ -107,13 +107,18 @@ export function Dialog({
 
   if (!open) return null;
 
-  const pad = translucent ? 'p-8' : 'p-5';
-  const desktopPad = translucent ? 'sm:pt-8 sm:pb-8' : 'sm:pt-5 sm:pb-5';
+  // Translucent (tools dialog) and fullscreen mobile panels use max() so the
+  // fixed padding is a minimum that the device safe-area can only extend,
+  // never override (a plain pt-16/pb-3 would lose to the later env() rule).
+  const pad = translucent
+    ? 'px-3 pt-[max(3.5rem,env(safe-area-inset-top))] pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-4'
+    : 'px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))]';
+  const desktopPad = translucent ? 'sm:px-6 sm:pb-8 sm:pt-6' : 'sm:px-5 sm:pt-5 sm:pb-5';
 
   return (
     <div
       className={`fixed inset-0 z-50 flex items-end justify-center bg-bg/70 sm:p-4 ${
-        align === 'top' ? 'sm:items-start sm:pt-[12vh]' : 'sm:items-center'
+        align === 'top' ? 'sm:items-start sm:pt-8' : 'sm:items-center'
       }`}
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
@@ -124,15 +129,15 @@ export function Dialog({
           translucent ? 'bg-bg/85 backdrop-blur-md' : 'bg-bg'
         } ${
           fullScreen
-            ? `h-[calc(100dvh-1.5rem)] max-h-dvh rounded-2xl ${pad} pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] mx-3 mb-3 sm:mx-0 sm:mb-0 sm:h-auto sm:max-h-[85vh] ${desktopPad}`
+            ? `h-[calc(100dvh-1.5rem)] max-h-dvh rounded-2xl ${pad} mx-3 mb-3 sm:mx-0 sm:mb-0 sm:h-auto sm:max-h-[85vh] ${desktopPad}`
             : `max-h-[85vh] rounded-t-2xl ${pad} pb-5`
         } ${wide ? 'sm:max-w-2xl' : 'sm:max-w-md'} ${
-          fixedBody ? 'flex flex-col' : 'overflow-y-auto'
+          fixedBody ? 'flex min-h-0 flex-col' : 'overflow-y-auto'
         }`}
       >
         <div
           className={`mb-4 flex items-center justify-between gap-2 ${
-            fixedBody ? 'shrink-0' : ''
+            fixedBody ? 'shrink-0 pb-1' : ''
           }`}
         >
           <h2 className="text-base font-semibold text-text">{title}</h2>

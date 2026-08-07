@@ -292,6 +292,11 @@ export interface ChatAttachmentInput {
   content: string; // file text, or base64 data for images
 }
 
+/** URL serving one stored message attachment (images usable as <img> src). */
+export function messageAttachmentUrl(projectId: string, messageId: string, idx: number): string {
+  return `/api/projects/${projectId}/messages/${messageId}/attachments/${idx}`;
+}
+
 /**
  * Streams a chat response as SSE over fetch. `message` is the user text;
  * `model` is an optional per-turn model override; `editMessageId`, when set,

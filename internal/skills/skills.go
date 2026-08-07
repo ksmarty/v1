@@ -27,6 +27,7 @@ type Skill struct {
 	Author      string `json:"author"`
 	Description string `json:"description"`
 	GitHubURL   string `json:"githubUrl"`
+	SkillsMPURL string `json:"skillsmpUrl"`
 	Branch      string `json:"branch"`
 	SourcePath  string `json:"sourcePath"`
 	Owner       string `json:"owner"`
@@ -65,6 +66,7 @@ func Search(ctx context.Context, q string, limit int) ([]Skill, error) {
 			Route       struct {
 				OwnerSlug        string `json:"ownerSlug"`
 				RepoSlug         string `json:"repoSlug"`
+				RouteSlug        string `json:"routeSlug"`
 				SourceSkillPath  string `json:"sourceSkillPath"`
 			} `json:"route"`
 		} `json:"skills"`
@@ -87,6 +89,10 @@ func Search(ctx context.Context, q string, limit int) ([]Skill, error) {
 		}
 		if sk.Branch == "" {
 			sk.Branch = "main"
+		}
+		// Link to the skill's page on SkillsMP, not its GitHub repo.
+		if s.Route.OwnerSlug != "" && s.Route.RepoSlug != "" && s.Route.RouteSlug != "" {
+			sk.SkillsMPURL = fmt.Sprintf("%s/creators/%s/%s/%s", apiBase, s.Route.OwnerSlug, s.Route.RepoSlug, s.Route.RouteSlug)
 		}
 		// Fall back to parsing the GitHub URL when route metadata is missing.
 		if sk.Owner == "" || sk.Repo == "" {

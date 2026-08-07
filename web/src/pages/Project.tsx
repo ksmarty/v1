@@ -80,7 +80,7 @@ export default function Project() {
   );
 
   return (
-    <div className="v1-safe-top flex h-dvh flex-col overflow-hidden">
+    <div className="v1-safe-top flex h-[var(--v1-app-height,100dvh)] flex-col overflow-hidden">
       {isDesktop ? (
         chatCollapsed ? (
           <div className="flex min-h-0 flex-1">
@@ -117,15 +117,18 @@ export default function Project() {
         )
       ) : (
         <>
-          <div className="min-h-0 flex-1 pb-[calc(3.5rem+env(safe-area-inset-bottom))]">
-            <div className={mobilePane === 'chat' ? 'h-full min-h-0' : 'hidden'}>
+          {/* The bottom nav is in-flow (not fixed): with the shell pinned to
+              the JS-measured viewport height, the bar can't float above the
+              screen edge in iOS standalone mode. */}
+          <div className="min-h-0 flex-1 overflow-hidden">
+            <div className={mobilePane === 'chat' ? 'h-full min-h-0 min-w-0' : 'hidden'}>
               {chatSidePanel}
             </div>
-            <div className={mobilePane === 'preview' ? 'h-full min-h-0' : 'hidden'}>
+            <div className={mobilePane === 'preview' ? 'h-full min-h-0 min-w-0' : 'hidden'}>
               {previewPanel}
             </div>
           </div>
-          <nav className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-2 border-t border-border bg-bg/95 pb-[env(safe-area-inset-bottom)] backdrop-blur">
+          <nav className="grid shrink-0 grid-cols-2 border-t border-border bg-bg pb-[env(safe-area-inset-bottom)]">
             {[
               { id: 'chat' as const, label: 'Chat', icon: <IconChat className="h-5 w-5" /> },
               { id: 'preview' as const, label: 'Preview', icon: <IconMonitor className="h-5 w-5" /> },

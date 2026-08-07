@@ -7,7 +7,8 @@ import type {
   PermissionMode,
   SkillSearchResult,
 } from '../types';
-import { errMsg } from '../utils';
+import { errMsg, randomId } from '../utils';
+import { PERMISSION_MODES } from '../permissions';
 import { Button, Field, Input, SaveRow, Section, Spinner } from './ui';
 import { IconCheck, IconExternalLink, IconX } from './icons';
 
@@ -17,24 +18,7 @@ const TABS = [
   { id: 'perms', label: 'Permissions' },
 ] as const;
 type Tab = (typeof TABS)[number]['id'];
-
-const MODES: { id: PermissionMode; name: string; desc: string }[] = [
-  {
-    id: 'ask',
-    name: 'Ask for approvals',
-    desc: 'Pause and prompt you before the agent runs tools. You approve or deny each call in the chat.',
-  },
-  {
-    id: 'auto',
-    name: "Don't ask for approvals",
-    desc: 'Auto-approve every tool call. The agent runs commands and edits files without prompting.',
-  },
-  {
-    id: 'yolo',
-    name: 'Yolo mode',
-    desc: 'Full autonomy, no prompts, no checks. The agent can do anything it has access to — use at your own risk.',
-  },
-];
+export type ToolsTab = Tab;
 
 function ViewOnSkillsMP({ href, name }: { href: string; name: string }) {
   return (
@@ -51,14 +35,30 @@ function ViewOnSkillsMP({ href, name }: { href: string; name: string }) {
   );
 }
 
+// SkillsMP page URL for a skill, falling back to its GitHub repo when the
+// marketplace route is missing (e.g. skills installed before the URL existed).
+function skillsmpHref(sk: { skillsmpUrl?: string; githubUrl: string }): string {
+  return sk.skillsmpUrl || sk.githubUrl;
+}
+
 /**
  * MCP servers, installed skills, and the tool approval mode. Shared by the
  * Settings page (variant="stacked", all sections shown as cards) and the
  * chat's quick-access tools dialog (variant="tabs", one section at a time
  * under a fixed tab bar).
  */
-function ToolSettings({ variant = 'tabs' }: { variant?: 'tabs' | 'stacked' }) {
-  const [tab, setTab] = useState<Tab>('mcp');
+function ToolSettings({
+  variant = 'tabs',
+  initialTab = 'mcp',
+  onPermissionSaved,
+}: {
+  variant?: 'tabs' | 'stacked';
+  /** Tab to show when the dialog opens (used for deep links). */
+  initialTab?: ToolsTab;
+  /** Called with the saved mode after a successful permission save. */
+  onPermissionSaved?: (mode: PermissionMode) => void;
+}) {
+  const [tab, setTab] = useState<ToolsTab>(initialTab);
 
   // MCP servers
   const [servers, setServers] = useState<MCPServer[]>([]);
@@ -106,10 +106,14 @@ function ToolSettings({ variant = 'tabs' }: { variant?: 'tabs' | 'stacked' }) {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    if (variant === 'tabs') setTab(initialTab);
+  }, [initialTab, variant]);
+
   const parseMCP = (): MCPServer => {
     const parts = mcpCommand.trim().split(/\s+/).filter(Boolean);
     return {
-      id: crypto.randomUUID(),
+      id: randomId(),
       name: mcpName.trim() || parts[0] || 'server',
       command: parts[0] ?? '',
       args: parts.slice(1),
@@ -223,6 +227,7 @@ function ToolSettings({ variant = 'tabs' }: { variant?: 'tabs' | 'stacked' }) {
     try {
       await api.updateSettings({ permissionMode });
       setPermSaved(true);
+      onPermissionSaved?.(permissionMode);
     } catch (err) {
       setPermError(errMsg(err));
     } finally {
@@ -231,57 +236,8 @@ function ToolSettings({ variant = 'tabs' }: { variant?: 'tabs' | 'stacked' }) {
   };
 
   const mcpSection = (
-    <div className="flex flex-col gap-3">
-      {servers.length > 0 && (
-        <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          {servers.map((srv) => {
-            const st = status[srv.id];
-            return (
-              <li key={srv.id} className="flex flex-col gap-1.5 rounded-xl border border-border p-3">
-                <div className="flex items-center gap-2">
-                  <span
-                    className={`h-2 w-2 shrink-0 rounded-full ${
-                      st?.connected ? 'bg-emerald-500' : 'bg-border'
-                    }`}
-                    title={
-                      st?.connected
-                        ? `Connected — ${st.toolCount} tools`
-                        : 'Not connected (connects on the next chat)'
-                    }
-                  />
-                  <span className="min-w-0 flex-1 truncate text-sm font-medium text-text">
-                    {srv.name}
-                  </span>
-                  {st?.connected && (
-                    <span className="shrink-0 rounded-full bg-emerald-950 px-1.5 py-0.5 text-[10px] text-emerald-400">
-                      {st.toolCount} tools
-                    </span>
-                  )}
-                  <button
-                    type="button"
-                    aria-label={`Remove MCP server ${srv.name}`}
-                    title="Remove server"
-                    onClick={() => void removeMCP(srv.id)}
-                    className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-dim transition-colors hover:bg-border hover:text-red-400"
-                  >
-                    <IconX className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-                <div className="truncate font-mono text-[11px] text-faint">
-                  {srv.command} {srv.args.join(' ')}
-                </div>
-                {!st?.connected && (
-                  <span className="text-[10px] text-faint">
-                    Not connected — connects on the next chat
-                  </span>
-                )}
-              </li>
-            );
-          })}
-        </ul>
-      )}
-
-      <form onSubmit={(e) => void addMCP(e)} className="flex flex-col gap-3 rounded-xl border border-border p-3">
+    <div className="flex flex-col">
+      <form onSubmit={(e) => void addMCP(e)} className="flex flex-col gap-3">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label="Name (optional)">
             <Input
@@ -346,11 +302,63 @@ function ToolSettings({ variant = 'tabs' }: { variant?: 'tabs' | 'stacked' }) {
             </p>
           ))}
       </form>
+
+      {servers.length > 0 && (
+        <>
+          <div className="my-4 border-t border-border" />
+          <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {servers.map((srv) => {
+              const st = status[srv.id];
+              return (
+                <li key={srv.id} className="flex flex-col gap-1.5 rounded-xl border border-border p-3">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`h-2 w-2 shrink-0 rounded-full ${
+                        st?.connected ? 'bg-emerald-500' : 'bg-border'
+                      }`}
+                      title={
+                        st?.connected
+                          ? `Connected — ${st.toolCount} tools`
+                          : 'Not connected (connects on the next chat)'
+                      }
+                    />
+                    <span className="min-w-0 flex-1 truncate text-sm font-medium text-text">
+                      {srv.name}
+                    </span>
+                    {st?.connected && (
+                      <span className="shrink-0 rounded-full bg-emerald-950 px-1.5 py-0.5 text-[10px] text-emerald-400">
+                        {st.toolCount} tools
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      aria-label={`Remove MCP server ${srv.name}`}
+                      title="Remove server"
+                      onClick={() => void removeMCP(srv.id)}
+                      className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-dim transition-colors hover:bg-border hover:text-red-400"
+                    >
+                      <IconX className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                  <div className="truncate font-mono text-[11px] text-faint">
+                    {srv.command} {srv.args.join(' ')}
+                  </div>
+                  {!st?.connected && (
+                    <span className="text-[10px] text-faint">
+                      Not connected — connects on the next chat
+                    </span>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </>
+      )}
     </div>
   );
 
   const skillsSection = (
-    <div className="flex flex-col gap-3">
+    <div className="flex min-h-0 flex-col gap-3">
       <form onSubmit={(e) => void searchSkills(e)} className="flex items-end gap-2">
         <div className="flex-1">
           <Field label="Search SkillsMP">
@@ -368,7 +376,7 @@ function ToolSettings({ variant = 'tabs' }: { variant?: 'tabs' | 'stacked' }) {
       </form>
 
       {skillResults.length > 0 && (
-        <ul className="flex max-h-56 flex-col gap-1.5 overflow-y-auto rounded-lg border border-border p-1.5">
+        <ul className="min-h-0 flex-1 flex flex-col gap-1.5 overflow-y-auto rounded-lg border border-border p-1.5">
           {skillResults.map((sk) => (
             <li
               key={sk.id}
@@ -381,7 +389,7 @@ function ToolSettings({ variant = 'tabs' }: { variant?: 'tabs' | 'stacked' }) {
                   {sk.description ? ` · ${sk.description}` : ''}
                 </div>
               </div>
-              <ViewOnSkillsMP href={sk.githubUrl} name={sk.name} />
+              <ViewOnSkillsMP href={skillsmpHref(sk)} name={sk.name} />
               <Button
                 variant="outline"
                 className="h-7 shrink-0 px-2 text-xs"
@@ -440,7 +448,7 @@ function ToolSettings({ variant = 'tabs' }: { variant?: 'tabs' | 'stacked' }) {
                     {sk.description ? ` · ${sk.description}` : ''}
                   </div>
                 </div>
-                <ViewOnSkillsMP href={sk.githubUrl} name={sk.name} />
+                <ViewOnSkillsMP href={skillsmpHref(sk)} name={sk.name} />
                 <button
                   type="button"
                   aria-label={`Remove skill ${sk.name}`}
@@ -461,22 +469,20 @@ function ToolSettings({ variant = 'tabs' }: { variant?: 'tabs' | 'stacked' }) {
   const permsSection = (
     <form onSubmit={(e) => void savePermissionMode(e)} className="flex flex-col gap-3">
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-        {MODES.map((m) => {
+        {PERMISSION_MODES.map((m) => {
           const active = permissionMode === m.id;
           return (
             <button
               key={m.id}
               type="button"
               onClick={() => setPermissionMode(m.id)}
-              className={`flex flex-col gap-1.5 rounded-xl border p-3 text-left transition-colors ${
-                active
-                  ? 'border-accent bg-surface ring-1 ring-accent'
-                  : 'border-border hover:border-border-strong'
+              className={`flex min-w-0 flex-col gap-1.5 rounded-xl border p-3 text-left transition-colors ${
+                active ? m.selected : 'border-border hover:border-border-strong'
               }`}
             >
               <span className="flex items-center gap-2 text-sm font-medium text-text">
                 <span className="flex h-4 w-4 shrink-0 items-center justify-center">
-                  {active && <IconCheck className="h-4 w-4 text-accent" />}
+                  {active && <IconCheck className="h-4 w-4" />}
                 </span>
                 {m.name}
               </span>
@@ -515,14 +521,14 @@ function ToolSettings({ variant = 'tabs' }: { variant?: 'tabs' | 'stacked' }) {
   }
 
   return (
-    <div className="flex flex-col">
+    <div className="flex min-h-0 flex-1 flex-col">
       <div className="sticky top-0 z-10 flex gap-0.5 border-b border-border bg-bg">
         {TABS.map((t) => (
           <button
             key={t.id}
             type="button"
             onClick={() => setTab(t.id)}
-            className={`-mb-px flex h-9 items-center gap-1.5 border-b-2 px-3 text-sm transition-colors ${
+            className={`-mb-px flex h-9 flex-1 items-center justify-center gap-1.5 border-b-2 px-2 text-sm transition-colors ${
               tab === t.id
                 ? 'border-accent text-text'
                 : 'border-transparent text-subtle hover:text-text'
@@ -532,9 +538,9 @@ function ToolSettings({ variant = 'tabs' }: { variant?: 'tabs' | 'stacked' }) {
           </button>
         ))}
       </div>
-      <div className="mt-3">
+      <div className="min-h-0 flex-1 overflow-y-auto px-1 pt-3 pb-2">
         {tab === 'mcp' && mcpSection}
-        {tab === 'skills' && skillsSection}
+        {tab === 'skills' && <div className="flex min-h-full flex-col">{skillsSection}</div>}
         {tab === 'perms' && permsSection}
       </div>
     </div>

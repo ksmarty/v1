@@ -3,7 +3,7 @@ import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { SiVercel } from 'react-icons/si';
 import { api, type SettingsUpdate } from '../api';
 import type { Settings as SettingsType } from '../types';
-import { errMsg, getChatSide, setChatSide, type ChatSide } from '../utils';
+import { errMsg, getChatSide, randomId, setChatSide, type ChatSide } from '../utils';
 import {
   applyTheme,
   getStoredTheme,
@@ -248,7 +248,7 @@ export default function Settings() {
         await api.updateSettings({ llm: { providers: list, activeProviderId: active.id } });
       } else {
         // Providers exist but none is active — create one from the form.
-        const newId = crypto.randomUUID();
+        const newId = randomId();
         let host = '';
         try {
           host = new URL(baseURL).hostname;
@@ -286,7 +286,7 @@ export default function Settings() {
     setProvSaved(false);
     setProvError(null);
     try {
-      const newId = crypto.randomUUID();
+      const newId = randomId();
       const list = providers.map((p) => ({
         id: p.id,
         name: p.name,

@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { api } from './api';
 import type { AuthStatus } from './types';
 import { errMsg } from './utils';
+import { useAppHeight } from './hooks/useAppHeight';
 import { Button, Center, Spinner } from './components/ui';
 import Login from './pages/Login';
 import Projects from './pages/Projects';
@@ -61,6 +62,7 @@ function RequireAuth({ children }: { children: ReactNode }) {
 }
 
 export default function App() {
+  useAppHeight();
   return (
     <BrowserRouter>
       <Routes>
