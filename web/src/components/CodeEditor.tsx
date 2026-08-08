@@ -75,6 +75,7 @@ export default function CodeEditor({
       <textarea
         ref={taRef}
         value={value}
+        autoCorrect="off"
         onChange={(e) => onChange(e.target.value)}
         onScroll={syncScroll}
         onKeyDown={(e) => {

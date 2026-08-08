@@ -60,11 +60,11 @@ const fieldClasses =
   'w-full min-w-0 rounded-lg border border-border bg-surface px-3 py-2 text-base text-text outline-none transition-colors placeholder:text-faint focus:border-subtle sm:text-sm';
 
 export function Input({ className = '', ...props }: InputHTMLAttributes<HTMLInputElement>) {
-  return <input {...props} className={`${fieldClasses} ${className}`} />;
+  return <input autoCorrect="off" {...props} className={`${fieldClasses} ${className}`} />;
 }
 
 export function Textarea({ className = '', ...props }: TextareaHTMLAttributes<HTMLTextAreaElement>) {
-  return <textarea {...props} className={`${fieldClasses} ${className}`} />;
+  return <textarea autoCorrect="off" {...props} className={`${fieldClasses} ${className}`} />;
 }
 
 export function Select({ className = '', ...props }: SelectHTMLAttributes<HTMLSelectElement>) {
