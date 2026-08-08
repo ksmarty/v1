@@ -5,7 +5,6 @@ import {
   useMemo,
   useRef,
   useState,
-  type MouseEvent,
   type ReactNode,
 } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -21,10 +20,10 @@ import type {
   Todo,
 } from '../types';
 import { errMsg } from '../utils';
-import { renderMarkdown } from '../markdown';
 import { permissionMeta } from '../permissions';
 import { Button, Dialog, ErrorBox, IconButton, Spinner } from './ui';
 import ToolSettings, { type ToolsTab } from './ToolSettings';
+import Markdown from './Markdown';
 import ModelPicker from './ModelPicker';
 import {
   IconArrowUp,
@@ -296,38 +295,6 @@ function ToolResultBlock({ name, detail }: ToolCall) {
       )}
     </div>
   );
-}
-
-function Markdown({
-  text,
-  streaming,
-  validTag,
-}: {
-  text: string;
-  streaming?: boolean;
-  validTag?: (tag: string) => boolean;
-}) {
-  const html = useMemo(() => renderMarkdown(text, streaming, validTag), [text, streaming, validTag]);
-  const onCopy = (e: MouseEvent<HTMLDivElement>) => {
-    const btn = (e.target as HTMLElement).closest('button[data-copy]');
-    if (!(btn instanceof HTMLButtonElement)) return;
-    const code = btn.parentElement?.querySelector('code');
-    const content = code?.textContent ?? '';
-    if (!content) return;
-    void navigator.clipboard
-      .writeText(content)
-      .then(() => {
-        const label = btn.textContent;
-        btn.textContent = 'Copied';
-        window.setTimeout(() => {
-          btn.textContent = label;
-        }, 1500);
-      })
-      .catch(() => {
-        // clipboard unavailable — ignore
-      });
-  };
-  return <div className="md" onClick={onCopy} dangerouslySetInnerHTML={{ __html: html }} />;
 }
 
 function ImageLightbox({

@@ -10,6 +10,7 @@ import type {
 import { errMsg, randomId } from '../utils';
 import { PERMISSION_MODES } from '../permissions';
 import { Button, Dialog, Field, Input, SaveRow, Spinner } from './ui';
+import Markdown from './Markdown';
 import { IconCheck, IconExternalLink, IconX } from './icons';
 
 const TABS = [
@@ -94,9 +95,7 @@ function SkillPreviewDialog({
         )}
         {readme && (
           <div className="fade-y max-h-72 overflow-y-auto overscroll-contain rounded-lg border border-border bg-surface p-3">
-            <pre className="whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-dim">
-              {readme}
-            </pre>
+            <Markdown text={readme} />
           </div>
         )}
         <div className="flex items-center gap-2">
