@@ -9,7 +9,7 @@ import type {
 } from '../types';
 import { errMsg, randomId } from '../utils';
 import { PERMISSION_MODES } from '../permissions';
-import { Button, Field, Input, SaveRow, Spinner } from './ui';
+import { Button, Dialog, Field, Input, SaveRow, Spinner } from './ui';
 import { IconCheck, IconExternalLink, IconX } from './icons';
 
 const TABS = [
@@ -39,6 +39,96 @@ function ViewOnSkillsMP({ href, name }: { href: string; name: string }) {
 // marketplace route is missing (e.g. skills installed before the URL existed).
 function skillsmpHref(sk: { skillsmpUrl?: string; githubUrl: string }): string {
   return sk.skillsmpUrl || sk.githubUrl;
+}
+
+type SkillPreviewTarget = {
+  name: string;
+  author: string;
+  description: string;
+  githubUrl: string;
+  skillsmpUrl?: string;
+  /** Set when opened from search results — enables the Install action. */
+  result?: SkillSearchResult;
+  /** Set when already installed — enables readme, toggle and remove. */
+  installed?: InstalledSkill;
+};
+
+// Detail dialog for a skill: marketplace metadata, the installed SKILL.md
+// when available, and install/toggle/remove actions — no trip to SkillsMP.
+function SkillPreviewDialog({
+  target,
+  busy,
+  onClose,
+  onInstall,
+  onToggle,
+  onRemove,
+}: {
+  target: SkillPreviewTarget;
+  busy: boolean;
+  onClose: () => void;
+  onInstall: () => void;
+  onToggle: (enabled: boolean) => void;
+  onRemove: () => void;
+}) {
+  const [readme, setReadme] = useState<string | null>(null);
+  const [readmeLoading, setReadmeLoading] = useState(false);
+  useEffect(() => {
+    if (!target.installed) return;
+    setReadmeLoading(true);
+    api
+      .skillReadme(target.installed.id)
+      .then((r) => setReadme(r.content))
+      .catch(() => setReadme(null))
+      .finally(() => setReadmeLoading(false));
+  }, [target.installed]);
+
+  return (
+    <Dialog open onClose={onClose} title={target.name} wide fixedBody align="top">
+      <div className="flex flex-col gap-3">
+        <p className="text-xs text-subtle">by {target.author}</p>
+        {target.description && <p className="text-sm text-text">{target.description}</p>}
+        {readmeLoading && (
+          <div className="flex justify-center py-4">
+            <Spinner className="h-4 w-4" />
+          </div>
+        )}
+        {readme && (
+          <div className="fade-y max-h-72 overflow-y-auto overscroll-contain rounded-lg border border-border bg-surface p-3">
+            <pre className="whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-dim">
+              {readme}
+            </pre>
+          </div>
+        )}
+        <div className="flex items-center gap-2">
+          {target.installed ? (
+            <>
+              <Button variant="outline" onClick={() => onToggle(!target.installed!.enabled)}>
+                {target.installed.enabled ? 'Disable' : 'Enable'}
+              </Button>
+              <Button variant="ghost" className="text-red-400" onClick={onRemove}>
+                Remove
+              </Button>
+            </>
+          ) : (
+            target.result && (
+              <Button variant="outline" onClick={onInstall} disabled={busy}>
+                {busy ? <Spinner className="h-4 w-4" /> : 'Install'}
+              </Button>
+            )
+          )}
+          <a
+            href={skillsmpHref(target)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="ml-auto inline-flex items-center gap-1 text-xs text-dim transition-colors hover:text-text"
+          >
+            View on SkillsMP
+            <IconExternalLink className="h-3 w-3" />
+          </a>
+        </div>
+      </div>
+    </Dialog>
+  );
 }
 
 /**
@@ -84,6 +174,7 @@ function ToolSettings({
   const [skillBusy, setSkillBusy] = useState(false);
   const [skillBusyId, setSkillBusyId] = useState<string | null>(null);
   const [skillError, setSkillError] = useState<string | null>(null);
+  const [skillPreview, setSkillPreview] = useState<SkillPreviewTarget | null>(null);
 
   // Approval mode
   const [permissionMode, setPermissionMode] = useState<PermissionMode>(initialPermissionMode ?? 'ask');
@@ -381,23 +472,37 @@ function ToolSettings({
         </Button>
       </form>
 
-      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-x-hidden overflow-y-auto overscroll-contain">
+      <div className="shrink-0 border-t border-border" />
+
+      <div className="fade-y flex min-h-0 flex-1 flex-col gap-3 overflow-x-hidden overflow-y-auto overscroll-contain">
         {skillResults.length > 0 && (
-          <>
-            <div className="border-t border-border" />
-            <ul className="min-w-0 flex flex-col gap-2">
-              {skillResults.map((sk) => (
-                <li
-                  key={sk.id}
-                  className="flex items-center gap-2 rounded-xl border border-border px-3 py-2"
+          <ul className="min-w-0 flex flex-col gap-2">
+            {skillResults.map((sk) => (
+              <li
+                key={sk.id}
+                className="flex items-center gap-2 rounded-xl border border-border px-3 py-2"
+              >
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSkillPreview({
+                      name: sk.name,
+                      author: sk.author,
+                      description: sk.description,
+                      githubUrl: sk.githubUrl,
+                      skillsmpUrl: sk.skillsmpUrl,
+                      result: sk,
+                    })
+                  }
+                  title={`About ${sk.name}`}
+                  className="min-w-0 flex-1 text-left"
                 >
-                <div className="min-w-0 flex-1">
                   <div className="truncate text-sm text-text">{sk.name}</div>
                   <div className="truncate text-[11px] text-faint">
                     {sk.author}
                     {sk.description ? ` · ${sk.description}` : ''}
                   </div>
-                </div>
+                </button>
                 <ViewOnSkillsMP href={skillsmpHref(sk)} name={sk.name} />
                 <Button
                   variant="outline"
@@ -410,7 +515,6 @@ function ToolSettings({
               </li>
             ))}
           </ul>
-          </>
         )}
 
         {skillError && <p className="text-xs text-red-400">{skillError}</p>}
@@ -444,7 +548,21 @@ function ToolSettings({
                       }`}
                     />
                   </button>
-                  <div className="min-w-0 flex-1">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setSkillPreview({
+                        name: sk.name,
+                        author: sk.author,
+                        description: sk.description,
+                        githubUrl: sk.githubUrl,
+                        skillsmpUrl: sk.skillsmpUrl,
+                        installed: sk,
+                      })
+                    }
+                    title={`About ${sk.name}`}
+                    className="min-w-0 flex-1 text-left"
+                  >
                     <div className="flex items-center gap-1.5">
                       <span className="truncate text-sm text-text">{sk.name}</span>
                       {!sk.enabled && (
@@ -457,7 +575,7 @@ function ToolSettings({
                       {sk.author}
                       {sk.description ? ` · ${sk.description}` : ''}
                     </div>
-                  </div>
+                  </button>
                   <ViewOnSkillsMP href={skillsmpHref(sk)} name={sk.name} />
                   <button
                     type="button"
@@ -533,11 +651,38 @@ function ToolSettings({
           </button>
         ))}
       </div>
-      <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-3 pt-2 pb-2 overscroll-contain">
+      <div className="fade-y min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-3 pt-2 pb-2 overscroll-contain">
         {tab === 'mcp' && mcpSection}
         {tab === 'skills' && <div className="flex h-full min-h-0 flex-col">{skillsSection}</div>}
         {tab === 'perms' && permsSection}
       </div>
+      {skillPreview && (
+        <SkillPreviewDialog
+          target={skillPreview}
+          busy={skillPreview.result ? skillBusyId === skillPreview.result.id : false}
+          onClose={() => setSkillPreview(null)}
+          onInstall={() => {
+            if (skillPreview.result) {
+              void installSkill(skillPreview.result);
+              setSkillPreview(null);
+            }
+          }}
+          onToggle={(enabled) => {
+            const inst = skillPreview.installed;
+            if (!inst) return;
+            void toggleSkill(inst.id, enabled);
+            setSkillPreview((p) =>
+              p?.installed ? { ...p, installed: { ...p.installed, enabled } } : p,
+            );
+          }}
+          onRemove={() => {
+            if (skillPreview.installed) {
+              void removeSkill(skillPreview.installed.id);
+              setSkillPreview(null);
+            }
+          }}
+        />
+      )}
     </div>
   );
 }

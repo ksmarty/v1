@@ -209,6 +209,7 @@ export const api = {
   skillInstall: (skill: SkillSearchResult) =>
     post<{ skills: InstalledSkill[] }>('/api/skills/install', { skill }),
   skillRemove: (id: string) => post<{ skills: InstalledSkill[] }>('/api/skills/remove', { id }),
+  skillReadme: (id: string) => request<{ content: string }>(`/api/skills/${id}/readme`),
   skillToggle: (id: string, enabled: boolean) =>
     post<{ skills: InstalledSkill[] }>('/api/skills/toggle', { id, enabled }),
 

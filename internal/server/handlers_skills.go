@@ -95,6 +95,29 @@ func (s *Server) handleSkillsInstall(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"skills": out, "installed": installed})
 }
 
+// handleSkillReadme returns an installed skill's SKILL.md so the UI can show
+// a detail preview without leaving the app.
+func (s *Server) handleSkillReadme(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	for _, sk := range s.installedSkills() {
+		if sk.ID != id && sk.Dir != id {
+			continue
+		}
+		// Dir must be a plain directory name under the skills root.
+		if sk.Dir == "" || sk.Dir != filepath.Base(sk.Dir) {
+			break
+		}
+		data, err := os.ReadFile(filepath.Join(s.skillsRoot(), sk.Dir, "SKILL.md"))
+		if err != nil {
+			writeError(w, http.StatusNotFound, "no SKILL.md for this skill")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"content": string(data)})
+		return
+	}
+	writeError(w, http.StatusNotFound, "skill not found")
+}
+
 // handleSkillsRemove deletes an installed skill and its files.
 func (s *Server) handleSkillsRemove(w http.ResponseWriter, r *http.Request) {
 	var body struct {
