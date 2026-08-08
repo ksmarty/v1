@@ -59,3 +59,21 @@ export function setChatSide(side: ChatSide): void {
     // ignore (private mode etc.)
   }
 }
+
+const DEBUG_HUD_KEY = 'v1.debugHud';
+
+export function getDebugHud(): boolean {
+  try {
+    return localStorage.getItem(DEBUG_HUD_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export function setDebugHud(on: boolean): void {
+  try {
+    localStorage.setItem(DEBUG_HUD_KEY, on ? '1' : '0');
+  } catch {
+    // ignore (private mode etc.)
+  }
+}

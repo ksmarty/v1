@@ -134,6 +134,7 @@ func (s *Server) routes(m *http.ServeMux) {
 	m.HandleFunc("GET /api/projects/{id}/messages", s.handleListMessages)
 	m.HandleFunc("GET /api/projects/{id}/messages/{msgId}/attachments/{idx}", s.handleMessageAttachment)
 	m.HandleFunc("POST /api/projects/{id}/messages/truncate", s.handleTruncateMessages)
+	m.HandleFunc("POST /api/projects/{id}/compact", s.handleCompact)
 	m.HandleFunc("GET /api/projects/{id}/todos", s.handleGetTodos)
 	m.HandleFunc("POST /api/projects/{id}/chat", s.handleChat)
 	m.HandleFunc("POST /api/projects/{id}/chat/retry", s.handleChatRetry)

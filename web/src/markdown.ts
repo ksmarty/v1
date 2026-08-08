@@ -43,7 +43,7 @@ import swift from 'highlight.js/lib/languages/swift';
 import typescript from 'highlight.js/lib/languages/typescript';
 import xml from 'highlight.js/lib/languages/xml';
 import yaml from 'highlight.js/lib/languages/yaml';
-import { Marked, Renderer, type Tokens } from 'marked';
+import { Marked, Renderer, type TokenizerAndRendererExtension, type Tokens } from 'marked';
 
 // Register the languages that actually show up in generated apps. highlight.js
 // core ships ~200 grammars; importing them one by one keeps the bundle small.
@@ -254,7 +254,29 @@ renderer.link = ({ href, title, tokens }: Tokens.Link): string => {
   return text;
 };
 
-const marked = new Marked({ renderer, gfm: true });
+// Inline extension: render @file / #skill mentions as monospaced pills.
+// Being an inline tokenizer, it never fires inside code spans or fences.
+// Matches the pill style used for tags in user bubbles (ChatPane TaggedText).
+const tagExtension: TokenizerAndRendererExtension = {
+  name: 'v1tag',
+  level: 'inline',
+  start(src) {
+    const i = src.search(/[@#]/);
+    return i < 0 ? undefined : i;
+  },
+  tokenizer(src) {
+    const m = /^([@#][A-Za-z0-9_\-./]+)/.exec(src);
+    if (!m) return undefined;
+    return { type: 'v1tag', raw: m[0], text: m[1] };
+  },
+  renderer(token) {
+    return `<span class="rounded bg-border px-1 py-px font-mono text-[0.85em] text-accent">${escapeHtml(
+      String(token.text ?? ''),
+    )}</span>`;
+  },
+};
+
+const marked = new Marked({ renderer, gfm: true, extensions: [tagExtension] });
 
 // Appended to the raw source of a streaming message before rendering, then
 // swapped for a blinking caret span in the output so it tracks the last token.

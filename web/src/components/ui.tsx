@@ -102,17 +102,28 @@ export function Dialog({
       if (e.key === 'Escape') onClose();
     };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+    };
   }, [open, onClose]);
 
   if (!open) return null;
 
-  // Translucent (tools dialog) and fullscreen mobile panels use max() so the
-  // fixed padding is a minimum that the device safe-area can only extend,
-  // never override (a plain pt-16/pb-3 would lose to the later env() rule).
-  const pad = translucent
-    ? 'px-3 pt-[max(3.5rem,env(safe-area-inset-top))] pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-4'
-    : 'px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))]';
+  // Fullscreen mobile sheets fill the fixed overlay exactly (h-full): the
+  // overlay's top already sits below the Dynamic Island, so they use plain
+  // top padding — no dead space above the header — and only the bottom needs
+  // the home-indicator inset. Bottom sheets keep the max() top pad since
+  // their top edge can reach into the status area.
+  const pad = fullScreen
+    ? translucent
+      ? 'px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-4'
+      : 'px-4 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))]'
+    : translucent
+      ? 'px-3 pt-3 pb-3 sm:px-4'
+      : 'px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))]';
   const desktopPad = translucent ? 'sm:px-6 sm:pb-8 sm:pt-6' : 'sm:px-5 sm:pt-5 sm:pb-5';
 
   return (
@@ -129,15 +140,15 @@ export function Dialog({
           translucent ? 'bg-bg/85 backdrop-blur-md' : 'bg-bg'
         } ${
           fullScreen
-            ? `h-[calc(100dvh-1.5rem)] max-h-dvh rounded-2xl ${pad} mx-3 mb-3 sm:mx-0 sm:mb-0 sm:h-auto sm:max-h-[85vh] ${desktopPad}`
+            ? `h-full ${pad} sm:h-auto sm:max-h-[85vh] ${desktopPad}`
             : `max-h-[85vh] rounded-t-2xl ${pad} pb-5`
         } ${wide ? 'sm:max-w-2xl' : 'sm:max-w-md'} ${
-          fixedBody ? 'flex min-h-0 flex-col' : 'overflow-y-auto'
+          fixedBody ? 'flex min-h-0 flex-col overflow-hidden' : 'overflow-y-auto'
         }`}
       >
         <div
           className={`mb-4 flex items-center justify-between gap-2 ${
-            fixedBody ? 'shrink-0 pb-1' : ''
+            fixedBody ? 'shrink-0' : ''
           }`}
         >
           <h2 className="text-base font-semibold text-text">{title}</h2>
@@ -145,7 +156,7 @@ export function Dialog({
             <IconX className="h-4 w-4" />
           </IconButton>
         </div>
-        {fixedBody ? <div className="min-h-0 flex-1 overflow-y-auto">{children}</div> : children}
+        {fixedBody ? <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain">{children}</div> : children}
       </div>
     </div>
   );
@@ -188,15 +199,23 @@ export function SaveRow({
   saved,
   error,
   extra,
+  pulse = false,
 }: {
   saving: boolean;
   saved: boolean;
   error: string | null;
   extra?: ReactNode;
+  /** Breathing accent glow on Save — set while there are unsaved changes. */
+  pulse?: boolean;
 }) {
   return (
     <div className="flex items-center gap-2">
-      <Button type="submit" variant="outline" disabled={saving}>
+      <Button
+        type="submit"
+        variant="outline"
+        disabled={saving}
+        className={pulse ? 'v1-save-breathe' : ''}
+      >
         {saving ? <Spinner className="h-4 w-4" /> : 'Save'}
       </Button>
       {extra}

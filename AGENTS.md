@@ -30,7 +30,10 @@ React SPA (Vite + TypeScript), both built into a single binary.
 - `go build ./...`, `go test ./...` — backend compile + tests.
 
 Always run `go build ./...` and `cd web && npm run build` (typecheck) after
-backend and frontend changes respectively.
+backend and frontend changes respectively. After each round of changes, rebuild
+and restart the local server with `V1_AUTH_DISABLED=true` (via `make dev-backend`
+or `make dev`), then report: (1) the new stamped build version (`v1 <version>
+(<commit>) listening on :8080`), and (2) confirmation that auth is disabled.
 
 ## Conventions
 
@@ -50,4 +53,42 @@ backend and frontend changes respectively.
   API client in `web/src/api.ts`.
 - Frontend/backend JSON fields are camelCase. Backend keys use the `key*`
   constants in `internal/server/server.go`.
+- `Dialog` (ui.tsx) locks body scroll while open (`overflow: hidden`); dialog
+  bodies that scroll use `overscroll-contain` so wheel/touch momentum doesn't
+  chain to the page behind the overlay. `fixedBody` splits a fixed header from
+  a scrolling body — use it for tall dialogs (tools, model picker).
+  `fullScreen` dialogs are full-bleed on mobile and size to
+  `max(var(--v1-app-height,0px),100dvh)` like the project shell.
+- `ToolSettings` (chat tools dialog + Settings → Tools & permissions) shows one
+  section at a time under a fixed `shrink-0` tab bar with a separate scroll
+  container below. The tab bar is NOT `sticky` — it sits in a non-scrolling
+  flex column so it never moves. On the Settings page the tools pane gets a
+  fixed-height flex column (`overflow-hidden` main, no page padding) so the
+  same pinning works there; other Settings pages scroll `main` as before.
+  `initialPermissionMode` is passed from the chat header so the permission cards
+  don't flash the default (`ask`) before the server value loads.
+- Token usage (`usageTotal` in ChatPane) is restored on page load by summing
+  each message's persisted `usage`/`model` in `load()` — not only from live
+  SSE `done` events. The backend already stores usage per assistant message.
+- iOS PWA: the project view root uses `v1-safe-top` so content clears the
+  Dynamic Island; the mobile bottom nav uses
+  `pb-[calc(env(safe-area-inset-bottom)/2)]` — half the home-indicator inset,
+  so the labels just clear the indicator while the bar sits as low as
+  possible. `useAppHeight` pins
+  `--v1-app-height` to work around stale viewport bounds in standalone mode;
+  the root is `h-[max(var(--v1-app-height,0px),100dvh)]` — at cold launch iOS
+  JS viewport metrics read too small while `100dvh` is nearly correct, so the
+  taller of the two wins. In standalone mode the largest measured height is
+  kept (never shrunk), capped at the screen size (zoomed-out/expanded states
+  report huge visual viewports — a bogus 1241 once got persisted, so the keys
+  are v2), and persisted per orientation in `localStorage`
+  (`v1-app-height-v2:<portrait|landscape>`); the inline script in
+  `web/index.html` restores it before first paint so cold launches start at
+  the last known-good height. Keep the inline script and the hook in sync.
+  The viewport meta locks zoom (`maximum-scale=1, user-scalable=no`) so pinch
+  zoom can't distort the metrics again, and the inline script resets
+  `scrollRestoration`/`scrollTo(0,0)` — iOS restores PWA scroll offsets
+  across launches. The preview iframe sits absolutely positioned inside an
+  `overflow-hidden` stage (PreviewPane) because iOS expands in-flow iframes
+  to their content height, which stretches the whole page.
 - No comments unless they add real value; match surrounding style.

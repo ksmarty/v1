@@ -44,7 +44,7 @@ export default function ModelPicker({
   }, [models, query]);
 
   return (
-    <Dialog open={open} onClose={onClose} title="Model" fullScreen fixedBody align="top">
+    <Dialog open={open} onClose={onClose} title="Model" wide fullScreen fixedBody align="top">
       <div className="flex flex-col gap-5">
         <section>
           <h3 className="mb-2 text-xs font-medium text-subtle">Provider</h3>

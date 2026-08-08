@@ -146,6 +146,8 @@ export const api = {
   // Files
   listFiles: (id: string, path: string) =>
     request<{ entries: FileEntry[] }>(`/api/projects/${id}/files?path=${encodeURIComponent(path)}`),
+  listAllFiles: (id: string) =>
+    request<{ entries: FileEntry[] }>(`/api/projects/${id}/files?recursive=true`),
   readFile: (id: string, path: string) =>
     request<{ content: string }>(`/api/projects/${id}/file?path=${encodeURIComponent(path)}`),
   writeFile: (id: string, path: string, content: string) =>
@@ -157,6 +159,7 @@ export const api = {
   getMessages: (id: string) => request<ChatMessage[]>(`/api/projects/${id}/messages`),
   truncateMessages: (id: string, messageId: number) =>
     post<void>(`/api/projects/${id}/messages/truncate`, { id: messageId }),
+  compact: (id: string) => post<{ coveredMessageId: number }>(`/api/projects/${id}/compact`),
   getTodos: (id: string) => request<{ todos: Todo[] }>(`/api/projects/${id}/todos`),
 
   // Preview

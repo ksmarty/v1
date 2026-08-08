@@ -9,7 +9,7 @@ import type {
 } from '../types';
 import { errMsg, randomId } from '../utils';
 import { PERMISSION_MODES } from '../permissions';
-import { Button, Field, Input, SaveRow, Section, Spinner } from './ui';
+import { Button, Field, Input, SaveRow, Spinner } from './ui';
 import { IconCheck, IconExternalLink, IconX } from './icons';
 
 const TABS = [
@@ -43,20 +43,23 @@ function skillsmpHref(sk: { skillsmpUrl?: string; githubUrl: string }): string {
 
 /**
  * MCP servers, installed skills, and the tool approval mode. Shared by the
- * Settings page (variant="stacked", all sections shown as cards) and the
- * chat's quick-access tools dialog (variant="tabs", one section at a time
- * under a fixed tab bar).
+ * Settings page and the chat's quick-access tools dialog: one section at a
+ * time under a fixed tab bar, with the active section scrolling below.
  */
 function ToolSettings({
-  variant = 'tabs',
   initialTab = 'mcp',
+  initialPermissionMode,
   onPermissionSaved,
+  onPermissionModeChange,
 }: {
-  variant?: 'tabs' | 'stacked';
   /** Tab to show when the dialog opens (used for deep links). */
   initialTab?: ToolsTab;
+  /** Initial permission mode (from the chat header) to avoid a flash of the default. */
+  initialPermissionMode?: PermissionMode;
   /** Called with the saved mode after a successful permission save. */
   onPermissionSaved?: (mode: PermissionMode) => void;
+  /** Called immediately when the selected mode changes. */
+  onPermissionModeChange?: (mode: PermissionMode) => void;
 }) {
   const [tab, setTab] = useState<ToolsTab>(initialTab);
 
@@ -83,7 +86,8 @@ function ToolSettings({
   const [skillError, setSkillError] = useState<string | null>(null);
 
   // Approval mode
-  const [permissionMode, setPermissionMode] = useState<PermissionMode>('ask');
+  const [permissionMode, setPermissionMode] = useState<PermissionMode>(initialPermissionMode ?? 'ask');
+  const [savedMode, setSavedMode] = useState<PermissionMode>(initialPermissionMode ?? 'ask');
   const [permSaving, setPermSaving] = useState(false);
   const [permSaved, setPermSaved] = useState(false);
   const [permError, setPermError] = useState<string | null>(null);
@@ -94,6 +98,7 @@ function ToolSettings({
       setServers(s.mcp ?? []);
       setSkills(s.skills ?? []);
       setPermissionMode(s.permissionMode ?? 'ask');
+      setSavedMode(s.permissionMode ?? 'ask');
       const byId: Record<string, MCPServerStatus> = {};
       for (const sv of st.servers) byId[sv.id] = sv;
       setStatus(byId);
@@ -107,8 +112,8 @@ function ToolSettings({
   }, [load]);
 
   useEffect(() => {
-    if (variant === 'tabs') setTab(initialTab);
-  }, [initialTab, variant]);
+    setTab(initialTab);
+  }, [initialTab]);
 
   const parseMCP = (): MCPServer => {
     const parts = mcpCommand.trim().split(/\s+/).filter(Boolean);
@@ -227,6 +232,7 @@ function ToolSettings({
     try {
       await api.updateSettings({ permissionMode });
       setPermSaved(true);
+      setSavedMode(permissionMode);
       onPermissionSaved?.(permissionMode);
     } catch (err) {
       setPermError(errMsg(err));
@@ -358,8 +364,8 @@ function ToolSettings({
   );
 
   const skillsSection = (
-    <div className="flex min-h-0 flex-col gap-3">
-      <form onSubmit={(e) => void searchSkills(e)} className="flex items-end gap-2">
+    <div className="flex h-full min-h-0 min-w-0 flex-col gap-3">
+      <form onSubmit={(e) => void searchSkills(e)} className="flex shrink-0 min-w-0 items-end gap-2">
         <div className="flex-1">
           <Field label="Search SkillsMP">
             <Input
@@ -370,99 +376,104 @@ function ToolSettings({
             />
           </Field>
         </div>
-        <Button type="submit" variant="outline" disabled={skillBusy}>
+        <Button type="submit" variant="outline" disabled={skillBusy} className="h-[42px] sm:h-[38px]">
           {skillBusy ? <Spinner className="h-4 w-4" /> : 'Search'}
         </Button>
       </form>
 
-      {skillResults.length > 0 && (
-        <ul className="min-h-0 flex-1 flex flex-col gap-1.5 overflow-y-auto rounded-lg border border-border p-1.5">
-          {skillResults.map((sk) => (
-            <li
-              key={sk.id}
-              className="flex items-center gap-2 rounded-lg border border-border px-3 py-2"
-            >
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-sm text-text">{sk.name}</div>
-                <div className="truncate text-[11px] text-faint">
-                  {sk.author}
-                  {sk.description ? ` · ${sk.description}` : ''}
-                </div>
-              </div>
-              <ViewOnSkillsMP href={skillsmpHref(sk)} name={sk.name} />
-              <Button
-                variant="outline"
-                className="h-7 shrink-0 px-2 text-xs"
-                disabled={skillBusyId === sk.id}
-                onClick={() => void installSkill(sk)}
-              >
-                {skillBusyId === sk.id ? <Spinner className="h-3.5 w-3.5" /> : 'Install'}
-              </Button>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {skillError && <p className="text-xs text-red-400">{skillError}</p>}
-
-      {skills.length > 0 && (
-        <div>
-          <div className="mb-2 flex items-center justify-between">
-            <span className="text-xs text-subtle">Installed</span>
-            <span className="text-[11px] text-faint">{skills.length}</span>
-          </div>
-          <ul className="flex flex-col gap-1.5">
-            {skills.map((sk) => (
-              <li
-                key={sk.id}
-                className="flex items-center gap-2 rounded-lg border border-border px-3 py-2"
-              >
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={sk.enabled}
-                  aria-label={`Toggle skill ${sk.name}`}
-                  title={sk.enabled ? 'Disable skill' : 'Enable skill'}
-                  onClick={() => void toggleSkill(sk.id, !sk.enabled)}
-                  className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${
-                    sk.enabled ? 'bg-accent' : 'bg-border'
-                  }`}
+      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-x-hidden overflow-y-auto overscroll-contain">
+        {skillResults.length > 0 && (
+          <>
+            <div className="border-t border-border" />
+            <ul className="min-w-0 flex flex-col gap-2">
+              {skillResults.map((sk) => (
+                <li
+                  key={sk.id}
+                  className="flex items-center gap-2 rounded-xl border border-border px-3 py-2"
                 >
-                  <span
-                    className={`absolute top-0.5 h-4 w-4 rounded-full bg-bg transition-all ${
-                      sk.enabled ? 'left-[18px]' : 'left-0.5'
-                    }`}
-                  />
-                </button>
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5">
-                    <span className="truncate text-sm text-text">{sk.name}</span>
-                    {!sk.enabled && (
-                      <span className="rounded-full bg-border px-1.5 py-0.5 text-[10px] text-dim">
-                        disabled
-                      </span>
-                    )}
-                  </div>
+                  <div className="truncate text-sm text-text">{sk.name}</div>
                   <div className="truncate text-[11px] text-faint">
                     {sk.author}
                     {sk.description ? ` · ${sk.description}` : ''}
                   </div>
                 </div>
                 <ViewOnSkillsMP href={skillsmpHref(sk)} name={sk.name} />
-                <button
-                  type="button"
-                  aria-label={`Remove skill ${sk.name}`}
-                  title="Remove skill"
-                  onClick={() => void removeSkill(sk.id)}
-                  className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-dim transition-colors hover:bg-border hover:text-red-400"
+                <Button
+                  variant="outline"
+                  className="h-7 shrink-0 px-2 text-xs"
+                  disabled={skillBusyId === sk.id}
+                  onClick={() => void installSkill(sk)}
                 >
-                  <IconX className="h-3.5 w-3.5" />
-                </button>
+                  {skillBusyId === sk.id ? <Spinner className="h-3.5 w-3.5" /> : 'Install'}
+                </Button>
               </li>
             ))}
           </ul>
-        </div>
-      )}
+          </>
+        )}
+
+        {skillError && <p className="text-xs text-red-400">{skillError}</p>}
+
+        {skills.length > 0 && (
+          <div>
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-xs text-subtle">Installed</span>
+              <span className="text-[11px] text-faint">{skills.length}</span>
+            </div>
+            <ul className="flex flex-col gap-1.5">
+              {skills.map((sk) => (
+                <li
+                  key={sk.id}
+                  className="flex items-center gap-2 rounded-lg border border-border px-3 py-2"
+                >
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={sk.enabled}
+                    aria-label={`Toggle skill ${sk.name}`}
+                    title={sk.enabled ? 'Disable skill' : 'Enable skill'}
+                    onClick={() => void toggleSkill(sk.id, !sk.enabled)}
+                    className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${
+                      sk.enabled ? 'bg-accent' : 'bg-border'
+                    }`}
+                  >
+                    <span
+                      className={`absolute top-0.5 h-4 w-4 rounded-full bg-bg transition-all ${
+                        sk.enabled ? 'left-[18px]' : 'left-0.5'
+                      }`}
+                    />
+                  </button>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <span className="truncate text-sm text-text">{sk.name}</span>
+                      {!sk.enabled && (
+                        <span className="rounded-full bg-border px-1.5 py-0.5 text-[10px] text-dim">
+                          disabled
+                        </span>
+                      )}
+                    </div>
+                    <div className="truncate text-[11px] text-faint">
+                      {sk.author}
+                      {sk.description ? ` · ${sk.description}` : ''}
+                    </div>
+                  </div>
+                  <ViewOnSkillsMP href={skillsmpHref(sk)} name={sk.name} />
+                  <button
+                    type="button"
+                    aria-label={`Remove skill ${sk.name}`}
+                    title="Remove skill"
+                    onClick={() => void removeSkill(sk.id)}
+                    className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-dim transition-colors hover:bg-border hover:text-red-400"
+                  >
+                    <IconX className="h-3.5 w-3.5" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
     </div>
   );
 
@@ -475,8 +486,12 @@ function ToolSettings({
             <button
               key={m.id}
               type="button"
-              onClick={() => setPermissionMode(m.id)}
-              className={`flex min-w-0 flex-col gap-1.5 rounded-xl border p-3 text-left transition-colors ${
+              onClick={() => {
+                setPermissionMode(m.id);
+                setPermSaved(false);
+                onPermissionModeChange?.(m.id);
+              }}
+              className={`flex min-w-0 overflow-hidden flex-col gap-1.5 rounded-xl border p-3 text-left transition-colors ${
                 active ? m.selected : 'border-border hover:border-border-strong'
               }`}
             >
@@ -491,38 +506,18 @@ function ToolSettings({
           );
         })}
       </div>
-      <SaveRow saving={permSaving} saved={permSaved} error={permError} />
+      <SaveRow
+        saving={permSaving}
+        saved={permSaved}
+        error={permError}
+        pulse={permissionMode !== savedMode}
+      />
     </form>
   );
 
-  if (variant === 'stacked') {
-    return (
-      <div className="flex flex-col gap-4">
-        <Section
-          title="MCP servers"
-          description="External servers whose tools the agent can call."
-        >
-          {mcpSection}
-        </Section>
-        <Section
-          title="Skills"
-          description="Installed SkillsMP skills the agent can load. Search to install more."
-        >
-          {skillsSection}
-        </Section>
-        <Section
-          title="Permissions"
-          description="Controls how the agent handles tool calls like running commands, editing files, and talking to MCP servers."
-        >
-          {permsSection}
-        </Section>
-      </div>
-    );
-  }
-
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <div className="sticky top-0 z-10 flex gap-0.5 border-b border-border bg-bg">
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="shrink-0 z-10 flex gap-0.5 border-b border-border bg-bg">
         {TABS.map((t) => (
           <button
             key={t.id}
@@ -538,9 +533,9 @@ function ToolSettings({
           </button>
         ))}
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto px-1 pt-3 pb-2">
+      <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-3 pt-2 pb-2 overscroll-contain">
         {tab === 'mcp' && mcpSection}
-        {tab === 'skills' && <div className="flex min-h-full flex-col">{skillsSection}</div>}
+        {tab === 'skills' && <div className="flex h-full min-h-0 flex-col">{skillsSection}</div>}
         {tab === 'perms' && permsSection}
       </div>
     </div>

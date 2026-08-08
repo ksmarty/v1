@@ -53,17 +53,20 @@ type ChatEvent struct {
 
 // ChatParams carries everything needed to run one chat turn.
 type ChatParams struct {
-	Store        *store.Store
-	Project      *store.Project
-	Client       *llm.Client
-	Exec         *Executor
-	Message      string
-	Attachments  []Attachment // files attached to this user turn
-	Model        string       // per-turn override; empty uses p.Client.Model
-	LastUserID   int64        // retry mode: >0 re-runs the existing user message
-	ExtraTools   []llm.Tool   // dynamically added tools (e.g. MCP), namespaced
-	SkillsPrompt string       // enabled skills' SKILL.md content for the system prompt
-	Emit         func(ChatEvent)
+	Store            *store.Store
+	Project          *store.Project
+	Client           *llm.Client
+	Exec             *Executor
+	Message          string
+	Attachments      []Attachment // files attached to this user turn
+	Model            string       // per-turn override; empty uses p.Client.Model
+	LastUserID       int64        // retry mode: >0 re-runs the existing user message
+	ExtraTools       []llm.Tool   // dynamically added tools (e.g. MCP), namespaced
+	SkillsPrompt     string       // enabled skills' SKILL.md content for the system prompt
+	ContextBudget    int
+	ContextThreshold float64
+	Summarizer       Summarizer
+	Emit             func(ChatEvent)
 }
 
 // RunChat persists the user message, replays history to the LLM, executes
@@ -92,12 +95,19 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 		return nil, err
 	}
 	system := systemPrompt
+	if snapshot, snapshotErr := p.Store.GetCompactionSnapshot(p.Project.ID); snapshotErr == nil {
+		system += "\n\nConversation summary (historical, not user-visible; covers messages through ID " + fmt.Sprint(snapshot.CoveredMessageID) + "):\n" + snapshot.Summary
+	}
 	if p.SkillsPrompt != "" {
 		system += "\n\n" + p.SkillsPrompt
 	}
 	history := []llm.Message{{Role: "system", Content: system}}
+	var coveredID int64
+	if snapshot, snapshotErr := p.Store.GetCompactionSnapshot(p.Project.ID); snapshotErr == nil {
+		coveredID = snapshot.CoveredMessageID
+	}
 	for _, m := range stored {
-		if p.LastUserID > 0 && m.ID > p.LastUserID {
+		if m.ID <= coveredID || (p.LastUserID > 0 && m.ID > p.LastUserID) {
 			continue
 		}
 		switch m.Role {
@@ -139,7 +149,8 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 		if len(p.ExtraTools) > 0 {
 			allTools = append(append([]llm.Tool{}, tools...), p.ExtraTools...)
 		}
-		res, err := p.Client.ChatStream(ctx, history, allTools,
+		requestHistory := compactForModel(ctx, history, p)
+		res, err := p.Client.ChatStream(ctx, requestHistory, allTools,
 			func(d string) { p.Emit(ChatEvent{Type: "delta", Text: d}) },
 			func(d string) { p.Emit(ChatEvent{Type: "reasoning", Text: d}) })
 		// Models that don't support vision reject image parts; retry once with
@@ -147,12 +158,20 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 		if err != nil && round == 0 && vision {
 			history = stripImageParts(history)
 			vision = false
-			res, err = p.Client.ChatStream(ctx, history, allTools,
+			res, err = p.Client.ChatStream(ctx, compactForModel(ctx, history, p), allTools,
 				func(d string) { p.Emit(ChatEvent{Type: "delta", Text: d}) },
 				func(d string) { p.Emit(ChatEvent{Type: "reasoning", Text: d}) })
 		}
 		if err != nil {
 			return nil, err
+		}
+		// Some providers stream tool calls without ids; they only need to be
+		// unique within the conversation, so fill in a local one — otherwise the
+		// tool result goes out without tool_call_id and strict providers 400.
+		for i := range res.ToolCalls {
+			if res.ToolCalls[i].ID == "" {
+				res.ToolCalls[i].ID = fmt.Sprintf("v1_call_%d_%d", round, i)
+			}
 		}
 
 		toolJSON := ""

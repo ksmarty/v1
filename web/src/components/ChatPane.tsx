@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
   type MouseEvent,
+  type ReactNode,
 } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, messageAttachmentUrl, retryChat, streamChat, type ChatAttachmentInput } from '../api';
@@ -40,6 +41,48 @@ import {
 } from './icons';
 
 type ToolCall = { name: string; detail: string };
+
+// Autocomplete item for the composer's /, @ and # menus. `insert` is the
+// token written into the textarea; `label`/`hint` are display-only.
+type Suggestion = { insert: string; label: string; hint?: string };
+
+const CHAT_COMMANDS = [
+  { name: '/compact', hint: 'Summarize history to free up context' },
+  { name: '/clear', hint: 'Clear the chat history' },
+  { name: '/model', hint: 'Choose a model' },
+  { name: '/preview', hint: 'Restart the preview' },
+  { name: '/tools', hint: 'Open tools, skills & permissions' },
+  { name: '/stop', hint: 'Stop the current run' },
+  { name: '/help', hint: 'Show available commands' },
+] as const;
+
+// Renders user message text with @file / #skill tags pill-highlighted. Tag
+// characters are limited to path-ish ones so trailing punctuation stays out.
+// pillClassName overrides the pill style; the composer echo passes a
+// width-neutral variant (negative margins cancel the padding) so the visible
+// text keeps the exact metrics of the transparent textarea text above it.
+function TaggedText({ text, pillClassName }: { text: string; pillClassName?: string }) {
+  const out: ReactNode[] = [];
+  const re = /(^|\s)([@#][A-Za-z0-9_\-./]+)/g;
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text))) {
+    out.push(text.slice(last, m.index), m[1]);
+    out.push(
+      <span
+        key={m.index}
+        className={
+          pillClassName ?? 'rounded bg-bg/70 px-1 py-px font-mono text-[0.85em] text-accent'
+        }
+      >
+        {m[2]}
+      </span>,
+    );
+    last = m.index + m[0].length;
+  }
+  out.push(text.slice(last));
+  return <>{out}</>;
+}
 
 // AttachmentView adds a display URL to the stored metadata: a data URL for
 // just-sent images, or the attachment endpoint URL for persisted ones.
@@ -148,7 +191,7 @@ function readAttachment(file: File): Promise<{ value: ChatAttachmentInput } | { 
 function ToolRow({ item }: { item: ToolItem }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="v1-cv rounded-lg border border-border/80 bg-surface/50 text-xs">
+    <div className="rounded-lg border border-border/80 bg-surface/50 text-xs">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
@@ -389,9 +432,9 @@ const MessageRow = memo(function MessageRow({
       );
     }
     return (
-      <div className="v1-cv ml-auto flex max-w-[85%] flex-col items-end gap-1">
+      <div className="ml-auto flex max-w-[85%] flex-col items-end gap-1">
         <div className="w-full rounded-2xl bg-border px-3.5 py-2 text-sm text-text">
-          <div className="whitespace-pre-wrap break-words">{item.content}</div>
+          <div className="whitespace-pre-wrap break-words"><TaggedText text={item.content} /></div>
           {item.attachments && item.attachments.length > 0 && (
             <div className="mt-1.5 flex flex-wrap justify-end gap-1.5">
               {item.attachments.map((a, i) =>
@@ -444,14 +487,14 @@ const MessageRow = memo(function MessageRow({
   }
   if (item.role === 'error') {
     return (
-      <div className="v1-cv whitespace-pre-wrap break-words text-sm text-red-400">
+      <div className="whitespace-pre-wrap break-words text-sm text-red-400">
         {item.content}
       </div>
     );
   }
   return (
     <div
-      className={`v1-cv flex min-w-0 flex-col gap-1.5 ${item.stale ? 'opacity-45' : ''}`}
+      className={`flex min-w-0 flex-col gap-1.5 ${item.stale ? 'opacity-45' : ''}`}
     >
       {item.reasoning && (
         <ReasoningBlock text={item.reasoning} autoOpen={item.streaming ?? false} />
@@ -497,6 +540,8 @@ export default function ChatPane({
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [input, setInput] = useState('');
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  const [suggestionIndex, setSuggestionIndex] = useState(0);
   const [streaming, setStreaming] = useState(false);
   const [attachments, setAttachments] = useState<ChatAttachmentInput[]>([]);
   const [attachError, setAttachError] = useState<string | null>(null);
@@ -530,7 +575,11 @@ export default function ChatPane({
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
+  const echoRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  // Cached once per mount so @/# completion doesn't hit the API per keystroke.
+  const fileListRef = useRef<string[] | null>(null);
+  const skillListRef = useRef<{ name: string; hint: string }[] | null>(null);
   const restartRef = useRef(onPreviewRestart);
   restartRef.current = onPreviewRestart;
 
@@ -620,9 +669,11 @@ export default function ChatPane({
     [catalogModels, model],
   );
 
-  // The attach button only makes sense for vision-capable models; for custom
-  // or uncatalogued ids the capability is unknown, so keep it visible.
-  const canAttach = showFreeText || selectedModelMeta === null || selectedModelMeta.imageInput === true;
+  // Text files inline as plain text, so any model accepts them; only images
+  // need a vision-capable model. For custom or uncatalogued ids the
+  // capability is unknown, so allow images and let the provider decide.
+  const supportsImages =
+    showFreeText || selectedModelMeta === null || selectedModelMeta.imageInput === true;
 
   const modelLabel = selectedModelMeta?.name || model || 'Select model';
 
@@ -659,7 +710,13 @@ export default function ChatPane({
     try {
       const msgs = await api.getMessages(projectId);
       const mapped: Item[] = [];
+      const usageAcc: ChatUsage = { input: 0, output: 0 };
       for (const m of msgs) {
+        if (m.usage) {
+          usageAcc.input += m.usage.input;
+          usageAcc.output += m.usage.output;
+          usageAcc.model = m.model || m.usage.model || usageAcc.model;
+        }
         if (m.role === 'tool') {
           const name = m.tool ? parseToolName(m.tool) : 'tool';
           const last = mapped[mapped.length - 1];
@@ -702,6 +759,7 @@ export default function ChatPane({
       }
       itemsRef.current = mapped;
       setItems(mapped);
+      if (usageAcc.input || usageAcc.output) setUsageTotal(usageAcc);
     } catch (e) {
       setLoadError(errMsg(e));
     } finally {
@@ -726,21 +784,42 @@ export default function ChatPane({
   // Auto-scroll on new content, but only while the user is already at (or near)
   // the bottom — otherwise reading history during a stream gets yanked around.
   const nearBottomRef = useRef(true);
+  const [showJump, setShowJump] = useState(false);
   const onScroll = useCallback(() => {
     const el = scrollRef.current;
-    if (el) nearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    if (!el) return;
+    const near = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    nearBottomRef.current = near;
+    setShowJump(!near);
+  }, []);
+  const jumpToBottom = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    // Re-engage the sticky zone so streaming keeps pinning after the jump.
+    nearBottomRef.current = true;
+    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+    // Images and late layout shifts can grow scrollHeight — re-pin once the
+    // smooth scroll settles so we land on the true bottom.
+    window.setTimeout(() => {
+      const el2 = scrollRef.current;
+      if (el2 && nearBottomRef.current) el2.scrollTop = el2.scrollHeight;
+    }, 350);
   }, []);
   useEffect(() => {
     const el = scrollRef.current;
-    if (el && nearBottomRef.current) {
-      el.scrollTop = el.scrollHeight;
-      // content-visibility rows start with estimated heights, so scrollHeight
-      // can grow after first layout — re-pin on the next frame so the last
-      // message doesn't sit above a phantom gap.
-      requestAnimationFrame(() => {
-        if (el && nearBottomRef.current) el.scrollTop = el.scrollHeight;
-      });
-    }
+    if (!el || !nearBottomRef.current) return;
+    const pin = () => {
+      if (nearBottomRef.current) el.scrollTop = el.scrollHeight;
+    };
+    pin();
+    // scrollHeight can keep growing after new content (images, async layout)
+    // — re-pin over a short window so loads and streams land on the true bottom.
+    const raf = requestAnimationFrame(pin);
+    const timers = [100, 300, 600].map((ms) => setTimeout(pin, ms));
+    return () => {
+      cancelAnimationFrame(raf);
+      timers.forEach(clearTimeout);
+    };
   }, [items]);
 
   // Auto-grow the input textarea.
@@ -951,7 +1030,18 @@ export default function ChatPane({
   const addFiles = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
     setAttachError(null);
-    const results = await Promise.all(Array.from(files).map(readAttachment));
+    let list = Array.from(files);
+    if (!supportsImages) {
+      const rejected = list.filter((f) => f.type.startsWith('image/'));
+      list = list.filter((f) => !f.type.startsWith('image/'));
+      if (rejected.length > 0) {
+        setAttachError(
+          `${rejected[0].name}: this model does not support images — attach text files instead.`,
+        );
+        if (list.length === 0) return;
+      }
+    }
+    const results = await Promise.all(list.map(readAttachment));
     setAttachments((prev) => {
       const next = [...prev];
       let firstError: string | null = null;
@@ -971,7 +1061,148 @@ export default function ChatPane({
     });
   };
 
-  const send = useCallback(() => sendText(input), [input, sendText]);
+  const [localStatus, setLocalStatus] = useState<string | null>(null);
+  const runLocalCommand = useCallback(async (text: string): Promise<boolean> => {
+    const command = text.trim().split(/\s+/)[0];
+    if (!CHAT_COMMANDS.some((c) => c.name === command)) return false;
+    switch (command) {
+      case '/help':
+        setLocalStatus(CHAT_COMMANDS.map((c) => `${c.name} ${c.hint.toLowerCase()}`).join(' · '));
+        break;
+      case '/model':
+        setModelPickerOpen(true);
+        break;
+      case '/tools':
+        openTools('mcp');
+        break;
+      case '/preview':
+        restartRef.current?.();
+        setLocalStatus('Preview restarting…');
+        break;
+      case '/stop':
+        if (streaming) {
+          abortRef.current?.abort();
+          setLocalStatus('Stopped.');
+        } else {
+          setLocalStatus('Nothing is running.');
+        }
+        break;
+      case '/clear':
+        if (streaming) {
+          setLocalStatus('Stop the current run before clearing.');
+          break;
+        }
+        try {
+          await api.truncateMessages(projectId, 0);
+          await load();
+          setUsageTotal(null);
+          setLocalStatus('Chat cleared.');
+        } catch (e) {
+          setLocalStatus(errMsg(e));
+        }
+        break;
+      default:
+        // /compact
+        if (streaming) {
+          setLocalStatus('Stop the current run before compacting.');
+          break;
+        }
+        setLocalStatus('Compacting conversation…');
+        try {
+          await api.compact(projectId);
+          setLocalStatus('Conversation compacted.');
+        } catch (e) {
+          setLocalStatus(errMsg(e));
+        }
+    }
+    setInput('');
+    return true;
+  }, [projectId, streaming, load]);
+
+  const send = useCallback(async () => {
+    if (await runLocalCommand(input)) return;
+    sendText(input);
+  }, [input, runLocalCommand, sendText]);
+
+  const updateSuggestions = useCallback(async (value: string) => {
+    const cursor = taRef.current?.selectionStart ?? value.length;
+    const before = value.slice(0, cursor);
+    const tokenMatch = before.match(/(?:^|\s)([@#/][^\s]*)$/);
+    if (!tokenMatch) { setSuggestions([]); return; }
+    const token = tokenMatch[1];
+    const query = token.slice(1).toLowerCase();
+    setSuggestionIndex(0);
+    try {
+      if (token[0] === '/') {
+        setSuggestions(
+          CHAT_COMMANDS.filter((c) => c.name.slice(1).startsWith(query)).map((c) => ({
+            insert: c.name,
+            label: c.name,
+            hint: c.hint,
+          })),
+        );
+        return;
+      }
+      if (token[0] === '@') {
+        if (!fileListRef.current) {
+          const r = await api.listAllFiles(projectId);
+          fileListRef.current = r.entries.map((e) => e.path);
+        }
+        setSuggestions(
+          fileListRef.current
+            .filter((p) => p.toLowerCase().includes(query))
+            .slice(0, 8)
+            .map((p) => ({ insert: `@${p}`, label: p })),
+        );
+        return;
+      }
+      if (!skillListRef.current) {
+        const s = await api.getSettings();
+        skillListRef.current = (s.skills ?? [])
+          .filter((x) => x.enabled)
+          .map((x) => ({ name: x.name, hint: x.description || x.author }));
+      }
+      setSuggestions(
+        skillListRef.current
+          .filter((x) => x.name.toLowerCase().includes(query))
+          .slice(0, 8)
+          .map((x) => ({ insert: `#${x.name}`, label: `#${x.name}`, hint: x.hint })),
+      );
+    } catch { setSuggestions([]); }
+  }, [projectId]);
+
+  // Pick the highlighted suggestion: slash commands run right away (they take
+  // no arguments), @/# tokens complete in the textarea.
+  const chooseSuggestion = useCallback((suggestion: string) => {
+    const textarea = taRef.current;
+    const cursor = textarea?.selectionStart ?? input.length;
+    const before = input.slice(0, cursor);
+    const match = before.match(/(?:^|\s)([@#/][^\s]*)$/);
+    if (!match) return;
+    const start = cursor - match[1].length;
+    const next = input.slice(0, start) + suggestion + ' ' + input.slice(cursor);
+    setInput(next);
+    setSuggestions([]);
+    requestAnimationFrame(() => {
+      textarea?.focus();
+      const nextCursor = start + suggestion.length + 1;
+      textarea?.setSelectionRange(nextCursor, nextCursor);
+    });
+  }, [input]);
+
+  // Pick the highlighted suggestion: slash commands run right away (they take
+  // no arguments), @/# tokens complete in the textarea.
+  const acceptSuggestion = useCallback(
+    (s: Suggestion) => {
+      if (s.insert.startsWith('/')) {
+        setSuggestions([]);
+        void runLocalCommand(s.insert);
+      } else {
+        chooseSuggestion(s.insert);
+      }
+    },
+    [runLocalCommand, chooseSuggestion],
+  );
 
   const regenerate = useCallback(() => {
     if (streaming || !llmReady) return;
@@ -1098,18 +1329,6 @@ export default function ChatPane({
               <IconLock className="h-3.5 w-3.5 shrink-0" />
               {permissionMeta(permissionMode).short}
             </button>
-            {streaming && (
-              <span
-                className="flex shrink-0 items-center gap-1.5 rounded-full bg-border px-2 py-1 text-[11px] text-subtle"
-                title={`Working with ${model || (selectedProvider?.name ?? 'provider')}`}
-              >
-                <span className="relative flex h-2 w-2">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent opacity-60" />
-                  <span className="relative inline-flex h-2 w-2 rounded-full bg-accent" />
-                </span>
-                Working…
-              </span>
-            )}
           </div>
         </div>
       )}
@@ -1243,9 +1462,47 @@ export default function ChatPane({
         )}
       </div>
 
+      {showJump && (
+        <div className="relative z-10 flex h-0 justify-center overflow-visible">
+          <button
+            type="button"
+            onClick={jumpToBottom}
+            aria-label="Scroll to bottom"
+            title="Scroll to bottom"
+            className="flex h-9 w-9 -translate-y-[calc(100%+0.75rem)] items-center justify-center rounded-full border border-border bg-surface/95 text-subtle shadow-lg backdrop-blur transition-colors hover:text-text"
+          >
+            <IconChevronDown className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
+      {localStatus && <div className="px-3 py-1 text-center text-xs text-subtle">{localStatus}</div>}
       {llmReady ? (
-        <div className="shrink-0 border-t border-border p-2 md:p-3">
-          <div className="flex flex-col gap-2">
+        <div className="mt-auto shrink-0 border-t border-border px-2 pt-2 pb-1 md:p-3">
+          <div className="relative flex flex-col gap-2">
+            {suggestions.length > 0 && (
+              <div className="absolute inset-x-0 bottom-full z-20 mb-1 max-h-64 overflow-y-auto overscroll-contain rounded-lg border border-border bg-surface shadow-lg">
+                {suggestions.map((s, index) => (
+                  <button
+                    key={s.insert}
+                    type="button"
+                    onMouseEnter={() => setSuggestionIndex(index)}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => acceptSuggestion(s)}
+                    className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs ${
+                      index === suggestionIndex ? 'bg-border text-text' : 'text-subtle'
+                    }`}
+                  >
+                    <span className="min-w-0 flex-1 truncate font-mono">{s.label}</span>
+                    {s.hint && (
+                      <span className="max-w-[50%] shrink-0 truncate text-[10px] text-faint">
+                        {s.hint}
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
             {(attachments.length > 0 || attachError) && (
               <div className="flex flex-wrap items-center gap-1.5">
                 {attachments.map((a, i) => (
@@ -1269,7 +1526,7 @@ export default function ChatPane({
               </div>
             )}
             <div
-              className={`flex min-w-0 items-end gap-1.5 overflow-hidden rounded-xl border border-border-strong bg-surface p-1.5 transition-colors focus-within:border-subtle md:gap-2 md:p-2 ${
+              className={`relative flex min-w-0 items-end gap-1.5 overflow-hidden rounded-xl border border-border-strong bg-surface p-1.5 transition-colors focus-within:border-subtle md:gap-2 md:p-2 ${
                 streaming ? 'v1-working' : ''
               }`}
             >
@@ -1281,17 +1538,21 @@ export default function ChatPane({
             >
               <IconWrench className="h-4 w-4" />
             </IconButton>
-            {canAttach && (
-              <IconButton
-                onClick={() => fileRef.current?.click()}
-                disabled={!hasModel}
-                aria-label="Attach a file"
-                title={hasModel ? 'Attach a file (image or text)' : 'Select a model first'}
-                className="h-8! w-8! shrink-0 md:h-9! md:w-9!"
-              >
-                <IconPaperclip className="h-4 w-4" />
-              </IconButton>
-            )}
+            <IconButton
+              onClick={() => fileRef.current?.click()}
+              disabled={!hasModel}
+              aria-label="Attach a file"
+              title={
+                !hasModel
+                  ? 'Select a model first'
+                  : supportsImages
+                    ? 'Attach a file (image or text)'
+                    : 'Attach a text file (this model does not support images)'
+              }
+              className="h-8! w-8! shrink-0 md:h-9! md:w-9!"
+            >
+              <IconPaperclip className="h-4 w-4" />
+            </IconButton>
             <input
               ref={fileRef}
               type="file"
@@ -1302,20 +1563,67 @@ export default function ChatPane({
                 e.target.value = '';
               }}
             />
-            <textarea
-              ref={taRef}
-              rows={1}
-              value={input}
-              placeholder="Describe what to build…"
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  void send();
-                }
-              }}
-              className="max-h-40 min-h-[32px] min-w-0 flex-1 resize-none bg-transparent px-1.5 py-1 text-base text-text outline-none placeholder:text-faint sm:text-sm md:min-h-[36px] md:py-1.5"
-            />
+            <div className="relative min-w-0 flex-1">
+              {/* The textarea's own text is transparent; this echo beneath it
+                  renders the same text with @/# tags pilled. The echo must
+                  keep the textarea's exact font/padding metrics — the pill
+                  uses negative margins to cancel its padding, otherwise the
+                  caret and selection drift from the visible text. */}
+              <div
+                ref={echoRef}
+                aria-hidden
+                className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words px-1.5 py-1 text-base sm:text-sm md:py-1.5"
+              >
+                <TaggedText
+                  text={input}
+                  pillClassName="-mx-0.5 rounded-sm bg-border px-0.5 text-accent"
+                />
+                {'​'}
+              </div>
+              <textarea
+                ref={taRef}
+                rows={1}
+                value={input}
+                placeholder="Describe what to build…"
+                onChange={(e) => {
+                  setInput(e.target.value);
+                  void updateSuggestions(e.target.value);
+                }}
+                onKeyDown={(e) => {
+                  if (suggestions.length > 0 && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+                    e.preventDefault();
+                    setSuggestionIndex((i) => (e.key === 'ArrowDown'
+                      ? (i + 1) % suggestions.length
+                      : (i + suggestions.length - 1) % suggestions.length));
+                    return;
+                  }
+                  if (suggestions.length > 0 && e.key === 'Tab') {
+                    e.preventDefault();
+                    chooseSuggestion(suggestions[suggestionIndex].insert);
+                    return;
+                  }
+                  if (suggestions.length > 0 && e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    acceptSuggestion(suggestions[suggestionIndex]);
+                    return;
+                  }
+                  if (e.key === 'Escape' && suggestions.length > 0) {
+                    e.preventDefault();
+                    setSuggestions([]);
+                    return;
+                  }
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    void send();
+                  }
+                }}
+                onScroll={(e) => {
+                  const echo = echoRef.current;
+                  if (echo) echo.scrollTop = e.currentTarget.scrollTop;
+                }}
+                className="relative block max-h-40 min-h-[32px] w-full resize-none bg-transparent px-1.5 py-1 text-base text-transparent caret-accent outline-none placeholder:text-faint sm:text-sm md:min-h-[36px] md:py-1.5"
+              />
+            </div>
             {streaming ? (
               <IconButton
                 onClick={stop}
@@ -1365,7 +1673,10 @@ export default function ChatPane({
         translucent
       >
         <ToolSettings
+          key={toolsTab}
           initialTab={toolsTab}
+          initialPermissionMode={permissionMode}
+          onPermissionModeChange={setPermissionMode}
           onPermissionSaved={(m) => {
             setPermissionMode(m);
             setToolsOpen(false);

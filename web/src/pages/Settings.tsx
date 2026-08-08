@@ -3,7 +3,15 @@ import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { SiVercel } from 'react-icons/si';
 import { api, type SettingsUpdate } from '../api';
 import type { Settings as SettingsType } from '../types';
-import { errMsg, getChatSide, randomId, setChatSide, type ChatSide } from '../utils';
+import {
+  errMsg,
+  getChatSide,
+  getDebugHud,
+  randomId,
+  setChatSide,
+  setDebugHud,
+  type ChatSide,
+} from '../utils';
 import {
   applyTheme,
   getStoredTheme,
@@ -114,6 +122,32 @@ function ChatSideControl() {
           }`}
         >
           {s === 'left' ? 'Chat on left' : 'Chat on right'}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function DebugHudControl() {
+  const [on, setOn] = useState(() => getDebugHud());
+
+  const choose = (v: boolean) => {
+    setOn(v);
+    setDebugHud(v);
+  };
+
+  return (
+    <div className="grid w-full max-w-xs grid-cols-2 gap-1 rounded-lg border border-border bg-surface p-1">
+      {([false, true] as const).map((v) => (
+        <button
+          key={String(v)}
+          type="button"
+          onClick={() => choose(v)}
+          className={`min-h-[36px] rounded-md text-sm transition-colors ${
+            on === v ? 'bg-border text-text' : 'text-dim hover:text-text'
+          }`}
+        >
+          {v ? 'On' : 'Off'}
         </button>
       ))}
     </div>
@@ -575,8 +609,16 @@ export default function Settings() {
           ))}
         </nav>
 
-        <main className="min-h-0 flex-1 overflow-y-auto">
-          <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 p-4 md:p-6">
+        <main
+          className={`flex min-h-0 flex-1 flex-col ${
+            page === 'tools' ? 'overflow-hidden' : 'overflow-y-auto'
+          }`}
+        >
+          <div
+            className={`mx-auto flex w-full max-w-3xl flex-col ${
+              page === 'tools' ? 'min-h-0 flex-1' : 'gap-4 p-4 md:p-6'
+            }`}
+          >
             <div className={page === 'llm' ? '' : 'hidden'}>
               <Section title="LLM" description="The OpenAI-compatible endpoint v1 uses to generate apps. The model is picked per project in the chat.">
           <form onSubmit={(e) => void saveLLM(e)} className="flex flex-col gap-3">
@@ -922,8 +964,8 @@ export default function Settings() {
         </Section>
             </div>
 
-            <div className={page === 'tools' ? '' : 'hidden'}>
-              <ToolSettings variant="stacked" />
+            <div className={page === 'tools' ? 'flex min-h-0 flex-1 flex-col' : 'hidden'}>
+              <ToolSettings initialTab="mcp" />
             </div>
 
             <div className={page === 'appearance' ? '' : 'hidden'}>
@@ -987,6 +1029,12 @@ export default function Settings() {
                       {settings.commit ? settings.commit.slice(0, 7) : 'dev'}
                     </span>
                   </p>
+                </div>
+                <div>
+                  <span className="mb-1 block text-xs text-subtle">
+                    Debug HUD (project view, applies on reload)
+                  </span>
+                  <DebugHudControl />
                 </div>
               </Section>
             </div>

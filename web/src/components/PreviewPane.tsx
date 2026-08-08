@@ -10,7 +10,6 @@ import {
   IconMonitor,
   IconPlay,
   IconRefresh,
-  IconSquare,
 } from './icons';
 
 // Device presets render the iframe at exact device dimensions so media
@@ -207,52 +206,49 @@ export default function PreviewPane({
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex h-11 shrink-0 items-center gap-1 border-b border-border px-2">
-        {running ? (
-          <Button
-            variant="outline"
-            onClick={() => void stop()}
-            disabled={stopping}
-            className="min-h-[32px] px-2.5 py-1 text-xs"
-          >
-            {stopping ? <Spinner className="h-3.5 w-3.5" /> : <IconSquare className="h-3.5 w-3.5" />}
-            Stop
-          </Button>
-        ) : (
-          <Button
-            variant="outline"
-            onClick={() => void start()}
-            disabled={starting}
-            className="min-h-[32px] px-2.5 py-1 text-xs"
-          >
-            {starting ? <Spinner className="h-3.5 w-3.5" /> : <IconPlay className="h-3.5 w-3.5" />}
-            {starting ? 'Starting…' : 'Start'}
-          </Button>
-        )}
-        <span className="ml-1 flex items-center gap-1.5 text-xs text-subtle">
-          <span
-            className={`h-1.5 w-1.5 rounded-full ${
-              running ? 'bg-emerald-500' : starting ? 'animate-pulse bg-amber-500' : 'bg-border-strong'
-            }`}
-          />
-          {running ? 'Running' : starting ? 'Starting' : 'Stopped'}
-        </span>
+        <Button
+          variant="outline"
+          onClick={() => void (running ? stop() : start())}
+          disabled={starting || stopping}
+          title={
+            running
+              ? 'Preview is running — click to stop'
+              : starting
+                ? 'Preview is starting…'
+                : 'Preview is stopped — click to start'
+          }
+          className="min-h-[32px] gap-1.5 px-2.5 py-1 text-xs"
+        >
+          {starting || stopping ? (
+            <Spinner className="h-3.5 w-3.5" />
+          ) : (
+            <span
+              className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                running ? 'bg-emerald-500' : 'bg-border-strong'
+              }`}
+            />
+          )}
+          {running ? 'Stop' : starting ? 'Starting…' : 'Start'}
+        </Button>
         <div className="flex-1" />
         <select
           value={deviceIdx}
           onChange={(e) => setDeviceIdx(Number(e.target.value))}
           aria-label="Preview device size"
           title="Preview device size"
-          className="shrink-0 rounded-md border border-border bg-surface px-2 py-1 text-xs text-subtle outline-none transition-colors focus:border-subtle"
+          className="shrink-0 rounded-md border border-border bg-surface px-1.5 py-1 text-xs text-subtle outline-none transition-colors focus:border-subtle md:px-2"
         >
           {DEVICES.map((d, i) => (
             <option key={d.label} value={i}>
-              {d.w ? `${d.label} ${d.w}×${d.h}` : d.label}
+              {d.label}
             </option>
           ))}
         </select>
         <button
           type="button"
           onClick={() => setLogsOpen((o) => !o)}
+          aria-label="Toggle preview logs"
+          title="Preview logs"
           className="flex min-h-[36px] items-center gap-1 rounded-lg px-2 text-xs text-subtle transition-colors hover:bg-border hover:text-text"
         >
           {logsOpen ? (
@@ -260,7 +256,7 @@ export default function PreviewPane({
           ) : (
             <IconChevronRight className="h-3.5 w-3.5" />
           )}
-          Logs
+          <span className="hidden md:inline">Logs</span>
         </button>
         <IconButton
           aria-label="Refresh preview"
@@ -311,7 +307,10 @@ export default function PreviewPane({
         </div>
       )}
 
-      <div className="min-h-0 flex-1">
+      {/* relative + overflow-hidden: iOS expands in-flow iframes to their
+          content height, which would stretch the whole page — an absolutely
+          positioned frame inside a clipped stage keeps its bounds. */}
+      <div className="relative min-h-0 flex-1 overflow-hidden">
         {initialLoading ? (
           <div className="flex h-full items-center justify-center">
             <Spinner className="h-5 w-5" />
@@ -339,7 +338,7 @@ export default function PreviewPane({
               </span>
             </div>
           ) : (
-            frame('h-full w-full border-0 bg-bg')
+            frame('absolute inset-0 h-full w-full border-0 bg-bg')
           )
         ) : (
           <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">

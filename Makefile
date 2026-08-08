@@ -1,4 +1,5 @@
-VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+BUILD_ID := $(shell git rev-parse --short=6 HEAD)-$(shell date +%H%M%S)
+LDFLAGS := -X main.version=$(BUILD_ID) -X main.commit=$(shell git rev-parse --short HEAD)
 
 .PHONY: dev dev-backend dev-frontend build docker
 
@@ -7,11 +8,11 @@ VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 # or use `make dev`, which backgrounds the backend with `&` and runs the
 # frontend dev server in the foreground (Ctrl-C stops both).
 dev:
-	@V1_AUTH_DISABLED=true V1_DATA_DIR=./data go run ./cmd/v1 & \
+	@V1_AUTH_DISABLED=true V1_DATA_DIR=./data go run -ldflags "$(LDFLAGS)" ./cmd/v1 & \
 	cd web && npm run dev
 
 dev-backend:
-	V1_AUTH_DISABLED=true V1_DATA_DIR=./data go run ./cmd/v1
+	V1_AUTH_DISABLED=true V1_DATA_DIR=./data go run -ldflags "$(LDFLAGS)" ./cmd/v1
 
 dev-frontend:
 	cd web && npm run dev
@@ -21,8 +22,8 @@ build:
 	cd web && npm ci && npm run build
 	mkdir -p internal/server/dist
 	cp -R web/dist/. internal/server/dist/
-	go build -ldflags "-X main.version=$(VERSION) -X main.commit=$(shell git rev-parse --short HEAD)" -o bin/v1 ./cmd/v1
+	go build -ldflags "$(LDFLAGS)" -o bin/v1 ./cmd/v1
 
 # Local docker build (multi-arch + push is handled by the release workflow)
 docker:
-	docker build --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(shell git rev-parse --short HEAD) -t v1:local .
+	docker build --build-arg VERSION=$(BUILD_ID) --build-arg COMMIT=$(shell git rev-parse --short HEAD) -t v1:local .

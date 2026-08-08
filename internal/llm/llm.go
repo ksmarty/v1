@@ -93,10 +93,47 @@ const chatRetries = 3
 // chatBackoffBase is the first retry delay, doubled per attempt.
 const chatBackoffBase = 500 * time.Millisecond
 
-// ChatStream streams a chat completion, invoking onDelta for text chunks and
-// onReasoning for reasoning deltas. The initial request is retried up to
-// chatRetries attempts on transient failures; a HTTP 400 triggers one fallback
-// request without stream_options for providers that reject it.
+// Complete requests a non-streaming chat completion and returns its text.
+// It is intentionally small so agent features can inject an equivalent client.
+func (c *Client) Complete(ctx context.Context, messages []Message) (string, error) {
+	body := map[string]any{"model": c.Model, "messages": messages}
+	payload, err := json.Marshal(body)
+	if err != nil {
+		return "", err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+"/chat/completions", bytes.NewReader(payload))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if c.APIKey != "" {
+		req.Header.Set("Authorization", "Bearer "+c.APIKey)
+	}
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		data, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return "", llmError(resp.StatusCode, data)
+	}
+	var out struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return "", err
+	}
+	if len(out.Choices) == 0 {
+		return "", fmt.Errorf("LLM response contained no choices")
+	}
+	return out.Choices[0].Message.Content, nil
+}
+
 func (c *Client) ChatStream(ctx context.Context, messages []Message, tools []Tool, onDelta func(string), onReasoning func(string)) (*StreamResult, error) {
 	res := &StreamResult{}
 	streamOptions := true

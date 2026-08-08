@@ -322,13 +322,6 @@ body {
   padding-top: env(safe-area-inset-top);
 }
 
-/* Skip layout/paint of off-screen chat rows and modal content so scrolling a
-   long thread stays cheap. The browser remembers each element's last size. */
-.v1-cv {
-  content-visibility: auto;
-  contain-intrinsic-size: auto 120px;
-}
-
 /* Blinking caret appended to a streaming assistant message */
 .v1-stream-cursor {
   display: inline-block;
@@ -344,18 +337,46 @@ body {
   50% { opacity: 0; }
 }
 
-/* Animated glow on the chat input while the agent is working */
-@keyframes v1-working-pulse {
-  0%,
-  100% {
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--v1-accent) 55%, transparent);
-  }
-  50% {
-    box-shadow:
-      0 0 0 1px color-mix(in srgb, var(--v1-accent) 90%, transparent),
-      0 0 14px 2px color-mix(in srgb, var(--v1-accent) 35%, transparent);
+/* Composer highlight while the agent runs: a gradient flowing around the
+   border. The padding-box layer keeps the fill opaque; the border-box layer
+   shows through the transparent border. background-position animation works
+   everywhere (no @property needed). */
+.v1-working {
+  border-color: transparent;
+  background:
+    linear-gradient(var(--v1-surface), var(--v1-surface)) padding-box,
+    linear-gradient(
+      90deg,
+      var(--v1-accent),
+      #a855f7,
+      #ec4899,
+      #f59e0b,
+      var(--v1-accent)
+    ) border-box;
+  background-size:
+    100% 100%,
+    300% 100%;
+  animation: v1-working-slide 2.5s linear infinite;
+}
+@keyframes v1-working-slide {
+  to {
+    background-position:
+      0 0,
+      300% 0;
   }
 }
-.v1-working {
-  animation: v1-working-pulse 1.6s ease-in-out infinite;
+
+/* "Unsaved changes" nudge: a slow accent glow that expands and fades. */
+.v1-save-breathe {
+  border-color: color-mix(in srgb, var(--v1-accent) 70%, transparent);
+  animation: v1-save-breathe 2s ease-in-out infinite;
+}
+@keyframes v1-save-breathe {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--v1-accent) 55%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 12px 3px color-mix(in srgb, var(--v1-accent) 35%, transparent);
+  }
 }

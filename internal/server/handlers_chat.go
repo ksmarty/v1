@@ -186,6 +186,21 @@ func (s *Server) handleGetTodos(w http.ResponseWriter, r *http.Request) {
 
 // ---- chat (SSE agent loop) ----
 
+func (s *Server) handleCompact(w http.ResponseWriter, r *http.Request) {
+	p := s.projectOr404(w, r)
+	if p == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), chatTimeout)
+	defer cancel()
+	id, err := agent.CompactProject(ctx, s.st, p.ID, s.llmClient())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"coveredMessageId": id})
+}
+
 func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	p := s.projectOr404(w, r)
 	if p == nil {
@@ -262,6 +277,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 
 // handleTruncateMessages deletes every message after the given id — the
 // "revert"/rewind action that cuts the thread back to a chosen point.
+// id 0 deletes the whole thread (the chat's /clear command).
 func (s *Server) handleTruncateMessages(w http.ResponseWriter, r *http.Request) {
 	p := s.projectOr404(w, r)
 	if p == nil {
@@ -273,7 +289,7 @@ func (s *Server) handleTruncateMessages(w http.ResponseWriter, r *http.Request) 
 	if !decodeJSON(w, r, &body) {
 		return
 	}
-	if body.ID <= 0 {
+	if body.ID < 0 {
 		writeError(w, http.StatusBadRequest, "id is required")
 		return
 	}
@@ -350,6 +366,8 @@ func (s *Server) streamChatTurn(w http.ResponseWriter, r *http.Request, p *store
 	mcpTools, _ := s.mcp.Sync(ctx)
 	params.ExtraTools = mcpTools
 	params.SkillsPrompt = s.skillsSystemPrompt()
+	params.ContextBudget = s.cfg.ContextBudget
+	params.ContextThreshold = s.cfg.ContextThreshold
 	params.Emit = emit
 	params.Exec = &agent.Executor{
 		Root:           root,

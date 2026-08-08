@@ -6,7 +6,10 @@
       rel="icon"
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230a0a0a'/%3E%3Ctext x='16' y='21' font-family='system-ui,sans-serif' font-size='13' font-weight='700' fill='white' text-anchor='middle'%3Ev1%3C/text%3E%3C/svg%3E"
     />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
     <meta name="color-scheme" content="dark" />
     <meta name="theme-color" content="#0a0a0a" />
     <meta name="mobile-web-app-capable" content="yes" />
@@ -16,6 +19,80 @@
     <link rel="manifest" href="/manifest.json" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <title>v1</title>
+    <script>
+      (function () {
+        // iOS standalone PWAs lay out against stale (too-small) viewport
+        // bounds at cold launch; metrics only correct after the first touch.
+        // In standalone mode, persist the largest plausible height seen per
+        // orientation and re-apply it before first paint so restarts start at
+        // the last known-good height. Heights are capped at the screen size:
+        // zoomed-out / expanded states can report a much larger visual
+        // viewport and must never grow the shell (v1 keys held such a bogus
+        // value — hence the v2 key). Outside standalone, track the window
+        // exactly. Keep in sync with web/src/hooks/useAppHeight.ts.
+        try { history.scrollRestoration = 'manual'; } catch (e) {}
+        window.scrollTo(0, 0);
+        var standalone =
+          window.matchMedia('(display-mode: standalone)').matches ||
+          window.navigator.standalone === true;
+        var portrait = function () {
+          return window.matchMedia('(orientation: portrait)').matches;
+        };
+        var key = function () {
+          return 'v1-app-height-v2:' + (portrait() ? 'portrait' : 'landscape');
+        };
+        var cap = function () {
+          return portrait()
+            ? Math.max(window.screen.width, window.screen.height)
+            : Math.min(window.screen.width, window.screen.height);
+        };
+        var readStored = function () {
+          try {
+            return parseInt(localStorage.getItem(key()) || '0', 10) || 0;
+          } catch (e) {
+            return 0;
+          }
+        };
+        var best = standalone ? readStored() : 0;
+        var set = function () {
+          void document.body && document.body.offsetHeight;
+          var h = Math.max(
+            window.innerHeight || 0,
+            document.documentElement && document.documentElement.clientHeight || 0,
+            window.visualViewport && window.visualViewport.height || 0
+          );
+          if (standalone) {
+            h = Math.min(h, cap());
+            if (h <= best) {
+              document.documentElement.style.setProperty('--v1-app-height', best + 'px');
+              return;
+            }
+            best = h;
+            try {
+              localStorage.setItem(key(), String(best));
+            } catch (e) {}
+          } else {
+            best = h;
+          }
+          document.documentElement.style.setProperty('--v1-app-height', best + 'px');
+        };
+        set();
+        var raf = requestAnimationFrame(function () {
+          requestAnimationFrame(set);
+        });
+        var timers = [50, 150, 300, 600, 1000].map(function (ms) {
+          return setTimeout(set, ms);
+        });
+        window.addEventListener('resize', set);
+        window.addEventListener('orientationchange', function () {
+          best = standalone ? readStored() : 0;
+          set();
+        });
+        if (window.visualViewport) {
+          window.visualViewport.addEventListener('resize', set);
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

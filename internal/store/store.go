@@ -78,6 +78,12 @@ CREATE TABLE IF NOT EXISTS messages (
   created_at INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_messages_project_id ON messages(project_id, id);
+CREATE TABLE IF NOT EXISTS compaction_snapshots (
+  project_id TEXT PRIMARY KEY,
+  summary TEXT NOT NULL,
+  covered_message_id INTEGER NOT NULL,
+  created_at INTEGER NOT NULL
+);
 `)
 	if err != nil {
 		return err
@@ -312,6 +318,9 @@ func (s *Store) DeleteProject(id string) error {
 	if _, err := s.db.Exec(`DELETE FROM messages WHERE project_id = ?`, id); err != nil {
 		return err
 	}
+	if _, err := s.db.Exec(`DELETE FROM compaction_snapshots WHERE project_id = ?`, id); err != nil {
+		return err
+	}
 	_, err := s.db.Exec(`DELETE FROM projects WHERE id = ?`, id)
 	return err
 }
@@ -355,6 +364,33 @@ func (s *Store) AddMessage(projectID, role, content, toolJSON, model, reasoning,
 		return 0, err
 	}
 	return res.LastInsertId()
+}
+
+// CompactionSnapshot is a non-visible summary covering messages through an ID.
+type CompactionSnapshot struct {
+	ProjectID        string
+	Summary          string
+	CoveredMessageID int64
+	CreatedAt        int64
+}
+
+// GetCompactionSnapshot returns the latest snapshot for a project.
+func (s *Store) GetCompactionSnapshot(projectID string) (*CompactionSnapshot, error) {
+	var c CompactionSnapshot
+	err := s.db.QueryRow(`SELECT project_id, summary, covered_message_id, created_at FROM compaction_snapshots WHERE project_id = ?`, projectID).
+		Scan(&c.ProjectID, &c.Summary, &c.CoveredMessageID, &c.CreatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	return &c, err
+}
+
+// SaveCompactionSnapshot replaces the project's non-visible transcript summary.
+func (s *Store) SaveCompactionSnapshot(projectID, summary string, coveredMessageID int64) error {
+	_, err := s.db.Exec(`INSERT INTO compaction_snapshots (project_id, summary, covered_message_id, created_at) VALUES (?, ?, ?, ?)
+		ON CONFLICT(project_id) DO UPDATE SET summary = excluded.summary, covered_message_id = excluded.covered_message_id, created_at = excluded.created_at`,
+		projectID, summary, coveredMessageID, now())
+	return err
 }
 
 // DeleteMessagesAfter removes every message with id greater than id. Chat

@@ -3,12 +3,52 @@ import { Link, useParams } from 'react-router-dom';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import { api } from '../api';
 import type { Project as ProjectType } from '../types';
-import { errMsg, getChatSide } from '../utils';
+import { errMsg, getChatSide, getDebugHud } from '../utils';
 import { useMediaQuery } from '../hooks/useMediaQuery';
 import { Button, Center } from '../components/ui';
 import { IconChat, IconChevronLeft, IconMonitor } from '../components/icons';
 import ChatPanel from '../components/ChatPanel';
 import PreviewPane from '../components/PreviewPane';
+
+// Diagnostic overlay for the iOS PWA stale-viewport issue; enabled via
+// Settings → Appearance → Debug HUD (v1.debugHud in localStorage).
+function DebugHud() {
+  const [txt, setTxt] = useState('');
+  const [hidden, setHidden] = useState(false);
+  useEffect(() => {
+    const update = () => {
+      const probe = document.getElementById('v1-dvh-probe');
+      let stored = '?';
+      try {
+        stored = localStorage.getItem('v1-app-height-v2:portrait') ?? '-';
+      } catch {
+        stored = 'err';
+      }
+      setTxt(
+        `ih=${window.innerHeight} ch=${document.documentElement.clientHeight} ` +
+          `vv=${Math.round(window.visualViewport?.height ?? 0)} dvh=${probe?.offsetHeight ?? '?'} ` +
+          `var=${document.documentElement.style.getPropertyValue('--v1-app-height') || '-'} stored=${stored} ` +
+          `sy=${Math.round(window.scrollY)}`,
+      );
+    };
+    update();
+    const t = setInterval(update, 500);
+    return () => clearInterval(t);
+  }, []);
+  if (hidden) return null;
+  return (
+    <>
+      <div id="v1-dvh-probe" className="pointer-events-none absolute left-0 top-0 h-dvh w-0" />
+      <button
+        type="button"
+        onClick={() => setHidden(true)}
+        className="fixed bottom-1 left-1 z-[100] max-w-[95vw] rounded bg-red-900/80 px-1.5 py-0.5 text-left font-mono text-[10px] text-white"
+      >
+        {txt}
+      </button>
+    </>
+  );
+}
 
 export default function Project() {
   const { id = '' } = useParams();
@@ -19,6 +59,7 @@ export default function Project() {
   const [chatCollapsed, setChatCollapsed] = useState(false);
   const [previewRefreshKey, setPreviewRefreshKey] = useState(0);
   const [chatSide] = useState<'left' | 'right'>(() => getChatSide());
+  const [debugHud] = useState(() => getDebugHud());
   const [llmReady, setLlmReady] = useState(false);
 
   useEffect(() => {
@@ -80,9 +121,9 @@ export default function Project() {
   );
 
   return (
-    <div className="v1-safe-top flex h-[var(--v1-app-height,100dvh)] flex-col overflow-hidden">
-      {isDesktop ? (
-        chatCollapsed ? (
+    <div className="v1-safe-top flex h-[max(var(--v1-app-height,0px),100dvh)] flex-col overflow-hidden">
+      {debugHud && <DebugHud />}
+      {isDesktop ? (        chatCollapsed ? (
           <div className="flex min-h-0 flex-1">
             {chatSide === 'left' && expandStrip}
             <div className="min-h-0 flex-1">{previewPanel}</div>
@@ -117,9 +158,10 @@ export default function Project() {
         )
       ) : (
         <>
-          {/* The bottom nav is in-flow (not fixed): with the shell pinned to
-              the JS-measured viewport height, the bar can't float above the
-              screen edge in iOS standalone mode. */}
+          {/* The bottom nav is in-flow (not fixed): the shell is pinned to
+              max(100dvh, JS-measured/persisted viewport height) — whichever
+              metric iOS currently reports taller wins, so the bar can't float
+              above the screen edge in standalone mode. */}
           <div className="min-h-0 flex-1 overflow-hidden">
             <div className={mobilePane === 'chat' ? 'h-full min-h-0 min-w-0' : 'hidden'}>
               {chatSidePanel}
@@ -128,7 +170,7 @@ export default function Project() {
               {previewPanel}
             </div>
           </div>
-          <nav className="grid shrink-0 grid-cols-2 border-t border-border bg-bg pb-[env(safe-area-inset-bottom)]">
+          <nav className="grid shrink-0 grid-cols-2 border-t border-border bg-bg pb-[calc(env(safe-area-inset-bottom)/2)]">
             {[
               { id: 'chat' as const, label: 'Chat', icon: <IconChat className="h-5 w-5" /> },
               { id: 'preview' as const, label: 'Preview', icon: <IconMonitor className="h-5 w-5" /> },

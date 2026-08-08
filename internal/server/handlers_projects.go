@@ -2,6 +2,7 @@ package server
 
 import (
 	"errors"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -195,6 +196,43 @@ func (s *Server) handleListFiles(w http.ResponseWriter, r *http.Request) {
 	if p == nil {
 		return
 	}
+	type entry struct {
+		Name string `json:"name"`
+		Path string `json:"path"`
+		Type string `json:"type"`
+		Size int64  `json:"size"`
+	}
+	// ?recursive=true: every file in the project (for chat @-completion).
+	if r.URL.Query().Get("recursive") == "true" {
+		out := []entry{}
+		root := p.Path
+		err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if d.IsDir() {
+				if path != root && skipListNames[d.Name()] {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			rel, err := filepath.Rel(root, path)
+			if err != nil {
+				return err
+			}
+			out = append(out, entry{Name: d.Name(), Path: filepath.ToSlash(rel), Type: "file"})
+			if len(out) >= 5000 {
+				return fs.SkipAll
+			}
+			return nil
+		})
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "cannot walk directory: "+err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"entries": out})
+		return
+	}
 	rel := r.URL.Query().Get("path")
 	full, err := safeJoin(p.Path, rel)
 	if errors.Is(err, errPathTraversal) {
@@ -209,12 +247,6 @@ func (s *Server) handleListFiles(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, http.StatusNotFound, "cannot read directory: "+err.Error())
 		return
-	}
-	type entry struct {
-		Name string `json:"name"`
-		Path string `json:"path"`
-		Type string `json:"type"`
-		Size int64  `json:"size"`
 	}
 	out := []entry{}
 	base := strings.Trim(filepath.ToSlash(filepath.Clean("/"+rel)), "/")
