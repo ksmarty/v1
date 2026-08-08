@@ -257,6 +257,9 @@ renderer.link = ({ href, title, tokens }: Tokens.Link): string => {
 // Inline extension: render @file / #skill mentions as monospaced pills.
 // Being an inline tokenizer, it never fires inside code spans or fences.
 // Matches the pill style used for tags in user bubbles (ChatPane TaggedText).
+// renderMarkdown sets tagValidator around the synchronous parse; tags that
+// fail validation (nonexistent file/skill) render as plain text.
+let tagValidator: ((tag: string) => boolean) | null = null;
 const tagExtension: TokenizerAndRendererExtension = {
   name: 'v1tag',
   level: 'inline',
@@ -270,8 +273,10 @@ const tagExtension: TokenizerAndRendererExtension = {
     return { type: 'v1tag', raw: m[0], text: m[1] };
   },
   renderer(token) {
+    const text = String(token.text ?? '');
+    if (tagValidator && !tagValidator(text)) return escapeHtml(text);
     return `<span class="rounded bg-border px-1 py-px font-mono text-[0.85em] text-accent">${escapeHtml(
-      String(token.text ?? ''),
+      text,
     )}</span>`;
   },
 };
@@ -283,10 +288,19 @@ const marked = new Marked({ renderer, gfm: true, extensions: [tagExtension] });
 const CURSOR_MARKER = '\u200b\u200bV1CURSOR\u200b\u200b';
 const CURSOR_SPAN = '<span class="v1-stream-cursor" />';
 
-export function renderMarkdown(src: string, streaming = false): string {
+export function renderMarkdown(
+  src: string,
+  streaming = false,
+  validTag?: (tag: string) => boolean,
+): string {
   // Only append the blinking caret while there is actual text on screen — an
   // empty assistant bubble (e.g. between tool steps) should not blink.
   const withCursor = streaming && src.trim() !== '';
-  const html = marked.parse(withCursor ? src + CURSOR_MARKER : src, { async: false });
-  return html.replaceAll(CURSOR_MARKER, CURSOR_SPAN);
+  tagValidator = validTag ?? null;
+  try {
+    const html = marked.parse(withCursor ? src + CURSOR_MARKER : src, { async: false });
+    return html.replaceAll(CURSOR_MARKER, CURSOR_SPAN);
+  } finally {
+    tagValidator = null;
+  }
 }

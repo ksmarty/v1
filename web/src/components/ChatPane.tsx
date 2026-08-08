@@ -58,15 +58,26 @@ const CHAT_COMMANDS = [
 
 // Renders user message text with @file / #skill tags pill-highlighted. Tag
 // characters are limited to path-ish ones so trailing punctuation stays out.
+// When `valid` is given, only tags that resolve to a real file or enabled
+// skill get the pill; the rest render as plain text.
 // pillClassName overrides the pill style; the composer echo passes a
 // width-neutral variant (negative margins cancel the padding) so the visible
 // text keeps the exact metrics of the transparent textarea text above it.
-function TaggedText({ text, pillClassName }: { text: string; pillClassName?: string }) {
+function TaggedText({
+  text,
+  pillClassName,
+  valid,
+}: {
+  text: string;
+  pillClassName?: string;
+  valid?: (tag: string) => boolean;
+}) {
   const out: ReactNode[] = [];
   const re = /(^|\s)([@#][A-Za-z0-9_\-./]+)/g;
   let last = 0;
   let m: RegExpExecArray | null;
   while ((m = re.exec(text))) {
+    if (valid && !valid(m[2])) continue; // unknown file/skill — leave as plain text
     out.push(text.slice(last, m.index), m[1]);
     out.push(
       <span
@@ -287,8 +298,16 @@ function ToolResultBlock({ name, detail }: ToolCall) {
   );
 }
 
-function Markdown({ text, streaming }: { text: string; streaming?: boolean }) {
-  const html = useMemo(() => renderMarkdown(text, streaming), [text, streaming]);
+function Markdown({
+  text,
+  streaming,
+  validTag,
+}: {
+  text: string;
+  streaming?: boolean;
+  validTag?: (tag: string) => boolean;
+}) {
+  const html = useMemo(() => renderMarkdown(text, streaming, validTag), [text, streaming, validTag]);
   const onCopy = (e: MouseEvent<HTMLDivElement>) => {
     const btn = (e.target as HTMLElement).closest('button[data-copy]');
     if (!(btn instanceof HTMLButtonElement)) return;
@@ -380,6 +399,7 @@ function EditUserBubble({
         ref={ref}
         rows={3}
         value={value}
+        autoCorrect="off"
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === 'Enter' && !e.shiftKey) {
@@ -405,6 +425,7 @@ const MessageRow = memo(function MessageRow({
   item,
   isLast,
   streaming,
+  validTag,
   onEdit,
   onRewind,
   onRegenerate,
@@ -414,6 +435,7 @@ const MessageRow = memo(function MessageRow({
   item: Item;
   isLast: boolean;
   streaming: boolean;
+  validTag: (tag: string) => boolean;
   onEdit: (key: string, text: string) => void;
   onRewind: (key: string) => void;
   onRegenerate: () => void;
@@ -434,7 +456,7 @@ const MessageRow = memo(function MessageRow({
     return (
       <div className="ml-auto flex max-w-[85%] flex-col items-end gap-1">
         <div className="w-full rounded-2xl bg-border px-3.5 py-2 text-sm text-text">
-          <div className="whitespace-pre-wrap break-words"><TaggedText text={item.content} /></div>
+          <div className="whitespace-pre-wrap break-words"><TaggedText text={item.content} valid={validTag} /></div>
           {item.attachments && item.attachments.length > 0 && (
             <div className="mt-1.5 flex flex-wrap justify-end gap-1.5">
               {item.attachments.map((a, i) =>
@@ -500,7 +522,7 @@ const MessageRow = memo(function MessageRow({
         <ReasoningBlock text={item.reasoning} autoOpen={item.streaming ?? false} />
       )}
       <div className="min-w-0">
-        <Markdown text={item.content} streaming={item.streaming} />
+        <Markdown text={item.content} streaming={item.streaming} validTag={validTag} />
       </div>
       {item.toolCalls && item.toolCalls.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
@@ -577,9 +599,11 @@ export default function ChatPane({
   const taRef = useRef<HTMLTextAreaElement>(null);
   const echoRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-  // Cached once per mount so @/# completion doesn't hit the API per keystroke.
-  const fileListRef = useRef<string[] | null>(null);
-  const skillListRef = useRef<{ name: string; hint: string }[] | null>(null);
+  // File and enabled-skill lists power the @/# autocomplete and tag
+  // validation (only real files/skills get pill-highlighted). Loaded eagerly;
+  // files refresh after each agent run since runs create/edit files.
+  const [fileList, setFileList] = useState<string[]>([]);
+  const [skillList, setSkillList] = useState<{ name: string; hint: string }[]>([]);
   const restartRef = useRef(onPreviewRestart);
   restartRef.current = onPreviewRestart;
 
@@ -781,6 +805,39 @@ export default function ChatPane({
       });
   }, [projectId]);
 
+  // Load the project file list and enabled skills for @/# completion and tag
+  // validation (only real entries get pill-highlighted).
+  useEffect(() => {
+    let active = true;
+    api
+      .listAllFiles(projectId)
+      .then((r) => {
+        if (active) setFileList(r.entries.map((e) => e.path));
+      })
+      .catch(() => {});
+    api
+      .getSettings()
+      .then((s) => {
+        if (active) {
+          setSkillList(
+            (s.skills ?? [])
+              .filter((x) => x.enabled)
+              .map((x) => ({ name: x.name, hint: x.description || x.author })),
+          );
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [projectId]);
+
+  const validTag = useMemo(() => {
+    const files = new Set(fileList);
+    const skills = new Set(skillList.map((s) => s.name));
+    return (tag: string) => (tag[0] === '@' ? files.has(tag.slice(1)) : skills.has(tag.slice(1)));
+  }, [fileList, skillList]);
+
   // Auto-scroll on new content, but only while the user is already at (or near)
   // the bottom — otherwise reading history during a stream gets yanked around.
   const nearBottomRef = useRef(true);
@@ -839,7 +896,13 @@ export default function ChatPane({
     update((prev) =>
       prev.map((it) => (it.kind === 'msg' && it.streaming ? { ...it, streaming: false } : it)),
     );
-  }, [update]);
+    // Runs create/edit project files — refresh the list behind @-completion
+    // and tag validation.
+    api
+      .listAllFiles(projectId)
+      .then((r) => setFileList(r.entries.map((e) => e.path)))
+      .catch(() => {});
+  }, [update, projectId]);
 
   const handleEvent = useCallback(
     (ev: ChatEvent) => {
@@ -1124,7 +1187,7 @@ export default function ChatPane({
     sendText(input);
   }, [input, runLocalCommand, sendText]);
 
-  const updateSuggestions = useCallback(async (value: string) => {
+  const updateSuggestions = useCallback((value: string) => {
     const cursor = taRef.current?.selectionStart ?? value.length;
     const before = value.slice(0, cursor);
     const tokenMatch = before.match(/(?:^|\s)([@#/][^\s]*)$/);
@@ -1132,44 +1195,32 @@ export default function ChatPane({
     const token = tokenMatch[1];
     const query = token.slice(1).toLowerCase();
     setSuggestionIndex(0);
-    try {
-      if (token[0] === '/') {
-        setSuggestions(
-          CHAT_COMMANDS.filter((c) => c.name.slice(1).startsWith(query)).map((c) => ({
-            insert: c.name,
-            label: c.name,
-            hint: c.hint,
-          })),
-        );
-        return;
-      }
-      if (token[0] === '@') {
-        if (!fileListRef.current) {
-          const r = await api.listAllFiles(projectId);
-          fileListRef.current = r.entries.map((e) => e.path);
-        }
-        setSuggestions(
-          fileListRef.current
-            .filter((p) => p.toLowerCase().includes(query))
-            .slice(0, 8)
-            .map((p) => ({ insert: `@${p}`, label: p })),
-        );
-        return;
-      }
-      if (!skillListRef.current) {
-        const s = await api.getSettings();
-        skillListRef.current = (s.skills ?? [])
-          .filter((x) => x.enabled)
-          .map((x) => ({ name: x.name, hint: x.description || x.author }));
-      }
+    if (token[0] === '/') {
       setSuggestions(
-        skillListRef.current
-          .filter((x) => x.name.toLowerCase().includes(query))
-          .slice(0, 8)
-          .map((x) => ({ insert: `#${x.name}`, label: `#${x.name}`, hint: x.hint })),
+        CHAT_COMMANDS.filter((c) => c.name.slice(1).startsWith(query)).map((c) => ({
+          insert: c.name,
+          label: c.name,
+          hint: c.hint,
+        })),
       );
-    } catch { setSuggestions([]); }
-  }, [projectId]);
+      return;
+    }
+    if (token[0] === '@') {
+      setSuggestions(
+        fileList
+          .filter((p) => p.toLowerCase().includes(query))
+          .slice(0, 8)
+          .map((p) => ({ insert: `@${p}`, label: p })),
+      );
+      return;
+    }
+    setSuggestions(
+      skillList
+        .filter((x) => x.name.toLowerCase().includes(query))
+        .slice(0, 8)
+        .map((x) => ({ insert: `#${x.name}`, label: `#${x.name}`, hint: x.hint })),
+    );
+  }, [fileList, skillList]);
 
   // Pick the highlighted suggestion: slash commands run right away (they take
   // no arguments), @/# tokens complete in the textarea.
@@ -1443,6 +1494,7 @@ export default function ChatPane({
                 item={it}
                 isLast={i === lastMsgIdx}
                 streaming={streaming}
+                validTag={validTag}
                 onEdit={editUserMessage}
                 onRewind={rewindTo}
                 onRegenerate={regenerate}
@@ -1577,6 +1629,7 @@ export default function ChatPane({
                 <TaggedText
                   text={input}
                   pillClassName="-mx-0.5 rounded-sm bg-border px-0.5 text-accent"
+                  valid={validTag}
                 />
                 {'​'}
               </div>
@@ -1584,6 +1637,7 @@ export default function ChatPane({
                 ref={taRef}
                 rows={1}
                 value={input}
+                autoCorrect="off"
                 placeholder="Describe what to build…"
                 onChange={(e) => {
                   setInput(e.target.value);
