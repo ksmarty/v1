@@ -112,15 +112,15 @@ export function Dialog({
 
   if (!open) return null;
 
-  // Fullscreen mobile sheets fill the fixed overlay exactly (h-full): the
-  // overlay's top already sits below the Dynamic Island, so they use plain
-  // top padding — no dead space above the header — and only the bottom needs
-  // the home-indicator inset. Bottom sheets keep the max() top pad since
+  // Fullscreen mobile sheets fill the fixed overlay (h-full), whose top edge
+  // sits at the physical screen top in iOS standalone — so they pad the top
+  // by the safe-area inset to clear the Dynamic Island, and drop the top
+  // border so no line shows through it. Bottom sheets keep these pads too:
   // their top edge can reach into the status area.
   const pad = fullScreen
     ? translucent
-      ? 'px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-4'
-      : 'px-4 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))]'
+      ? 'px-3 pt-[max(0.75rem,env(safe-area-inset-top))] pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-4'
+      : 'px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))]'
     : translucent
       ? 'px-3 pt-3 pb-3 sm:px-4'
       : 'px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))]';
@@ -136,7 +136,9 @@ export function Dialog({
       }}
     >
       <div
-        className={`w-full border border-border shadow-2xl sm:rounded-xl ${
+        className={`w-full shadow-2xl sm:rounded-xl ${
+          fullScreen ? 'border-0 sm:border sm:border-border' : 'border border-border'
+        } ${
           translucent ? 'bg-bg/85 backdrop-blur-md' : 'bg-bg'
         } ${
           fullScreen
