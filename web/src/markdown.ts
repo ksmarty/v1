@@ -288,6 +288,13 @@ const marked = new Marked({ renderer, gfm: true, extensions: [tagExtension] });
 const CURSOR_MARKER = '\u200b\u200bV1CURSOR\u200b\u200b';
 const CURSOR_SPAN = '<span class="v1-stream-cursor" />';
 
+// Drop a leading YAML frontmatter block (---\n...\n---) — SKILL.md files
+// carry one and marked renders it as a rule plus a text blob.
+function stripFrontmatter(src: string): string {
+  const m = /^---\r?\n[\s\S]*?\r?\n---\r?\n?/.exec(src);
+  return m ? src.slice(m[0].length) : src;
+}
+
 export function renderMarkdown(
   src: string,
   streaming = false,
@@ -298,7 +305,9 @@ export function renderMarkdown(
   const withCursor = streaming && src.trim() !== '';
   tagValidator = validTag ?? null;
   try {
-    const html = marked.parse(withCursor ? src + CURSOR_MARKER : src, { async: false });
+    const html = marked.parse(stripFrontmatter(withCursor ? src + CURSOR_MARKER : src), {
+      async: false,
+    });
     return html.replaceAll(CURSOR_MARKER, CURSOR_SPAN);
   } finally {
     tagValidator = null;
