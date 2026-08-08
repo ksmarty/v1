@@ -23,6 +23,26 @@ const DEVICES: { label: string; w: number; h: number }[] = [
   { label: 'Mobile', w: 390, h: 844 },
 ];
 
+// Renders a log line with the filter query highlighted.
+function LogLine({ line, query }: { line: string; query: string }) {
+  if (!query) return <>{line + '\n'}</>;
+  const parts = line.split(new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'ig'));
+  return (
+    <>
+      {parts.map((p, i) =>
+        i % 2 === 1 ? (
+          <mark key={i} className="rounded-sm bg-accent/30 text-text">
+            {p}
+          </mark>
+        ) : (
+          p
+        ),
+      )}
+      {'\n'}
+    </>
+  );
+}
+
 export default function PreviewPane({
   projectId,
   refreshKey,
@@ -36,6 +56,7 @@ export default function PreviewPane({
   const [stopping, setStopping] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [logsOpen, setLogsOpen] = useState(false);
+  const [logQuery, setLogQuery] = useState('');
   const [iframeKey, setIframeKey] = useState(0);
   const [deviceIdx, setDeviceIdx] = useState(0);
   const [scale, setScale] = useState(1);
@@ -172,6 +193,11 @@ export default function PreviewPane({
 
   const running = status?.running ?? false;
 
+  const filteredLogs = (status?.logs ?? '')
+    .split('\n')
+    .filter((l) => l.trim() !== '')
+    .filter((l) => !logQuery.trim() || l.toLowerCase().includes(logQuery.trim().toLowerCase()));
+
   // Fit the device frame into the stage: scale down (never up) when the pane
   // is smaller than the device, so the preview keeps true device pixels.
   useEffect(() => {
@@ -266,14 +292,22 @@ export default function PreviewPane({
         >
           <IconRefresh className="h-4 w-4" />
         </IconButton>
-        <IconButton
+        {/* An anchor, not window.open: iOS PWAs ignore window.open but follow
+            target=_blank links into Safari. */}
+        <a
+          href={running ? iframeUrl : undefined}
+          target="_blank"
+          rel="noopener noreferrer"
           aria-label="Open preview in new tab"
-          onClick={() => window.open(iframeUrl, '_blank', 'noopener')}
-          disabled={!running}
-          className="h-9 w-9 md:h-8 md:w-8"
+          aria-disabled={!running}
+          className={`inline-flex h-9 w-9 items-center justify-center rounded-lg text-dim transition-colors md:h-8 md:w-8 ${
+            running
+              ? 'hover:bg-border hover:text-text'
+              : 'pointer-events-none opacity-40'
+          }`}
         >
           <IconExternalLink className="h-4 w-4" />
-        </IconButton>
+        </a>
       </div>
 
       <form
@@ -288,6 +322,7 @@ export default function PreviewPane({
             if (e.key === 'Enter') go();
           }}
           spellCheck={false}
+          autoCorrect="off"
           aria-label="Preview URL"
           className="h-7 min-w-0 flex-1 rounded-md border border-border bg-surface px-2 font-mono text-xs text-text outline-none transition-colors focus:border-subtle"
         />
@@ -300,10 +335,32 @@ export default function PreviewPane({
       </form>
 
       {logsOpen && (
-        <div className="max-h-44 shrink-0 overflow-auto border-b border-border bg-bg p-3">
-          <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-relaxed text-dim">
-            {status?.logs?.trim() ? status.logs : 'No logs yet.'}
-          </pre>
+        <div className="shrink-0 border-b border-border bg-bg">
+          <div className="flex items-center gap-2 px-3 pt-2">
+            <input
+              value={logQuery}
+              onChange={(e) => setLogQuery(e.target.value)}
+              placeholder="Filter logs…"
+              spellCheck={false}
+              autoCorrect="off"
+              aria-label="Filter logs"
+              className="h-7 min-w-0 flex-1 rounded-md border border-border bg-surface px-2 font-mono text-xs text-text outline-none transition-colors placeholder:text-faint focus:border-subtle"
+            />
+            {logQuery.trim() && (
+              <span className="shrink-0 text-[10px] text-faint">
+                {filteredLogs.length} line{filteredLogs.length === 1 ? '' : 's'}
+              </span>
+            )}
+          </div>
+          <div className="fade-y mt-2 max-h-44 overflow-auto px-3 pb-3">
+            <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-relaxed text-dim">
+              {filteredLogs.length > 0
+                ? filteredLogs.map((line, i) => <LogLine key={i} line={line} query={logQuery.trim()} />)
+                : status?.logs?.trim()
+                  ? 'No lines match.'
+                  : 'No logs yet.'}
+            </pre>
+          </div>
         </div>
       )}
 
