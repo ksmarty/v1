@@ -1336,7 +1336,7 @@ export default function ChatPane({
       <div
         ref={scrollRef}
         onScroll={onScroll}
-        className="min-h-0 flex-1 overflow-y-auto px-3 py-4 md:px-4"
+        className="fade-y min-h-0 flex-1 overflow-y-auto px-3 py-4 md:px-4"
       >
         {loading && (
           <div className="flex justify-center py-10">
