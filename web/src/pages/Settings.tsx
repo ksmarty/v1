@@ -1016,7 +1016,7 @@ export default function Settings() {
         </Section>
             </div>
 
-            <div className={page === 'about' ? '' : 'hidden'}>
+            <div className={page === 'about' ? 'flex flex-col gap-4' : 'hidden'}>
               <Section title="About">
                 <div className="flex flex-col gap-1">
                   <p className="text-sm text-dim">
@@ -1030,12 +1030,12 @@ export default function Settings() {
                     </span>
                   </p>
                 </div>
-                <div>
-                  <span className="mb-1 block text-xs text-subtle">
-                    Debug HUD (project view, applies on reload)
-                  </span>
-                  <DebugHudControl />
-                </div>
+              </Section>
+              <Section
+                title="Debug HUD"
+                description="Shows live viewport metrics in the project view. Applies on reload."
+              >
+                <DebugHudControl />
               </Section>
             </div>
           </div>
