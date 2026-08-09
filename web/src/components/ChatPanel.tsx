@@ -97,13 +97,13 @@ export default function ChatPanel({
         )}
       </header>
 
-      <div className="flex h-10 shrink-0 items-center gap-0.5 border-b border-border px-2">
+      <div className="fade-x flex h-10 shrink-0 items-center gap-0.5 overflow-x-auto border-b border-border px-2">
         {TABS.map((t) => (
           <button
             key={t.id}
             type="button"
             onClick={() => setTab(t.id)}
-            className={`-mb-px flex h-10 items-center gap-1.5 border-b-2 px-3 text-sm transition-colors ${
+            className={`-mb-px flex h-10 shrink-0 items-center gap-1.5 border-b-2 px-3 text-sm transition-colors ${
               tab === t.id
                 ? 'border-accent text-text'
                 : 'border-transparent text-subtle hover:text-text'
