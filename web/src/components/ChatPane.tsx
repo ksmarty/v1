@@ -39,6 +39,7 @@ import {
   IconMap,
   IconModel,
   IconPaperclip,
+  IconPlus,
   IconRefresh,
   IconSquare,
   IconWrench,
@@ -552,6 +553,7 @@ export default function ChatPane({
   const [input, setInput] = useState('');
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [suggestionIndex, setSuggestionIndex] = useState(0);
+  const [plusOpen, setPlusOpen] = useState(false);
   const [streaming, setStreaming] = useState(false);
   const [attachments, setAttachments] = useState<ChatAttachmentInput[]>([]);
   const [attachError, setAttachError] = useState<string | null>(null);
@@ -1788,39 +1790,68 @@ export default function ChatPane({
                 streaming ? 'v1-working' : ''
               } ${expanded ? 'min-h-0 flex-1' : ''}`}
             >
-            <IconButton
-              onClick={() => openTools('mcp')}
-              aria-label="Tools, skills & permissions"
-              title="Tools, skills & permissions"
-              className="h-8! w-8! shrink-0 md:h-9! md:w-9!"
-            >
-              <IconWrench className="h-4 w-4" />
-            </IconButton>
-            {!isDesktop && (
+            <div className="relative shrink-0">
               <IconButton
-                onClick={() => setExpanded((x) => !x)}
-                aria-label={expanded ? 'Collapse composer' : 'Expand composer'}
-                title={expanded ? 'Collapse composer' : 'Expand composer'}
-                className="h-8! w-8! shrink-0 md:h-9! md:w-9!"
+                onClick={() => setPlusOpen((o) => !o)}
+                aria-label="More actions"
+                title="More actions"
+                className={`h-8! w-8! md:h-9! md:w-9! ${plusOpen ? 'bg-border text-text' : ''}`}
               >
-                {expanded ? <IconCompress className="h-4 w-4" /> : <IconExpand className="h-4 w-4" />}
+                <IconPlus className="h-4 w-4" />
               </IconButton>
-            )}
-            <IconButton
-              onClick={() => fileRef.current?.click()}
-              disabled={!hasModel}
-              aria-label="Attach a file"
-              title={
-                !hasModel
-                  ? 'Select a model first'
-                  : supportsImages
-                    ? 'Attach a file (image or text)'
-                    : 'Attach a text file (this model does not support images)'
-              }
-              className="h-8! w-8! shrink-0 md:h-9! md:w-9!"
-            >
-              <IconPaperclip className="h-4 w-4" />
-            </IconButton>
+              {plusOpen && (
+                <>
+                  <button
+                    type="button"
+                    aria-label="Close menu"
+                    className="fixed inset-0 z-20 cursor-default"
+                    onClick={() => setPlusOpen(false)}
+                  />
+                  <div className="absolute bottom-full left-0 z-30 mb-1 w-56 overflow-hidden rounded-lg border border-border bg-surface shadow-lg">
+                    <button
+                      type="button"
+                      disabled={!hasModel}
+                      onClick={() => {
+                        setPlusOpen(false);
+                        fileRef.current?.click();
+                      }}
+                      className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm text-text transition-colors hover:bg-border disabled:opacity-40"
+                    >
+                      <IconPaperclip className="h-4 w-4 shrink-0 text-dim" />
+                      {supportsImages ? 'Attach a file' : 'Attach a text file'}
+                    </button>
+                    {!isDesktop && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPlusOpen(false);
+                          setExpanded((x) => !x);
+                        }}
+                        className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm text-text transition-colors hover:bg-border"
+                      >
+                        {expanded ? (
+                          <IconCompress className="h-4 w-4 shrink-0 text-dim" />
+                        ) : (
+                          <IconExpand className="h-4 w-4 shrink-0 text-dim" />
+                        )}
+                        {expanded ? 'Collapse composer' : 'Expand composer'}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPlusOpen(false);
+                        openTools('mcp');
+                      }}
+                      className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm text-text transition-colors hover:bg-border"
+                    >
+                      <IconWrench className="h-4 w-4 shrink-0 text-dim" />
+                      Tools, skills & permissions
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
             <input
               ref={fileRef}
               type="file"
