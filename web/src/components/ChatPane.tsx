@@ -13,6 +13,7 @@ import type {
   ChatAttachmentMeta,
   ChatEvent,
   ChatUsage,
+  Memory,
   PermissionMode,
   Provider,
   ProviderModel,
@@ -536,11 +537,13 @@ export default function ChatPane({
   projectId,
   projectName,
   onPreviewRestart,
+  onMemories,
   llmReady,
 }: {
   projectId: string;
   projectName: string;
   onPreviewRestart: () => void;
+  onMemories?: (mems: Memory[]) => void;
   llmReady: boolean;
 }) {
   const [items, setItems] = useState<Item[]>([]);
@@ -599,6 +602,8 @@ export default function ChatPane({
   const [skillList, setSkillList] = useState<{ name: string; hint: string }[]>([]);
   const restartRef = useRef(onPreviewRestart);
   restartRef.current = onPreviewRestart;
+  const onMemoriesRef = useRef(onMemories);
+  onMemoriesRef.current = onMemories;
 
   const openLightbox = useCallback((url: string, name: string) => setLightbox({ url, name }), []);
 
@@ -1014,6 +1019,10 @@ export default function ChatPane({
         case 'todos': {
           setTodos(ev.todos);
           setTodosOpen(true);
+          break;
+        }
+        case 'memories': {
+          onMemoriesRef.current?.(ev.memories);
           break;
         }
         case 'permission_request': {

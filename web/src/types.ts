@@ -192,6 +192,7 @@ export type ChatEvent =
   | { type: 'tool_start'; name: string; detail: string }
   | { type: 'tool_end'; name: string; ok: boolean; detail: string }
   | { type: 'todos'; todos: Todo[] }
+  | { type: 'memories'; memories: Memory[] }
   | { type: 'permission_request'; requestId: string; tool: string; detail: string }
   | { type: 'done'; usage?: ChatUsage }
   | { type: 'error'; error: string }

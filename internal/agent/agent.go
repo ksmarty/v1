@@ -50,6 +50,7 @@ type ChatEvent struct {
 	Error       string           `json:"error,omitempty"`
 	Usage       *Usage           `json:"usage,omitempty"`
 	Todos       []store.Todo     `json:"todos,omitempty"`
+	Memories    []store.Memory   `json:"memories,omitempty"`
 	RequestID   string           `json:"requestId,omitempty"`
 	Tool        string           `json:"tool,omitempty"`
 	MessageID   int64            `json:"messageId,omitempty"`

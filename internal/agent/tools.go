@@ -32,6 +32,7 @@ type Executor struct {
 	Previews       PreviewStarter
 	Store          *store.Store
 	OnTodos        func([]store.Todo)
+	OnMemories     func([]store.Memory)
 	OnFileChange   func()
 	MCP            *mcp.Manager // optional: namespaced mcp_<server>_<tool> tools
 	Perm           Resolver     // optional: gates tool calls via allow/deny/ask
@@ -176,6 +177,7 @@ func (e *Executor) remember(argsJSON string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	e.emitMemories()
 	return toolResult(map[string]any{"ok": true, "id": id}), nil
 }
 
@@ -195,7 +197,18 @@ func (e *Executor) forget(argsJSON string) (string, error) {
 	if err := e.Store.DeleteMemory(e.ProjectID, args.ID); err != nil {
 		return "", err
 	}
+	e.emitMemories()
 	return toolResult(map[string]any{"ok": true}), nil
+}
+
+// emitMemories pushes the refreshed memory list to the UI after a change.
+func (e *Executor) emitMemories() {
+	if e.OnMemories == nil || e.Store == nil {
+		return
+	}
+	if mems, err := e.Store.ListMemories(e.ProjectID); err == nil {
+		e.OnMemories(mems)
+	}
 }
 
 // askUser blocks the turn until the user answers through the ask endpoint.

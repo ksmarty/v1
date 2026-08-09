@@ -8,6 +8,7 @@ import GitPane from './GitPane';
 import MemoriesPane from './MemoriesPane';
 import GitHubMenu from './GitHubMenu';
 import VercelMenu from './VercelMenu';
+import type { Memory } from '../types';
 import {
   IconArrowLeft,
   IconBrain,
@@ -48,6 +49,9 @@ export default function ChatPanel({
   onPreviewRestart: () => void;
 }) {
   const [tab, setTab] = useState<ChatTab>('chat');
+  // Live memory list pushed up from the chat stream when the agent uses the
+  // remember/forget tools — forwarded to the Memories tab.
+  const [liveMemories, setLiveMemories] = useState<Memory[] | null>(null);
   const [visited, setVisited] = useState<ReadonlySet<ChatTab>>(
     () => new Set<ChatTab>(['chat']),
   );
@@ -122,6 +126,7 @@ export default function ChatPanel({
             projectId={projectId}
             projectName={project?.name ?? ''}
             onPreviewRestart={onPreviewRestart}
+            onMemories={setLiveMemories}
             llmReady={llmReady}
           />
         </div>
@@ -142,7 +147,7 @@ export default function ChatPanel({
         )}
         {visited.has('memories') && (
           <div className={tab === 'memories' ? 'h-full min-h-0' : 'hidden'}>
-            <MemoriesPane projectId={projectId} />
+            <MemoriesPane projectId={projectId} live={liveMemories} />
           </div>
         )}
       </div>

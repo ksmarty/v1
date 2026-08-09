@@ -6,9 +6,21 @@ import { IconButton, Spinner } from './ui';
 import { IconBrain, IconX } from './icons';
 
 // Browse and delete the facts the agent saved with the remember tool.
-export default function MemoriesPane({ projectId }: { projectId: string }) {
+// `live` carries updates pushed by the chat stream so changes appear
+// immediately, without a remount.
+export default function MemoriesPane({
+  projectId,
+  live,
+}: {
+  projectId: string;
+  live: Memory[] | null;
+}) {
   const [memories, setMemories] = useState<Memory[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (live) setMemories(live);
+  }, [live]);
 
   const load = useCallback(async () => {
     try {

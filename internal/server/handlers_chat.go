@@ -408,6 +408,9 @@ func (s *Server) streamChatTurn(w http.ResponseWriter, r *http.Request, p *store
 		OnTodos: func(t []store.Todo) {
 			emit(agent.ChatEvent{Type: "todos", Todos: t})
 		},
+		OnMemories: func(mems []store.Memory) {
+			emit(agent.ChatEvent{Type: "memories", Memories: mems})
+		},
 		OnFileChange: func() { s.previews.TouchRevision(p.ID) },
 		OnAsk:        s.turnAsk(emit),
 	}
