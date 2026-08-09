@@ -2011,10 +2011,12 @@ export default function ChatPane({
               {expanded ? (
                 <>
                   <div className="flex shrink-0 items-center justify-between">
-                    {collapseButton}
                     <div className="flex items-center gap-1.5">
                       {toolsButton}
                       {attachButton}
+                      {collapseButton}
+                    </div>
+                    <div className="flex items-center gap-1.5">
                       {stopButton}
                       {sendButton}
                     </div>
