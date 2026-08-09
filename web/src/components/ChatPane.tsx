@@ -1741,7 +1741,11 @@ export default function ChatPane({
         >
           <div className={`relative flex flex-col gap-2 ${expanded ? 'min-h-0 flex-1' : ''}`}>
             {suggestions.length > 0 && (
-              <div className="absolute inset-x-0 bottom-full z-20 mb-1 max-h-64 overflow-y-auto overscroll-contain rounded-lg border border-border bg-surface shadow-lg">
+              <div
+                className={`absolute z-20 max-h-64 overflow-y-auto overscroll-contain rounded-lg border border-border bg-surface shadow-lg ${
+                  expanded ? 'bottom-2 left-2 right-2' : 'inset-x-0 bottom-full mb-1'
+                }`}
+              >
                 {suggestions.map((s, index) => (
                   <button
                     key={s.insert}
@@ -1771,9 +1775,14 @@ export default function ChatPane({
                   className="fixed inset-0 z-20 cursor-default"
                   onClick={() => setPlusOpen(false)}
                 />
-                {/* Rendered at the composer-column level: the input box is
-                    overflow-hidden, so a menu inside it gets clipped away. */}
-                <div className="absolute bottom-full left-2 z-30 mb-1 w-56 overflow-hidden rounded-lg border border-border bg-surface shadow-lg">
+                {/* bottom-full pops above the composer normally, but the
+                    expanded column is full-height, which would shoot the menu
+                    off the top of the screen — anchor to the bottom there. */}
+                <div
+                  className={`absolute z-30 w-56 overflow-hidden rounded-lg border border-border bg-surface shadow-lg ${
+                    expanded ? 'bottom-2 left-2' : 'bottom-full left-2 mb-1'
+                  }`}
+                >
                   <button
                     type="button"
                     disabled={!hasModel}
