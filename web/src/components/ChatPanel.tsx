@@ -6,6 +6,7 @@ import FilesPane from './FilesPane';
 import TerminalPane from './TerminalPane';
 import GitPane from './GitPane';
 import MemoriesPane from './MemoriesPane';
+import ProjectPane from './ProjectPane';
 import GitHubMenu from './GitHubMenu';
 import VercelMenu from './VercelMenu';
 import type { Memory } from '../types';
@@ -20,7 +21,7 @@ import {
   IconTerminal,
 } from './icons';
 
-export type ChatTab = 'chat' | 'files' | 'terminal' | 'git' | 'memories';
+export type ChatTab = 'chat' | 'files' | 'terminal' | 'git' | 'memories' | 'project';
 
 const iconLinkClass =
   'inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-dim transition-colors hover:bg-border hover:text-text md:h-9 md:w-9';
@@ -31,6 +32,7 @@ const TABS: { id: ChatTab; label: string; icon: ReactNode }[] = [
   { id: 'terminal', label: 'Terminal', icon: <IconTerminal className="h-4 w-4" /> },
   { id: 'git', label: 'Git', icon: <IconGitBranch className="h-4 w-4" /> },
   { id: 'memories', label: 'Memories', icon: <IconBrain className="h-4 w-4" /> },
+  { id: 'project', label: 'Project', icon: <IconSettings className="h-4 w-4" /> },
 ];
 
 export default function ChatPanel({
@@ -40,6 +42,7 @@ export default function ChatPanel({
   showCollapse,
   onCollapse,
   onPreviewRestart,
+  onProjectChange,
 }: {
   projectId: string;
   project: ProjectType | null;
@@ -47,6 +50,7 @@ export default function ChatPanel({
   showCollapse: boolean;
   onCollapse: () => void;
   onPreviewRestart: () => void;
+  onProjectChange: (p: ProjectType) => void;
 }) {
   const [tab, setTab] = useState<ChatTab>('chat');
   // Live memory list pushed up from the chat stream when the agent uses the
@@ -148,6 +152,11 @@ export default function ChatPanel({
         {visited.has('memories') && (
           <div className={tab === 'memories' ? 'h-full min-h-0' : 'hidden'}>
             <MemoriesPane projectId={projectId} live={liveMemories} />
+          </div>
+        )}
+        {visited.has('project') && (
+          <div className={tab === 'project' ? 'h-full min-h-0' : 'hidden'}>
+            <ProjectPane project={project} onProjectChange={onProjectChange} />
           </div>
         )}
       </div>

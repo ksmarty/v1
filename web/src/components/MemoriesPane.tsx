@@ -78,6 +78,18 @@ export default function MemoriesPane({
     }
   };
 
+  const toggle = async (id: number, enabled: boolean) => {
+    const prev = memories;
+    setMemories((m) => m?.map((x) => (x.id === id ? { ...x, enabled } : x)) ?? m);
+    try {
+      const r = await api.toggleMemory(projectId, id, enabled);
+      setMemories(r.memories);
+    } catch (e) {
+      setMemories(prev);
+      setError(errMsg(e));
+    }
+  };
+
   if (memories === null && !error) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -155,8 +167,31 @@ export default function MemoriesPane({
               </div>
             ) : (
               <>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={m.enabled}
+                  aria-label={`Toggle memory ${m.id}`}
+                  title={m.enabled ? 'Disable memory (kept, but excluded from the prompt)' : 'Enable memory'}
+                  onClick={() => void toggle(m.id, !m.enabled)}
+                  className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${
+                    m.enabled ? 'bg-accent' : 'bg-border'
+                  }`}
+                >
+                  <span
+                    className={`absolute top-0.5 h-4 w-4 rounded-full bg-bg transition-all ${
+                      m.enabled ? 'left-[18px]' : 'left-0.5'
+                    }`}
+                  />
+                </button>
                 <div className="min-w-0 flex-1">
-                  <p className="whitespace-pre-wrap break-words text-sm text-text">{m.content}</p>
+                  <p
+                    className={`whitespace-pre-wrap break-words text-sm ${
+                      m.enabled ? 'text-text' : 'text-faint line-through'
+                    }`}
+                  >
+                    {m.content}
+                  </p>
                   <p className="mt-1 font-mono text-[10px] text-faint">#{m.id}</p>
                 </div>
                 <IconButton

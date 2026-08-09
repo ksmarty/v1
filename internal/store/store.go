@@ -66,6 +66,7 @@ CREATE TABLE IF NOT EXISTS projects (
   path TEXT NOT NULL,
   repo_url TEXT,
   preview_command TEXT,
+  instructions TEXT,
   created_at INTEGER,
   updated_at INTEGER
 );
@@ -88,6 +89,7 @@ CREATE TABLE IF NOT EXISTS memories (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   project_id TEXT NOT NULL,
   content TEXT NOT NULL,
+  enabled INTEGER NOT NULL DEFAULT 1,
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_memories_project ON memories(project_id, id);
@@ -95,22 +97,28 @@ CREATE INDEX IF NOT EXISTS idx_memories_project ON memories(project_id, id);
 	if err != nil {
 		return err
 	}
-	return migrateMessages(db)
+	// Columns added after their tables first shipped, for existing databases.
+	if err := migrateAddColumns(db, "messages", map[string]string{
+		"model":       "ALTER TABLE messages ADD COLUMN model TEXT",
+		"reasoning":   "ALTER TABLE messages ADD COLUMN reasoning TEXT",
+		"usage":       "ALTER TABLE messages ADD COLUMN usage TEXT",
+		"attachments": "ALTER TABLE messages ADD COLUMN attachments TEXT",
+	}); err != nil {
+		return err
+	}
+	if err := migrateAddColumns(db, "projects", map[string]string{
+		"instructions": "ALTER TABLE projects ADD COLUMN instructions TEXT",
+	}); err != nil {
+		return err
+	}
+	return migrateAddColumns(db, "memories", map[string]string{
+		"enabled": "ALTER TABLE memories ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1",
+	})
 }
 
-// migrateMessages adds columns added after the initial schema so existing
-// databases survive upgrades. Each missing column is ALTERed onto messages.
-func migrateMessages(db *sql.DB) error {
-	want := []struct {
-		name string
-		ddl  string
-	}{
-		{"model", "ALTER TABLE messages ADD COLUMN model TEXT"},
-		{"reasoning", "ALTER TABLE messages ADD COLUMN reasoning TEXT"},
-		{"usage", "ALTER TABLE messages ADD COLUMN usage TEXT"},
-		{"attachments", "ALTER TABLE messages ADD COLUMN attachments TEXT"},
-	}
-	rows, err := db.Query(`PRAGMA table_info(messages)`)
+// migrateAddColumns ALTERs the given columns onto table when missing.
+func migrateAddColumns(db *sql.DB, table string, want map[string]string) error {
+	rows, err := db.Query(`PRAGMA table_info(` + table + `)`)
 	if err != nil {
 		return err
 	}
@@ -130,11 +138,11 @@ func migrateMessages(db *sql.DB) error {
 		return err
 	}
 	rows.Close()
-	for _, c := range want {
-		if have[c.name] {
+	for name, ddl := range want {
+		if have[name] {
 			continue
 		}
-		if _, err := db.Exec(c.ddl); err != nil {
+		if _, err := db.Exec(ddl); err != nil {
 			return err
 		}
 	}
@@ -261,6 +269,7 @@ type Project struct {
 	Path           string
 	RepoURL        string
 	PreviewCommand string
+	Instructions   string
 	CreatedAt      int64
 	UpdatedAt      int64
 }
@@ -282,16 +291,24 @@ type scanner interface {
 
 func scanProject(row scanner) (*Project, error) {
 	var p Project
-	var repoURL, previewCmd sql.NullString
-	if err := row.Scan(&p.ID, &p.Name, &p.Path, &repoURL, &previewCmd, &p.CreatedAt, &p.UpdatedAt); err != nil {
+	var repoURL, previewCmd, instructions sql.NullString
+	if err := row.Scan(&p.ID, &p.Name, &p.Path, &repoURL, &previewCmd, &instructions, &p.CreatedAt, &p.UpdatedAt); err != nil {
 		return nil, err
 	}
 	p.RepoURL = repoURL.String
 	p.PreviewCommand = previewCmd.String
+	p.Instructions = instructions.String
 	return &p, nil
 }
 
-const projectCols = `id, name, path, repo_url, preview_command, created_at, updated_at`
+const projectCols = `id, name, path, repo_url, preview_command, instructions, created_at, updated_at`
+
+// UpdateProjectSettings rewrites the user-editable project fields.
+func (s *Store) UpdateProjectSettings(id, name, previewCommand, instructions string) error {
+	_, err := s.db.Exec(`UPDATE projects SET name = ?, preview_command = NULLIF(?, ''), instructions = NULLIF(?, ''), updated_at = ? WHERE id = ?`,
+		name, previewCommand, instructions, now(), id)
+	return err
+}
 
 // GetProject returns the project with the given ID or ErrNotFound.
 func (s *Store) GetProject(id string) (*Project, error) {
@@ -320,9 +337,12 @@ func (s *Store) ListProjects() ([]*Project, error) {
 	return out, rows.Err()
 }
 
-// DeleteProject removes a project and its messages.
+// DeleteProject removes a project and its messages, memories and snapshots.
 func (s *Store) DeleteProject(id string) error {
 	if _, err := s.db.Exec(`DELETE FROM messages WHERE project_id = ?`, id); err != nil {
+		return err
+	}
+	if _, err := s.db.Exec(`DELETE FROM memories WHERE project_id = ?`, id); err != nil {
 		return err
 	}
 	if _, err := s.db.Exec(`DELETE FROM compaction_snapshots WHERE project_id = ?`, id); err != nil {
@@ -411,6 +431,7 @@ func (s *Store) DeleteMessagesAfter(projectID string, id int64) error {
 type Memory struct {
 	ID        int64  `json:"id"`
 	Content   string `json:"content"`
+	Enabled   bool   `json:"enabled"`
 	CreatedAt int64  `json:"createdAt"`
 }
 
@@ -426,7 +447,7 @@ func (s *Store) AddMemory(projectID, content string) (int64, error) {
 
 // ListMemories returns a project's memories oldest first.
 func (s *Store) ListMemories(projectID string) ([]Memory, error) {
-	rows, err := s.db.Query(`SELECT id, content, created_at FROM memories WHERE project_id = ? ORDER BY id`, projectID)
+	rows, err := s.db.Query(`SELECT id, content, enabled, created_at FROM memories WHERE project_id = ? ORDER BY id`, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -434,12 +455,28 @@ func (s *Store) ListMemories(projectID string) ([]Memory, error) {
 	var out []Memory
 	for rows.Next() {
 		var m Memory
-		if err := rows.Scan(&m.ID, &m.Content, &m.CreatedAt); err != nil {
+		if err := rows.Scan(&m.ID, &m.Content, &m.Enabled, &m.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, m)
 	}
 	return out, rows.Err()
+}
+
+// SetMemoryEnabled toggles a memory without deleting it, or ErrNotFound.
+func (s *Store) SetMemoryEnabled(projectID string, id int64, enabled bool) error {
+	res, err := s.db.Exec(`UPDATE memories SET enabled = ? WHERE project_id = ? AND id = ?`, enabled, projectID, id)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 // DeleteMemory removes one memory, or returns ErrNotFound.

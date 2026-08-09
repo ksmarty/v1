@@ -128,6 +128,7 @@ func (s *Server) routes(m *http.ServeMux) {
 	m.HandleFunc("POST /api/projects", s.handleCreateProject)
 	m.HandleFunc("POST /api/projects/import", s.handleImportProject)
 	m.HandleFunc("GET /api/projects/{id}", s.handleGetProject)
+	m.HandleFunc("PATCH /api/projects/{id}", s.handleUpdateProject)
 	m.HandleFunc("DELETE /api/projects/{id}", s.handleDeleteProject)
 
 	m.HandleFunc("GET /api/projects/{id}/files", s.handleListFiles)
@@ -140,6 +141,7 @@ func (s *Server) routes(m *http.ServeMux) {
 	m.HandleFunc("POST /api/projects/{id}/messages/truncate", s.handleTruncateMessages)
 	m.HandleFunc("GET /api/projects/{id}/memories", s.handleListMemories)
 	m.HandleFunc("POST /api/projects/{id}/memories", s.handleCreateMemory)
+	m.HandleFunc("POST /api/projects/{id}/memories/{memId}/toggle", s.handleToggleMemory)
 	m.HandleFunc("PUT /api/projects/{id}/memories/{memId}", s.handleUpdateMemory)
 	m.HandleFunc("DELETE /api/projects/{id}/memories/{memId}", s.handleDeleteMemory)
 	m.HandleFunc("POST /api/projects/{id}/ask/respond", s.handleAskRespond)

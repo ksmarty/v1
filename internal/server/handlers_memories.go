@@ -14,26 +14,33 @@ import (
 // prompt (re-sent with every request of every round, so it stays small).
 const memoryBudgetChars = 4000
 
-// memoryPrompt renders the memories section for the system prompt. When the
-// total exceeds the budget, the newest memories win and the count of hidden
-// older ones is noted so the model knows they exist.
+// memoryPrompt renders the memories section for the system prompt. Disabled
+// memories are excluded entirely. When the total exceeds the budget, the
+// newest memories win and the count of hidden older ones is noted so the
+// model knows they exist.
 func memoryPrompt(mems []store.Memory) string {
-	if len(mems) == 0 {
+	active := make([]store.Memory, 0, len(mems))
+	for _, m := range mems {
+		if m.Enabled {
+			active = append(active, m)
+		}
+	}
+	if len(active) == 0 {
 		return ""
 	}
-	kept := make([]store.Memory, 0, len(mems))
+	kept := make([]store.Memory, 0, len(active))
 	total := 0
-	for i := len(mems) - 1; i >= 0; i-- {
-		line := len(mems[i].Content) + 8 // id, dash and newline
+	for i := len(active) - 1; i >= 0; i-- {
+		line := len(active[i].Content) + 8 // id, dash and newline
 		if total+line > memoryBudgetChars && len(kept) > 0 {
 			break
 		}
 		total += line
-		kept = append([]store.Memory{mems[i]}, kept...)
+		kept = append([]store.Memory{active[i]}, kept...)
 	}
 	var b strings.Builder
 	b.WriteString("Project memories (facts you saved in earlier turns; use the forget tool with an id to delete one):")
-	if hidden := len(mems) - len(kept); hidden > 0 {
+	if hidden := len(active) - len(kept); hidden > 0 {
 		fmt.Fprintf(&b, "\n(%d older memories omitted — they still exist.)", hidden)
 	}
 	for _, m := range kept {
@@ -141,6 +148,33 @@ func (s *Server) respondMemories(w http.ResponseWriter, projectID string) {
 		mems = []store.Memory{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"memories": mems})
+}
+
+// handleToggleMemory enables/disables a memory without deleting it.
+func (s *Server) handleToggleMemory(w http.ResponseWriter, r *http.Request) {
+	p := s.projectOr404(w, r)
+	if p == nil {
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("memId"), 10, 64)
+	if err != nil || id <= 0 {
+		writeError(w, http.StatusBadRequest, "invalid memory id")
+		return
+	}
+	var body struct {
+		Enabled bool `json:"enabled"`
+	}
+	if !decodeJSON(w, r, &body) {
+		return
+	}
+	if err := s.st.SetMemoryEnabled(p.ID, id, body.Enabled); errors.Is(err, store.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "memory not found")
+		return
+	} else if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	s.respondMemories(w, p.ID)
 }
 
 // handleListMemories serves the project's saved memories.

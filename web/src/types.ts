@@ -137,6 +137,8 @@ export interface Project {
   id: string;
   name: string;
   repoUrl: string;
+  previewCommand?: string;
+  instructions?: string;
   preview: PreviewInfo;
   updatedAt: string;
 }
@@ -164,6 +166,7 @@ export interface Todo {
 export interface Memory {
   id: number;
   content: string;
+  enabled: boolean;
   createdAt: number;
 }
 

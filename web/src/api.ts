@@ -88,6 +88,14 @@ function put<T>(path: string, body: unknown): Promise<T> {
   });
 }
 
+function patch<T>(path: string, body: unknown): Promise<T> {
+  return request<T>(path, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
 export interface SavedProviderInput {
   id?: string;
   name: string;
@@ -140,6 +148,8 @@ export const api = {
   createProject: (name: string, template: ProjectTemplate) =>
     post<Project>('/api/projects', { name, template }),
   getProject: (id: string) => request<Project>(`/api/projects/${id}`),
+  updateProject: (id: string, body: { name?: string; previewCommand?: string; instructions?: string }) =>
+    patch<Project>(`/api/projects/${id}`, body),
   deleteProject: (id: string) => request<void>(`/api/projects/${id}`, { method: 'DELETE' }),
   importProject: (repoUrl: string, name?: string) =>
     post<Project>('/api/projects/import', name ? { repoUrl, name } : { repoUrl }),
@@ -171,6 +181,8 @@ export const api = {
     post<{ memories: Memory[] }>(`/api/projects/${id}/memories`, { content }),
   updateMemory: (id: string, memId: number, content: string) =>
     put<{ memories: Memory[] }>(`/api/projects/${id}/memories/${memId}`, { content }),
+  toggleMemory: (id: string, memId: number, enabled: boolean) =>
+    post<{ memories: Memory[] }>(`/api/projects/${id}/memories/${memId}/toggle`, { enabled }),
   deleteMemory: (id: string, memId: number) =>
     request<void>(`/api/projects/${id}/memories/${memId}`, { method: 'DELETE' }),
   askRespond: (id: string, requestId: string, answer: string) =>

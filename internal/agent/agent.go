@@ -115,6 +115,9 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 	if p.MemoriesPrompt != "" {
 		system += "\n\n" + p.MemoriesPrompt
 	}
+	if p.Project.Instructions != "" {
+		system += "\n\nProject instructions from the user:\n" + p.Project.Instructions
+	}
 	if p.Vision {
 		system += "\n\nYou can see the app: call screenshot_app to capture an image of the running preview and inspect what is on screen. Use it after visual changes to verify them."
 	}

@@ -99,6 +99,7 @@ export default function Project() {
       showCollapse={isDesktop}
       onCollapse={() => setChatCollapsed(true)}
       onPreviewRestart={() => setPreviewRefreshKey((k) => k + 1)}
+      onProjectChange={setProject}
     />
   );
 

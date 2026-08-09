@@ -18,6 +18,7 @@ type projectJSON struct {
 	Name           string `json:"name"`
 	RepoURL        string `json:"repoUrl,omitempty"`
 	PreviewCommand string `json:"previewCommand,omitempty"`
+	Instructions   string `json:"instructions,omitempty"`
 	CreatedAt      int64  `json:"createdAt"`
 	UpdatedAt      int64  `json:"updatedAt"`
 }
@@ -28,9 +29,40 @@ func toProjectJSON(p *store.Project) projectJSON {
 		Name:           p.Name,
 		RepoURL:        p.RepoURL,
 		PreviewCommand: p.PreviewCommand,
+		Instructions:   p.Instructions,
 		CreatedAt:      p.CreatedAt,
 		UpdatedAt:      p.UpdatedAt,
 	}
+}
+
+// handleUpdateProject rewrites the user-editable project settings.
+func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
+	p := s.projectOr404(w, r)
+	if p == nil {
+		return
+	}
+	var body struct {
+		Name           string `json:"name"`
+		PreviewCommand string `json:"previewCommand"`
+		Instructions   string `json:"instructions"`
+	}
+	if !decodeJSON(w, r, &body) {
+		return
+	}
+	name := strings.TrimSpace(body.Name)
+	if name == "" {
+		name = p.Name
+	}
+	if err := s.st.UpdateProjectSettings(p.ID, name, strings.TrimSpace(body.PreviewCommand), strings.TrimSpace(body.Instructions)); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	updated, err := s.st.GetProject(p.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, toProjectJSON(updated))
 }
 
 func (s *Server) handleListProjects(w http.ResponseWriter, r *http.Request) {
