@@ -77,3 +77,21 @@ export function setDebugHud(on: boolean): void {
     // ignore (private mode etc.)
   }
 }
+
+const NOTIFY_KEY = 'v1.notifications';
+
+export function getNotifyEnabled(): boolean {
+  try {
+    return localStorage.getItem(NOTIFY_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export function setNotifyEnabled(on: boolean): void {
+  try {
+    localStorage.setItem(NOTIFY_KEY, on ? '1' : '0');
+  } catch {
+    // ignore (private mode etc.)
+  }
+}

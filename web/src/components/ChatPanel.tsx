@@ -117,6 +117,7 @@ export default function ChatPanel({
         <div className={tab === 'chat' ? 'h-full min-h-0' : 'hidden'}>
           <ChatPane
             projectId={projectId}
+            projectName={project?.name ?? ''}
             onPreviewRestart={onPreviewRestart}
             llmReady={llmReady}
           />

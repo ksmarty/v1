@@ -20,6 +20,7 @@ import type {
   Todo,
 } from '../types';
 import { errMsg } from '../utils';
+import { notifyTurnDone } from '../notify';
 import { permissionMeta } from '../permissions';
 import { Button, Dialog, ErrorBox, IconButton, Spinner } from './ui';
 import ToolSettings, { type ToolsTab } from './ToolSettings';
@@ -528,10 +529,12 @@ const MessageRow = memo(function MessageRow({
 
 export default function ChatPane({
   projectId,
+  projectName,
   onPreviewRestart,
   llmReady,
 }: {
   projectId: string;
+  projectName: string;
   onPreviewRestart: () => void;
   llmReady: boolean;
 }) {
@@ -994,6 +997,15 @@ export default function ChatPane({
               );
             }
           }
+          let snippet = '';
+          for (let i = itemsRef.current.length - 1; i >= 0; i--) {
+            const it = itemsRef.current[i];
+            if (it.kind === 'msg' && it.role === 'assistant') {
+              snippet = it.content;
+              break;
+            }
+          }
+          void notifyTurnDone(projectId, projectName, snippet);
           finish();
           break;
         }
@@ -1026,7 +1038,7 @@ export default function ChatPane({
         }
       }
     },
-    [update, finish, projectId],
+    [update, finish, projectId, projectName],
   );
 
   const run = useCallback(

@@ -7,9 +7,11 @@ import {
   errMsg,
   getChatSide,
   getDebugHud,
+  getNotifyEnabled,
   randomId,
   setChatSide,
   setDebugHud,
+  setNotifyEnabled,
   type ChatSide,
 } from '../utils';
 import {
@@ -150,6 +152,55 @@ function DebugHudControl() {
           {v ? 'On' : 'Off'}
         </button>
       ))}
+    </div>
+  );
+}
+
+function NotificationsControl() {
+  const supported = 'Notification' in window;
+  const [on, setOn] = useState(() => getNotifyEnabled());
+  const [perm, setPerm] = useState(() => (supported ? Notification.permission : 'denied'));
+
+  const choose = async (v: boolean) => {
+    if (!v) {
+      setOn(false);
+      setNotifyEnabled(false);
+      return;
+    }
+    setOn(true);
+    setNotifyEnabled(true);
+    if (supported && Notification.permission === 'default') {
+      const p = await Notification.requestPermission();
+      setPerm(p);
+      if (p !== 'granted') {
+        setOn(false);
+        setNotifyEnabled(false);
+      }
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="grid w-full max-w-xs grid-cols-2 gap-1 rounded-lg border border-border bg-surface p-1">
+        {([false, true] as const).map((v) => (
+          <button
+            key={String(v)}
+            type="button"
+            onClick={() => void choose(v)}
+            className={`min-h-[36px] rounded-md text-sm transition-colors ${
+              on === v ? 'bg-border text-text' : 'text-dim hover:text-text'
+            }`}
+          >
+            {v ? 'On' : 'Off'}
+          </button>
+        ))}
+      </div>
+      {!supported && <p className="text-xs text-faint">This browser does not support notifications.</p>}
+      {supported && perm === 'denied' && (
+        <p className="text-xs text-faint">
+          Notifications are blocked — allow them in the browser or system settings.
+        </p>
+      )}
     </div>
   );
 }
@@ -1030,6 +1081,12 @@ export default function Settings() {
                     </span>
                   </p>
                 </div>
+              </Section>
+              <Section
+                title="Notifications"
+                description="Get a system notification when a chat turn finishes while the app is in the background."
+              >
+                <NotificationsControl />
               </Section>
               <Section
                 title="Debug HUD"

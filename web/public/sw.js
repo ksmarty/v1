@@ -3,6 +3,17 @@
 const VERSION = 'v1-cache-v1';
 const APP_SHELL = ['/', '/index.html', '/manifest.json', '/icon-192.png', '/icon-512.png'];
 
+// Turn-finished notifications: focus the app (or reopen it) on tap.
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  e.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((cs) => {
+      if (cs.length > 0) return cs[0].focus();
+      return clients.openWindow('/');
+    }),
+  );
+});
+
 self.addEventListener('install', (e) => {
   e.waitUntil(
     caches
