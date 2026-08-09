@@ -107,6 +107,8 @@ type MsgItem = {
   reasoning?: string;
   toolCalls?: ToolCall[];
   toolResults?: ToolCall[];
+  /** Token usage for the turn this message closed (turn-final messages only). */
+  usage?: ChatUsage;
   streaming?: boolean;
   stale?: boolean;
   editing?: boolean;
@@ -392,6 +394,7 @@ const MessageRow = memo(function MessageRow({
   item,
   isLast,
   streaming,
+  turnEnd,
   validTag,
   onEdit,
   onRewind,
@@ -402,6 +405,7 @@ const MessageRow = memo(function MessageRow({
   item: Item;
   isLast: boolean;
   streaming: boolean;
+  turnEnd: boolean;
   validTag: (tag: string) => boolean;
   onEdit: (key: string, text: string) => void;
   onRewind: (key: string) => void;
@@ -499,6 +503,12 @@ const MessageRow = memo(function MessageRow({
         </div>
       )}
       {item.toolResults && item.toolResults.map((tr, j) => <ToolResultBlock key={j} {...tr} />)}
+      {turnEnd && item.usage && !item.streaming && (
+        <div className="text-[10px] text-faint">
+          {item.usage.input.toLocaleString()} in · {item.usage.output.toLocaleString()} out
+          {item.usage.model ? ` · ${item.usage.model}` : ''}
+        </div>
+      )}
       {persisted(item.key) && !streaming && isLast && (
         <div className="flex gap-1">
           <button
@@ -729,6 +739,7 @@ export default function ChatPane({
             role: 'assistant',
             content: m.content,
             reasoning: m.reasoning,
+            usage: m.usage ? { ...m.usage, model: m.model || m.usage.model } : undefined,
           };
           const calls = m.tool ? parseToolCalls(m.tool) : null;
           if (calls) item.toolCalls = calls;
@@ -976,6 +987,12 @@ export default function ChatPane({
               output: (prev?.output ?? 0) + u.output,
               model: u.model || prev?.model,
             }));
+            const k = assistantKeyRef.current;
+            if (k) {
+              update((prev) =>
+                prev.map((it) => (it.kind === 'msg' && it.key === k ? { ...it, usage: u } : it)),
+              );
+            }
           }
           finish();
           break;
@@ -1319,6 +1336,24 @@ export default function ChatPane({
     return -1;
   }, [items]);
 
+  // Keys of the assistant messages that closed their turn — the usage line
+  // (per-turn token counts) only shows on these.
+  const turnEndKeys = useMemo(() => {
+    const keys = new Set<string>();
+    let pending = true;
+    for (let i = items.length - 1; i >= 0; i--) {
+      const it = items[i];
+      if (it.kind !== 'msg') continue;
+      if (it.role === 'user') {
+        pending = true;
+      } else if (it.role === 'assistant') {
+        if (pending) keys.add(it.key);
+        pending = false;
+      }
+    }
+    return keys;
+  }, [items]);
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       {llmReady && (
@@ -1461,6 +1496,7 @@ export default function ChatPane({
                 item={it}
                 isLast={i === lastMsgIdx}
                 streaming={streaming}
+                turnEnd={turnEndKeys.has(it.key)}
                 validTag={validTag}
                 onEdit={editUserMessage}
                 onRewind={rewindTo}
