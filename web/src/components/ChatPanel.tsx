@@ -101,7 +101,7 @@ export default function ChatPanel({
         )}
       </header>
 
-      <div className="fade-x flex h-10 shrink-0 items-center gap-0.5 overflow-x-auto overflow-y-hidden border-b border-border px-2">
+      <div className="fade-x v1-no-scrollbar flex h-10 shrink-0 items-center gap-0.5 overflow-x-auto overflow-y-hidden border-b border-border px-2">
         {TABS.map((t) => (
           <button
             key={t.id}

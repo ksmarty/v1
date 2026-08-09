@@ -323,6 +323,14 @@ body {
   padding-top: env(safe-area-inset-top);
 }
 
+/* Scrollable but no visible bar (horizontally scrolling tab bars). */
+.v1-no-scrollbar {
+  scrollbar-width: none;
+}
+.v1-no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
 /* Blinking caret appended to a streaming assistant message */
 .v1-stream-cursor {
   display: inline-block;
