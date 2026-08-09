@@ -560,7 +560,6 @@ export default function ChatPane({
     setToolsOpen(true);
   };
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
-  const [usageTotal, setUsageTotal] = useState<ChatUsage | null>(null);
   const [lightbox, setLightbox] = useState<{ url: string; name: string } | null>(null);
   const [permissionMode, setPermissionMode] = useState<PermissionMode>('ask');
   const [permPrompt, setPermPrompt] = useState<{
@@ -714,13 +713,7 @@ export default function ChatPane({
     try {
       const msgs = await api.getMessages(projectId);
       const mapped: Item[] = [];
-      const usageAcc: ChatUsage = { input: 0, output: 0 };
       for (const m of msgs) {
-        if (m.usage) {
-          usageAcc.input += m.usage.input;
-          usageAcc.output += m.usage.output;
-          usageAcc.model = m.model || m.usage.model || usageAcc.model;
-        }
         if (m.role === 'tool') {
           const name = m.tool ? parseToolName(m.tool) : 'tool';
           const last = mapped[mapped.length - 1];
@@ -764,7 +757,6 @@ export default function ChatPane({
       }
       itemsRef.current = mapped;
       setItems(mapped);
-      if (usageAcc.input || usageAcc.output) setUsageTotal(usageAcc);
     } catch (e) {
       setLoadError(errMsg(e));
     } finally {
@@ -985,11 +977,6 @@ export default function ChatPane({
         case 'done': {
           if (ev.usage) {
             const u = ev.usage;
-            setUsageTotal((prev) => ({
-              input: (prev?.input ?? 0) + u.input,
-              output: (prev?.output ?? 0) + u.output,
-              model: u.model || prev?.model,
-            }));
             const k = assistantKeyRef.current;
             if (k) {
               update((prev) =>
@@ -1173,7 +1160,6 @@ export default function ChatPane({
         try {
           await api.truncateMessages(projectId, 0);
           await load();
-          setUsageTotal(null);
           setLocalStatus('Chat cleared.');
         } catch (e) {
           setLocalStatus(errMsg(e));
@@ -1556,14 +1542,6 @@ export default function ChatPane({
                 onImageClick={openLightbox}
               />
             ))}
-          </div>
-        )}
-        {!streaming && usageTotal && (
-          <div className="mx-auto mt-3 flex max-w-2xl justify-center">
-            <span className="text-[10px] text-faint">
-              {usageTotal.input.toLocaleString()} in · {usageTotal.output.toLocaleString()} out
-              {usageTotal.model ? ` · ${usageTotal.model}` : ''}
-            </span>
           </div>
         )}
       </div>

@@ -83,9 +83,10 @@ or `make dev`), then report: (1) the new stamped build version (`v1 <version>
   same pinning works there; other Settings pages scroll `main` as before.
   `initialPermissionMode` is passed from the chat header so the permission cards
   don't flash the default (`ask`) before the server value loads.
-- Token usage (`usageTotal` in ChatPane) is restored on page load by summing
-  each message's persisted `usage`/`model` in `load()` — not only from live
-  SSE `done` events. The backend already stores usage per assistant message.
+- Token usage shows per turn: the backend stores usage per assistant message,
+  and each turn-final assistant message renders its round's counts beneath it
+  (from persisted usage on reload and from the live `done` event). There is no
+  cumulative session total.
 - iOS PWA: the project view root uses `v1-safe-top` so content clears the
   Dynamic Island; the mobile bottom nav uses
   `pb-[calc(env(safe-area-inset-bottom)/2)]` — half the home-indicator inset,
