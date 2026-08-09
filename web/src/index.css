@@ -346,36 +346,19 @@ body {
   50% { opacity: 0; }
 }
 
-/* Composer highlight while the agent runs: a bright arc chasing itself
-   around the border on a faint accent track. Rotating an angle custom
-   property needs @property; unsupported browsers just show a static arc. */
-@property --v1-spin {
-  syntax: '<angle>';
-  initial-value: 0deg;
-  inherits: false;
-}
+/* Composer highlight while the agent runs: an SVG rect stroke (rendered by
+   the composer) traveling the border like a track over the box's faint accent
+   border. pathLength=100 normalizes the perimeter so the lap speed is
+   uniform — the conic-gradient version sped up and slowed down per edge. */
 .v1-working {
-  border-color: transparent;
-  background:
-    linear-gradient(var(--v1-surface), var(--v1-surface)) padding-box,
-    conic-gradient(
-      from var(--v1-spin),
-      transparent 0deg,
-      var(--v1-accent) 30deg,
-      #a855f7 90deg,
-      #ec4899 150deg,
-      #f59e0b 200deg,
-      transparent 240deg
-    ) border-box,
-    linear-gradient(
-      color-mix(in srgb, var(--v1-accent) 30%, transparent),
-      color-mix(in srgb, var(--v1-accent) 30%, transparent)
-    ) border-box;
-  animation: v1-working-spin 1.2s linear infinite;
+  border-color: color-mix(in srgb, var(--v1-accent) 35%, transparent);
 }
-@keyframes v1-working-spin {
+.v1-track-rect {
+  animation: v1-track 1.6s linear infinite;
+}
+@keyframes v1-track {
   to {
-    --v1-spin: 360deg;
+    stroke-dashoffset: -100;
   }
 }
 

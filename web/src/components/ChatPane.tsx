@@ -133,30 +133,35 @@ type ToolItem = {
 
 type Item = MsgItem | ToolItem;
 
-/** Parses an assistant message's tool_json: {"tool_calls":[{function:{name,arguments}}]}. */
-function parseToolCalls(tool: string): ToolCall[] | null {
-  try {
-    const data = JSON.parse(tool) as {
-      tool_calls?: { function?: { name?: string; arguments?: string } }[];
-    };
-    if (!Array.isArray(data.tool_calls)) return null;
-    return data.tool_calls.map((c) => ({
-      name: c?.function?.name ?? 'tool',
-      detail: c?.function?.arguments ?? '',
-    }));
-  } catch {
-    return null;
+/** The API serves tool_json as raw JSON (an object), but older callers pass a
+ * string — accept both. */
+function asToolJSON(tool: unknown): unknown {
+  if (typeof tool === 'string') {
+    try {
+      return JSON.parse(tool);
+    } catch {
+      return null;
+    }
   }
+  return tool ?? null;
+}
+
+/** Parses an assistant message's tool_json: {"tool_calls":[{function:{name,arguments}}]}. */
+function parseToolCalls(tool: unknown): ToolCall[] | null {
+  const data = asToolJSON(tool) as {
+    tool_calls?: { function?: { name?: string; arguments?: string } }[];
+  } | null;
+  if (!data || !Array.isArray(data.tool_calls)) return null;
+  return data.tool_calls.map((c) => ({
+    name: c?.function?.name ?? 'tool',
+    detail: c?.function?.arguments ?? '',
+  }));
 }
 
 /** Parses a role "tool" message's tool_json: {"name": "..."}. */
-function parseToolName(tool: string): string {
-  try {
-    const data = JSON.parse(tool) as { name?: string };
-    return typeof data.name === 'string' && data.name ? data.name : 'tool';
-  } catch {
-    return 'tool';
-  }
+function parseToolName(tool: unknown): string {
+  const data = asToolJSON(tool) as { name?: string } | null;
+  return data && typeof data.name === 'string' && data.name ? data.name : 'tool';
 }
 
 /** True when a message key is a persisted row id (not a live/synthetic key). */
@@ -1635,6 +1640,16 @@ export default function ChatPane({
       <IconPaperclip className="h-4 w-4" />
     </IconButton>
   );
+  const tasksButton = todos.length > 0 && (
+    <IconButton
+      onClick={() => setTodosOpen(true)}
+      aria-label="Tasks"
+      title={`Tasks (${todos.filter((t) => !t.done).length} left)`}
+      className="h-8! w-8! shrink-0 md:h-9! md:w-9!"
+    >
+      <IconCheck className="h-4 w-4" />
+    </IconButton>
+  );
   const stopButton = streaming && (
     <IconButton
       onClick={stop}
@@ -2062,7 +2077,7 @@ export default function ChatPane({
                 />
                 <div
                   className={`absolute z-30 w-64 overflow-hidden rounded-lg border border-border bg-surface shadow-lg ${
-                    expanded ? 'bottom-2 left-2' : 'bottom-full left-2 mb-1'
+                    expanded ? 'left-2 top-14' : 'bottom-full left-2 mb-1'
                   }`}
                 >
                   <div className="border-b border-border px-3 py-2 text-xs font-medium text-subtle">
@@ -2133,12 +2148,39 @@ export default function ChatPane({
                   e.target.value = '';
                 }}
               />
+              {streaming && (
+                <svg
+                  className="pointer-events-none absolute inset-0 h-full w-full"
+                  aria-hidden
+                >
+                  <defs>
+                    <linearGradient id="v1-track-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+                      <stop offset="0%" stopColor="var(--v1-accent)" />
+                      <stop offset="40%" stopColor="#a855f7" />
+                      <stop offset="70%" stopColor="#ec4899" />
+                      <stop offset="100%" stopColor="#f59e0b" />
+                    </linearGradient>
+                  </defs>
+                  <rect
+                    className="v1-track-rect"
+                    style={{ x: 1.25, y: 1.25, width: 'calc(100% - 2.5px)', height: 'calc(100% - 2.5px)' }}
+                    rx="10"
+                    fill="none"
+                    stroke="url(#v1-track-grad)"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    pathLength={100}
+                    strokeDasharray="65 35"
+                  />
+                </svg>
+              )}
               {expanded ? (
                 <>
                   <div className="flex shrink-0 items-center justify-between">
                     <div className="flex items-center gap-1.5">
                       {toolsButton}
                       {attachButton}
+                      {tasksButton}
                       {collapseButton}
                     </div>
                     <div className="flex items-center gap-1.5">

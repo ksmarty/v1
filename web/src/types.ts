@@ -182,7 +182,7 @@ export interface ChatMessage {
   id: string;
   role: string;
   content: string;
-  tool?: string;
+  tool?: unknown;
   reasoning?: string;
   usage?: ChatUsage;
   model?: string;
