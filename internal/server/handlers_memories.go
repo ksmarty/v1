@@ -42,13 +42,97 @@ func memoryPrompt(mems []store.Memory) string {
 	return b.String()
 }
 
-// handleListMemories serves the project's saved memories.
-func (s *Server) handleListMemories(w http.ResponseWriter, r *http.Request) {
+// memoryContent trims and caps memory writes the same way the remember tool
+// does; writes the HTTP error and reports false when invalid.
+func memoryContent(w http.ResponseWriter, content string) (string, bool) {
+	content = strings.TrimSpace(content)
+	if content == "" {
+		writeError(w, http.StatusBadRequest, "content is required")
+		return "", false
+	}
+	if len(content) > 300 {
+		writeError(w, http.StatusBadRequest, "memory entries must be 300 characters or fewer")
+		return "", false
+	}
+	return content, true
+}
+
+// handleCreateMemory adds a memory manually (same caps/dedup as remember).
+func (s *Server) handleCreateMemory(w http.ResponseWriter, r *http.Request) {
 	p := s.projectOr404(w, r)
 	if p == nil {
 		return
 	}
+	var body struct {
+		Content string `json:"content"`
+	}
+	if !decodeJSON(w, r, &body) {
+		return
+	}
+	content, ok := memoryContent(w, body.Content)
+	if !ok {
+		return
+	}
 	mems, err := s.st.ListMemories(p.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	normalized := strings.ToLower(strings.Join(strings.Fields(content), " "))
+	exists := false
+	for _, m := range mems {
+		if strings.ToLower(strings.Join(strings.Fields(m.Content), " ")) == normalized {
+			exists = true
+			break
+		}
+	}
+	if !exists {
+		if len(mems) >= 200 {
+			writeError(w, http.StatusBadRequest, "memory is full (200 entries)")
+			return
+		}
+		if _, err := s.st.AddMemory(p.ID, content); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+	s.respondMemories(w, p.ID)
+}
+
+// handleUpdateMemory rewrites a memory's content manually.
+func (s *Server) handleUpdateMemory(w http.ResponseWriter, r *http.Request) {
+	p := s.projectOr404(w, r)
+	if p == nil {
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("memId"), 10, 64)
+	if err != nil || id <= 0 {
+		writeError(w, http.StatusBadRequest, "invalid memory id")
+		return
+	}
+	var body struct {
+		Content string `json:"content"`
+	}
+	if !decodeJSON(w, r, &body) {
+		return
+	}
+	content, ok := memoryContent(w, body.Content)
+	if !ok {
+		return
+	}
+	if err := s.st.UpdateMemory(p.ID, id, content); errors.Is(err, store.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "memory not found")
+		return
+	} else if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	s.respondMemories(w, p.ID)
+}
+
+// respondMemories writes the project's refreshed memory list.
+func (s *Server) respondMemories(w http.ResponseWriter, projectID string) {
+	mems, err := s.st.ListMemories(projectID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -57,6 +141,15 @@ func (s *Server) handleListMemories(w http.ResponseWriter, r *http.Request) {
 		mems = []store.Memory{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"memories": mems})
+}
+
+// handleListMemories serves the project's saved memories.
+func (s *Server) handleListMemories(w http.ResponseWriter, r *http.Request) {
+	p := s.projectOr404(w, r)
+	if p == nil {
+		return
+	}
+	s.respondMemories(w, p.ID)
 }
 
 // handleDeleteMemory removes one of the project's memories.

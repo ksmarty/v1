@@ -167,6 +167,10 @@ export const api = {
     post<{ queued?: boolean }>(`/api/projects/${id}/chat`, { message, model, providerId }),
   getTodos: (id: string) => request<{ todos: Todo[] }>(`/api/projects/${id}/todos`),
   getMemories: (id: string) => request<{ memories: Memory[] }>(`/api/projects/${id}/memories`),
+  createMemory: (id: string, content: string) =>
+    post<{ memories: Memory[] }>(`/api/projects/${id}/memories`, { content }),
+  updateMemory: (id: string, memId: number, content: string) =>
+    put<{ memories: Memory[] }>(`/api/projects/${id}/memories/${memId}`, { content }),
   deleteMemory: (id: string, memId: number) =>
     request<void>(`/api/projects/${id}/memories/${memId}`, { method: 'DELETE' }),
   askRespond: (id: string, requestId: string, answer: string) =>

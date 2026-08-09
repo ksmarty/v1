@@ -139,6 +139,8 @@ func (s *Server) routes(m *http.ServeMux) {
 	m.HandleFunc("GET /api/projects/{id}/messages/{msgId}/attachments/{idx}", s.handleMessageAttachment)
 	m.HandleFunc("POST /api/projects/{id}/messages/truncate", s.handleTruncateMessages)
 	m.HandleFunc("GET /api/projects/{id}/memories", s.handleListMemories)
+	m.HandleFunc("POST /api/projects/{id}/memories", s.handleCreateMemory)
+	m.HandleFunc("PUT /api/projects/{id}/memories/{memId}", s.handleUpdateMemory)
 	m.HandleFunc("DELETE /api/projects/{id}/memories/{memId}", s.handleDeleteMemory)
 	m.HandleFunc("POST /api/projects/{id}/ask/respond", s.handleAskRespond)
 	m.HandleFunc("POST /api/projects/{id}/compact", s.handleCompact)

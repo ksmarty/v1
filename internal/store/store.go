@@ -458,6 +458,22 @@ func (s *Store) DeleteMemory(projectID string, id int64) error {
 	return nil
 }
 
+// UpdateMemory rewrites a memory's content, or returns ErrNotFound.
+func (s *Store) UpdateMemory(projectID string, id int64, content string) error {
+	res, err := s.db.Exec(`UPDATE memories SET content = ? WHERE project_id = ? AND id = ?`, content, projectID, id)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // GetMessage returns the message with the given id for a project, or
 // ErrNotFound when it does not exist.
 func (s *Store) GetMessage(projectID string, id int64) (*Message, error) {
