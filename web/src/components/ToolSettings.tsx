@@ -306,10 +306,14 @@ function ToolSettings({
 
   const toggleSkill = async (id: string, enabled: boolean) => {
     setSkillError(null);
+    // Optimistic: flip the switch immediately, sync with the server after.
+    const prev = skills;
+    setSkills(prev.map((s) => (s.id === id ? { ...s, enabled } : s)));
     try {
       const r = await api.skillToggle(id, enabled);
       setSkills(r.skills);
     } catch (err) {
+      setSkills(prev);
       setSkillError(errMsg(err));
     }
   };
@@ -670,9 +674,7 @@ function ToolSettings({
             const inst = skillPreview.installed;
             if (!inst) return;
             void toggleSkill(inst.id, enabled);
-            setSkillPreview((p) =>
-              p?.installed ? { ...p, installed: { ...p.installed, enabled } } : p,
-            );
+            setSkillPreview(null);
           }}
           onRemove={() => {
             if (skillPreview.installed) {
