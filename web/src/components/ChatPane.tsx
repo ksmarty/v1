@@ -31,6 +31,8 @@ import {
   IconCheck,
   IconChevronDown,
   IconChevronRight,
+  IconCompress,
+  IconExpand,
   IconLock,
   IconModel,
   IconPaperclip,
@@ -39,6 +41,7 @@ import {
   IconWrench,
   IconX,
 } from './icons';
+import { useMediaQuery } from '../hooks/useMediaQuery';
 
 type ToolCall = { name: string; detail: string };
 
@@ -560,6 +563,9 @@ export default function ChatPane({
     setToolsOpen(true);
   };
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
+  const isDesktop = useMediaQuery('(min-width: 768px)');
+  // Mobile-only: the composer can cover the chat pane for long messages.
+  const [expanded, setExpanded] = useState(false);
   const [lightbox, setLightbox] = useState<{ url: string; name: string } | null>(null);
   const [permissionMode, setPermissionMode] = useState<PermissionMode>('ask');
   const [permPrompt, setPermPrompt] = useState<{
@@ -852,14 +858,18 @@ export default function ChatPane({
     };
   }, [items]);
 
-  // Auto-grow the input textarea.
+  // Auto-grow the input textarea (full height while expanded on mobile).
   useEffect(() => {
     const el = taRef.current;
-    if (el) {
-      el.style.height = 'auto';
-      el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+    if (!el) return;
+    if (expanded) {
+      el.style.height = '100%';
+      el.focus();
+      return;
     }
-  }, [input]);
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+  }, [input, expanded]);
 
   const finish = useCallback(() => {
     setStreaming(false);
@@ -1199,6 +1209,7 @@ export default function ChatPane({
       setSuggestions([]);
       try {
         await api.queueChat(projectId, text, modelOverride, providerOverride);
+        setExpanded(false);
       } catch (e) {
         setInput(text);
         setLoadError(errMsg(e));
@@ -1206,6 +1217,7 @@ export default function ChatPane({
       return;
     }
     sendText(input);
+    setExpanded(false);
   }, [input, streaming, attachments.length, runLocalCommand, sendText, projectId, modelOverride, providerOverride]);
 
   const updateSuggestions = useCallback((value: string) => {
@@ -1392,7 +1404,7 @@ export default function ChatPane({
   }, [items]);
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="relative flex h-full min-h-0 flex-col">
       {llmReady && (
         <div className="shrink-0 border-b border-border px-3 py-1.5 md:px-4">
           <div className="flex items-center gap-2">
@@ -1562,8 +1574,14 @@ export default function ChatPane({
 
       {localStatus && <div className="px-3 py-1 text-center text-xs text-subtle">{localStatus}</div>}
       {llmReady ? (
-        <div className="mt-auto shrink-0 border-t border-border px-2 pt-2 pb-1 md:p-3">
-          <div className="relative flex flex-col gap-2">
+        <div
+          className={
+            expanded
+              ? 'absolute inset-0 z-20 flex flex-col bg-bg px-2 pt-2 pb-1'
+              : 'mt-auto shrink-0 border-t border-border px-2 pt-2 pb-1 md:p-3'
+          }
+        >
+          <div className={`relative flex flex-col gap-2 ${expanded ? 'min-h-0 flex-1' : ''}`}>
             {suggestions.length > 0 && (
               <div className="absolute inset-x-0 bottom-full z-20 mb-1 max-h-64 overflow-y-auto overscroll-contain rounded-lg border border-border bg-surface shadow-lg">
                 {suggestions.map((s, index) => (
@@ -1612,7 +1630,7 @@ export default function ChatPane({
             <div
               className={`relative flex min-w-0 items-end gap-1.5 overflow-hidden rounded-xl border border-border-strong bg-surface p-1.5 transition-colors focus-within:border-subtle md:gap-2 md:p-2 ${
                 streaming ? 'v1-working' : ''
-              }`}
+              } ${expanded ? 'min-h-0 flex-1' : ''}`}
             >
             <IconButton
               onClick={() => openTools('mcp')}
@@ -1622,6 +1640,16 @@ export default function ChatPane({
             >
               <IconWrench className="h-4 w-4" />
             </IconButton>
+            {!isDesktop && (
+              <IconButton
+                onClick={() => setExpanded((x) => !x)}
+                aria-label={expanded ? 'Collapse composer' : 'Expand composer'}
+                title={expanded ? 'Collapse composer' : 'Expand composer'}
+                className="h-8! w-8! shrink-0 md:h-9! md:w-9!"
+              >
+                {expanded ? <IconCompress className="h-4 w-4" /> : <IconExpand className="h-4 w-4" />}
+              </IconButton>
+            )}
             <IconButton
               onClick={() => fileRef.current?.click()}
               disabled={!hasModel}
@@ -1647,7 +1675,7 @@ export default function ChatPane({
                 e.target.value = '';
               }}
             />
-            <div className="relative min-w-0 flex-1">
+            <div className={`relative min-w-0 flex-1 ${expanded ? 'h-full min-h-0' : ''}`}>
               {/* The textarea's own text is transparent; this echo beneath it
                   renders the same text with @/# tags pilled. The echo must
                   keep the textarea's exact font/padding metrics — the pill
@@ -1698,7 +1726,7 @@ export default function ChatPane({
                     setSuggestions([]);
                     return;
                   }
-                  if (e.key === 'Enter' && !e.shiftKey) {
+                  if (e.key === 'Enter' && !e.shiftKey && isDesktop) {
                     e.preventDefault();
                     void send();
                   }
@@ -1707,7 +1735,9 @@ export default function ChatPane({
                   const echo = echoRef.current;
                   if (echo) echo.scrollTop = e.currentTarget.scrollTop;
                 }}
-                className="relative block max-h-40 min-h-[32px] w-full resize-none bg-transparent px-1.5 py-1 text-base text-transparent caret-accent outline-none placeholder:text-faint sm:text-sm md:min-h-[36px] md:py-1.5"
+                className={`relative block min-h-[32px] w-full resize-none bg-transparent px-1.5 py-1 text-base text-transparent caret-accent outline-none placeholder:text-faint sm:text-sm md:min-h-[36px] md:py-1.5 ${
+                  expanded ? 'h-full max-h-none' : 'max-h-40'
+                }`}
               />
             </div>
             {streaming && (
