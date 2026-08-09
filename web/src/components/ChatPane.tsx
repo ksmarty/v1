@@ -1452,6 +1452,13 @@ export default function ChatPane({
     return -1;
   }, [items]);
 
+  // Keys of the user's messages, in order — the minimap shows one dot each.
+  const userKeys = useMemo(
+    () =>
+      items.filter((it) => it.kind === 'msg' && it.role === 'user').map((it) => it.key),
+    [items],
+  );
+
   // Keys of the assistant messages that closed their turn — the usage line
   // (per-turn token counts) only shows on these.
   const turnEndKeys = useMemo(() => {
@@ -1643,7 +1650,7 @@ export default function ChatPane({
               <IconLock className="h-3.5 w-3.5 shrink-0" />
               {permissionMeta(permissionMode).short}
             </button>
-            {items.length > 1 && (
+            {userKeys.length > 1 && (
               <IconButton
                 onClick={() => setMapOpen((o) => !o)}
                 aria-label="Toggle message map"
@@ -1824,38 +1831,23 @@ export default function ChatPane({
           </div>
         )}
       </div>
-      {mapOpen && items.length > 1 && (
-        <div className="absolute bottom-2 right-1 top-2 z-10 w-14 overflow-y-auto overscroll-contain rounded-lg border border-border bg-bg/85 p-1.5 backdrop-blur">
-          <div className="flex flex-col items-stretch gap-[3px]">
-            {items.map((it) => {
-              const visible = visibleKeys.has(it.key);
-              const role = it.kind === 'tool' ? 'tool' : it.role;
-              const h =
-                it.kind === 'tool'
-                  ? 2
-                  : Math.min(14, Math.max(3, Math.round((it.content?.length ?? 0) / 200) + 2));
-              const color =
-                role === 'user'
-                  ? 'bg-accent/80 ml-auto w-3/4'
-                  : role === 'error'
-                    ? 'bg-red-400/80 w-3/4'
-                    : role === 'tool'
-                      ? 'bg-faint/60 mx-auto w-1/2'
-                      : 'bg-border-strong w-3/4';
-              return (
-                <button
-                  key={it.key}
-                  type="button"
-                  onClick={() => jumpTo(it.key)}
-                  aria-label={`Jump to ${role} message`}
-                  title={`Jump to ${role} message`}
-                  style={{ height: h }}
-                  className={`shrink-0 rounded-full transition-opacity ${color} ${
-                    visible ? 'opacity-100' : 'opacity-35'
-                  }`}
-                />
-              );
-            })}
+      {mapOpen && userKeys.length > 1 && (
+        <div className="absolute bottom-4 right-2 top-4 z-10 flex flex-col items-center justify-center overflow-hidden rounded-full border border-border bg-bg/85 backdrop-blur">
+          <div className="v1-no-scrollbar flex flex-col items-center gap-2.5 overflow-y-auto overscroll-contain px-2 py-3">
+            {userKeys.map((key, i) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => jumpTo(key)}
+                aria-label={`Jump to your message ${i + 1}`}
+                title={`Jump to your message ${i + 1}`}
+                className={`h-2.5 w-2.5 shrink-0 rounded-full transition-all ${
+                  visibleKeys.has(key)
+                    ? 'scale-125 bg-accent'
+                    : 'bg-border-strong hover:bg-subtle'
+                }`}
+              />
+            ))}
           </div>
         </div>
       )}
