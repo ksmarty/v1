@@ -1492,6 +1492,33 @@ export default function ChatPane({
       <IconCompress className="h-4 w-4" />
     </IconButton>
   );
+  const toolsButton = (
+    <IconButton
+      onClick={() => openTools('mcp')}
+      aria-label="Tools, skills & permissions"
+      title="Tools, skills & permissions"
+      className="h-8! w-8! shrink-0 md:h-9! md:w-9!"
+    >
+      <IconWrench className="h-4 w-4" />
+    </IconButton>
+  );
+  const attachButton = (
+    <IconButton
+      onClick={() => fileRef.current?.click()}
+      disabled={!hasModel}
+      aria-label="Attach a file"
+      title={
+        !hasModel
+          ? 'Select a model first'
+          : supportsImages
+            ? 'Attach a file (image or text)'
+            : 'Attach a text file (this model does not support images)'
+      }
+      className="h-8! w-8! shrink-0 md:h-9! md:w-9!"
+    >
+      <IconPaperclip className="h-4 w-4" />
+    </IconButton>
+  );
   const stopButton = streaming && (
     <IconButton
       onClick={stop}
@@ -1984,9 +2011,10 @@ export default function ChatPane({
               {expanded ? (
                 <>
                   <div className="flex shrink-0 items-center justify-between">
-                    {plusButton}
+                    {collapseButton}
                     <div className="flex items-center gap-1.5">
-                      {collapseButton}
+                      {toolsButton}
+                      {attachButton}
                       {stopButton}
                       {sendButton}
                     </div>
