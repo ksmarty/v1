@@ -144,6 +144,25 @@ func (m *Manager) Revision(projectID string) int64 {
 	return m.revs[projectID]
 }
 
+// DirectURL returns the dev-server URL that serves the app at its root, or ""
+// when the preview is static (served only through the v1 proxy) or not
+// running. Headless tools (screenshot) use this to skip the auth-protected
+// proxy.
+func (m *Manager) DirectURL(projectID string) string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	p, ok := m.items[projectID]
+	if !ok || p.Mode != "node" || p.Port == 0 {
+		return ""
+	}
+	base := fmt.Sprintf("http://127.0.0.1:%d/", p.Port)
+	if p.Vite {
+		// Vite dev servers run with --base so they serve under the proxy path.
+		base = fmt.Sprintf("http://127.0.0.1:%d/preview/%s/", p.Port, projectID)
+	}
+	return base
+}
+
 // Start starts (or returns the existing) preview for a project and returns
 // its relative URL once it is ready to serve.
 func (m *Manager) Start(projectID, dir, previewCommand string) (string, error) {

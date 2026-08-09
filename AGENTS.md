@@ -40,7 +40,16 @@ or `make dev`), then report: (1) the new stamped build version (`v1 <version>
 - Go: stdlib only for new dependencies unless unavoidable; `net/http` (Go 1.22+
   method-pattern routes), no framework. Errors returned upward, handled at the
   boundary. `writeJSON`/`writeError`/`decodeJSON` helpers live in
-  `internal/server/server.go`.
+  `internal/server/server.go`. The one browser-automation dep is
+  `github.com/chromedp/chromedp` (`internal/screenshot`) — it drives a shared
+  headless Chrome for the `screenshot_app` agent tool; Chrome is auto-located,
+  `V1_CHROME_PATH` overrides. The tool is only registered when the turn's
+  model carries `imageInput` catalog metadata
+  (`Server.modelSupportsImages`); the PNG reaches the model as an injected
+  user message with an image attachment (tool results are text-only on many
+  OpenAI-compatible APIs), streamed to the UI as `injected_message`.
+  Node-mode previews are screenshotted via `preview.Manager.DirectURL`
+  (the proxy requires a session when auth is on).
 - SQLite is accessed only through `internal/store`. Settings are key/value
   strings; env vars are fallbacks, sqlite overrides env. Prefix settings keys
   with a domain (`keyLLM...`, `keyGitHub...`).

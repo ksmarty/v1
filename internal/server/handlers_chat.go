@@ -9,10 +9,12 @@ import (
 	"net/http"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"v1/internal/agent"
 	"v1/internal/gitops"
+	"v1/internal/screenshot"
 	"v1/internal/store"
 )
 
@@ -247,6 +249,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		Message:     body.Message,
 		Attachments: body.Attachments,
 		Model:       body.Model,
+		Vision:      s.modelSupportsImages(body.ProviderID, body.Model),
 	}
 	// Editing an existing user message rewinds the thread to it and re-runs
 	// from the edited text: update its content, then run with LastUserID set so
@@ -328,6 +331,7 @@ func (s *Server) handleChatRetry(w http.ResponseWriter, r *http.Request) {
 		Attachments: agent.ParseAttachments(last.Attachments),
 		Model:       last.Model,
 		LastUserID:  last.ID,
+		Vision:      s.modelSupportsImages("", last.Model),
 	})
 }
 
@@ -382,6 +386,11 @@ func (s *Server) streamChatTurn(w http.ResponseWriter, r *http.Request, p *store
 		},
 		OnFileChange: func() { s.previews.TouchRevision(p.ID) },
 	}
+	if params.Vision {
+		params.Exec.Screenshot = func(ctx context.Context, path string) ([]byte, error) {
+			return s.capturePreview(ctx, p, path)
+		}
+	}
 	turn, err := agent.RunChat(ctx, params)
 	if err != nil {
 		emit(agent.ChatEvent{Type: "error", Error: err.Error()})
@@ -390,10 +399,57 @@ func (s *Server) streamChatTurn(w http.ResponseWriter, r *http.Request, p *store
 	// Snapshot each finished turn as a git commit when the project is
 	// repo-backed, so time-travel always has a checkpoint to return to.
 	// Edits/retries rewind the thread, so they skip the snapshot.
+	// Edits/retries rewind the thread, so they skip the snapshot.
 	if params.LastUserID <= 0 {
 		_, _ = gitops.CommitIfRepo(root, params.Message, "")
 	}
 	emit(agent.ChatEvent{Type: "done", Usage: turn.Usage})
+}
+
+// capturePreview ensures the project's preview is running and screenshots it.
+// Node previews are reached directly on their dev-server port (the v1 proxy
+// requires a session when auth is on); static previews go through the proxy,
+// which needs auth disabled.
+func (s *Server) capturePreview(ctx context.Context, p *store.Project, path string) ([]byte, error) {
+	rel, err := s.previews.Start(p.ID, p.Path, p.PreviewCommand)
+	if err != nil {
+		return nil, err
+	}
+	base := s.previews.DirectURL(p.ID)
+	if base == "" {
+		base = fmt.Sprintf("http://127.0.0.1:%d%s", s.cfg.Port, rel)
+	}
+	if path != "" && path != "/" {
+		base = strings.TrimSuffix(base, "/") + "/" + strings.TrimPrefix(path, "/")
+	}
+	return screenshot.Capture(ctx, base)
+}
+
+// modelSupportsImages reports whether the given model carries image-input
+// metadata in the provider catalog — gates the screenshot_app tool.
+func (s *Server) modelSupportsImages(providerID, model string) bool {
+	if model == "" {
+		if p := s.findLLMProvider(providerID); p != nil {
+			model = p.Model
+		} else {
+			_, _, model = s.llmConfig()
+		}
+	}
+	cat := s.providerCatalog()
+	if cat == nil {
+		return false
+	}
+	for _, prov := range cat.Providers {
+		if providerID != "" && prov.ID != providerID {
+			continue
+		}
+		for _, m := range prov.Models {
+			if m.ID == model && m.ImageInput {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // ---- preview control ----

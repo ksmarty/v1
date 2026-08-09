@@ -37,7 +37,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 # cross-building; both build stages above run natively on $BUILDPLATFORM.
 FROM node:22-alpine AS final
 
-RUN apk add --no-cache git bash ca-certificates \
+RUN apk add --no-cache git bash ca-certificates chromium \
     && corepack enable \
     && corepack prepare pnpm@latest --activate
 

@@ -35,6 +35,11 @@ type Executor struct {
 	OnFileChange   func()
 	MCP            *mcp.Manager // optional: namespaced mcp_<server>_<tool> tools
 	Perm           Resolver     // optional: gates tool calls via allow/deny/ask
+	// Screenshot captures the app preview as a PNG (nil when the model cannot
+	// read images). PendingImage carries the PNG from a screenshot_app call to
+	// the agent loop, which attaches it to the conversation.
+	Screenshot   func(ctx context.Context, path string) ([]byte, error)
+	PendingImage []byte
 }
 
 // Execute runs one tool call and returns the result string fed back to the LLM.
@@ -52,6 +57,8 @@ func (e *Executor) Execute(ctx context.Context, name, argsJSON string) (string, 
 		return e.runCommand(ctx, argsJSON)
 	case "restart_preview":
 		return e.restartPreview()
+	case "screenshot_app":
+		return e.screenshotApp(ctx, argsJSON)
 	case "set_todos":
 		return e.setTodos(argsJSON)
 	default:
@@ -60,6 +67,34 @@ func (e *Executor) Execute(ctx context.Context, name, argsJSON string) (string, 
 		}
 		return "", fmt.Errorf("unknown tool %q", name)
 	}
+}
+
+// screenshotApp captures the current app preview; the image travels to the
+// agent loop via PendingImage and reaches the model as an injected image
+// message (tool results are text-only on many OpenAI-compatible APIs).
+func (e *Executor) screenshotApp(ctx context.Context, argsJSON string) (string, error) {
+	if e.Screenshot == nil {
+		return "", fmt.Errorf("screenshots are not available with this model")
+	}
+	var args struct {
+		Path string `json:"path"`
+	}
+	if argsJSON != "" {
+		if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
+			return "", fmt.Errorf("invalid arguments: %w", err)
+		}
+	}
+	png, err := e.Screenshot(ctx, args.Path)
+	if err != nil {
+		return "", err
+	}
+	e.PendingImage = png
+	return toolResult(map[string]any{
+		"ok":    true,
+		"path":  args.Path,
+		"bytes": len(png),
+		"note":  "the screenshot image follows in the next message",
+	}), nil
 }
 
 // mcpCall routes a namespaced MCP tool (mcp_<server>_<tool>) to the matching

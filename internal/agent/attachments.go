@@ -41,6 +41,15 @@ func ParseAttachments(raw string) []Attachment {
 	return out
 }
 
+// AttachmentMeta describes an attachment without its content (for SSE events;
+// the content is served separately by the message-attachment endpoint).
+type AttachmentMeta struct {
+	Name string `json:"name"`
+	MIME string `json:"mime"`
+	Kind string `json:"kind"`
+	Size int    `json:"size"`
+}
+
 func textPart(t string) map[string]any {
 	return map[string]any{"type": "text", "text": t}
 }

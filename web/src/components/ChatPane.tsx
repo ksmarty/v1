@@ -1005,9 +1005,28 @@ export default function ChatPane({
           finish();
           break;
         }
+        case 'injected_message': {
+          // The agent added a user message mid-turn (a screenshot from the
+          // screenshot_app tool) — render it like any other user turn.
+          const id = ev.messageId ?? 0;
+          update((prev) => [
+            ...prev,
+            {
+              kind: 'msg',
+              key: id > 0 ? String(id) : `i${++counterRef.current}`,
+              role: 'user',
+              content: ev.text ?? '',
+              attachments: ev.attachments?.map((a, i) => ({
+                ...a,
+                url: a.kind === 'image' && id > 0 ? messageAttachmentUrl(projectId, String(id), i) : undefined,
+              })),
+            },
+          ]);
+          break;
+        }
       }
     },
-    [update, finish],
+    [update, finish, projectId],
   );
 
   const run = useCallback(

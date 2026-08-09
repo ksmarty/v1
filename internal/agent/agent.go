@@ -4,6 +4,7 @@ package agent
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -39,16 +40,18 @@ type TurnResult struct {
 
 // ChatEvent is one SSE event sent to the chat client.
 type ChatEvent struct {
-	Type      string       `json:"type"`
-	Text      string       `json:"text,omitempty"`
-	Name      string       `json:"name,omitempty"`
-	Detail    string       `json:"detail,omitempty"`
-	OK        bool         `json:"ok,omitempty"`
-	Error     string       `json:"error,omitempty"`
-	Usage     *Usage       `json:"usage,omitempty"`
-	Todos     []store.Todo `json:"todos,omitempty"`
-	RequestID string       `json:"requestId,omitempty"`
-	Tool      string       `json:"tool,omitempty"`
+	Type        string           `json:"type"`
+	Text        string           `json:"text,omitempty"`
+	Name        string           `json:"name,omitempty"`
+	Detail      string           `json:"detail,omitempty"`
+	OK          bool             `json:"ok,omitempty"`
+	Error       string           `json:"error,omitempty"`
+	Usage       *Usage           `json:"usage,omitempty"`
+	Todos       []store.Todo     `json:"todos,omitempty"`
+	RequestID   string           `json:"requestId,omitempty"`
+	Tool        string           `json:"tool,omitempty"`
+	MessageID   int64            `json:"messageId,omitempty"`
+	Attachments []AttachmentMeta `json:"attachments,omitempty"`
 }
 
 // ChatParams carries everything needed to run one chat turn.
@@ -63,6 +66,7 @@ type ChatParams struct {
 	LastUserID       int64        // retry mode: >0 re-runs the existing user message
 	ExtraTools       []llm.Tool   // dynamically added tools (e.g. MCP), namespaced
 	SkillsPrompt     string       // enabled skills' SKILL.md content for the system prompt
+	Vision           bool         // the model reads images — enables screenshot_app
 	ContextBudget    int
 	ContextThreshold float64
 	Summarizer       Summarizer
@@ -100,6 +104,9 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 	}
 	if p.SkillsPrompt != "" {
 		system += "\n\n" + p.SkillsPrompt
+	}
+	if p.Vision {
+		system += "\n\nYou can see the app: call screenshot_app to capture an image of the running preview and inspect what is on screen. Use it after visual changes to verify them."
 	}
 	history := []llm.Message{{Role: "system", Content: system}}
 	var coveredID int64
@@ -146,8 +153,11 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 	vision := hasImageParts(history)
 	for round := 0; round < maxRounds; round++ {
 		allTools := tools
+		if p.Vision {
+			allTools = append(append([]llm.Tool{}, allTools...), screenshotAppTool)
+		}
 		if len(p.ExtraTools) > 0 {
-			allTools = append(append([]llm.Tool{}, tools...), p.ExtraTools...)
+			allTools = append(append([]llm.Tool{}, allTools...), p.ExtraTools...)
 		}
 		requestHistory := compactForModel(ctx, history, p)
 		res, err := p.Client.ChatStream(ctx, requestHistory, allTools,
@@ -224,6 +234,31 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 				Name:       tc.Function.Name,
 				Content:    result,
 			})
+			// A screenshot tool call leaves a PNG behind: deliver it as a user
+			// message with an image part (tool results are text-only on many
+			// OpenAI-compatible APIs). Persisted like a user attachment so
+			// history replay and the chat UI show it too.
+			if img := p.Exec.PendingImage; len(img) > 0 {
+				p.Exec.PendingImage = nil
+				att := []Attachment{{
+					Name:    "screenshot.png",
+					MIME:    "image/png",
+					Kind:    "image",
+					Content: base64.StdEncoding.EncodeToString(img),
+				}}
+				caption := "Screenshot of the current app preview (captured by the screenshot_app tool)."
+				msgID, err := p.Store.AddMessage(p.Project.ID, "user", caption, "", "", "", "", MarshalAttachments(att))
+				if err != nil {
+					return nil, err
+				}
+				history = append(history, userMessage(caption, att))
+				p.Emit(ChatEvent{
+					Type:        "injected_message",
+					MessageID:   msgID,
+					Text:        caption,
+					Attachments: []AttachmentMeta{{Name: "screenshot.png", MIME: "image/png", Kind: "image", Size: len(img)}},
+				})
+			}
 		}
 	}
 	return &TurnResult{Usage: usage, Model: p.Client.Model}, nil
@@ -246,6 +281,23 @@ func toolDetail(tc llm.ToolCall) string {
 		return args.Command
 	}
 	return ""
+}
+
+var screenshotAppTool = llm.Tool{
+	Type: "function",
+	Function: llm.ToolFunction{
+		Name:        "screenshot_app",
+		Description: "Capture a screenshot of the app preview so you can see its current visual state. Starts the preview if it is not running. Only available for models that can read images.",
+		Parameters: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"path": map[string]any{
+					"type":        "string",
+					"description": "Route path inside the app to capture (e.g. /about). Defaults to the app's root page.",
+				},
+			},
+		},
+	},
 }
 
 var tools = []llm.Tool{

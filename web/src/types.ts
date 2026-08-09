@@ -188,7 +188,13 @@ export type ChatEvent =
   | { type: 'todos'; todos: Todo[] }
   | { type: 'permission_request'; requestId: string; tool: string; detail: string }
   | { type: 'done'; usage?: ChatUsage }
-  | { type: 'error'; error: string };
+  | { type: 'error'; error: string }
+  | {
+      type: 'injected_message';
+      messageId?: number;
+      text?: string;
+      attachments?: ChatAttachmentMeta[];
+    };
 
 export interface MCPServer {
   id: string;
