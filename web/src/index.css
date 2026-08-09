@@ -361,17 +361,17 @@ body {
     conic-gradient(
       from var(--v1-spin),
       transparent 0deg,
-      var(--v1-accent) 20deg,
-      #a855f7 35deg,
-      #ec4899 55deg,
-      #f59e0b 80deg,
-      transparent 110deg
+      var(--v1-accent) 30deg,
+      #a855f7 90deg,
+      #ec4899 150deg,
+      #f59e0b 200deg,
+      transparent 240deg
     ) border-box,
     linear-gradient(
       color-mix(in srgb, var(--v1-accent) 30%, transparent),
       color-mix(in srgb, var(--v1-accent) 30%, transparent)
     ) border-box;
-  animation: v1-working-spin 2.2s linear infinite;
+  animation: v1-working-spin 1.2s linear infinite;
 }
 @keyframes v1-working-spin {
   to {

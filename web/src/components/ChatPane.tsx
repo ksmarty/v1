@@ -651,7 +651,7 @@ export default function ChatPane({
   const [providers, setProviders] = useState<SavedProvider[]>([]);
   const [catalog, setCatalog] = useState<Provider[]>([]);
   const [todos, setTodos] = useState<Todo[]>([]);
-  const [todosOpen, setTodosOpen] = useState(true);
+  const [todosOpen, setTodosOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
   const [toolsTab, setToolsTab] = useState<ToolsTab>('mcp');
   const openTools = (tab: ToolsTab) => {
@@ -963,8 +963,11 @@ export default function ChatPane({
     return () => cancelAnimationFrame(raf);
   }, [items, mapOpen, updateCurrent]);
   const jumpTo = useCallback((key: string, smooth = true) => {
-    const el = scrollRef.current?.querySelector(`[data-msg-key="${CSS.escape(key)}"]`);
-    el?.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'start' });
+    const sc = scrollRef.current;
+    const row = sc?.querySelector(`[data-msg-key="${CSS.escape(key)}"]`) as HTMLElement | null;
+    if (!sc || !row) return;
+    // block:'start' would park the message under the top fade — leave room.
+    sc.scrollTo({ top: Math.max(0, row.offsetTop - 72), behavior: smooth ? 'smooth' : 'auto' });
   }, []);
   // Scrubbing: map a pointer Y on the strip to a dot index and jump there.
   const scrubTo = useCallback(
@@ -1127,7 +1130,6 @@ export default function ChatPane({
         }
         case 'todos': {
           setTodos(ev.todos);
-          setTodosOpen(true);
           break;
         }
         case 'memories': {
@@ -1792,47 +1794,6 @@ export default function ChatPane({
             </div>
           </div>
         )}
-        {todos.length > 0 && (
-          <div className="mx-auto mb-2 w-full max-w-2xl rounded-xl border border-border bg-surface/50">
-            <button
-              type="button"
-              onClick={() => setTodosOpen((o) => !o)}
-              className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-subtle transition-colors hover:text-text"
-            >
-              {todosOpen ? (
-                <IconChevronDown className="h-3.5 w-3.5 shrink-0 text-faint" />
-              ) : (
-                <IconChevronRight className="h-3.5 w-3.5 shrink-0 text-faint" />
-              )}
-              To do
-              <span className="ml-auto font-normal text-faint">
-                {todos.filter((t) => !t.done).length} left
-              </span>
-            </button>
-            {todosOpen && (
-              <ul className="border-t border-border/80 px-3 py-2">
-                {todos.map((t, i) => (
-                  <li key={i} className="flex items-start gap-2.5 py-1">
-                    <span
-                      className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
-                        t.done ? 'border-emerald-500 bg-emerald-500 text-emerald-50' : 'border-border-strong'
-                      }`}
-                    >
-                      {t.done && <IconCheck className="h-3 w-3" />}
-                    </span>
-                    <span
-                      className={`min-w-0 text-sm ${
-                        t.done ? 'text-faint line-through' : 'text-text'
-                      }`}
-                    >
-                      {t.title}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        )}
         {askPrompt && streaming && (
           <div className="mx-auto mb-3 w-full max-w-2xl rounded-lg border border-accent/50 bg-surface p-3 text-sm">
             <div className="flex items-start gap-2">
@@ -2053,7 +2014,6 @@ export default function ChatPane({
                       onClick={() => {
                         setPlusOpen(false);
                         setTodosOpen(true);
-                        scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
                       }}
                       className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm text-text transition-colors hover:bg-border"
                     >
@@ -2089,6 +2049,50 @@ export default function ChatPane({
                     <IconWrench className="h-4 w-4 shrink-0 text-dim" />
                     Tools, skills & permissions
                   </button>
+                </div>
+              </>
+            )}
+            {todosOpen && todos.length > 0 && (
+              <>
+                <button
+                  type="button"
+                  aria-label="Close tasks"
+                  className="fixed inset-0 z-20 cursor-default"
+                  onClick={() => setTodosOpen(false)}
+                />
+                <div
+                  className={`absolute z-30 w-64 overflow-hidden rounded-lg border border-border bg-surface shadow-lg ${
+                    expanded ? 'bottom-2 left-2' : 'bottom-full left-2 mb-1'
+                  }`}
+                >
+                  <div className="border-b border-border px-3 py-2 text-xs font-medium text-subtle">
+                    Tasks
+                    <span className="ml-1.5 font-normal text-faint">
+                      {todos.filter((t) => !t.done).length} left
+                    </span>
+                  </div>
+                  <ul className="fade-y max-h-64 overflow-y-auto overscroll-contain px-3 py-2">
+                    {todos.map((t, i) => (
+                      <li key={i} className="flex items-start gap-2.5 py-1">
+                        <span
+                          className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
+                            t.done
+                              ? 'border-emerald-500 bg-emerald-500 text-emerald-50'
+                              : 'border-border-strong'
+                          }`}
+                        >
+                          {t.done && <IconCheck className="h-3 w-3" />}
+                        </span>
+                        <span
+                          className={`min-w-0 text-sm ${
+                            t.done ? 'text-faint line-through' : 'text-text'
+                          }`}
+                        >
+                          {t.title}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
               </>
             )}
