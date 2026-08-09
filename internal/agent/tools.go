@@ -139,8 +139,9 @@ func (e *Executor) mcpCall(ctx context.Context, name, argsJSON string) (string, 
 	return result, nil
 }
 
-// remember saves a project-scoped memory; forget deletes one by id. Both are
-// capped so the system prompt's memories section stays small.
+// remember saves a project-scoped memory; forget deletes one by id. Entries
+// are short, deduped, and capped so the system prompt's memories section
+// stays small (it is re-sent with every request of every round).
 func (e *Executor) remember(argsJSON string) (string, error) {
 	var args struct {
 		Content string `json:"content"`
@@ -155,12 +156,18 @@ func (e *Executor) remember(argsJSON string) (string, error) {
 	if e.Store == nil {
 		return "", fmt.Errorf("memory store unavailable")
 	}
-	if len(args.Content) > 1000 {
-		args.Content = args.Content[:1000]
+	if len(args.Content) > 300 {
+		return "", fmt.Errorf("memory entries must be 300 characters or fewer — save a shorter fact")
 	}
 	mems, err := e.Store.ListMemories(e.ProjectID)
 	if err != nil {
 		return "", err
+	}
+	normalized := strings.ToLower(strings.Join(strings.Fields(args.Content), " "))
+	for _, m := range mems {
+		if strings.ToLower(strings.Join(strings.Fields(m.Content), " ")) == normalized {
+			return toolResult(map[string]any{"ok": true, "id": m.ID, "note": "already remembered"}), nil
+		}
 	}
 	if len(mems) >= 200 {
 		return "", fmt.Errorf("memory is full (200 entries) — use the forget tool to delete one first")

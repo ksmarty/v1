@@ -390,13 +390,8 @@ func (s *Server) streamChatTurn(w http.ResponseWriter, r *http.Request, p *store
 	mcpTools, _ := s.mcp.Sync(ctx)
 	params.ExtraTools = mcpTools
 	params.SkillsPrompt = s.skillsSystemPrompt()
-	if mems, err := s.st.ListMemories(p.ID); err == nil && len(mems) > 0 {
-		var b strings.Builder
-		b.WriteString("Project memories (facts you saved in earlier turns; use the forget tool with an id to delete one):")
-		for _, m := range mems {
-			fmt.Fprintf(&b, "\n- [%d] %s", m.ID, m.Content)
-		}
-		params.MemoriesPrompt = b.String()
+	if mems, err := s.st.ListMemories(p.ID); err == nil {
+		params.MemoriesPrompt = memoryPrompt(mems)
 	}
 	params.ContextBudget = s.cfg.ContextBudget
 	params.ContextThreshold = s.cfg.ContextThreshold
