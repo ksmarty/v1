@@ -34,6 +34,7 @@ import {
   IconCompress,
   IconExpand,
   IconLock,
+  IconMap,
   IconModel,
   IconPaperclip,
   IconRefresh,
@@ -821,12 +822,39 @@ export default function ChatPane({
   // the bottom — otherwise reading history during a stream gets yanked around.
   const nearBottomRef = useRef(true);
   const [showJump, setShowJump] = useState(false);
+  // Minimap: toggleable overview strip; markers for in-view messages are lit.
+  const [mapOpen, setMapOpen] = useState(false);
+  const [visibleKeys, setVisibleKeys] = useState<ReadonlySet<string>>(new Set());
+  const updateVisible = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const top = el.scrollTop;
+    const bottom = top + el.clientHeight;
+    const vis = new Set<string>();
+    el.querySelectorAll('[data-msg-key]').forEach((node) => {
+      const n = node as HTMLElement;
+      if (n.offsetTop + n.offsetHeight >= top && n.offsetTop <= bottom) {
+        vis.add(n.dataset.msgKey as string);
+      }
+    });
+    setVisibleKeys(vis);
+  }, []);
   const onScroll = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
     const near = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
     nearBottomRef.current = near;
     setShowJump(!near);
+    updateVisible();
+  }, [updateVisible]);
+  useEffect(() => {
+    if (!mapOpen) return;
+    const raf = requestAnimationFrame(updateVisible);
+    return () => cancelAnimationFrame(raf);
+  }, [items, mapOpen, updateVisible]);
+  const jumpTo = useCallback((key: string) => {
+    const el = scrollRef.current?.querySelector(`[data-msg-key="${CSS.escape(key)}"]`);
+    el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, []);
   const jumpToBottom = useCallback(() => {
     const el = scrollRef.current;
@@ -1431,14 +1459,25 @@ export default function ChatPane({
               <IconLock className="h-3.5 w-3.5 shrink-0" />
               {permissionMeta(permissionMode).short}
             </button>
+            {items.length > 1 && (
+              <IconButton
+                onClick={() => setMapOpen((o) => !o)}
+                aria-label="Toggle message map"
+                title="Message map"
+                className={`h-9! w-9! shrink-0 ${mapOpen ? 'text-accent' : ''}`}
+              >
+                <IconMap className="h-4 w-4" />
+              </IconButton>
+            )}
           </div>
         </div>
       )}
 
+      <div className="relative min-h-0 flex-1">
       <div
         ref={scrollRef}
         onScroll={onScroll}
-        className="fade-y min-h-0 flex-1 overflow-y-auto px-3 py-4 md:px-4"
+        className="fade-y h-full overflow-y-auto px-3 py-4 md:px-4"
       >
         {loading && (
           <div className="flex justify-center py-10">
@@ -1540,22 +1579,59 @@ export default function ChatPane({
         {!loading && !loadError && items.length > 0 && (
           <div className="mx-auto flex max-w-2xl flex-col gap-3">
             {items.map((it, i) => (
-              <MessageRow
-                key={it.key}
-                item={it}
-                isLast={i === lastMsgIdx}
-                streaming={streaming}
-                turnEnd={turnEndKeys.has(it.key)}
-                validTag={validTag}
-                onEdit={editUserMessage}
-                onRewind={rewindTo}
-                onRegenerate={regenerate}
-                onEditStart={setItemEditing}
-                onImageClick={openLightbox}
-              />
+              <div key={it.key} data-msg-key={it.key}>
+                <MessageRow
+                  item={it}
+                  isLast={i === lastMsgIdx}
+                  streaming={streaming}
+                  turnEnd={turnEndKeys.has(it.key)}
+                  validTag={validTag}
+                  onEdit={editUserMessage}
+                  onRewind={rewindTo}
+                  onRegenerate={regenerate}
+                  onEditStart={setItemEditing}
+                  onImageClick={openLightbox}
+                />
+              </div>
             ))}
           </div>
         )}
+      </div>
+      {mapOpen && items.length > 1 && (
+        <div className="absolute bottom-2 right-1 top-2 z-10 w-14 overflow-y-auto overscroll-contain rounded-lg border border-border bg-bg/85 p-1.5 backdrop-blur">
+          <div className="flex flex-col items-stretch gap-[3px]">
+            {items.map((it) => {
+              const visible = visibleKeys.has(it.key);
+              const role = it.kind === 'tool' ? 'tool' : it.role;
+              const h =
+                it.kind === 'tool'
+                  ? 2
+                  : Math.min(14, Math.max(3, Math.round((it.content?.length ?? 0) / 200) + 2));
+              const color =
+                role === 'user'
+                  ? 'bg-accent/80 ml-auto w-3/4'
+                  : role === 'error'
+                    ? 'bg-red-400/80 w-3/4'
+                    : role === 'tool'
+                      ? 'bg-faint/60 mx-auto w-1/2'
+                      : 'bg-border-strong w-3/4';
+              return (
+                <button
+                  key={it.key}
+                  type="button"
+                  onClick={() => jumpTo(it.key)}
+                  aria-label={`Jump to ${role} message`}
+                  title={`Jump to ${role} message`}
+                  style={{ height: h }}
+                  className={`shrink-0 rounded-full transition-opacity ${color} ${
+                    visible ? 'opacity-100' : 'opacity-35'
+                  }`}
+                />
+              );
+            })}
+          </div>
+        </div>
+      )}
       </div>
 
       {showJump && (

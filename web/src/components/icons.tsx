@@ -94,6 +94,14 @@ export const IconCompress = (p: SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
+export const IconMap = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}>
+    <path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2z" />
+    <path d="M9 4v14" />
+    <path d="M15 6v14" />
+  </svg>
+);
+
 export const IconRefresh = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}>
     <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
