@@ -115,15 +115,16 @@ export function Dialog({
   // Fullscreen mobile sheets fill the fixed overlay (h-full), whose top edge
   // sits at the physical screen top in iOS standalone — so they pad the top
   // by the safe-area inset to clear the Dynamic Island, and drop the top
-  // border so no line shows through it. Bottom sheets keep these pads too:
-  // their top edge can reach into the status area.
+  // border so no line shows through it. Bottom sheets are anchored mid-screen,
+  // so a top inset would just be dead space; they only need the bottom inset
+  // for the home indicator.
   const pad = fullScreen
     ? translucent
       ? 'px-3 pt-[max(0.75rem,env(safe-area-inset-top))] pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-4'
       : 'px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))]'
     : translucent
       ? 'px-3 pt-3 pb-3 sm:px-4'
-      : 'px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))]';
+      : 'px-4 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))]';
   const desktopPad = translucent ? 'sm:px-6 sm:pb-8 sm:pt-6' : 'sm:px-5 sm:pt-5 sm:pb-5';
 
   return (
