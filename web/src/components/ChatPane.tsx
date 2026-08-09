@@ -831,6 +831,22 @@ export default function ChatPane({
       for (const m of msgs) {
         if (m.role === 'tool') {
           const name = m.tool ? parseToolName(m.tool) : 'tool';
+          // Pure success acks ({"ok":true,...} with no payload) are noise —
+          // the call chip and its diff already tell the story. Failures and
+          // output-bearing results (read_file, run_command, …) stay.
+          let noise = false;
+          try {
+            const d = JSON.parse(m.content) as Record<string, unknown>;
+            noise =
+              d !== null &&
+              d.ok === true &&
+              !('error' in d) &&
+              !('content' in d) &&
+              !('output' in d);
+          } catch {
+            // not JSON — keep it
+          }
+          if (noise) continue;
           const last = mapped[mapped.length - 1];
           if (last && last.kind === 'msg' && last.role === 'assistant') {
             last.toolResults = [...(last.toolResults ?? []), { name, detail: m.content }];
@@ -1774,6 +1790,8 @@ export default function ChatPane({
               <IconLock className="h-3.5 w-3.5 shrink-0" />
               {permissionMeta(permissionMode).short}
             </button>
+            {isDesktop && toolsButton}
+            {isDesktop && tasksButton}
             {userKeys.length > 1 && (
               <IconButton
                 onClick={() => setMapOpen((o) => !o)}
@@ -1944,6 +1962,51 @@ export default function ChatPane({
       )}
       </div>
 
+      {todosOpen && todos.length > 0 && (
+        <>
+          <button
+            type="button"
+            aria-label="Close tasks"
+            className="fixed inset-0 z-20 cursor-default"
+            onClick={() => setTodosOpen(false)}
+          />
+          <div
+            className={`absolute z-30 w-64 overflow-hidden rounded-lg border border-border bg-surface shadow-lg ${
+              expanded ? 'left-2 top-14' : isDesktop ? 'right-2 top-14' : 'bottom-24 left-2'
+            }`}
+          >
+            <div className="border-b border-border px-3 py-2 text-xs font-medium text-subtle">
+              Tasks
+              <span className="ml-1.5 font-normal text-faint">
+                {todos.filter((t) => !t.done).length} left
+              </span>
+            </div>
+            <ul className="fade-y max-h-64 overflow-y-auto overscroll-contain px-3 py-2">
+              {todos.map((t, i) => (
+                <li key={i} className="flex items-start gap-2.5 py-1">
+                  <span
+                    className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
+                      t.done
+                        ? 'border-emerald-500 bg-emerald-500 text-emerald-50'
+                        : 'border-border-strong'
+                    }`}
+                  >
+                    {t.done && <IconCheck className="h-3 w-3" />}
+                  </span>
+                  <span
+                    className={`min-w-0 text-sm ${
+                      t.done ? 'text-faint line-through' : 'text-text'
+                    }`}
+                  >
+                    {t.title}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </>
+      )}
+
       {showJump && (
         <div className="relative z-10 flex h-0 justify-center overflow-visible">
           <button
@@ -2067,50 +2130,6 @@ export default function ChatPane({
                 </div>
               </>
             )}
-            {todosOpen && todos.length > 0 && (
-              <>
-                <button
-                  type="button"
-                  aria-label="Close tasks"
-                  className="fixed inset-0 z-20 cursor-default"
-                  onClick={() => setTodosOpen(false)}
-                />
-                <div
-                  className={`absolute z-30 w-64 overflow-hidden rounded-lg border border-border bg-surface shadow-lg ${
-                    expanded ? 'left-2 top-14' : 'bottom-full left-2 mb-1'
-                  }`}
-                >
-                  <div className="border-b border-border px-3 py-2 text-xs font-medium text-subtle">
-                    Tasks
-                    <span className="ml-1.5 font-normal text-faint">
-                      {todos.filter((t) => !t.done).length} left
-                    </span>
-                  </div>
-                  <ul className="fade-y max-h-64 overflow-y-auto overscroll-contain px-3 py-2">
-                    {todos.map((t, i) => (
-                      <li key={i} className="flex items-start gap-2.5 py-1">
-                        <span
-                          className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
-                            t.done
-                              ? 'border-emerald-500 bg-emerald-500 text-emerald-50'
-                              : 'border-border-strong'
-                          }`}
-                        >
-                          {t.done && <IconCheck className="h-3 w-3" />}
-                        </span>
-                        <span
-                          className={`min-w-0 text-sm ${
-                            t.done ? 'text-faint line-through' : 'text-text'
-                          }`}
-                        >
-                          {t.title}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </>
-            )}
             {(attachments.length > 0 || attachError) && (
               <div className="flex flex-wrap items-center gap-1.5">
                 {attachments.map((a, i) => (
@@ -2192,7 +2211,7 @@ export default function ChatPane({
                 </>
               ) : (
                 <>
-                  {plusButton}
+                  {isDesktop ? attachButton : plusButton}
                   {textField}
                   {stopButton}
                   {sendButton}

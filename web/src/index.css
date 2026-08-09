@@ -354,11 +354,20 @@ body {
   border-color: color-mix(in srgb, var(--v1-accent) 35%, transparent);
 }
 .v1-track-rect {
-  animation: v1-track 1.6s linear infinite;
+  /* Lap around the perimeter + continuous hue shift so the rainbow reads as
+     changing color, not a fixed gradient sliding past. */
+  animation:
+    v1-track 1.2s linear infinite,
+    v1-track-hue 3s linear infinite;
 }
 @keyframes v1-track {
   to {
     stroke-dashoffset: -100;
+  }
+}
+@keyframes v1-track-hue {
+  to {
+    filter: hue-rotate(360deg);
   }
 }
 
