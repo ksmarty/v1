@@ -84,8 +84,8 @@ function SkillPreviewDialog({
   }, [target.installed]);
 
   return (
-    <Dialog open onClose={onClose} title={target.name} wide fixedBody align="top">
-      <div className="flex flex-col gap-3">
+    <Dialog open onClose={onClose} title={target.name} wide fullScreen fixedBody align="top">
+      <div className="flex h-full min-h-0 flex-col gap-3">
         <p className="text-xs text-subtle">by {target.author}</p>
         {target.description && <p className="text-sm text-text">{target.description}</p>}
         {readmeLoading && (
@@ -94,11 +94,11 @@ function SkillPreviewDialog({
           </div>
         )}
         {readme && (
-          <div className="fade-y max-h-72 overflow-y-auto overscroll-contain rounded-lg border border-border bg-surface p-3">
+          <div className="fade-y min-h-0 flex-1 overflow-y-auto overscroll-contain rounded-lg border border-border bg-surface p-3">
             <Markdown text={readme} />
           </div>
         )}
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
           {target.installed ? (
             <>
               <Button variant="outline" onClick={() => onToggle(!target.installed!.enabled)}>
