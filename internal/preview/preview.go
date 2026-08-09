@@ -422,6 +422,15 @@ func packageManager() string {
 	return "npm"
 }
 
+// DefaultPreviewCommand is the command used when a project has no preview
+// override — empty for static projects (no package.json, nothing to run).
+func DefaultPreviewCommand(dir string) string {
+	if _, err := os.Stat(filepath.Join(dir, "package.json")); err != nil {
+		return ""
+	}
+	return packageManager() + " run dev"
+}
+
 // installDeps runs the package manager install, falling back to npm when the
 // preferred manager fails (e.g. pnpm refusing build scripts).
 func (m *Manager) installDeps(dir string, logs *ringLog) error {

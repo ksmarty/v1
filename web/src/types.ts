@@ -138,6 +138,7 @@ export interface Project {
   name: string;
   repoUrl: string;
   previewCommand?: string;
+  defaultPreviewCommand?: string;
   instructions?: string;
   preview: PreviewInfo;
   updatedAt: string;

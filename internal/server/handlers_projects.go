@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"v1/internal/gitops"
+	"v1/internal/preview"
 	"v1/internal/scaffold"
 	"v1/internal/store"
 )
@@ -18,20 +19,24 @@ type projectJSON struct {
 	Name           string `json:"name"`
 	RepoURL        string `json:"repoUrl,omitempty"`
 	PreviewCommand string `json:"previewCommand,omitempty"`
-	Instructions   string `json:"instructions,omitempty"`
-	CreatedAt      int64  `json:"createdAt"`
-	UpdatedAt      int64  `json:"updatedAt"`
+	// DefaultPreviewCommand is the command used without an override ("" for
+	// static projects) — shown as the override field's placeholder.
+	DefaultPreviewCommand string `json:"defaultPreviewCommand"`
+	Instructions          string `json:"instructions,omitempty"`
+	CreatedAt             int64  `json:"createdAt"`
+	UpdatedAt             int64  `json:"updatedAt"`
 }
 
 func toProjectJSON(p *store.Project) projectJSON {
 	return projectJSON{
-		ID:             p.ID,
-		Name:           p.Name,
-		RepoURL:        p.RepoURL,
-		PreviewCommand: p.PreviewCommand,
-		Instructions:   p.Instructions,
-		CreatedAt:      p.CreatedAt,
-		UpdatedAt:      p.UpdatedAt,
+		ID:                    p.ID,
+		Name:                  p.Name,
+		RepoURL:               p.RepoURL,
+		PreviewCommand:        p.PreviewCommand,
+		DefaultPreviewCommand: preview.DefaultPreviewCommand(p.Path),
+		Instructions:          p.Instructions,
+		CreatedAt:             p.CreatedAt,
+		UpdatedAt:             p.UpdatedAt,
 	}
 }
 

@@ -58,7 +58,7 @@ export default function ProjectPane({
               <Input
                 value={previewCommand}
                 onChange={(e) => setPreviewCommand(e.target.value)}
-                placeholder="e.g. npm run dev"
+                placeholder={project?.defaultPreviewCommand || 'static — no command to run'}
                 autoComplete="off"
                 className="font-mono text-xs"
               />
