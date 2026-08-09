@@ -1470,6 +1470,124 @@ export default function ChatPane({
     return keys;
   }, [items]);
 
+  // Composer pieces, shared between the normal row layout and the expanded
+  // layout (top button row in the corners, text field below at full width).
+  const plusButton = (
+    <IconButton
+      onClick={() => setPlusOpen((o) => !o)}
+      aria-label="More actions"
+      title="More actions"
+      className={`h-8! w-8! shrink-0 md:h-9! md:w-9! ${plusOpen ? 'bg-border text-text' : ''}`}
+    >
+      <IconPlus className="h-4 w-4" />
+    </IconButton>
+  );
+  const collapseButton = (
+    <IconButton
+      onClick={() => setExpanded(false)}
+      aria-label="Collapse composer"
+      title="Collapse composer"
+      className="h-8! w-8! shrink-0 md:h-9! md:w-9!"
+    >
+      <IconCompress className="h-4 w-4" />
+    </IconButton>
+  );
+  const stopButton = streaming && (
+    <IconButton
+      onClick={stop}
+      aria-label="Stop generating"
+      title="Stop generating"
+      className="h-8! w-8! shrink-0 md:h-9! md:w-9!"
+    >
+      <IconSquare className="h-4 w-4" />
+    </IconButton>
+  );
+  const sendButton = (
+    <IconButton
+      onClick={() => void send()}
+      disabled={!input.trim() || !hasModel}
+      aria-label={streaming ? 'Steer or queue for the next turn' : 'Send message'}
+      title={
+        streaming
+          ? 'Send to steer the current run — it becomes a follow-up turn if the run finishes first'
+          : hasModel
+            ? 'Send message'
+            : 'Select a model first'
+      }
+      className="h-8! w-8! shrink-0 bg-primary text-primary-text hover:opacity-90 hover:text-primary-text disabled:bg-border disabled:text-faint md:h-9! md:w-9!"
+    >
+      <IconArrowUp className="h-4 w-4" />
+    </IconButton>
+  );
+
+  const textField = (
+    <div className={`relative min-w-0 flex-1 ${expanded ? 'h-full min-h-0 w-full' : ''}`}>
+      {/* The textarea's own text is transparent; this echo beneath it
+          renders the same text with @/# tags pilled. The echo must
+          keep the textarea's exact font/padding metrics — the pill
+          uses negative margins to cancel its padding, otherwise the
+          caret and selection drift from the visible text. */}
+      <div
+        ref={echoRef}
+        aria-hidden
+        className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words px-1.5 py-1 text-base sm:text-sm md:py-1.5"
+      >
+        <TaggedText
+          text={input}
+          pillClassName="-mx-0.5 rounded-sm bg-border px-0.5 text-accent"
+          valid={validTag}
+        />
+        {'​'}
+      </div>
+      <textarea
+        ref={taRef}
+        rows={1}
+        value={input}
+        autoCorrect="off"
+        placeholder="Describe what to build…"
+        onChange={(e) => {
+          setInput(e.target.value);
+          void updateSuggestions(e.target.value);
+        }}
+        onKeyDown={(e) => {
+          if (suggestions.length > 0 && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+            e.preventDefault();
+            setSuggestionIndex((i) => (e.key === 'ArrowDown'
+              ? (i + 1) % suggestions.length
+              : (i + suggestions.length - 1) % suggestions.length));
+            return;
+          }
+          if (suggestions.length > 0 && e.key === 'Tab') {
+            e.preventDefault();
+            chooseSuggestion(suggestions[suggestionIndex].insert);
+            return;
+          }
+          if (suggestions.length > 0 && e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            acceptSuggestion(suggestions[suggestionIndex]);
+            return;
+          }
+          if (e.key === 'Escape' && suggestions.length > 0) {
+            e.preventDefault();
+            setSuggestions([]);
+            return;
+          }
+          if (e.key === 'Enter' && !e.shiftKey && isDesktop) {
+            e.preventDefault();
+            void send();
+          }
+        }}
+        onScroll={(e) => {
+          const echo = echoRef.current;
+          if (echo) echo.scrollTop = e.currentTarget.scrollTop;
+        }}
+        className={`relative block min-h-[32px] w-full resize-none bg-transparent px-1.5 py-1 text-base text-transparent caret-accent outline-none placeholder:text-faint sm:text-sm md:min-h-[36px] md:py-1.5 ${
+          expanded ? 'h-full max-h-none' : 'max-h-40'
+        }`}
+      />
+    </div>
+  );
+
   return (
     <div className="relative flex h-full min-h-0 flex-col">
       {llmReady && (
@@ -1853,128 +1971,36 @@ export default function ChatPane({
                 streaming ? 'v1-working' : ''
               } ${expanded ? 'min-h-0 flex-1 flex-col' : 'items-end'}`}
             >
-            <div className={expanded ? 'order-2 flex shrink-0' : 'contents'}>
-              <IconButton
-                onClick={() => setPlusOpen((o) => !o)}
-                aria-label="More actions"
-                title="More actions"
-                className={`h-8! w-8! shrink-0 md:h-9! md:w-9! ${plusOpen ? 'bg-border text-text' : ''}`}
-              >
-                <IconPlus className="h-4 w-4" />
-              </IconButton>
-            </div>
-            <input
-              ref={fileRef}
-              type="file"
-              multiple
-              className="hidden"
-              onChange={(e) => {
-                void addFiles(e.target.files);
-                e.target.value = '';
-              }}
-            />
-            <div className={`relative min-w-0 flex-1 ${expanded ? 'order-1 h-full min-h-0 w-full' : ''}`}>
-              {/* The textarea's own text is transparent; this echo beneath it
-                  renders the same text with @/# tags pilled. The echo must
-                  keep the textarea's exact font/padding metrics — the pill
-                  uses negative margins to cancel its padding, otherwise the
-                  caret and selection drift from the visible text. */}
-              <div
-                ref={echoRef}
-                aria-hidden
-                className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words px-1.5 py-1 text-base sm:text-sm md:py-1.5"
-              >
-                <TaggedText
-                  text={input}
-                  pillClassName="-mx-0.5 rounded-sm bg-border px-0.5 text-accent"
-                  valid={validTag}
-                />
-                {'​'}
-              </div>
-              <textarea
-                ref={taRef}
-                rows={1}
-                value={input}
-                autoCorrect="off"
-                placeholder="Describe what to build…"
+              <input
+                ref={fileRef}
+                type="file"
+                multiple
+                className="hidden"
                 onChange={(e) => {
-                  setInput(e.target.value);
-                  void updateSuggestions(e.target.value);
+                  void addFiles(e.target.files);
+                  e.target.value = '';
                 }}
-                onKeyDown={(e) => {
-                  if (suggestions.length > 0 && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
-                    e.preventDefault();
-                    setSuggestionIndex((i) => (e.key === 'ArrowDown'
-                      ? (i + 1) % suggestions.length
-                      : (i + suggestions.length - 1) % suggestions.length));
-                    return;
-                  }
-                  if (suggestions.length > 0 && e.key === 'Tab') {
-                    e.preventDefault();
-                    chooseSuggestion(suggestions[suggestionIndex].insert);
-                    return;
-                  }
-                  if (suggestions.length > 0 && e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    acceptSuggestion(suggestions[suggestionIndex]);
-                    return;
-                  }
-                  if (e.key === 'Escape' && suggestions.length > 0) {
-                    e.preventDefault();
-                    setSuggestions([]);
-                    return;
-                  }
-                  if (e.key === 'Enter' && !e.shiftKey && isDesktop) {
-                    e.preventDefault();
-                    void send();
-                  }
-                }}
-                onScroll={(e) => {
-                  const echo = echoRef.current;
-                  if (echo) echo.scrollTop = e.currentTarget.scrollTop;
-                }}
-                className={`relative block min-h-[32px] w-full resize-none bg-transparent px-1.5 py-1 text-base text-transparent caret-accent outline-none placeholder:text-faint sm:text-sm md:min-h-[36px] md:py-1.5 ${
-                  expanded ? 'h-full max-h-none' : 'max-h-40'
-                }`}
               />
-            </div>
-            <div className={expanded ? 'order-3 flex shrink-0 items-center justify-end gap-1.5' : 'contents'}>
-              {expanded && (
-                <IconButton
-                  onClick={() => setExpanded(false)}
-                  aria-label="Collapse composer"
-                  title="Collapse composer"
-                  className="h-8! w-8! shrink-0 md:h-9! md:w-9!"
-                >
-                  <IconCompress className="h-4 w-4" />
-                </IconButton>
+              {expanded ? (
+                <>
+                  <div className="flex shrink-0 items-center justify-between">
+                    {plusButton}
+                    <div className="flex items-center gap-1.5">
+                      {collapseButton}
+                      {stopButton}
+                      {sendButton}
+                    </div>
+                  </div>
+                  {textField}
+                </>
+              ) : (
+                <>
+                  {plusButton}
+                  {textField}
+                  {stopButton}
+                  {sendButton}
+                </>
               )}
-              {streaming && (
-              <IconButton
-                onClick={stop}
-                aria-label="Stop generating"
-                title="Stop generating"
-                className="h-8! w-8! shrink-0 md:h-9! md:w-9!"
-              >
-                <IconSquare className="h-4 w-4" />
-              </IconButton>
-            )}
-            <IconButton
-              onClick={() => void send()}
-              disabled={!input.trim() || !hasModel}
-              aria-label={streaming ? 'Steer or queue for the next turn' : 'Send message'}
-              title={
-                streaming
-                  ? 'Send to steer the current run — it becomes a follow-up turn if the run finishes first'
-                  : hasModel
-                    ? 'Send message'
-                    : 'Select a model first'
-              }
-              className="h-8! w-8! shrink-0 bg-primary text-primary-text hover:opacity-90 hover:text-primary-text disabled:bg-border disabled:text-faint md:h-9! md:w-9!"
-            >
-              <IconArrowUp className="h-4 w-4" />
-            </IconButton>
-            </div>
             </div>
           </div>
         </div>
