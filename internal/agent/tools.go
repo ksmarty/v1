@@ -35,6 +35,9 @@ type Executor struct {
 	OnFileChange   func()
 	MCP            *mcp.Manager // optional: namespaced mcp_<server>_<tool> tools
 	Perm           Resolver     // optional: gates tool calls via allow/deny/ask
+	// OnAsk asks the user a question and waits for their answer (the ask_user
+	// tool); nil when the turn cannot prompt.
+	OnAsk func(ctx context.Context, question string, options []string) (string, error)
 	// Screenshot captures the app preview as a PNG (nil when the model cannot
 	// read images). PendingImage carries the PNG from a screenshot_app call to
 	// the agent loop, which attaches it to the conversation.
@@ -61,6 +64,12 @@ func (e *Executor) Execute(ctx context.Context, name, argsJSON string) (string, 
 		return e.screenshotApp(ctx, argsJSON)
 	case "set_todos":
 		return e.setTodos(argsJSON)
+	case "remember":
+		return e.remember(argsJSON)
+	case "forget":
+		return e.forget(argsJSON)
+	case "ask_user":
+		return e.askUser(ctx, argsJSON)
 	default:
 		if strings.HasPrefix(name, "mcp_") {
 			return e.mcpCall(ctx, name, argsJSON)
@@ -128,6 +137,83 @@ func (e *Executor) mcpCall(ctx context.Context, name, argsJSON string) (string, 
 		return "", err
 	}
 	return result, nil
+}
+
+// remember saves a project-scoped memory; forget deletes one by id. Both are
+// capped so the system prompt's memories section stays small.
+func (e *Executor) remember(argsJSON string) (string, error) {
+	var args struct {
+		Content string `json:"content"`
+	}
+	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
+		return "", fmt.Errorf("invalid arguments: %w", err)
+	}
+	args.Content = strings.TrimSpace(args.Content)
+	if args.Content == "" {
+		return "", fmt.Errorf("content is required")
+	}
+	if e.Store == nil {
+		return "", fmt.Errorf("memory store unavailable")
+	}
+	if len(args.Content) > 1000 {
+		args.Content = args.Content[:1000]
+	}
+	mems, err := e.Store.ListMemories(e.ProjectID)
+	if err != nil {
+		return "", err
+	}
+	if len(mems) >= 200 {
+		return "", fmt.Errorf("memory is full (200 entries) — use the forget tool to delete one first")
+	}
+	id, err := e.Store.AddMemory(e.ProjectID, args.Content)
+	if err != nil {
+		return "", err
+	}
+	return toolResult(map[string]any{"ok": true, "id": id}), nil
+}
+
+func (e *Executor) forget(argsJSON string) (string, error) {
+	var args struct {
+		ID int64 `json:"id"`
+	}
+	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
+		return "", fmt.Errorf("invalid arguments: %w", err)
+	}
+	if args.ID <= 0 {
+		return "", fmt.Errorf("id is required")
+	}
+	if e.Store == nil {
+		return "", fmt.Errorf("memory store unavailable")
+	}
+	if err := e.Store.DeleteMemory(e.ProjectID, args.ID); err != nil {
+		return "", err
+	}
+	return toolResult(map[string]any{"ok": true}), nil
+}
+
+// askUser blocks the turn until the user answers through the ask endpoint.
+func (e *Executor) askUser(ctx context.Context, argsJSON string) (string, error) {
+	var args struct {
+		Question string   `json:"question"`
+		Options  []string `json:"options"`
+	}
+	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
+		return "", fmt.Errorf("invalid arguments: %w", err)
+	}
+	if strings.TrimSpace(args.Question) == "" {
+		return "", fmt.Errorf("question is required")
+	}
+	if len(args.Options) > 4 {
+		args.Options = args.Options[:4]
+	}
+	if e.OnAsk == nil {
+		return "", fmt.Errorf("asking the user is unavailable in this context")
+	}
+	answer, err := e.OnAsk(ctx, args.Question, args.Options)
+	if err != nil {
+		return "", err
+	}
+	return toolResult(map[string]any{"answer": answer}), nil
 }
 
 // setTodos replaces the project's task list. The agent is expected to pass the

@@ -5,10 +5,12 @@ import ChatPane from './ChatPane';
 import FilesPane from './FilesPane';
 import TerminalPane from './TerminalPane';
 import GitPane from './GitPane';
+import MemoriesPane from './MemoriesPane';
 import GitHubMenu from './GitHubMenu';
 import VercelMenu from './VercelMenu';
 import {
   IconArrowLeft,
+  IconBrain,
   IconChat,
   IconChevronLeft,
   IconFolder,
@@ -17,7 +19,7 @@ import {
   IconTerminal,
 } from './icons';
 
-export type ChatTab = 'chat' | 'files' | 'terminal' | 'git';
+export type ChatTab = 'chat' | 'files' | 'terminal' | 'git' | 'memories';
 
 const iconLinkClass =
   'inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-dim transition-colors hover:bg-border hover:text-text md:h-9 md:w-9';
@@ -27,6 +29,7 @@ const TABS: { id: ChatTab; label: string; icon: ReactNode }[] = [
   { id: 'files', label: 'Files', icon: <IconFolder className="h-4 w-4" /> },
   { id: 'terminal', label: 'Terminal', icon: <IconTerminal className="h-4 w-4" /> },
   { id: 'git', label: 'Git', icon: <IconGitBranch className="h-4 w-4" /> },
+  { id: 'memories', label: 'Memories', icon: <IconBrain className="h-4 w-4" /> },
 ];
 
 export default function ChatPanel({
@@ -135,6 +138,11 @@ export default function ChatPanel({
         {visited.has('git') && (
           <div className={tab === 'git' ? 'h-full min-h-0' : 'hidden'}>
             <GitPane projectId={projectId} onPreviewRestart={onPreviewRestart} />
+          </div>
+        )}
+        {visited.has('memories') && (
+          <div className={tab === 'memories' ? 'h-full min-h-0' : 'hidden'}>
+            <MemoriesPane projectId={projectId} />
           </div>
         )}
       </div>

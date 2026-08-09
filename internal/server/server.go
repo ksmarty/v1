@@ -43,6 +43,7 @@ type Server struct {
 
 	mcp  *mcp.Manager
 	perm permRegistry
+	ask  askRegistry
 
 	oauthMu    sync.Mutex
 	oauthFlows map[string]*oauthFlow
@@ -78,6 +79,7 @@ func New(cfg config.Config, st *store.Store) *Server {
 			AllowedEmails: cfg.OIDCAllowedEmails,
 		}),
 		perm: permRegistry{reqs: map[string]*permRequest{}},
+		ask:  askRegistry{reqs: map[string]*askRequest{}},
 	}
 	s.mcp = mcp.NewManager(s.mcpServers)
 	s.auth.EnsureEnvPassword()
@@ -136,6 +138,9 @@ func (s *Server) routes(m *http.ServeMux) {
 	m.HandleFunc("GET /api/projects/{id}/messages", s.handleListMessages)
 	m.HandleFunc("GET /api/projects/{id}/messages/{msgId}/attachments/{idx}", s.handleMessageAttachment)
 	m.HandleFunc("POST /api/projects/{id}/messages/truncate", s.handleTruncateMessages)
+	m.HandleFunc("GET /api/projects/{id}/memories", s.handleListMemories)
+	m.HandleFunc("DELETE /api/projects/{id}/memories/{memId}", s.handleDeleteMemory)
+	m.HandleFunc("POST /api/projects/{id}/ask/respond", s.handleAskRespond)
 	m.HandleFunc("POST /api/projects/{id}/compact", s.handleCompact)
 	m.HandleFunc("GET /api/projects/{id}/todos", s.handleGetTodos)
 	m.HandleFunc("POST /api/projects/{id}/chat", s.handleChat)

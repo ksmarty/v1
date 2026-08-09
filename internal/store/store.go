@@ -84,6 +84,13 @@ CREATE TABLE IF NOT EXISTS compaction_snapshots (
   covered_message_id INTEGER NOT NULL,
   created_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS memories (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id TEXT NOT NULL,
+  content TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_memories_project ON memories(project_id, id);
 `)
 	if err != nil {
 		return err
@@ -398,6 +405,57 @@ func (s *Store) SaveCompactionSnapshot(projectID, summary string, coveredMessage
 func (s *Store) DeleteMessagesAfter(projectID string, id int64) error {
 	_, err := s.db.Exec(`DELETE FROM messages WHERE project_id = ? AND id > ?`, projectID, id)
 	return err
+}
+
+// Memory is one fact the agent saved for a project.
+type Memory struct {
+	ID        int64  `json:"id"`
+	Content   string `json:"content"`
+	CreatedAt int64  `json:"createdAt"`
+}
+
+// AddMemory stores a memory for a project and returns its id.
+func (s *Store) AddMemory(projectID, content string) (int64, error) {
+	res, err := s.db.Exec(`INSERT INTO memories (project_id, content, created_at) VALUES (?, ?, ?)`,
+		projectID, content, now())
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
+}
+
+// ListMemories returns a project's memories oldest first.
+func (s *Store) ListMemories(projectID string) ([]Memory, error) {
+	rows, err := s.db.Query(`SELECT id, content, created_at FROM memories WHERE project_id = ? ORDER BY id`, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Memory
+	for rows.Next() {
+		var m Memory
+		if err := rows.Scan(&m.ID, &m.Content, &m.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
+// DeleteMemory removes one memory, or returns ErrNotFound.
+func (s *Store) DeleteMemory(projectID string, id int64) error {
+	res, err := s.db.Exec(`DELETE FROM memories WHERE project_id = ? AND id = ?`, projectID, id)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 // GetMessage returns the message with the given id for a project, or

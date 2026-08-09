@@ -22,12 +22,13 @@ import type {
 import { errMsg } from '../utils';
 import { notifyTurnDone } from '../notify';
 import { permissionMeta } from '../permissions';
-import { Button, Dialog, ErrorBox, IconButton, Spinner } from './ui';
+import { Button, Dialog, ErrorBox, IconButton, Input, Spinner } from './ui';
 import ToolSettings, { type ToolsTab } from './ToolSettings';
 import Markdown from './Markdown';
 import ModelPicker from './ModelPicker';
 import {
   IconArrowUp,
+  IconChat,
   IconCheck,
   IconChevronDown,
   IconChevronRight,
@@ -574,6 +575,12 @@ export default function ChatPane({
     tool: string;
     detail: string;
   } | null>(null);
+  const [askPrompt, setAskPrompt] = useState<{
+    requestId: string;
+    question: string;
+    options: string[];
+  } | null>(null);
+  const [askText, setAskText] = useState('');
   const navigate = useNavigate();
 
   const itemsRef = useRef<Item[]>([]);
@@ -904,6 +911,7 @@ export default function ChatPane({
     abortRef.current = null;
     assistantKeyRef.current = null;
     setPermPrompt(null);
+    setAskPrompt(null);
     update((prev) =>
       prev.map((it) => (it.kind === 'msg' && it.streaming ? { ...it, streaming: false } : it)),
     );
@@ -1010,6 +1018,11 @@ export default function ChatPane({
         }
         case 'permission_request': {
           setPermPrompt({ requestId: ev.requestId, tool: ev.tool, detail: ev.detail });
+          break;
+        }
+        case 'question_request': {
+          setAskPrompt({ requestId: ev.requestId, question: ev.text ?? '', options: ev.options ?? [] });
+          setAskText('');
           break;
         }
         case 'done': {
@@ -1406,6 +1419,21 @@ export default function ChatPane({
     [permPrompt, projectId],
   );
 
+  const answerAsk = useCallback(
+    async (answer: string) => {
+      const a = askPrompt;
+      const text = answer.trim();
+      if (!a || !text) return;
+      setAskPrompt(null);
+      try {
+        await api.askRespond(projectId, a.requestId, text);
+      } catch {
+        // 404 — already answered or timed out
+      }
+    },
+    [askPrompt, projectId],
+  );
+
   const lastMsgIdx = useMemo(() => {
     for (let i = items.length - 1; i >= 0; i--) {
       if (items[i].kind === 'msg') return i;
@@ -1533,6 +1561,49 @@ export default function ChatPane({
                 ))}
               </ul>
             )}
+          </div>
+        )}
+        {askPrompt && streaming && (
+          <div className="mx-auto mb-3 w-full max-w-2xl rounded-lg border border-accent/50 bg-surface p-3 text-sm">
+            <div className="flex items-start gap-2">
+              <IconChat className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
+              <p className="min-w-0 flex-1 whitespace-pre-wrap break-words text-text">
+                {askPrompt.question}
+              </p>
+            </div>
+            {askPrompt.options.length > 0 && (
+              <div className="mt-2.5 flex flex-wrap gap-1.5">
+                {askPrompt.options.map((o) => (
+                  <Button
+                    key={o}
+                    variant="outline"
+                    className="h-8 px-3 text-xs"
+                    onClick={() => void answerAsk(o)}
+                  >
+                    {o}
+                  </Button>
+                ))}
+              </div>
+            )}
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                void answerAsk(askText);
+              }}
+              className="mt-2.5 flex items-end gap-2"
+            >
+              <div className="flex-1">
+                <Input
+                  value={askText}
+                  onChange={(e) => setAskText(e.target.value)}
+                  placeholder={askPrompt.options.length > 0 ? '…or type an answer' : 'Type an answer…'}
+                  autoComplete="off"
+                />
+              </div>
+              <Button type="submit" variant="outline" className="h-[42px] sm:h-[38px]" disabled={!askText.trim()}>
+                Answer
+              </Button>
+            </form>
           </div>
         )}
         {permPrompt && streaming && (

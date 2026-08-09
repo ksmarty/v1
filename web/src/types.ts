@@ -161,6 +161,12 @@ export interface Todo {
   done: boolean;
 }
 
+export interface Memory {
+  id: number;
+  content: string;
+  createdAt: number;
+}
+
 export interface ChatAttachmentMeta {
   name: string;
   mime: string;
@@ -189,6 +195,7 @@ export type ChatEvent =
   | { type: 'permission_request'; requestId: string; tool: string; detail: string }
   | { type: 'done'; usage?: ChatUsage }
   | { type: 'error'; error: string }
+  | { type: 'question_request'; requestId: string; text?: string; options?: string[] }
   | {
       type: 'injected_message';
       messageId?: number;

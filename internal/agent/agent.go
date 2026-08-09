@@ -20,6 +20,8 @@ Rules:
 - All file paths are relative to the workspace root.
 - After writing or changing code, call restart_preview so the user can see the result.
 - Keep a visible todo list of your work using set_todos; add items up front and mark them done as they complete.
+- Save durable facts, decisions and user preferences with the remember tool; delete stale ones with forget.
+- If something important is unclear or you need a decision, use ask_user instead of guessing.
 - Keep your responses concise.`
 
 const maxRounds = 15
@@ -52,6 +54,7 @@ type ChatEvent struct {
 	Tool        string           `json:"tool,omitempty"`
 	MessageID   int64            `json:"messageId,omitempty"`
 	Attachments []AttachmentMeta `json:"attachments,omitempty"`
+	Options     []string         `json:"options,omitempty"`
 }
 
 // ChatParams carries everything needed to run one chat turn.
@@ -66,6 +69,7 @@ type ChatParams struct {
 	LastUserID       int64        // retry mode: >0 re-runs the existing user message
 	ExtraTools       []llm.Tool   // dynamically added tools (e.g. MCP), namespaced
 	SkillsPrompt     string       // enabled skills' SKILL.md content for the system prompt
+	MemoriesPrompt   string       // project memories section for the system prompt
 	Vision           bool         // the model reads images — enables screenshot_app
 	Steer            func() []string // drains mid-run user messages, injected next round
 	SkipSnapshot     bool         // edits/retries rewind the thread — no git checkpoint
@@ -106,6 +110,9 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 	}
 	if p.SkillsPrompt != "" {
 		system += "\n\n" + p.SkillsPrompt
+	}
+	if p.MemoriesPrompt != "" {
+		system += "\n\n" + p.MemoriesPrompt
 	}
 	if p.Vision {
 		system += "\n\nYou can see the app: call screenshot_app to capture an image of the running preview and inspect what is on screen. Use it after visual changes to verify them."
@@ -447,6 +454,62 @@ var tools = []llm.Tool{
 					},
 				},
 				"required": []string{"todos"},
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: llm.ToolFunction{
+			Name:        "remember",
+			Description: "Save a fact, decision or user preference to this project's long-term memory. It will be shown back to you in future turns. Keep it to one short sentence.",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"content": map[string]any{
+						"type":        "string",
+						"description": "The fact to remember.",
+					},
+				},
+				"required": []string{"content"},
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: llm.ToolFunction{
+			Name:        "forget",
+			Description: "Delete one project memory by its id (ids are listed in the system prompt's memories section).",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"id": map[string]any{
+						"type":        "number",
+						"description": "The memory id to delete.",
+					},
+				},
+				"required": []string{"id"},
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: llm.ToolFunction{
+			Name:        "ask_user",
+			Description: "Ask the user a question and wait for their answer. Use when you need a decision, clarification or preference instead of guessing.",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"question": map[string]any{
+						"type":        "string",
+						"description": "The question to ask the user.",
+					},
+					"options": map[string]any{
+						"type":        "array",
+						"description": "Optional 2-4 suggested answers the user can pick with one tap.",
+						"items":       map[string]any{"type": "string"},
+					},
+				},
+				"required": []string{"question"},
 			},
 		},
 	},

@@ -57,6 +57,12 @@ or `make dev`), then report: (1) the new stamped build version (`v1 <version>
   `injected_message`); leftovers become follow-up turns on the same SSE
   stream (queue). Edits and retries reject with `run_active` (409) while a
   run is active.
+- Agent tools beyond file/command work: `remember`/`forget` manage
+  project-scoped memories (sqlite `memories` table, injected into the system
+  prompt each turn, browsable in the Memories tab); `ask_user` blocks the
+  turn on a user question via the `askRegistry` (mirrors the permission
+  pattern) and renders as an in-chat answer card; `screenshot_app` is
+  vision-gated (above).
 - SQLite is accessed only through `internal/store`. Settings are key/value
   strings; env vars are fallbacks, sqlite overrides env. Prefix settings keys
   with a domain (`keyLLM...`, `keyGitHub...`).

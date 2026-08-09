@@ -22,6 +22,7 @@ import type {
   PushResult,
   Settings,
   SkillSearchResult,
+  Memory,
   Todo,
   VercelDeploymentsResponse,
   VercelUserInfo,
@@ -165,6 +166,11 @@ export const api = {
   queueChat: (id: string, message: string, model?: string, providerId?: string) =>
     post<{ queued?: boolean }>(`/api/projects/${id}/chat`, { message, model, providerId }),
   getTodos: (id: string) => request<{ todos: Todo[] }>(`/api/projects/${id}/todos`),
+  getMemories: (id: string) => request<{ memories: Memory[] }>(`/api/projects/${id}/memories`),
+  deleteMemory: (id: string, memId: number) =>
+    request<void>(`/api/projects/${id}/memories/${memId}`, { method: 'DELETE' }),
+  askRespond: (id: string, requestId: string, answer: string) =>
+    post<void>(`/api/projects/${id}/ask/respond`, { requestId, answer }),
 
   // Preview
   getPreviewStatus: (id: string) => request<PreviewStatus>(`/api/projects/${id}/preview/status`),
