@@ -1840,18 +1840,20 @@ export default function ChatPane({
               </div>
             )}
             <div
-              className={`relative flex min-w-0 items-end gap-1.5 overflow-hidden rounded-xl border border-border-strong bg-surface p-1.5 transition-colors focus-within:border-subtle md:gap-2 md:p-2 ${
+              className={`relative flex min-w-0 gap-1.5 overflow-hidden rounded-xl border border-border-strong bg-surface p-1.5 transition-colors focus-within:border-subtle md:gap-2 md:p-2 ${
                 streaming ? 'v1-working' : ''
-              } ${expanded ? 'min-h-0 flex-1' : ''}`}
+              } ${expanded ? 'min-h-0 flex-1 flex-col' : 'items-end'}`}
             >
-            <IconButton
-              onClick={() => setPlusOpen((o) => !o)}
-              aria-label="More actions"
-              title="More actions"
-              className={`h-8! w-8! shrink-0 md:h-9! md:w-9! ${plusOpen ? 'bg-border text-text' : ''}`}
-            >
-              <IconPlus className="h-4 w-4" />
-            </IconButton>
+            <div className={expanded ? 'order-2 flex shrink-0' : 'contents'}>
+              <IconButton
+                onClick={() => setPlusOpen((o) => !o)}
+                aria-label="More actions"
+                title="More actions"
+                className={`h-8! w-8! shrink-0 md:h-9! md:w-9! ${plusOpen ? 'bg-border text-text' : ''}`}
+              >
+                <IconPlus className="h-4 w-4" />
+              </IconButton>
+            </div>
             <input
               ref={fileRef}
               type="file"
@@ -1862,7 +1864,7 @@ export default function ChatPane({
                 e.target.value = '';
               }}
             />
-            <div className={`relative min-w-0 flex-1 ${expanded ? 'h-full min-h-0' : ''}`}>
+            <div className={`relative min-w-0 flex-1 ${expanded ? 'order-1 h-full min-h-0 w-full' : ''}`}>
               {/* The textarea's own text is transparent; this echo beneath it
                   renders the same text with @/# tags pilled. The echo must
                   keep the textarea's exact font/padding metrics — the pill
@@ -1927,7 +1929,18 @@ export default function ChatPane({
                 }`}
               />
             </div>
-            {streaming && (
+            <div className={expanded ? 'order-3 flex shrink-0 items-center justify-end gap-1.5' : 'contents'}>
+              {expanded && (
+                <IconButton
+                  onClick={() => setExpanded(false)}
+                  aria-label="Collapse composer"
+                  title="Collapse composer"
+                  className="h-8! w-8! shrink-0 md:h-9! md:w-9!"
+                >
+                  <IconCompress className="h-4 w-4" />
+                </IconButton>
+              )}
+              {streaming && (
               <IconButton
                 onClick={stop}
                 aria-label="Stop generating"
@@ -1952,6 +1965,7 @@ export default function ChatPane({
             >
               <IconArrowUp className="h-4 w-4" />
             </IconButton>
+            </div>
             </div>
           </div>
         </div>
