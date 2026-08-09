@@ -270,7 +270,96 @@ function ReasoningBlock({ text, autoOpen }: { text: string; autoOpen: boolean })
   );
 }
 
+// Splits an edit's old/new strings into shared context lines and the changed
+// middle section, for the chat's edit diff view.
+function diffLines(oldText: string, newText: string) {
+  const a = oldText.split('\n');
+  const b = newText.split('\n');
+  let start = 0;
+  while (start < a.length && start < b.length && a[start] === b[start]) start++;
+  let endA = a.length;
+  let endB = b.length;
+  while (endA > start && endB > start && a[endA - 1] === b[endB - 1]) {
+    endA--;
+    endB--;
+  }
+  return {
+    before: a.slice(0, start),
+    removed: a.slice(start, endA),
+    added: b.slice(start, endB),
+    after: a.slice(endA),
+  };
+}
+
+function parseEditDiff(detail: string) {
+  try {
+    const a = JSON.parse(detail) as { path?: string; old_string?: string; new_string?: string };
+    if (typeof a.old_string !== 'string' || typeof a.new_string !== 'string') return null;
+    return { path: a.path ?? '', ...diffLines(a.old_string, a.new_string) };
+  } catch {
+    return null;
+  }
+}
+
+function DiffContext({ lines, side }: { lines: string[]; side: 'before' | 'after' }) {
+  // Keep the 2 context lines closest to the change, with a fold marker.
+  const truncated = lines.length > 2;
+  const shown = side === 'before' ? lines.slice(-2) : lines.slice(0, 2);
+  return (
+    <>
+      {side === 'before' && truncated && <div className="text-faint">⋮</div>}
+      {shown.map((l, i) => (
+        <div key={i} className="whitespace-pre-wrap break-words text-faint">
+          {'  '}
+          {l}
+        </div>
+      ))}
+      {side === 'after' && truncated && <div className="text-faint">⋮</div>}
+    </>
+  );
+}
+
 function ToolChip({ name, detail }: ToolCall) {
+  const [open, setOpen] = useState(false);
+  const diff = name === 'edit_file' ? parseEditDiff(detail) : null;
+  if (diff) {
+    return (
+      <div className="w-full overflow-hidden rounded-md border border-border bg-surface/50 font-mono text-[10px]">
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          className="flex min-h-[26px] w-full items-center gap-1.5 px-2 py-1 text-left text-dim transition-colors hover:text-text"
+        >
+          {open ? (
+            <IconChevronDown className="h-3 w-3 shrink-0" />
+          ) : (
+            <IconChevronRight className="h-3 w-3 shrink-0" />
+          )}
+          <IconWrench className="h-3 w-3 shrink-0 text-faint" />
+          <span className="shrink-0 text-text">{name}</span>
+          <span className="min-w-0 flex-1 truncate text-faint">{diff.path}</span>
+          <span className="shrink-0 text-red-400">-{diff.removed.length}</span>
+          <span className="shrink-0 text-emerald-400">+{diff.added.length}</span>
+        </button>
+        {open && (
+          <div className="max-h-60 overflow-auto border-t border-border/80 px-2 py-1.5 leading-relaxed">
+            <DiffContext lines={diff.before} side="before" />
+            {diff.removed.map((l, i) => (
+              <div key={i} className="whitespace-pre-wrap break-words bg-red-500/10 text-red-400">
+                - {l}
+              </div>
+            ))}
+            {diff.added.map((l, i) => (
+              <div key={i} className="whitespace-pre-wrap break-words bg-emerald-500/10 text-emerald-400">
+                + {l}
+              </div>
+            ))}
+            <DiffContext lines={diff.after} side="after" />
+          </div>
+        )}
+      </div>
+    );
+  }
   return (
     <span className="inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-md border border-border bg-surface/50 px-2 py-0.5 font-mono text-[10px] text-dim">
       <IconWrench className="h-3 w-3 shrink-0 text-faint" />
@@ -836,22 +925,29 @@ export default function ChatPane({
   // the bottom — otherwise reading history during a stream gets yanked around.
   const nearBottomRef = useRef(true);
   const [showJump, setShowJump] = useState(false);
-  // Minimap: toggleable overview strip; markers for in-view messages are lit.
+  // Minimap: toggleable dot strip with one dot per user message; the dot for
+  // the message nearest the viewport top is lit, and dragging along the strip
+  // scrubs through the thread.
   const [mapOpen, setMapOpen] = useState(false);
-  const [visibleKeys, setVisibleKeys] = useState<ReadonlySet<string>>(new Set());
-  const updateVisible = useCallback(() => {
+  const [currentKey, setCurrentKey] = useState<string | null>(null);
+  const stripRef = useRef<HTMLDivElement>(null);
+  const userKeysRef = useRef<string[]>([]);
+  const updateCurrent = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
-    const top = el.scrollTop;
-    const bottom = top + el.clientHeight;
-    const vis = new Set<string>();
-    el.querySelectorAll('[data-msg-key]').forEach((node) => {
-      const n = node as HTMLElement;
-      if (n.offsetTop + n.offsetHeight >= top && n.offsetTop <= bottom) {
-        vis.add(n.dataset.msgKey as string);
-      }
-    });
-    setVisibleKeys(vis);
+    const keys: string[] = [];
+    for (const it of itemsRef.current) {
+      if (it.kind === 'msg' && it.role === 'user') keys.push(it.key);
+    }
+    userKeysRef.current = keys;
+    if (keys.length === 0) return;
+    let current = keys[0];
+    for (const k of keys) {
+      const row = el.querySelector(`[data-msg-key="${CSS.escape(k)}"]`) as HTMLElement | null;
+      if (row && row.offsetTop <= el.scrollTop + 80) current = k;
+      else break;
+    }
+    setCurrentKey(current);
   }, []);
   const onScroll = useCallback(() => {
     const el = scrollRef.current;
@@ -859,17 +955,28 @@ export default function ChatPane({
     const near = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
     nearBottomRef.current = near;
     setShowJump(!near);
-    updateVisible();
-  }, [updateVisible]);
+    if (mapOpen) updateCurrent();
+  }, [mapOpen, updateCurrent]);
   useEffect(() => {
     if (!mapOpen) return;
-    const raf = requestAnimationFrame(updateVisible);
+    const raf = requestAnimationFrame(updateCurrent);
     return () => cancelAnimationFrame(raf);
-  }, [items, mapOpen, updateVisible]);
-  const jumpTo = useCallback((key: string) => {
+  }, [items, mapOpen, updateCurrent]);
+  const jumpTo = useCallback((key: string, smooth = true) => {
     const el = scrollRef.current?.querySelector(`[data-msg-key="${CSS.escape(key)}"]`);
-    el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    el?.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'start' });
   }, []);
+  // Scrubbing: map a pointer Y on the strip to a dot index and jump there.
+  const scrubTo = useCallback(
+    (clientY: number) => {
+      const rect = stripRef.current?.getBoundingClientRect();
+      const keys = userKeysRef.current;
+      if (!rect || keys.length === 0) return;
+      const ratio = Math.min(0.999, Math.max(0, (clientY - rect.top) / rect.height));
+      jumpTo(keys[Math.floor(ratio * keys.length)], false);
+    },
+    [jumpTo],
+  );
   const jumpToBottom = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
@@ -1832,23 +1939,31 @@ export default function ChatPane({
         )}
       </div>
       {mapOpen && userKeys.length > 1 && (
-        <div className="absolute bottom-4 right-2 top-4 z-10 flex flex-col items-center justify-center overflow-hidden rounded-full border border-border bg-bg/85 backdrop-blur">
-          <div className="v1-no-scrollbar flex flex-col items-center gap-2.5 overflow-y-auto overscroll-contain px-2 py-3">
-            {userKeys.map((key, i) => (
-              <button
-                key={key}
-                type="button"
-                onClick={() => jumpTo(key)}
-                aria-label={`Jump to your message ${i + 1}`}
-                title={`Jump to your message ${i + 1}`}
-                className={`h-2.5 w-2.5 shrink-0 rounded-full transition-all ${
-                  visibleKeys.has(key)
-                    ? 'scale-125 bg-accent'
-                    : 'bg-border-strong hover:bg-subtle'
-                }`}
-              />
-            ))}
-          </div>
+        <div
+          ref={stripRef}
+          onPointerDown={(e) => {
+            e.currentTarget.setPointerCapture(e.pointerId);
+            scrubTo(e.clientY);
+          }}
+          onPointerMove={(e) => {
+            if (e.buttons > 0) scrubTo(e.clientY);
+          }}
+          className="absolute bottom-4 right-2 top-4 z-10 flex touch-none flex-col items-center justify-between overflow-hidden rounded-full border border-border bg-bg/85 px-2 py-3 backdrop-blur"
+        >
+          {userKeys.map((key, i) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => jumpTo(key)}
+              aria-label={`Jump to your message ${i + 1}`}
+              title={`Jump to your message ${i + 1}`}
+              className={`h-2.5 w-2.5 shrink-0 rounded-full transition-all ${
+                currentKey === key
+                  ? 'scale-125 bg-accent'
+                  : 'bg-border-strong hover:bg-subtle'
+              }`}
+            />
+          ))}
         </div>
       )}
       </div>
@@ -1932,6 +2047,20 @@ export default function ChatPane({
                     <IconPaperclip className="h-4 w-4 shrink-0 text-dim" />
                     {supportsImages ? 'Attach a file' : 'Attach a text file'}
                   </button>
+                  {todos.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPlusOpen(false);
+                        setTodosOpen(true);
+                        scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+                      }}
+                      className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm text-text transition-colors hover:bg-border"
+                    >
+                      <IconCheck className="h-4 w-4 shrink-0 text-dim" />
+                      Tasks ({todos.filter((t) => !t.done).length} left)
+                    </button>
+                  )}
                   {!isDesktop && (
                     <button
                       type="button"
