@@ -38,6 +38,7 @@ type Server struct {
 	auth      *auth.Manager
 	previews  *preview.Manager
 	terminals *terminal.Manager
+	turns     *turnManager
 	handler   http.Handler
 
 	mcp  *mcp.Manager
@@ -63,6 +64,7 @@ func New(cfg config.Config, st *store.Store) *Server {
 		auth:          auth.NewManager(st, cfg.AuthDisabled, cfg.Password),
 		previews:      preview.NewManager(cfg.MaxPreviews),
 		terminals:     terminal.NewManager(),
+		turns:         newTurnManager(),
 		oauthFlows:    map[string]*oauthFlow{},
 		oidcFlows:     map[string]*oidcFlow{},
 		vercelFlows:   map[string]*vercelFlow{},

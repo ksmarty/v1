@@ -160,6 +160,10 @@ export const api = {
   truncateMessages: (id: string, messageId: number) =>
     post<void>(`/api/projects/${id}/messages/truncate`, { id: messageId }),
   compact: (id: string) => post<{ coveredMessageId: number }>(`/api/projects/${id}/compact`),
+  // Mid-run send: the same endpoint queues the message onto the active run
+  // (steer/follow-up) instead of opening an SSE stream.
+  queueChat: (id: string, message: string, model?: string, providerId?: string) =>
+    post<{ queued?: boolean }>(`/api/projects/${id}/chat`, { message, model, providerId }),
   getTodos: (id: string) => request<{ todos: Todo[] }>(`/api/projects/${id}/todos`),
 
   // Preview

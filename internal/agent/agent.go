@@ -67,6 +67,8 @@ type ChatParams struct {
 	ExtraTools       []llm.Tool   // dynamically added tools (e.g. MCP), namespaced
 	SkillsPrompt     string       // enabled skills' SKILL.md content for the system prompt
 	Vision           bool         // the model reads images — enables screenshot_app
+	Steer            func() []string // drains mid-run user messages, injected next round
+	SkipSnapshot     bool         // edits/retries rewind the thread — no git checkpoint
 	ContextBudget    int
 	ContextThreshold float64
 	Summarizer       Summarizer
@@ -152,6 +154,18 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 	var usage *Usage
 	vision := hasImageParts(history)
 	for round := 0; round < maxRounds; round++ {
+		// Steered messages join the turn between rounds: persisted like a
+		// normal user turn and rendered in the UI via injected_message.
+		if p.Steer != nil {
+			for _, msg := range p.Steer() {
+				msgID, err := p.Store.AddMessage(p.Project.ID, "user", msg, "", p.Client.Model, "", "", "")
+				if err != nil {
+					return nil, err
+				}
+				history = append(history, llm.Message{Role: "user", Content: msg})
+				p.Emit(ChatEvent{Type: "injected_message", MessageID: msgID, Text: msg})
+			}
+		}
 		allTools := tools
 		if p.Vision {
 			allTools = append(append([]llm.Tool{}, allTools...), screenshotAppTool)

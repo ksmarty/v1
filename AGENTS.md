@@ -50,6 +50,13 @@ or `make dev`), then report: (1) the new stamped build version (`v1 <version>
   OpenAI-compatible APIs), streamed to the UI as `injected_message`.
   Node-mode previews are screenshotted via `preview.Manager.DirectURL`
   (the proxy requires a session when auth is on).
+- Chat runs are single-flight per project (`turnManager` in
+  `internal/server/turns.go`): a second `POST /chat` while a run is active is
+  queued onto the run's `turnQueue` atomically (`beginOrQueue`, 202 reply).
+  The agent drains the queue between rounds (steer — persisted and emitted as
+  `injected_message`); leftovers become follow-up turns on the same SSE
+  stream (queue). Edits and retries reject with `run_active` (409) while a
+  run is active.
 - SQLite is accessed only through `internal/store`. Settings are key/value
   strings; env vars are fallbacks, sqlite overrides env. Prefix settings keys
   with a domain (`keyLLM...`, `keyGitHub...`).

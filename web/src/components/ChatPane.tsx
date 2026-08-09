@@ -1187,8 +1187,28 @@ export default function ChatPane({
 
   const send = useCallback(async () => {
     if (await runLocalCommand(input)) return;
+    if (streaming) {
+      // Mid-run: the server steers the message into the current turn or
+      // queues it as a follow-up; it renders via injected_message when
+      // consumed. Attachments can't ride along — they need a fresh turn.
+      const text = input.trim();
+      if (!text) return;
+      if (attachments.length > 0) {
+        setAttachError('Attachments can only be sent when no run is active.');
+        return;
+      }
+      setInput('');
+      setSuggestions([]);
+      try {
+        await api.queueChat(projectId, text, modelOverride, providerOverride);
+      } catch (e) {
+        setInput(text);
+        setLoadError(errMsg(e));
+      }
+      return;
+    }
     sendText(input);
-  }, [input, runLocalCommand, sendText]);
+  }, [input, streaming, attachments.length, runLocalCommand, sendText, projectId, modelOverride, providerOverride]);
 
   const updateSuggestions = useCallback((value: string) => {
     const cursor = taRef.current?.selectionStart ?? value.length;
@@ -1700,25 +1720,31 @@ export default function ChatPane({
                 className="relative block max-h-40 min-h-[32px] w-full resize-none bg-transparent px-1.5 py-1 text-base text-transparent caret-accent outline-none placeholder:text-faint sm:text-sm md:min-h-[36px] md:py-1.5"
               />
             </div>
-            {streaming ? (
+            {streaming && (
               <IconButton
                 onClick={stop}
                 aria-label="Stop generating"
+                title="Stop generating"
                 className="h-8! w-8! shrink-0 md:h-9! md:w-9!"
               >
                 <IconSquare className="h-4 w-4" />
               </IconButton>
-            ) : (
-              <IconButton
-                onClick={() => void send()}
-                disabled={!input.trim() || !hasModel}
-                aria-label="Send message"
-                title={hasModel ? 'Send message' : 'Select a model first'}
-                className="h-8! w-8! shrink-0 bg-primary text-primary-text hover:opacity-90 hover:text-primary-text disabled:bg-border disabled:text-faint md:h-9! md:w-9!"
-              >
-                <IconArrowUp className="h-4 w-4" />
-              </IconButton>
             )}
+            <IconButton
+              onClick={() => void send()}
+              disabled={!input.trim() || !hasModel}
+              aria-label={streaming ? 'Steer or queue for the next turn' : 'Send message'}
+              title={
+                streaming
+                  ? 'Send to steer the current run — it becomes a follow-up turn if the run finishes first'
+                  : hasModel
+                    ? 'Send message'
+                    : 'Select a model first'
+              }
+              className="h-8! w-8! shrink-0 bg-primary text-primary-text hover:opacity-90 hover:text-primary-text disabled:bg-border disabled:text-faint md:h-9! md:w-9!"
+            >
+              <IconArrowUp className="h-4 w-4" />
+            </IconButton>
             </div>
           </div>
         </div>

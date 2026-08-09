@@ -273,9 +273,21 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		params.LastUserID = msg.ID
+		params.SkipSnapshot = true
 	}
 
-	s.streamChatTurn(w, r, p, params)
+	// Mid-run sends steer (consumed next round) or queue (a follow-up turn).
+	// Edits rewrite history, so they must wait for a quiet project.
+	if body.EditMessageID > 0 && s.turns.get(p.ID) != nil {
+		writeError(w, http.StatusConflict, "run_active")
+		return
+	}
+	q, started := s.turns.beginOrQueue(p.ID, body.Message)
+	if !started {
+		writeJSON(w, http.StatusAccepted, map[string]any{"queued": true})
+		return
+	}
+	s.streamChatTurn(w, r, p, params, q)
 }
 
 // handleTruncateMessages deletes every message after the given id — the
@@ -323,21 +335,29 @@ func (s *Server) handleChatRetry(w http.ResponseWriter, r *http.Request) {
 	}
 	// Re-run the last user turn with its stored model, falling back to the
 	// current client model when the stored message has none.
+	q, started := s.turns.beginOrQueue(p.ID, "")
+	if !started {
+		writeError(w, http.StatusConflict, "run_active")
+		return
+	}
 	s.streamChatTurn(w, r, p, agent.ChatParams{
-		Store:       s.st,
-		Project:     p,
-		Client:      s.llmClient(),
-		Message:     last.Content,
-		Attachments: agent.ParseAttachments(last.Attachments),
-		Model:       last.Model,
-		LastUserID:  last.ID,
-		Vision:      s.modelSupportsImages("", last.Model),
-	})
+		Store:        s.st,
+		Project:      p,
+		Client:       s.llmClient(),
+		Message:      last.Content,
+		Attachments:  agent.ParseAttachments(last.Attachments),
+		Model:        last.Model,
+		LastUserID:   last.ID,
+		Vision:       s.modelSupportsImages("", last.Model),
+		SkipSnapshot: true,
+	}, q)
 }
 
 // streamChatTurn runs one chat turn and streams it as SSE: reasoning and text
-// deltas, tool events, then a done event carrying usage.
-func (s *Server) streamChatTurn(w http.ResponseWriter, r *http.Request, p *store.Project, params agent.ChatParams) {
+// deltas, tool events, then a done event carrying usage. Messages queued onto
+// the run while it executes become follow-up turns on the same stream.
+func (s *Server) streamChatTurn(w http.ResponseWriter, r *http.Request, p *store.Project, params agent.ChatParams, q *turnQueue) {
+	defer s.turns.end(p.ID)
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		writeError(w, http.StatusInternalServerError, "streaming unsupported")
@@ -373,6 +393,7 @@ func (s *Server) streamChatTurn(w http.ResponseWriter, r *http.Request, p *store
 	params.ContextBudget = s.cfg.ContextBudget
 	params.ContextThreshold = s.cfg.ContextThreshold
 	params.Emit = emit
+	params.Steer = q.drain
 	params.Exec = &agent.Executor{
 		Root:           root,
 		ProjectID:      p.ID,
@@ -391,19 +412,40 @@ func (s *Server) streamChatTurn(w http.ResponseWriter, r *http.Request, p *store
 			return s.capturePreview(ctx, p, path)
 		}
 	}
-	turn, err := agent.RunChat(ctx, params)
-	if err != nil {
-		emit(agent.ChatEvent{Type: "error", Error: err.Error()})
-		return
+	for {
+		turn, err := agent.RunChat(ctx, params)
+		if err != nil {
+			emit(agent.ChatEvent{Type: "error", Error: err.Error()})
+			return
+		}
+		// Snapshot each finished turn as a git commit when the project is
+		// repo-backed, so time-travel always has a checkpoint to return to.
+		if !params.SkipSnapshot {
+			_, _ = gitops.CommitIfRepo(root, params.Message, "")
+		}
+		emit(agent.ChatEvent{Type: "done", Usage: turn.Usage})
+
+		// Messages queued during the run become follow-up turns, one per
+		// message; anything left drains next iteration.
+		msgs := q.drain()
+		if len(msgs) == 0 {
+			return
+		}
+		for _, extra := range msgs[1:] {
+			q.add(extra)
+		}
+		m := msgs[0]
+		msgID, err := s.st.AddMessage(p.ID, "user", m, "", params.Client.Model, "", "", "")
+		if err != nil {
+			emit(agent.ChatEvent{Type: "error", Error: err.Error()})
+			return
+		}
+		emit(agent.ChatEvent{Type: "injected_message", MessageID: msgID, Text: m})
+		params.Message = m
+		params.Attachments = nil
+		params.LastUserID = msgID
+		params.SkipSnapshot = false
 	}
-	// Snapshot each finished turn as a git commit when the project is
-	// repo-backed, so time-travel always has a checkpoint to return to.
-	// Edits/retries rewind the thread, so they skip the snapshot.
-	// Edits/retries rewind the thread, so they skip the snapshot.
-	if params.LastUserID <= 0 {
-		_, _ = gitops.CommitIfRepo(root, params.Message, "")
-	}
-	emit(agent.ChatEvent{Type: "done", Usage: turn.Usage})
 }
 
 // capturePreview ensures the project's preview is running and screenshots it.
