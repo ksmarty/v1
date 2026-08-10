@@ -1,19 +1,25 @@
 package agent
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
+	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
+
+	"golang.org/x/net/html"
 
 	"v1/internal/mcp"
 	"v1/internal/store"
@@ -44,6 +50,10 @@ type Executor struct {
 	// the agent loop, which attaches it to the conversation.
 	Screenshot   func(ctx context.Context, path string) ([]byte, error)
 	PendingImage []byte
+	// RenderPage renders a URL in headless Chrome and returns the rendered
+	// HTML — the fetch_url tool falls back to it for JS-rendered pages whose
+	// static response carries no readable text.
+	RenderPage func(ctx context.Context, url string) (string, error)
 }
 
 // Execute runs one tool call and returns the result string fed back to the LLM.
@@ -51,12 +61,20 @@ func (e *Executor) Execute(ctx context.Context, name, argsJSON string) (string, 
 	switch name {
 	case "list_files":
 		return e.listFiles(argsJSON)
+	case "search_files":
+		return e.searchFiles(ctx, argsJSON)
 	case "read_file":
 		return e.readFile(argsJSON)
 	case "write_file":
 		return e.writeFile(argsJSON)
 	case "edit_file":
 		return e.editFile(argsJSON)
+	case "delete_file":
+		return e.deleteFile(argsJSON)
+	case "move_file":
+		return e.moveFile(argsJSON)
+	case "fetch_url":
+		return e.fetchURL(ctx, argsJSON)
 	case "run_command":
 		return e.runCommand(ctx, argsJSON)
 	case "restart_preview":
@@ -331,6 +349,174 @@ func (e *Executor) listFiles(argsJSON string) (string, error) {
 	}), nil
 }
 
+// searchFiles searches the workspace for files: semantic search via `semble`
+// when the binary is available, otherwise filename (fd) and content (rg)
+// matching. Paths in the result are workspace-relative.
+func (e *Executor) searchFiles(ctx context.Context, argsJSON string) (string, error) {
+	var args struct {
+		Query string `json:"query"`
+		Path  string `json:"path"`
+	}
+	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
+		return "", fmt.Errorf("invalid arguments: %w", err)
+	}
+	if strings.TrimSpace(args.Query) == "" {
+		return "", fmt.Errorf("query is required")
+	}
+	root, err := e.resolve(args.Path)
+	if err != nil {
+		return "", err
+	}
+	if out, ok := runSemble(ctx, args.Query, root); ok {
+		return out, nil
+	}
+	return e.searchFilesRgFd(args.Query, root)
+}
+
+// runSemble runs `semble search` in hybrid mode and returns its markdown
+// output (ranked paths with line ranges, snippets and scores) verbatim.
+func runSemble(ctx context.Context, query, root string) (string, bool) {
+	if _, err := exec.LookPath("semble"); err != nil {
+		return "", false
+	}
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "semble", "search", "-k", "5", query, root)
+	cmd.Dir = root
+	var out, errOut bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &errOut
+	if err := cmd.Run(); err != nil {
+		return "", false
+	}
+	return out.String(), true
+}
+
+// searchFilesRgFd is the fallback when semble is unavailable: filename
+// matches via fd plus content matches via rg (both literal, case-insensitive).
+func (e *Executor) searchFilesRgFd(query, root string) (string, error) {
+	res := map[string]any{"engine": "fd+rg"}
+	fdOK := false
+	rgOK := false
+	if files, ok := runFd(query, root); ok {
+		fdOK = true
+		rel := make([]string, 0, len(files))
+		for _, f := range files {
+			if p := e.workspacePath(root, f); p != "" {
+				rel = append(rel, p)
+			}
+		}
+		res["files"] = rel
+	}
+	if matches, ok := runRg(query, root); ok {
+		rgOK = true
+		m := make([]map[string]any, 0, len(matches))
+		for _, mm := range matches {
+			m = append(m, map[string]any{
+				"path": e.workspacePath(root, mm.Path),
+				"line": mm.Line,
+				"text": mm.Text,
+			})
+		}
+		res["matches"] = m
+	}
+	if !fdOK && !rgOK {
+		return "", fmt.Errorf("no search tool available: semble, rg and fd are all missing from PATH")
+	}
+	return toolResult(res), nil
+}
+
+// runFd lists files whose names match the query (literal, case-insensitive),
+// capped at 50. Paths are relative to the search root.
+func runFd(query, root string) ([]string, bool) {
+	if _, err := exec.LookPath("fd"); err != nil {
+		return nil, false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "fd", "-t", "f", "-i", "-F", "--max-results", "50", query, root)
+	cmd.Dir = root
+	out, err := cmd.Output()
+	if err != nil {
+		var ee *exec.ExitError
+		if errors.As(err, &ee) && ee.ExitCode() == 1 {
+			return []string{}, true // no matches
+		}
+		return nil, false
+	}
+	files := []string{}
+	for _, l := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if l != "" {
+			files = append(files, l)
+		}
+	}
+	return files, true
+}
+
+// searchMatch is one rg content match.
+type searchMatch struct {
+	Path string
+	Line int
+	Text string
+}
+
+// runRg returns up to 50 content matches for the query (literal,
+// case-insensitive, line numbers). Paths are relative to the search root;
+// node_modules, dist and .git are skipped.
+func runRg(query, root string) ([]searchMatch, bool) {
+	if _, err := exec.LookPath("rg"); err != nil {
+		return nil, false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "rg",
+		"--line-number", "--no-heading", "-i", "-F", "-m", "5",
+		"-g", "!**/node_modules/**", "-g", "!**/dist/**", "-g", "!**/.git/**",
+		query, root)
+	cmd.Dir = root
+	out, err := cmd.Output()
+	if err != nil {
+		var ee *exec.ExitError
+		if errors.As(err, &ee) && ee.ExitCode() == 1 {
+			return []searchMatch{}, true // no matches
+		}
+		return nil, false
+	}
+	matches := []searchMatch{}
+	for _, l := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if l == "" {
+			continue
+		}
+		path, rest, ok := strings.Cut(l, ":")
+		if !ok {
+			continue
+		}
+		lineStr, text, _ := strings.Cut(rest, ":")
+		line, _ := strconv.Atoi(lineStr)
+		if len(text) > 200 {
+			text = text[:200] + "…"
+		}
+		matches = append(matches, searchMatch{Path: path, Line: line, Text: text})
+		if len(matches) >= 50 {
+			break
+		}
+	}
+	return matches, true
+}
+
+// workspacePath converts a search command's output path (relative to the
+// search root) to a workspace-relative one.
+func (e *Executor) workspacePath(root, p string) string {
+	if !filepath.IsAbs(p) {
+		p = filepath.Join(root, p)
+	}
+	rel, err := filepath.Rel(e.Root, p)
+	if err != nil {
+		return ""
+	}
+	return filepath.ToSlash(rel)
+}
+
 func (e *Executor) readFile(argsJSON string) (string, error) {
 	var args struct {
 		Path string `json:"path"`
@@ -433,6 +619,297 @@ func (e *Executor) editFile(argsJSON string) (string, error) {
 		res["note"] = fmt.Sprintf("old_string occurred %d times; only the first occurrence was replaced", n)
 	}
 	return toolResult(res), nil
+}
+
+// deleteFile removes a file from the workspace (files only, never directories).
+func (e *Executor) deleteFile(argsJSON string) (string, error) {
+	var args struct {
+		Path string `json:"path"`
+	}
+	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
+		return "", fmt.Errorf("invalid arguments: %w", err)
+	}
+	if args.Path == "" {
+		return "", fmt.Errorf("path is required")
+	}
+	full, err := e.resolve(args.Path)
+	if err != nil {
+		return "", err
+	}
+	info, err := os.Lstat(full)
+	if err != nil {
+		return "", err
+	}
+	if info.IsDir() {
+		return "", fmt.Errorf("%s is a directory — delete files only", args.Path)
+	}
+	if err := os.Remove(full); err != nil {
+		return "", err
+	}
+	if e.OnFileChange != nil {
+		e.OnFileChange()
+	}
+	return toolResult(map[string]any{"ok": true, "path": args.Path}), nil
+}
+
+// moveFile renames a file or directory within the workspace; destination
+// parent directories are created as needed.
+func (e *Executor) moveFile(argsJSON string) (string, error) {
+	var args struct {
+		Path    string `json:"path"`
+		NewPath string `json:"newPath"`
+	}
+	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
+		return "", fmt.Errorf("invalid arguments: %w", err)
+	}
+	if args.Path == "" || args.NewPath == "" {
+		return "", fmt.Errorf("path and newPath are required")
+	}
+	src, err := e.resolve(args.Path)
+	if err != nil {
+		return "", err
+	}
+	dst, err := e.resolve(args.NewPath)
+	if err != nil {
+		return "", err
+	}
+	if src == dst {
+		return "", fmt.Errorf("source and destination are the same")
+	}
+	if _, err := os.Lstat(src); err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return "", err
+	}
+	if err := os.Rename(src, dst); err != nil {
+		return "", err
+	}
+	if e.OnFileChange != nil {
+		e.OnFileChange()
+	}
+	return toolResult(map[string]any{"ok": true, "path": args.Path, "newPath": args.NewPath}), nil
+}
+
+// fetchURL retrieves a web page's readable text (docs, READMEs, API
+// references). HTML is stripped to text; responses are size-capped. Pages
+// whose static response carries no readable text (JS-rendered SPAs) are
+// rendered in headless Chrome when one is available.
+func (e *Executor) fetchURL(ctx context.Context, argsJSON string) (string, error) {
+	var args struct {
+		URL string `json:"url"`
+	}
+	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
+		return "", fmt.Errorf("invalid arguments: %w", err)
+	}
+	u, err := url.Parse(strings.TrimSpace(args.URL))
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return "", fmt.Errorf("url must be a full http(s) URL")
+	}
+	text, err := e.fetchPageText(ctx, u.String())
+	if err != nil {
+		return "", err
+	}
+	if text == "" {
+		return "", fmt.Errorf("page returned no readable content")
+	}
+	if len(text) > 400*1024 {
+		text = text[:400*1024] + "\n…(truncated)"
+	}
+	return toolResult(map[string]any{"ok": true, "url": u.String(), "text": text}), nil
+}
+
+// fetchPageText fetches the page and extracts readable text. When the static
+// response is empty, too thin, or fails outright, the page is rendered in
+// headless Chrome (via RenderPage) and the text is extracted from the
+// rendered DOM — JS frameworks produce no static content.
+func (e *Executor) fetchPageText(ctx context.Context, rawURL string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("User-Agent", "v1-agent/1.0")
+	text := ""
+	var fetchErr error
+	if resp, err := http.DefaultClient.Do(req); err == nil {
+		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			body, rerr := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
+			resp.Body.Close()
+			if rerr == nil {
+				src := string(body)
+				if strings.Contains(resp.Header.Get("Content-Type"), "html") {
+					src = htmlToText(src)
+				}
+				text = strings.TrimSpace(src)
+			}
+		} else {
+			fetchErr = fmt.Errorf("fetch failed: %s", resp.Status)
+			resp.Body.Close()
+		}
+	} else {
+		fetchErr = err
+	}
+	// SPA shells carry no static text; render when the response was thin or
+	// failed outright.
+	if (len(text) < 40 || fetchErr != nil) && e.RenderPage != nil {
+		if rendered, rerr := e.RenderPage(ctx, rawURL); rerr == nil {
+			if rt := strings.TrimSpace(htmlToText(rendered)); rt != "" {
+				return rt, nil
+			}
+		}
+	}
+	if fetchErr != nil {
+		return "", fetchErr
+	}
+	return text, nil
+}
+
+var htmlBlockTags = map[string]bool{
+	"p": true, "div": true, "section": true, "article": true, "main": true,
+	"header": true, "footer": true, "aside": true, "figure": true, "figcaption": true,
+	"h1": true, "h2": true, "h3": true, "h4": true, "h5": true, "h6": true,
+	"ul": true, "ol": true, "li": true, "dl": true, "dt": true, "dd": true,
+	"table": true, "thead": true, "tbody": true, "tfoot": true, "tr": true,
+	"blockquote": true, "details": true, "summary": true, "address": true,
+}
+
+func isHTMLBlock(tag string) bool {
+	return htmlBlockTags[tag]
+}
+
+func htmlAttr(n *html.Node, key string) string {
+	for _, a := range n.Attr {
+		if a.Key == key {
+			return a.Val
+		}
+	}
+	return ""
+}
+
+// htmlToText extracts the readable text of an HTML document with a proper
+// DOM walk: the page title first, then structure-preserving text — headings,
+// paragraphs and list items on their own lines, code blocks fenced, table
+// cells separated. Scripts, styles, navigation and inline markup are dropped.
+func htmlToText(src string) string {
+	doc, err := html.Parse(strings.NewReader(src))
+	if err != nil {
+		return ""
+	}
+	var out strings.Builder
+	var title string
+	last := byte(0)
+	preserve := false // inside <pre>: whitespace kept verbatim
+	prefix := ""      // written after the block newline (list markers)
+
+	ensureNL := func() {
+		if out.Len() > 0 && last != '\n' {
+			out.WriteByte('\n')
+			last = '\n'
+		}
+	}
+	write := func(s string) {
+		if s == "" {
+			return
+		}
+		out.WriteString(s)
+		last = s[len(s)-1]
+	}
+	var textContent func(n *html.Node) string
+	textContent = func(n *html.Node) string {
+		var b strings.Builder
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			if c.Type == html.TextNode {
+				b.WriteString(c.Data)
+			} else if c.Type == html.ElementNode {
+				b.WriteString(textContent(c))
+			}
+		}
+		return b.String()
+	}
+	var walk func(n *html.Node)
+	walk = func(n *html.Node) {
+		switch n.Type {
+		case html.TextNode:
+			if preserve {
+				write(n.Data)
+				return
+			}
+			t := strings.TrimSpace(n.Data)
+			if t == "" {
+				return
+			}
+			if out.Len() > 0 && last != ' ' && last != '\n' {
+				write(" ")
+			}
+			write(t)
+			return
+		case html.ElementNode:
+		case html.DocumentNode:
+			for c := n.FirstChild; c != nil; c = c.NextSibling {
+				walk(c)
+			}
+			return
+		default:
+			return
+		}
+		switch n.Data {
+		case "script", "style", "noscript", "template", "svg", "iframe", "nav", "form":
+			return
+		case "head":
+			for c := n.FirstChild; c != nil; c = c.NextSibling {
+				if c.Type == html.ElementNode && c.Data == "title" {
+					title = strings.TrimSpace(textContent(c))
+				}
+			}
+			return
+		case "br", "hr":
+			ensureNL()
+			return
+		case "pre":
+			ensureNL()
+			write("```")
+			ensureNL()
+			preserve = true
+			for c := n.FirstChild; c != nil; c = c.NextSibling {
+				walk(c)
+			}
+			preserve = false
+			ensureNL()
+			write("```")
+			ensureNL()
+			return
+		case "li":
+			prefix = "- "
+		case "td", "th":
+			write("  ")
+		case "img":
+			if alt := htmlAttr(n, "alt"); alt != "" {
+				write(alt)
+			}
+			return
+		}
+		if isHTMLBlock(n.Data) {
+			ensureNL()
+		}
+		if prefix != "" {
+			write(prefix)
+			prefix = ""
+		}
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			walk(c)
+		}
+		if isHTMLBlock(n.Data) {
+			ensureNL()
+		}
+	}
+	walk(doc)
+	text := strings.TrimSpace(out.String())
+	if title != "" {
+		text = title + "\n\n" + text
+	}
+	return text
 }
 
 // limitWriter caps the amount of captured output.

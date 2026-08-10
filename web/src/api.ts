@@ -14,7 +14,6 @@ import type {
   PermissionMode,
   PreviewStatus,
   Project,
-  ProjectTemplate,
   ProviderAddResult,
   ProvidersRefreshResult,
   ProvidersResponse,
@@ -120,6 +119,10 @@ export interface SettingsUpdate {
   password?: string;
   mcp?: MCPServer[];
   permissionMode?: PermissionMode;
+  rewindApproval?: boolean;
+  defaultThinking?: string;
+  toonEnabled?: boolean;
+  systemPrompt?: string;
 }
 
 export const api = {
@@ -138,6 +141,10 @@ export const api = {
   // LLM providers
   getProviders: () => request<ProvidersResponse>('/api/providers'),
   refreshProviders: () => post<ProvidersRefreshResult>('/api/providers/refresh'),
+  providerThinking: (providerId: string, model: string) =>
+    request<{ levels: string[]; off: boolean }>(
+      `/api/providers/thinking?providerId=${encodeURIComponent(providerId)}&model=${encodeURIComponent(model)}`,
+    ),
   searchProviders: (query: string) =>
     request<ProvidersSearchResult>(`/api/providers/search?q=${encodeURIComponent(query)}`),
   addProvider: (id: string) => post<ProviderAddResult>('/api/providers/add', { id }),
@@ -145,8 +152,8 @@ export const api = {
 
   // Projects
   listProjects: () => request<Project[]>('/api/projects'),
-  createProject: (name: string, template: ProjectTemplate) =>
-    post<Project>('/api/projects', { name, template }),
+  createProject: (body: { name?: string; description?: string }) =>
+    post<Project>('/api/projects', body),
   getProject: (id: string) => request<Project>(`/api/projects/${id}`),
   updateProject: (id: string, body: { name?: string; previewCommand?: string; instructions?: string }) =>
     patch<Project>(`/api/projects/${id}`, body),
@@ -341,6 +348,8 @@ export function streamChat(
     editMessageId?: number;
     providerId?: string;
     attachments?: ChatAttachmentInput[];
+    /** Thinking level for reasoning models ('' = off). */
+    thinking?: string;
   } | undefined,
   onEvent: (ev: ChatEvent) => void,
   signal: AbortSignal,
@@ -351,11 +360,13 @@ export function streamChat(
     editMessageId?: number;
     providerId?: string;
     attachments?: ChatAttachmentInput[];
+    thinking?: string;
   } = { message };
   if (opts?.model && opts.model.trim() !== '') body.model = opts.model;
   if (opts?.editMessageId) body.editMessageId = opts.editMessageId;
   if (opts?.providerId) body.providerId = opts.providerId;
   if (opts?.attachments && opts.attachments.length > 0) body.attachments = opts.attachments;
+  if (opts?.thinking) body.thinking = opts.thinking;
   return streamChatEvents(`/api/projects/${projectId}/chat`, body, onEvent, signal);
 }
 

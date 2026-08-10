@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api';
-import type { GitHubRepo, Project, ProjectTemplate } from '../types';
+import type { GitHubRepo, Project } from '../types';
 import { errMsg, timeAgo } from '../utils';
 import { Button, Dialog, ErrorBox, IconButton, Input, Spinner } from '../components/ui';
 import {
@@ -12,12 +12,6 @@ import {
   IconSettings,
   IconTrash,
 } from '../components/icons';
-
-const TEMPLATES: { id: ProjectTemplate; label: string; desc: string }[] = [
-  { id: 'vite-react', label: 'Vite + React', desc: 'React app with Vite dev server' },
-  { id: 'static', label: 'Static HTML', desc: 'Plain HTML/CSS/JS site' },
-  { id: 'empty', label: 'Empty', desc: 'Start from scratch' },
-];
 
 function CardMenu({ onDelete }: { onDelete: () => void }) {
   const [open, setOpen] = useState(false);
@@ -71,15 +65,13 @@ function NewProjectDialog({
   onClose: () => void;
 }) {
   const navigate = useNavigate();
-  const [name, setName] = useState('');
-  const [template, setTemplate] = useState<ProjectTemplate>('vite-react');
+  const [description, setDescription] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (open) {
-      setName('');
-      setTemplate('vite-react');
+      setDescription('');
       setError(null);
       setBusy(false);
     }
@@ -87,15 +79,16 @@ function NewProjectDialog({
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) {
-      setError('Name is required.');
+    const text = description.trim();
+    if (!text) {
+      setError('Tell me what you want to create.');
       return;
     }
     setBusy(true);
     setError(null);
     try {
-      const p = await api.createProject(name.trim(), template);
-      navigate(`/project/${p.id}`);
+      const p = await api.createProject({ description: text });
+      navigate(`/project/${p.id}`, { state: { prompt: text } });
     } catch (err) {
       setError(errMsg(err));
       setBusy(false);
@@ -105,29 +98,14 @@ function NewProjectDialog({
   return (
     <Dialog open={open} onClose={onClose} title="New project">
       <form onSubmit={submit}>
-        <Input
+        <textarea
           autoFocus
-          placeholder="Project name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
+          rows={4}
+          placeholder="What do you want to create? e.g. a landing page for a coffee shop with a menu and a contact form"
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          className="w-full resize-y rounded-lg border border-border-strong bg-surface px-3 py-2 text-sm text-text outline-none transition-colors focus:border-subtle"
         />
-        <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
-          {TEMPLATES.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => setTemplate(t.id)}
-              className={`rounded-lg border p-3 text-left transition-colors ${
-                template === t.id
-                  ? 'border-accent bg-accent/10'
-                  : 'border-border hover:border-faint'
-              }`}
-            >
-              <div className="text-sm font-medium text-text">{t.label}</div>
-              <div className="mt-0.5 text-xs text-subtle">{t.desc}</div>
-            </button>
-          ))}
-        </div>
         {error && <ErrorBox message={error} className="mt-3" />}
         <div className="mt-4 flex justify-end gap-2">
           <Button variant="ghost" onClick={onClose}>

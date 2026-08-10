@@ -18,6 +18,7 @@ const systemPrompt = `You are v1, an AI full-stack engineer building web apps in
 Rules:
 - The workspace already contains a project; prefer the existing project structure and conventions.
 - All file paths are relative to the workspace root.
+- The app preview runs inside an iframe on an insecure (http) proxied origin: crypto.randomUUID() is unavailable there and throws. Never use it in generated apps — generate ids with Math.random()/Date.now() or a counter instead.
 - After writing or changing code, call restart_preview so the user can see the result.
 - Keep a visible todo list of your work using set_todos; add items up front and mark them done as they complete.
 - Save durable facts, decisions and user preferences with the remember tool; delete stale ones with forget.
@@ -71,7 +72,10 @@ type ChatParams struct {
 	ExtraTools       []llm.Tool   // dynamically added tools (e.g. MCP), namespaced
 	SkillsPrompt     string       // enabled skills' SKILL.md content for the system prompt
 	MemoriesPrompt   string       // project memories section for the system prompt
+	GlobalPrompt     string       // user's global system prompt (all projects)
 	Vision           bool         // the model reads images — enables screenshot_app
+	ReasoningEffort  string       // thinking level; sent as reasoning_effort when set
+	ToonEnabled      bool         // tool results are TOON-encoded for the model
 	Steer            func() []string // drains mid-run user messages, injected next round
 	SkipSnapshot     bool         // edits/retries rewind the thread — no git checkpoint
 	ContextBudget    int
@@ -87,6 +91,9 @@ type ChatParams struct {
 func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 	if p.Model != "" {
 		p.Client.Model = p.Model
+	}
+	if p.ReasoningEffort != "" {
+		p.Client.ReasoningEffort = p.ReasoningEffort
 	}
 	if p.LastUserID > 0 {
 		// Retry mode: the user message already exists with this ID; drop the
@@ -117,6 +124,12 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 	}
 	if p.Project.Instructions != "" {
 		system += "\n\nProject instructions from the user:\n" + p.Project.Instructions
+	}
+	if p.GlobalPrompt != "" {
+		system += "\n\nGlobal instructions from the user (apply to all projects):\n" + p.GlobalPrompt
+	}
+	if p.ToonEnabled {
+		system += "\n- Tool results are encoded in TOON, a compact indentation format: headers like key[N]{fields}: declare array length and column names, and rows are comma-separated. Read them as structured data, not prose."
 	}
 	if p.Vision {
 		system += "\n\nYou can see the app: call screenshot_app to capture an image of the running preview and inspect what is on screen. Use it after visual changes to verify them."
@@ -150,6 +163,9 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 			history = append(history, msg)
 		case "tool":
 			msg := llm.Message{Role: "tool", Content: m.Content}
+			if p.ToonEnabled {
+				msg.Content = toonJSON(m.Content)
+			}
 			var tj struct {
 				ToolCallID string `json:"tool_call_id"`
 				Name       string `json:"name"`
@@ -253,11 +269,15 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 			if _, err := p.Store.AddMessage(p.Project.ID, "tool", result, string(tj), "", "", "", ""); err != nil {
 				return nil, err
 			}
+			content := result
+			if p.ToonEnabled {
+				content = toonJSON(result)
+			}
 			history = append(history, llm.Message{
 				Role:       "tool",
 				ToolCallID: tc.ID,
 				Name:       tc.Function.Name,
-				Content:    result,
+				Content:    content,
 			})
 			// A screenshot tool call leaves a PNG behind: deliver it as a user
 			// message with an image part (tool results are text-only on many
@@ -345,6 +365,27 @@ var tools = []llm.Tool{
 	{
 		Type: "function",
 		Function: llm.ToolFunction{
+			Name:        "search_files",
+			Description: "Search the workspace for files or code: semantic similarity via semble when installed, otherwise filename (fd) and content (rg) matches. Use this to find a file by name or locate code by identifier, phrase, or concept instead of guessing paths.",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"query": map[string]any{
+						"type":        "string",
+						"description": "Search text: a natural-language description of what you are looking for, or an exact string/identifier.",
+					},
+					"path": map[string]any{
+						"type":        "string",
+						"description": "Subdirectory to search, relative to the workspace root. Defaults to the root.",
+					},
+				},
+				"required": []string{"query"},
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: llm.ToolFunction{
 			Name:        "read_file",
 			Description: "Read the contents of a file in the workspace.",
 			Parameters: map[string]any{
@@ -402,6 +443,61 @@ var tools = []llm.Tool{
 					},
 				},
 				"required": []string{"path", "old_string", "new_string"},
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: llm.ToolFunction{
+			Name:        "delete_file",
+			Description: "Delete a file from the workspace (files only, never directories).",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"path": map[string]any{
+						"type":        "string",
+						"description": "File path relative to the workspace root.",
+					},
+				},
+				"required": []string{"path"},
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: llm.ToolFunction{
+			Name:        "move_file",
+			Description: "Rename or move a file or directory within the workspace. Destination parent directories are created as needed.",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"path": map[string]any{
+						"type":        "string",
+						"description": "Current path relative to the workspace root.",
+					},
+					"newPath": map[string]any{
+						"type":        "string",
+						"description": "Destination path relative to the workspace root.",
+					},
+				},
+				"required": []string{"path", "newPath"},
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: llm.ToolFunction{
+			Name:        "fetch_url",
+			Description: "Fetch a web page (http/https) and return its readable text — docs, READMEs, API references. HTML is stripped to text; responses are size-capped.",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"url": map[string]any{
+						"type":        "string",
+						"description": "Full http(s) URL to fetch.",
+					},
+				},
+				"required": []string{"url"},
 			},
 		},
 	},

@@ -119,6 +119,10 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 		"mcp":            s.mcpServers(),
 		"skills":         s.installedSkills(),
 		"permissionMode": s.permissionMode(),
+		"rewindApproval": s.rewindApproval(),
+		"defaultThinking": s.defaultThinking(),
+		"toonEnabled":     s.toonEnabled(),
+		"systemPrompt":   s.globalSystemPrompt(),
 		"version":        s.cfg.Version,
 		"commit":         s.cfg.Commit,
 	})
@@ -141,6 +145,10 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		Password            *string             `json:"password"`
 		MCP                 *[]mcp.ServerConfig `json:"mcp"`
 		PermissionMode      *string             `json:"permissionMode"`
+		RewindApproval      *bool               `json:"rewindApproval"`
+		DefaultThinking     *string             `json:"defaultThinking"`
+		ToonEnabled         *bool               `json:"toonEnabled"`
+		SystemPrompt        *string             `json:"systemPrompt"`
 	}
 	if !decodeJSON(w, r, &body) {
 		return
@@ -290,6 +298,38 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.PermissionMode != nil {
 		if err := set(keyPermissionMode, body.PermissionMode); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+	if body.SystemPrompt != nil {
+		if err := set(keySystemPrompt, body.SystemPrompt); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+	if body.RewindApproval != nil {
+		val := "0"
+		if *body.RewindApproval {
+			val = "1"
+		}
+		if err := s.st.SetSetting(keyRewindApproval, val); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+	if body.DefaultThinking != nil {
+		if err := set(keyThinkingDefault, body.DefaultThinking); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+	if body.ToonEnabled != nil {
+		val := "0"
+		if *body.ToonEnabled {
+			val = "1"
+		}
+		if err := s.st.SetSetting(keyToonEnabled, val); err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}

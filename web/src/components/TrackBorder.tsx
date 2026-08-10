@@ -1,4 +1,37 @@
-import type { TrackSettings } from '../utils';
+// Working-border (composer rainbow track) tunables. The Settings UI was
+// removed, so these are fixed defaults now.
+export type TrackSettings = {
+  /** Seconds per lap around the border. */
+  lap: number;
+  /** Arc length, percent of the circumference. */
+  arc: number;
+  /** Seconds per hue cycle; 0 = colors stay fixed. */
+  hue: number;
+  /** Stroke width in px. */
+  width: number;
+  /** Corner radius in px. */
+  radius: number;
+  /** Number of arc segments on the track (1 = single comet). */
+  dashes: number;
+  /** Palette id from TRACK_PALETTES. */
+  palette: string;
+  /** Counter-clockwise travel. */
+  reverse: boolean;
+  /** Soft glow around the track. */
+  glow: boolean;
+};
+
+export const TRACK_DEFAULTS: TrackSettings = {
+  lap: 1.2,
+  arc: 33,
+  hue: 2.5,
+  width: 1.5,
+  radius: 12,
+  dashes: 1,
+  palette: 'rainbow',
+  reverse: false,
+  glow: true,
+};
 
 export const TRACK_PALETTES: Record<string, string[]> = {
   rainbow: ['var(--v1-accent)', '#a855f7', '#ec4899', '#f59e0b'],
@@ -30,6 +63,13 @@ export default function TrackBorder({ ts, id }: { ts: TrackSettings; id: string 
     ts.dashes > 1
       ? `${Array.from({ length: ts.dashes }, () => `${seg} 2`).join(' ')} ${100 - ts.arc}`
       : `${ts.arc} ${100 - ts.arc}`;
+  // This wrapper is rendered as a sibling of the overflow-hidden composer box,
+  // positioned over it, so nothing clips the track. Strokes are centered on
+  // their path, so the path is inset by half the stroke width — that puts the
+  // stroke's outer edge exactly on the box edge, on top of the border. The
+  // corner radius is reduced by half the stroke the same way, so the outer
+  // edge follows the requested radius instead of the path.
+  const half = ts.width / 2;
   return (
     <div
       className={`pointer-events-none absolute inset-0 ${ts.glow ? 'v1-track-glow' : ''}`}
@@ -49,14 +89,14 @@ export default function TrackBorder({ ts, id }: { ts: TrackSettings; id: string 
         <rect
           className="v1-track-rect"
           style={{
-            x: 0.5,
-            y: 0.5,
-            width: 'calc(100% - 1px)',
-            height: 'calc(100% - 1px)',
+            x: half,
+            y: half,
+            width: `calc(100% - ${ts.width}px)`,
+            height: `calc(100% - ${ts.width}px)`,
             animationDuration: `${ts.lap}s`,
             animationDirection: ts.reverse ? 'reverse' : 'normal',
           }}
-          rx={ts.radius}
+          rx={Math.max(0, ts.radius - half)}
           fill="none"
           stroke={`url(#${id})`}
           strokeWidth={ts.width}

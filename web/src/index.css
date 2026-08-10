@@ -346,11 +346,6 @@ body {
   50% { opacity: 0; }
 }
 
-/* Composer highlight while the agent runs: see TrackBorder.tsx. The box
-   border is the faint base track. */
-.v1-working {
-  border-color: color-mix(in srgb, var(--v1-accent) 35%, transparent);
-}
 .v1-track-rect {
   animation: v1-track 1.2s linear infinite;
 }

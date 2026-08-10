@@ -20,16 +20,17 @@ import type {
   SavedProvider,
   Todo,
 } from '../types';
-import { errMsg, getTrackSettings } from '../utils';
+import { errMsg, getJsonPretty } from '../utils';
 import { notifyTurnDone } from '../notify';
 import { permissionMeta } from '../permissions';
 import { Button, Dialog, ErrorBox, IconButton, Input, Spinner } from './ui';
 import ToolSettings, { type ToolsTab } from './ToolSettings';
 import Markdown from './Markdown';
 import ModelPicker from './ModelPicker';
-import TrackBorder from './TrackBorder';
+import TrackBorder, { TRACK_DEFAULTS } from './TrackBorder';
 import {
   IconArrowUp,
+  IconBrain,
   IconChat,
   IconCheck,
   IconChevronDown,
@@ -47,6 +48,12 @@ import {
   IconX,
 } from './icons';
 import { useMediaQuery } from '../hooks/useMediaQuery';
+import hljs from 'highlight.js/lib/core';
+import json from 'highlight.js/lib/languages/json';
+
+// Registered here (in addition to markdown.ts) so tool argument/result JSON
+// gets the same token colors as fenced code blocks.
+hljs.registerLanguage('json', json);
 
 type ToolCall = { name: string; detail: string };
 
@@ -63,6 +70,58 @@ const CHAT_COMMANDS = [
   { name: '/stop', hint: 'Stop the current run' },
   { name: '/help', hint: 'Show available commands' },
 ] as const;
+
+// Thinking level → button colors: escalation from cool to hot. Unknown
+// levels fall back to the accent color.
+const THINKING_LEVEL_COLORS: Record<string, { text: string; border: string }> = {
+  off: { text: 'text-dim', border: 'border-border' },
+  on: { text: 'text-accent', border: 'border-accent/60' },
+  none: { text: 'text-dim', border: 'border-border' },
+  minimal: { text: 'text-emerald-500', border: 'border-emerald-500/50' },
+  low: { text: 'text-emerald-500', border: 'border-emerald-500/50' },
+  medium: { text: 'text-amber-500', border: 'border-amber-500/50' },
+  high: { text: 'text-orange-500', border: 'border-orange-500/50' },
+  xhigh: { text: 'text-red-500', border: 'border-red-500/50' },
+  max: { text: 'text-red-500', border: 'border-red-500/50' },
+};
+
+// Canonical escalation order for thinking levels; unknown levels order by
+// their position in the model's list instead.
+const THINKING_LEVEL_RANK: Record<string, number> = {
+  off: 0,
+  none: 1,
+  minimal: 2,
+  low: 3,
+  medium: 4,
+  high: 5,
+  xhigh: 6,
+  max: 7,
+  on: 8,
+};
+
+// Human-readable labels for agent tool names shown in the chat; unknown
+// tools (e.g. mcp_*) keep their code name.
+const TOOL_LABELS: Record<string, string> = {
+  list_files: 'List files',
+  search_files: 'Search files',
+  read_file: 'Read file',
+  write_file: 'Write file',
+  edit_file: 'Edit file',
+  delete_file: 'Delete file',
+  move_file: 'Move file',
+  fetch_url: 'Fetch URL',
+  run_command: 'Run command',
+  restart_preview: 'Restart preview',
+  screenshot_app: 'Screenshot app',
+  set_todos: 'Update todos',
+  remember: 'Remember',
+  forget: 'Forget',
+  ask_user: 'Ask user',
+};
+
+function toolLabel(name: string): string {
+  return TOOL_LABELS[name] ?? name;
+}
 
 // Renders user message text with @file / #skill tags pill-highlighted. Tag
 // characters are limited to path-ish ones so trailing punctuation stays out.
@@ -229,7 +288,7 @@ function ToolRow({ item }: { item: ToolItem }) {
           <IconChevronRight className="h-3.5 w-3.5 shrink-0" />
         )}
         <IconWrench className="h-3.5 w-3.5 shrink-0" />
-        <span className="shrink-0 font-mono text-text">{item.name}</span>
+        <span className="shrink-0 font-mono text-text">{toolLabel(item.name)}</span>
         <span className="min-w-0 flex-1 truncate text-faint">{item.detail}</span>
         {item.running ? (
           <Spinner className="h-3.5 w-3.5 shrink-0" />
@@ -239,11 +298,7 @@ function ToolRow({ item }: { item: ToolItem }) {
           <IconX className="h-3.5 w-3.5 shrink-0 text-red-500" />
         )}
       </button>
-      {open && item.detail && (
-        <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-words border-t border-border/80 px-3 py-2 font-mono text-[11px] leading-relaxed text-subtle">
-          {item.detail}
-        </pre>
-      )}
+      {open && item.detail && <ToolBody detail={item.detail} />}
     </div>
   );
 }
@@ -330,8 +385,12 @@ function DiffContext({ lines, side }: { lines: string[]; side: 'before' | 'after
 function chipLabel(detail: string): string {
   try {
     const a = JSON.parse(detail) as Record<string, unknown>;
-    const v = a.command ?? a.path ?? a.query;
-    return typeof v === 'string' ? v : detail;
+    const v = a.command ?? a.path ?? a.query ?? a.url;
+    if (typeof v === 'string') return v;
+    if (Array.isArray(a.todos)) {
+      return `${a.todos.length} todo${a.todos.length === 1 ? '' : 's'}`;
+    }
+    return detail;
   } catch {
     return detail;
   }
@@ -340,52 +399,31 @@ function chipLabel(detail: string): string {
 function ToolChip({ name, detail }: ToolCall) {
   const [open, setOpen] = useState(false);
   const diff = name === 'edit_file' ? parseEditDiff(detail) : null;
-  const command = name === 'run_command' ? chipLabel(detail) : null;
-  if (command) {
-    return (
-      <div className="w-full overflow-hidden rounded-md border border-border bg-surface/50 font-mono text-[10px]">
-        <button
-          type="button"
-          onClick={() => setOpen((o) => !o)}
-          className="flex min-h-[26px] w-full items-center gap-1.5 px-2 py-1 text-left text-dim transition-colors hover:text-text"
-        >
-          {open ? (
-            <IconChevronDown className="h-3 w-3 shrink-0" />
-          ) : (
-            <IconChevronRight className="h-3 w-3 shrink-0" />
-          )}
-          <IconWrench className="h-3 w-3 shrink-0 text-faint" />
-          <span className="shrink-0 text-text">{name}</span>
-          <span className="min-w-0 flex-1 truncate text-faint">{command}</span>
-        </button>
-        {open && (
-          <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-words border-t border-border/80 px-2 py-1.5 leading-relaxed text-subtle">
-            {detail}
-          </pre>
+  const label = diff ? diff.path : chipLabel(detail);
+  return (
+    <div className="w-full overflow-hidden rounded-md border border-border bg-surface/50 font-mono text-[10px]">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex min-h-[26px] w-full items-center gap-1.5 px-2 py-1 text-left text-dim transition-colors hover:text-text"
+      >
+        {open ? (
+          <IconChevronDown className="h-3 w-3 shrink-0" />
+        ) : (
+          <IconChevronRight className="h-3 w-3 shrink-0" />
         )}
-      </div>
-    );
-  }
-  if (diff) {
-    return (
-      <div className="w-full overflow-hidden rounded-md border border-border bg-surface/50 font-mono text-[10px]">
-        <button
-          type="button"
-          onClick={() => setOpen((o) => !o)}
-          className="flex min-h-[26px] w-full items-center gap-1.5 px-2 py-1 text-left text-dim transition-colors hover:text-text"
-        >
-          {open ? (
-            <IconChevronDown className="h-3 w-3 shrink-0" />
-          ) : (
-            <IconChevronRight className="h-3 w-3 shrink-0" />
-          )}
-          <IconWrench className="h-3 w-3 shrink-0 text-faint" />
-          <span className="shrink-0 text-text">{name}</span>
-          <span className="min-w-0 flex-1 truncate text-faint">{diff.path}</span>
-          <span className="shrink-0 text-red-400">-{diff.removed.length}</span>
-          <span className="shrink-0 text-emerald-400">+{diff.added.length}</span>
-        </button>
-        {open && (
+        <IconWrench className="h-3 w-3 shrink-0 text-faint" />
+        <span className="shrink-0 text-text">{toolLabel(name)}</span>
+        {label && <span className="min-w-0 flex-1 truncate text-faint">{label}</span>}
+        {diff && (
+          <>
+            <span className="shrink-0 text-red-400">-{diff.removed.length}</span>
+            <span className="shrink-0 text-emerald-400">+{diff.added.length}</span>
+          </>
+        )}
+      </button>
+      {open &&
+        (diff ? (
           <div className="max-h-60 overflow-auto border-t border-border/80 px-2 py-1.5 leading-relaxed">
             <DiffContext lines={diff.before} side="before" />
             {diff.removed.map((l, i) => (
@@ -400,17 +438,118 @@ function ToolChip({ name, detail }: ToolCall) {
             ))}
             <DiffContext lines={diff.after} side="after" />
           </div>
-        )}
-      </div>
-    );
-  }
-  return (
-    <span className="inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-md border border-border bg-surface/50 px-2 py-0.5 font-mono text-[10px] text-dim">
-      <IconWrench className="h-3 w-3 shrink-0 text-faint" />
-      <span className="shrink-0 text-text">{name}</span>
-      {detail && <span className="min-w-0 flex-1 truncate text-faint">{chipLabel(detail)}</span>}
-    </span>
+        ) : (
+          <ToolBody detail={detail} />
+        ))}
+    </div>
   );
+}
+
+// Parses a tool result's JSON exitCode, or null when the result is not the
+// run_command shape (an error string or another tool's output).
+function runExitCode(detail: string): number | null {
+  try {
+    const d = JSON.parse(detail) as { exitCode?: number };
+    return typeof d.exitCode === 'number' ? d.exitCode : null;
+  } catch {
+    return null;
+  }
+}
+
+// Tool call/result body: JSON is pretty-printed by default (Raw toggle) and
+// syntax-highlighted; anything else renders as-is. The global default comes
+// from Settings → Appearance → Tool calls.
+function ToolBody({ detail }: { detail: string }) {
+  const [pretty, setPretty] = useState(() => getJsonPretty());
+  const parsed = useMemo(() => {
+    try {
+      return JSON.parse(detail) as unknown;
+    } catch {
+      return null;
+    }
+  }, [detail]);
+  const shown = parsed !== null && pretty ? JSON.stringify(parsed, null, 2) : detail;
+  const html = parsed !== null ? hljs.highlight(shown, { language: 'json' }).value : null;
+  return (
+    <div className="relative border-t border-border/80">
+      {parsed !== null && (
+        <button
+          type="button"
+          onClick={() => setPretty((p) => !p)}
+          title={pretty ? 'Show the raw JSON' : 'Pretty-print the JSON'}
+          className="absolute right-2 top-2 z-10 rounded-md border border-border bg-surface px-1.5 py-0.5 font-sans text-[10px] text-dim transition-colors hover:text-text"
+        >
+          {pretty ? 'Raw' : 'Pretty'}
+        </button>
+      )}
+      {html !== null ? (
+        <pre
+          className="max-h-60 overflow-auto whitespace-pre-wrap break-words px-3 py-2 font-mono text-[11px] leading-relaxed text-subtle"
+          dangerouslySetInnerHTML={{ __html: html }}
+        />
+      ) : (
+        <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-words px-3 py-2 font-mono text-[11px] leading-relaxed text-subtle">
+          {detail}
+        </pre>
+      )}
+    </div>
+  );
+}
+
+// A run_command call and its result merged into one card: the command in the
+// header (with an exit-code indicator), the result body below.
+function RunCommandBlock({ command, result }: { command: string; result: ToolCall }) {
+  const [open, setOpen] = useState(false);
+  const exitCode = runExitCode(result.detail);
+  return (
+    <div className="w-full overflow-hidden rounded-md border border-border bg-surface/50 font-mono text-[10px]">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex min-h-[26px] w-full items-center gap-1.5 px-2 py-1 text-left text-dim transition-colors hover:text-text"
+      >
+        {open ? (
+          <IconChevronDown className="h-3 w-3 shrink-0" />
+        ) : (
+          <IconChevronRight className="h-3 w-3 shrink-0" />
+        )}
+        <IconWrench className="h-3 w-3 shrink-0 text-faint" />
+        <span className="shrink-0 text-text">{toolLabel('run_command')}</span>
+        <span className="min-w-0 flex-1 truncate text-faint">{command}</span>
+        {exitCode === 0 && <IconCheck className="h-3 w-3 shrink-0 text-emerald-500" />}
+        {exitCode !== null && exitCode !== 0 && <IconX className="h-3 w-3 shrink-0 text-red-500" />}
+      </button>
+      {open && <ToolBody detail={result.detail} />}
+    </div>
+  );
+}
+
+// Renders an assistant message's tool calls and results as one column, pairing
+// each run_command call with its result (both lists are in chronological
+// order) so they show as a single block.
+function ToolBlocks({ calls, results }: { calls: ToolCall[]; results: ToolCall[] }) {
+  const out: ReactNode[] = [];
+  let next = 0;
+  calls.forEach((tc, j) => {
+    if (tc.name === 'run_command') {
+      let k = next;
+      while (k < results.length && results[k].name !== 'run_command') k++;
+      if (k < results.length) {
+        next = k + 1;
+        out.push(
+          <RunCommandBlock key={`c${j}`} command={chipLabel(tc.detail)} result={results[k]} />,
+        );
+        return;
+      }
+    }
+    out.push(<ToolChip key={`c${j}`} {...tc} />);
+  });
+  results.forEach((tr, j) => {
+    // results already merged into a RunCommandBlock are skipped
+    if (j < next && tr.name === 'run_command') return;
+    out.push(<ToolResultBlock key={`r${j}`} {...tr} />);
+  });
+  return <div className="flex flex-col gap-1.5">{out}</div>;
 }
 
 function ToolResultBlock({ name, detail }: ToolCall) {
@@ -428,14 +567,10 @@ function ToolResultBlock({ name, detail }: ToolCall) {
           <IconChevronRight className="h-3.5 w-3.5 shrink-0" />
         )}
         <IconWrench className="h-3.5 w-3.5 shrink-0" />
-        <span className="shrink-0 font-mono text-text">{name}</span>
+        <span className="shrink-0 font-mono text-text">{toolLabel(name)}</span>
         <span className="text-faint">result</span>
       </button>
-      {open && (
-        <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-words border-t border-border/80 px-3 py-2 font-mono text-[11px] leading-relaxed text-subtle">
-          {detail}
-        </pre>
-      )}
+      {open && <ToolBody detail={detail} />}
     </div>
   );
 }
@@ -549,7 +684,7 @@ const MessageRow = memo(function MessageRow({
   turnEnd: boolean;
   validTag: (tag: string) => boolean;
   onEdit: (key: string, text: string) => void;
-  onRewind: (key: string) => void;
+  onRewind: (key: string, text: string) => void;
   onRegenerate: () => void;
   onEditStart: (key: string, editing: boolean) => void;
   onImageClick: (url: string, name: string) => void;
@@ -607,7 +742,7 @@ const MessageRow = memo(function MessageRow({
             {!isLast && (
               <button
                 type="button"
-                onClick={() => void onRewind(item.key)}
+                onClick={() => void onRewind(item.key, item.content)}
                 title="Rewind to here (delete everything after)"
                 className="text-[11px] text-faint transition-colors hover:text-text"
               >
@@ -636,14 +771,9 @@ const MessageRow = memo(function MessageRow({
       <div className="min-w-0">
         <Markdown text={item.content} streaming={item.streaming} validTag={validTag} />
       </div>
-      {item.toolCalls && item.toolCalls.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          {item.toolCalls.map((tc, j) => (
-            <ToolChip key={j} {...tc} />
-          ))}
-        </div>
+      {(item.toolCalls?.length ?? 0) + (item.toolResults?.length ?? 0) > 0 && (
+        <ToolBlocks calls={item.toolCalls ?? []} results={item.toolResults ?? []} />
       )}
-      {item.toolResults && item.toolResults.map((tr, j) => <ToolResultBlock key={j} {...tr} />)}
       {turnEnd && item.usage && !item.streaming && (
         <div className="text-[10px] text-faint">
           {item.usage.input.toLocaleString()} in · {item.usage.output.toLocaleString()} out
@@ -673,12 +803,16 @@ export default function ChatPane({
   onPreviewRestart,
   onMemories,
   llmReady,
+  initialPrompt,
 }: {
   projectId: string;
   projectName: string;
   onPreviewRestart: () => void;
   onMemories?: (mems: Memory[]) => void;
-  llmReady: boolean;
+  /** null while the LLM configuration is still loading. */
+  llmReady: boolean | null;
+  /** Description from the New project dialog — auto-sent once, when ready. */
+  initialPrompt?: string;
 }) {
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
@@ -691,6 +825,9 @@ export default function ChatPane({
   const [attachments, setAttachments] = useState<ChatAttachmentInput[]>([]);
   const [attachError, setAttachError] = useState<string | null>(null);
   const [model, setModel] = useState('');
+  const [thinking, setThinking] = useState('');
+  const [thinkingOpen, setThinkingOpen] = useState(false);
+  const [defaultThinking, setDefaultThinking] = useState('');
   const [providerId, setProviderId] = useState(''); // '' = custom (no saved provider)
   const [providers, setProviders] = useState<SavedProvider[]>([]);
   const [catalog, setCatalog] = useState<Provider[]>([]);
@@ -707,8 +844,9 @@ export default function ChatPane({
   // Mobile-only: the composer can cover the chat pane for long messages.
   const [expanded, setExpanded] = useState(false);
   const [lightbox, setLightbox] = useState<{ url: string; name: string } | null>(null);
-  const [track] = useState(() => getTrackSettings());
+  const track = TRACK_DEFAULTS;
   const [permissionMode, setPermissionMode] = useState<PermissionMode>('ask');
+  const [rewindApproval, setRewindApproval] = useState(false);
   const [permPrompt, setPermPrompt] = useState<{
     requestId: string;
     tool: string;
@@ -755,7 +893,7 @@ export default function ChatPane({
   useEffect(() => {
     let active = true;
     const selKey = `v1.chatModel.${projectId}`;
-    let persisted: { providerId: string; model: string } | null = null;
+    let persisted: { providerId: string; model: string; thinking?: string } | null = null;
     try {
       persisted = JSON.parse(localStorage.getItem(selKey) ?? 'null');
     } catch {
@@ -768,6 +906,7 @@ export default function ChatPane({
         const saved = s.llm.providers ?? [];
         setProviders(saved);
         setPermissionMode(s.permissionMode ?? 'ask');
+        setRewindApproval(s.rewindApproval ?? false);
         const sel = persisted ?? { providerId: s.llm.activeProviderId ?? '', model: s.llm.model };
         // A persisted provider that was deleted falls back to the active one.
         if (sel.providerId === '' || saved.some((p) => p.id === sel.providerId)) {
@@ -776,6 +915,8 @@ export default function ChatPane({
           setProviderId(s.llm.activeProviderId ?? '');
         }
         setModel(sel.model);
+        setThinking(typeof sel.thinking === 'string' ? sel.thinking : '');
+        setDefaultThinking(s.defaultThinking ?? '');
         try {
           localStorage.setItem(selKey, JSON.stringify(sel));
         } catch {
@@ -836,9 +977,12 @@ export default function ChatPane({
   const modelLabel = selectedModelMeta?.name || model || 'Select model';
 
   const persistSelection = useCallback(
-    (pid: string, m: string) => {
+    (pid: string, m: string, th: string) => {
       try {
-        localStorage.setItem(`v1.chatModel.${projectId}`, JSON.stringify({ providerId: pid, model: m }));
+        localStorage.setItem(
+          `v1.chatModel.${projectId}`,
+          JSON.stringify({ providerId: pid, model: m, thinking: th }),
+        );
       } catch {
         // storage unavailable — ignore
       }
@@ -850,13 +994,124 @@ export default function ChatPane({
     setProviderId(pid);
     const nextModel = pid === '' ? '' : providers.find((p) => p.id === pid)?.model ?? '';
     setModel(nextModel);
-    persistSelection(pid, nextModel);
+    applyThinkingForModel(nextModel);
   };
 
   const changeModel = (m: string) => {
     setModel(m);
-    persistSelection(providerId, m);
+    applyThinkingForModel(m);
   };
+
+  // Applies the new model's thinking level immediately when its options are
+  // cached; otherwise clears to the loading state and the fetch resolves it.
+  const applyThinkingForModel = (m: string) => {
+    const cached = m ? thinkingMetaCache.current.get(`${providerId}|${m}`) : undefined;
+    if (cached) {
+      setThinkingMeta(cached);
+      const lvl = freshThinkingLevel(cached);
+      setThinking(lvl);
+      persistSelection(providerId, m, lvl);
+    } else {
+      setThinkingMeta(null);
+      setThinking('');
+      persistSelection(providerId, m, '');
+    }
+  };
+
+  // Thinking options come from the provider's own /models endpoint (server
+  // resolves it, with a family fallback when the endpoint publishes nothing).
+  // Results are cached per provider+model so switching back is instant.
+  const [thinkingMeta, setThinkingMeta] = useState<{ levels: string[]; off: boolean } | null>(
+    null,
+  );
+  const [thinkingLoading, setThinkingLoading] = useState(false);
+  const thinkingMetaCache = useRef(new Map<string, { levels: string[]; off: boolean }>());
+  // The level a fresh selection gets: the global default when the model
+  // supports it, otherwise the next highest available level (or the lowest
+  // when the default sits below everything the model offers).
+  const freshThinkingLevel = (meta: { levels: string[]; off: boolean }): string => {
+    if (defaultThinking === 'off' && (meta.off || meta.levels.includes('none'))) return 'off';
+    if (defaultThinking === '') return meta.levels[0] ?? '';
+    if (meta.levels.includes(defaultThinking)) return defaultThinking;
+    const reqRank = THINKING_LEVEL_RANK[defaultThinking] ?? -1;
+    let best = '';
+    let bestRank = -Infinity;
+    meta.levels.forEach((lvl, i) => {
+      const rank = THINKING_LEVEL_RANK[lvl] ?? i + 10;
+      if (rank <= reqRank && rank > bestRank) {
+        best = lvl;
+        bestRank = rank;
+      }
+    });
+    return best || meta.levels[0] || '';
+  };
+  useEffect(() => {
+    if (!model.trim()) {
+      setThinkingMeta(null);
+      return;
+    }
+    const key = `${providerId}|${model}`;
+    const cached = thinkingMetaCache.current.get(key);
+    if (cached) {
+      setThinkingMeta(cached);
+      setThinkingLoading(false);
+      return;
+    }
+    let active = true;
+    setThinkingLoading(true);
+    api
+      .providerThinking(providerId, model)
+      .then((r) => {
+        if (!active) return;
+        const meta = { levels: r.levels ?? [], off: r.off ?? false };
+        thinkingMetaCache.current.set(key, meta);
+        setThinkingMeta(meta);
+        // A fresh selection uses the global default thinking level when the
+        // model supports it, otherwise its lowest level.
+        setThinking((prev) => (prev === '' ? freshThinkingLevel(meta) : prev));
+      })
+      .catch(() => {
+        if (active) setThinkingMeta(null);
+      })
+      .finally(() => {
+        if (active) setThinkingLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [providerId, model, defaultThinking]);
+  // The selectable levels: published levels (with 'none' folded into Off),
+  // otherwise a single On.
+  const thinkingOptions = useMemo(() => {
+    if (!thinkingMeta) return [] as string[];
+    const levels = thinkingMeta.levels.filter((l) => l !== 'none');
+    if (levels.length > 0) return levels;
+    return ['on'];
+  }, [thinkingMeta]);
+  // Off sends nothing, unless the model spells it 'none' (OpenAI) — then it's
+  // sent explicitly, because those models require reasoning_effort to be set.
+  const thinkingOffValue = thinkingMeta?.levels.includes('none') ? 'none' : '';
+  const thinkingOffSupported = (thinkingMeta?.off ?? false) || thinkingOffValue !== '';
+  // The level actually sent: 'off' sends nothing (or 'none'), otherwise the
+  // selection when it is one of the model's options.
+  const thinkingEffort =
+    thinking === 'off' ? thinkingOffValue : thinkingOptions.includes(thinking) ? thinking : '';
+  // What the button/popup show: the current selection, with Off standing in
+  // for "unset" when the model supports turning thinking off.
+  const thinkingDisplay =
+    thinking === 'off' || (thinkingEffort === '' && thinkingMeta?.off)
+      ? 'off'
+      : thinkingEffort || '';
+  // Button colors escalate with the level (low = green … max = red).
+  const thinkingColor =
+    thinkingDisplay === 'off' || thinkingDisplay === ''
+      ? { text: 'text-dim', border: 'border-border' }
+      : (THINKING_LEVEL_COLORS[thinkingDisplay] ?? { text: 'text-accent', border: 'border-accent/60' });
+  const thinkingLabel =
+    thinkingDisplay === 'off' ? 'Off' : thinkingDisplay === 'on' ? 'On' : thinkingDisplay;
+  // Show the button while a new model's options are still loading, with a
+  // placeholder instead of a wrong value.
+  const showThinking = thinkingLoading || thinkingOptions.length > 0;
 
   const modelOverride = model.trim() || undefined;
   const providerOverride = providerId || undefined;
@@ -872,7 +1127,7 @@ export default function ChatPane({
         if (m.role === 'tool') {
           const name = m.tool ? parseToolName(m.tool) : 'tool';
           // Pure success acks ({"ok":true,...} with no payload) are noise —
-          // the call chip and its diff already tell the story. Failures and
+          // the call chip already tells the story. Failures and
           // output-bearing results (read_file, run_command, …) stay.
           let noise = false;
           try {
@@ -909,7 +1164,17 @@ export default function ChatPane({
             usage: m.usage ? { ...m.usage, model: m.model || m.usage.model } : undefined,
           };
           const calls = m.tool ? parseToolCalls(m.tool) : null;
-          if (calls) item.toolCalls = calls;
+          if (calls) {
+            // set_todos repeats are pure progress noise — only the first call
+            // of a message is worth a chip.
+            let seenTodos = false;
+            item.toolCalls = calls.filter((c) => {
+              if (c.name !== 'set_todos') return true;
+              if (seenTodos) return false;
+              seenTodos = true;
+              return true;
+            });
+          }
           mapped.push(item);
         } else if (m.role === 'user') {
           mapped.push({
@@ -986,29 +1251,59 @@ export default function ChatPane({
   // the bottom — otherwise reading history during a stream gets yanked around.
   const nearBottomRef = useRef(true);
   const [showJump, setShowJump] = useState(false);
-  // Minimap: toggleable dot strip with one dot per user message; the dot for
-  // the message nearest the viewport top is lit, and dragging along the strip
-  // scrubs through the thread.
+  // Minimap: a dot strip with one dot per viewport "screen" of the thread
+  // (messages are grouped by the screen their top falls into), so the strip
+  // stays short on long threads and dots remain circles. The dot for the
+  // message nearest the viewport top is lit, and dragging along the strip
+  // scrubs. It fades out on any interaction outside the strip or its toggle.
   const [mapOpen, setMapOpen] = useState(false);
-  const [currentKey, setCurrentKey] = useState<string | null>(null);
+  const [buckets, setBuckets] = useState<{ key: string; start: number }[]>([]);
+  const [currentDot, setCurrentDot] = useState(-1);
+  const [dotSize, setDotSize] = useState(10);
   const stripRef = useRef<HTMLDivElement>(null);
-  const userKeysRef = useRef<string[]>([]);
+  const bucketRef = useRef<{ key: string }[]>([]);
   const updateCurrent = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
     const keys: string[] = [];
+    const tops: number[] = [];
     for (const it of itemsRef.current) {
-      if (it.kind === 'msg' && it.role === 'user') keys.push(it.key);
+      if (it.kind !== 'msg' || it.role !== 'user') continue;
+      keys.push(it.key);
+      const row = el.querySelector(`[data-msg-key="${CSS.escape(it.key)}"]`) as HTMLElement | null;
+      tops.push(row ? row.offsetTop : -1);
     }
-    userKeysRef.current = keys;
-    if (keys.length === 0) return;
-    let current = keys[0];
-    for (const k of keys) {
-      const row = el.querySelector(`[data-msg-key="${CSS.escape(k)}"]`) as HTMLElement | null;
-      if (row && row.offsetTop <= el.scrollTop + 80) current = k;
-      else break;
+    if (keys.length === 0) {
+      setBuckets([]);
+      setCurrentDot(-1);
+      return;
     }
-    setCurrentKey(current);
+    // Group messages by the viewport bucket their top falls into.
+    const h = Math.max(1, el.clientHeight);
+    const grouped: { key: string; start: number }[] = [];
+    const dotOf: number[] = [];
+    let lastBucket = -1;
+    for (let i = 0; i < keys.length; i++) {
+      const b = tops[i] >= 0 ? Math.floor(tops[i] / h) : 0;
+      if (b !== lastBucket) {
+        lastBucket = b;
+        grouped.push({ key: keys[i], start: i });
+      }
+      dotOf.push(grouped.length - 1);
+    }
+    bucketRef.current = grouped;
+    setBuckets(grouped);
+    const stripH = stripRef.current?.clientHeight ?? 0;
+    setDotSize(Math.min(10, Math.max(4, ((stripH - 24) / grouped.length) * 0.8)));
+    // The dot for the message nearest the viewport top is lit; at the very
+    // bottom the last message can sit below the tracking line — light its
+    // dot anyway.
+    const nearBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 2;
+    let currentIdx = 0;
+    for (let i = 0; i < keys.length; i++) {
+      if (nearBottom || (tops[i] >= 0 && tops[i] <= el.scrollTop + 80)) currentIdx = i;
+    }
+    setCurrentDot(dotOf[currentIdx]);
   }, []);
   const onScroll = useCallback(() => {
     const el = scrollRef.current;
@@ -1023,6 +1318,19 @@ export default function ChatPane({
     const raf = requestAnimationFrame(updateCurrent);
     return () => cancelAnimationFrame(raf);
   }, [items, mapOpen, updateCurrent]);
+  // Fade out on interaction anywhere else (capture, so it fires before the
+  // target's own handler). The toggle button and the strip itself are exempt.
+  useEffect(() => {
+    if (!mapOpen) return;
+    const onDown = (e: PointerEvent) => {
+      const t = e.target as Node;
+      if (stripRef.current?.contains(t)) return;
+      if (t instanceof Element && t.closest('[data-map-toggle]')) return;
+      setMapOpen(false);
+    };
+    document.addEventListener('pointerdown', onDown, true);
+    return () => document.removeEventListener('pointerdown', onDown, true);
+  }, [mapOpen]);
   const jumpTo = useCallback((key: string, smooth = true) => {
     const sc = scrollRef.current;
     const row = sc?.querySelector(`[data-msg-key="${CSS.escape(key)}"]`) as HTMLElement | null;
@@ -1030,14 +1338,15 @@ export default function ChatPane({
     // block:'start' would park the message under the top fade — leave room.
     sc.scrollTo({ top: Math.max(0, row.offsetTop - 72), behavior: smooth ? 'smooth' : 'auto' });
   }, []);
-  // Scrubbing: map a pointer Y on the strip to a dot index and jump there.
+  // Scrubbing: map a pointer Y on the strip to a dot (screen bucket) and jump
+  // to that bucket's first message.
   const scrubTo = useCallback(
     (clientY: number) => {
       const rect = stripRef.current?.getBoundingClientRect();
-      const keys = userKeysRef.current;
-      if (!rect || keys.length === 0) return;
+      const buckets = bucketRef.current;
+      if (!rect || buckets.length === 0) return;
       const ratio = Math.min(0.999, Math.max(0, (clientY - rect.top) / rect.height));
-      jumpTo(keys[Math.floor(ratio * keys.length)], false);
+      jumpTo(buckets[Math.floor(ratio * buckets.length)].key, false);
     },
     [jumpTo],
   );
@@ -1315,14 +1624,29 @@ export default function ChatPane({
         streamChat(
           projectId,
           trimmed,
-          { model: modelOverride, providerId: providerOverride, attachments: atts },
+          {
+            model: modelOverride,
+            providerId: providerOverride,
+            attachments: atts,
+            thinking: thinkingEffort || undefined,
+          },
           handleEvent,
           signal,
         ),
       );
     },
-    [streaming, llmReady, projectId, modelOverride, providerOverride, handleEvent, run, update, attachments],
+    [streaming, llmReady, projectId, modelOverride, providerOverride, handleEvent, run, update, attachments, thinkingEffort],
   );
+
+  // Auto-send the New project dialog's "what do you want to create?"
+  // description once the initial history and model selection are ready.
+  const initialSentRef = useRef(false);
+  useEffect(() => {
+    if (!initialPrompt || initialSentRef.current) return;
+    if (loading || !llmReady || !modelOverride) return;
+    initialSentRef.current = true;
+    sendText(initialPrompt);
+  }, [initialPrompt, loading, llmReady, modelOverride, sendText]);
 
   const addFiles = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
@@ -1562,10 +1886,21 @@ export default function ChatPane({
       toolStackRef.current = {};
       assistantKeyRef.current = null;
       void run((signal) =>
-        streamChat(projectId, trimmed, { model: modelOverride, providerId: providerOverride, editMessageId: id }, handleEvent, signal),
+        streamChat(
+          projectId,
+          trimmed,
+          {
+            model: modelOverride,
+            providerId: providerOverride,
+            editMessageId: id,
+            thinking: thinkingEffort || undefined,
+          },
+          handleEvent,
+          signal,
+        ),
       );
     },
-    [streaming, llmReady, projectId, modelOverride, providerOverride, handleEvent, run, update],
+    [streaming, llmReady, projectId, modelOverride, providerOverride, handleEvent, run, update, thinkingEffort],
   );
 
   // Rewind/revert: cut the thread back to a chosen message (drops everything
@@ -1582,6 +1917,20 @@ export default function ChatPane({
       }
     },
     [projectId, load],
+  );
+
+  // Rewinds immediately, or opens the approval dialog when the setting
+  // requires one.
+  const [rewindTarget, setRewindTarget] = useState<{ key: string; text: string } | null>(null);
+  const requestRewind = useCallback(
+    (key: string, text: string) => {
+      if (rewindApproval) {
+        setRewindTarget({ key, text });
+      } else {
+        void rewindTo(key);
+      }
+    },
+    [rewindApproval, rewindTo],
   );
 
   const stop = () => abortRef.current?.abort();
@@ -1651,10 +2000,17 @@ export default function ChatPane({
   // layout (top button row in the corners, text field below at full width).
   const plusButton = (
     <IconButton
-      onClick={() => setPlusOpen((o) => !o)}
+      onClick={() => {
+        // Reopening the + menu dismisses any sub-menu first.
+        setTodosOpen(false);
+        setThinkingOpen(false);
+        setPlusOpen((o) => !o);
+      }}
       aria-label="More actions"
       title="More actions"
-      className={`h-8! w-8! shrink-0 md:h-9! md:w-9! ${plusOpen ? 'bg-border text-text' : ''}`}
+      className={`relative z-30 h-8! w-8! shrink-0 md:h-9! md:w-9! ${
+        plusOpen ? 'bg-border text-text' : ''
+      }`}
     >
       <IconPlus className="h-4 w-4" />
     </IconButton>
@@ -1698,10 +2054,16 @@ export default function ChatPane({
   );
   const tasksButton = todos.length > 0 && (
     <IconButton
-      onClick={() => setTodosOpen(true)}
-      aria-label="Tasks"
-      title={`Tasks (${todos.filter((t) => !t.done).length} left)`}
-      className="h-8! w-8! shrink-0 md:h-9! md:w-9!"
+      onClick={() => {
+        setPlusOpen(false);
+        setThinkingOpen(false);
+        setTodosOpen((o) => !o);
+      }}
+      aria-label="Todos"
+      title={`Todos (${todos.filter((t) => !t.done).length} left)`}
+      className={`relative z-30 h-8! w-8! shrink-0 md:h-9! md:w-9! ${
+        todosOpen ? 'bg-border text-text' : ''
+      }`}
     >
       <IconCheck className="h-4 w-4" />
     </IconButton>
@@ -1714,6 +2076,26 @@ export default function ChatPane({
       className="h-8! w-8! shrink-0 md:h-9! md:w-9!"
     >
       <IconSquare className="h-4 w-4" />
+    </IconButton>
+  );
+  // Compact thinking toggle for the expanded composer row (the header shows
+  // the level as text instead). Mirrors the todos button: toggles, sits above
+  // the popup backdrop, and lights up while its popup is open.
+  const thinkingIconButton = showThinking && (
+    <IconButton
+      disabled={thinkingLoading}
+      onClick={() => {
+        setPlusOpen(false);
+        setTodosOpen(false);
+        setThinkingOpen((o) => !o);
+      }}
+      aria-label="Thinking level"
+      title={`Thinking: ${thinkingLoading ? '…' : thinkingLabel || 'off'} — click to change`}
+      className={`relative z-30 h-8! w-8! shrink-0 md:h-9! md:w-9! ${
+        thinkingOpen ? 'bg-border' : ''
+      } ${thinkingColor.text}`}
+    >
+      <IconBrain className={`h-4 w-4 ${thinkingLoading ? 'animate-spin' : ''}`} />
     </IconButton>
   );
   const sendButton = (
@@ -1820,20 +2202,39 @@ export default function ChatPane({
               </span>
               <IconChevronDown className="h-3.5 w-3.5 shrink-0 text-faint" />
             </button>
+            {showThinking && (
+              <button
+                type="button"
+                disabled={thinkingLoading}
+                onClick={() => {
+                  setPlusOpen(false);
+                  setTodosOpen(false);
+                  setThinkingOpen(true);
+                }}
+                aria-label="Thinking level"
+                title={`Thinking: ${thinkingLoading ? '…' : thinkingLabel || 'off'} — click to change`}
+                className={`flex min-h-[36px] shrink-0 items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors hover:text-text disabled:cursor-not-allowed disabled:opacity-60 ${thinkingColor.border} ${thinkingColor.text}`}
+              >
+                <IconBrain
+                  className={`h-3.5 w-3.5 shrink-0 ${thinkingLoading ? 'animate-spin' : ''}`}
+                />
+                {!thinkingLoading && <span>{thinkingLabel || 'Off'}</span>}
+              </button>
+            )}
             <button
               type="button"
               onClick={() => openTools('perms')}
               aria-label="Permission mode"
               title={`${permissionMeta(permissionMode).title} — click to change`}
-              className={`flex min-h-[36px] shrink-0 items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors hover:text-text ${permissionMeta(permissionMode).badge}`}
+              className={`flex min-h-[36px] shrink-0 items-center rounded-md border px-2.5 py-1 transition-colors hover:text-text ${permissionMeta(permissionMode).badge}`}
             >
               <IconLock className="h-3.5 w-3.5 shrink-0" />
-              {permissionMeta(permissionMode).short}
             </button>
             {isDesktop && toolsButton}
             {isDesktop && tasksButton}
             {userKeys.length > 1 && (
               <IconButton
+                data-map-toggle
                 onClick={() => setMapOpen((o) => !o)}
                 aria-label="Toggle message map"
                 title="Message map"
@@ -1962,7 +2363,7 @@ export default function ChatPane({
                   turnEnd={turnEndKeys.has(it.key)}
                   validTag={validTag}
                   onEdit={editUserMessage}
-                  onRewind={rewindTo}
+                  onRewind={requestRewind}
                   onRegenerate={regenerate}
                   onEditStart={setItemEditing}
                   onImageClick={openLightbox}
@@ -1972,7 +2373,7 @@ export default function ChatPane({
           </div>
         )}
       </div>
-      {mapOpen && userKeys.length > 1 && (
+      {userKeys.length > 1 && (
         <div
           ref={stripRef}
           onPointerDown={(e) => {
@@ -1982,70 +2383,28 @@ export default function ChatPane({
           onPointerMove={(e) => {
             if (e.buttons > 0) scrubTo(e.clientY);
           }}
-          className="absolute bottom-4 right-2 top-4 z-10 flex touch-none flex-col items-center justify-between overflow-hidden rounded-full border border-border bg-bg/85 px-2 py-3 backdrop-blur"
+          className={`absolute bottom-4 right-2 top-4 z-10 w-7 touch-none overflow-hidden rounded-full border border-border bg-bg/85 px-2 py-3 shadow-xl shadow-black/40 backdrop-blur transition-opacity duration-200 ${
+            mapOpen ? 'opacity-100' : 'pointer-events-none opacity-0'
+          }`}
         >
-          {userKeys.map((key, i) => (
-            <button
-              key={key}
-              type="button"
-              onClick={() => jumpTo(key)}
-              aria-label={`Jump to your message ${i + 1}`}
-              title={`Jump to your message ${i + 1}`}
-              className={`h-2.5 w-2.5 shrink-0 rounded-full transition-all ${
-                currentKey === key
-                  ? 'scale-125 bg-accent'
-                  : 'bg-border-strong hover:bg-subtle'
-              }`}
-            />
-          ))}
+          <div className="flex h-full flex-col items-center justify-between">
+            {buckets.map((b, i) => (
+              <button
+                key={b.key}
+                type="button"
+                onClick={() => jumpTo(b.key)}
+                aria-label={`Jump to your message ${b.start + 1}`}
+                title={`Jump to your message ${b.start + 1}`}
+                style={{ width: dotSize, height: dotSize }}
+                className={`shrink-0 rounded-full transition-all ${
+                  currentDot === i ? 'scale-125 bg-accent' : 'bg-border-strong hover:bg-subtle'
+                }`}
+              />
+            ))}
+          </div>
         </div>
       )}
       </div>
-
-      {todosOpen && todos.length > 0 && (
-        <>
-          <button
-            type="button"
-            aria-label="Close tasks"
-            className="fixed inset-0 z-20 cursor-default"
-            onClick={() => setTodosOpen(false)}
-          />
-          <div
-            className={`absolute z-30 w-64 overflow-hidden rounded-lg border border-border bg-surface shadow-lg ${
-              expanded ? 'left-2 top-14' : isDesktop ? 'right-2 top-14' : 'bottom-24 left-2'
-            }`}
-          >
-            <div className="border-b border-border px-3 py-2 text-xs font-medium text-subtle">
-              Tasks
-              <span className="ml-1.5 font-normal text-faint">
-                {todos.filter((t) => !t.done).length} left
-              </span>
-            </div>
-            <ul className="fade-y max-h-64 overflow-y-auto overscroll-contain px-3 py-2">
-              {todos.map((t, i) => (
-                <li key={i} className="flex items-start gap-2.5 py-1">
-                  <span
-                    className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
-                      t.done
-                        ? 'border-emerald-500 bg-emerald-500 text-emerald-50'
-                        : 'border-border-strong'
-                    }`}
-                  >
-                    {t.done && <IconCheck className="h-3 w-3" />}
-                  </span>
-                  <span
-                    className={`min-w-0 text-sm ${
-                      t.done ? 'text-faint line-through' : 'text-text'
-                    }`}
-                  >
-                    {t.title}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </>
-      )}
 
       {showJump && (
         <div className="relative z-10 flex h-0 justify-center overflow-visible">
@@ -2062,7 +2421,7 @@ export default function ChatPane({
       )}
 
       {localStatus && <div className="px-3 py-1 text-center text-xs text-subtle">{localStatus}</div>}
-      {llmReady ? (
+      {llmReady === true ? (
         <div
           className={
             expanded
@@ -2136,9 +2495,26 @@ export default function ChatPane({
                       className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm text-text transition-colors hover:bg-border"
                     >
                       <IconCheck className="h-4 w-4 shrink-0 text-dim" />
-                      Tasks ({todos.filter((t) => !t.done).length} left)
+                      Todos ({todos.filter((t) => !t.done).length} left)
                     </button>
                   )}
+                  <button
+                    type="button"
+                    disabled={thinkingOptions.length === 0}
+                    title={
+                      thinkingOptions.length === 0
+                        ? "This model doesn't support thinking levels"
+                        : 'Model thinking'
+                    }
+                    onClick={() => {
+                      setPlusOpen(false);
+                      setThinkingOpen(true);
+                    }}
+                    className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm text-text transition-colors hover:bg-border disabled:opacity-40"
+                  >
+                    <IconBrain className="h-4 w-4 shrink-0 text-dim" />
+                    Model thinking
+                  </button>
                   {!isDesktop && (
                     <button
                       type="button"
@@ -2170,6 +2546,106 @@ export default function ChatPane({
                 </div>
               </>
             )}
+            {todosOpen && todos.length > 0 && (
+              <>
+                <button
+                  type="button"
+                  aria-label="Close tasks"
+                  className="fixed inset-0 z-20 cursor-default"
+                  onClick={() => setTodosOpen(false)}
+                />
+                <div
+                  className={`absolute z-30 w-80 overflow-hidden rounded-lg border bg-surface ${
+                    expanded
+                      ? 'bottom-2 left-2 border-border-strong shadow-[0_0_24px_rgba(0,0,0,0.7)]'
+                      : 'bottom-full left-2 mb-1 border-border shadow-lg'
+                  }`}
+                >
+                  <div className="border-b border-border px-3 py-2 text-xs font-medium text-subtle">
+                    Todos
+                    <span className="ml-1.5 font-normal text-faint">
+                      {todos.filter((t) => !t.done).length} left
+                    </span>
+                  </div>
+                  <ul className="fade-y max-h-64 overflow-y-auto overscroll-contain px-3 py-2">
+                    {todos.map((t, i) => (
+                      <li key={i} className="flex items-start gap-2.5 py-1">
+                        <span
+                          className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
+                            t.done
+                              ? 'border-emerald-500 bg-emerald-500 text-emerald-50'
+                              : 'border-border-strong'
+                          }`}
+                        >
+                          {t.done && <IconCheck className="h-3 w-3" />}
+                        </span>
+                        <span
+                          className={`min-w-0 text-sm ${
+                            t.done ? 'text-faint line-through' : 'text-text'
+                          }`}
+                        >
+                          {t.title}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </>
+            )}
+
+            {thinkingOpen && (
+              <>
+                <button
+                  type="button"
+                  aria-label="Close thinking"
+                  className="fixed inset-0 z-20 cursor-default"
+                  onClick={() => setThinkingOpen(false)}
+                />
+                <div
+                  className={`absolute z-30 w-64 overflow-hidden rounded-lg border bg-surface ${
+                    expanded
+                      ? 'bottom-2 left-2 border-border-strong shadow-[0_0_24px_rgba(0,0,0,0.7)]'
+                      : 'bottom-full left-2 mb-1 border-border shadow-lg'
+                  }`}
+                >
+                  <div className="border-b border-border px-3 py-2 text-xs font-medium text-subtle">
+                    Model thinking
+                  </div>
+                  <div className="px-1.5 py-1.5">
+                    {thinkingOptions.length === 0 ? (
+                      <p className="px-2 py-1.5 text-xs text-faint">
+                        This model doesn&apos;t support thinking levels.
+                      </p>
+                    ) : (
+                      (thinkingOffSupported ? ['off', ...thinkingOptions] : thinkingOptions).map(
+                        (opt) => (
+                          <button
+                            key={opt}
+                            type="button"
+                            onClick={() => {
+                              setThinking(opt);
+                              persistSelection(providerId, model, opt);
+                              setThinkingOpen(false);
+                            }}
+                            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-dim transition-colors hover:bg-border hover:text-text"
+                          >
+                            <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center">
+                              {thinkingDisplay === opt && (
+                                <IconCheck className="h-3.5 w-3.5 text-accent" />
+                              )}
+                            </span>
+                            <span className="capitalize">
+                              {opt === 'off' ? 'Off' : opt === 'on' ? 'On' : opt}
+                            </span>
+                          </button>
+                        ),
+                      )
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
+
             {(attachments.length > 0 || attachError) && (
               <div className="flex flex-wrap items-center gap-1.5">
                 {attachments.map((a, i) => (
@@ -2192,50 +2668,62 @@ export default function ChatPane({
                 {attachError && <span className="text-xs text-red-400">{attachError}</span>}
               </div>
             )}
-            <div
-              className={`relative flex min-w-0 gap-1.5 overflow-hidden rounded-xl border border-border-strong bg-surface p-1.5 transition-colors focus-within:border-subtle md:gap-2 md:p-2 ${
-                streaming ? 'v1-working' : ''
-              } ${expanded ? 'min-h-0 flex-1 flex-col' : 'items-end'}`}
-            >
-              <input
-                ref={fileRef}
-                type="file"
-                multiple
-                className="hidden"
-                onChange={(e) => {
-                  void addFiles(e.target.files);
-                  e.target.value = '';
-                }}
-              />
+            {/* The track is a sibling of the clipped composer box so nothing
+                masks it (see TrackBorder). */}
+            <div className={`relative ${expanded ? 'flex min-h-0 flex-1 flex-col' : ''}`}>
+              <div
+                className={`flex min-w-0 gap-1.5 overflow-hidden rounded-xl border border-border-strong bg-surface p-1.5 transition-colors focus-within:border-subtle md:gap-2 md:p-2 ${
+                  expanded ? 'min-h-0 flex-1 flex-col' : 'items-end'
+                }`}
+              >
+                <input
+                  ref={fileRef}
+                  type="file"
+                  multiple
+                  className="hidden"
+                  onChange={(e) => {
+                    void addFiles(e.target.files);
+                    e.target.value = '';
+                  }}
+                />
+                {expanded ? (
+                  <>
+                    <div className="flex shrink-0 items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        {toolsButton}
+                        {attachButton}
+                        {tasksButton}
+                        {thinkingIconButton}
+                        {collapseButton}
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        {stopButton}
+                        {sendButton}
+                      </div>
+                    </div>
+                    {textField}
+                  </>
+                ) : (
+                  <>
+                    {isDesktop ? (
+                      <>
+                        {attachButton}
+                        {plusButton}
+                      </>
+                    ) : (
+                      plusButton
+                    )}
+                    {textField}
+                    {stopButton}
+                    {sendButton}
+                  </>
+                )}
+              </div>
               {streaming && <TrackBorder ts={track} id="v1-track-grad" />}
-              {expanded ? (
-                <>
-                  <div className="flex shrink-0 items-center justify-between">
-                    <div className="flex items-center gap-1.5">
-                      {toolsButton}
-                      {attachButton}
-                      {tasksButton}
-                      {collapseButton}
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      {stopButton}
-                      {sendButton}
-                    </div>
-                  </div>
-                  {textField}
-                </>
-              ) : (
-                <>
-                  {isDesktop ? attachButton : plusButton}
-                  {textField}
-                  {stopButton}
-                  {sendButton}
-                </>
-              )}
             </div>
           </div>
         </div>
-      ) : (
+      ) : llmReady === false ? (
         <div className="shrink-0 border-t border-border p-2.5 md:p-3">
           <div className="mx-auto flex max-w-2xl flex-col items-center gap-3 rounded-xl border border-border-strong bg-surface px-4 py-5 text-center">
             <p className="text-sm text-text">
@@ -2247,6 +2735,13 @@ export default function ChatPane({
             >
               Open Settings
             </Button>
+          </div>
+        </div>
+      ) : (
+        <div className="shrink-0 border-t border-border p-2.5 md:p-3">
+          <div className="mx-auto flex max-w-2xl items-center justify-center gap-2 rounded-xl border border-border-strong bg-surface px-4 py-5 text-sm text-dim">
+            <Spinner className="h-4 w-4" />
+            Loading…
           </div>
         </div>
       )}
@@ -2283,6 +2778,37 @@ export default function ChatPane({
         onProviderChange={changeProvider}
         onModelChange={changeModel}
       />
+
+      <Dialog
+        open={rewindTarget !== null}
+        onClose={() => setRewindTarget(null)}
+        title="Approve rewind"
+      >
+        <p className="text-sm text-dim">
+          Rewind the chat to{' '}
+          <span className="font-medium text-text">
+            &ldquo;{rewindTarget?.text.slice(0, 80)}
+            {rewindTarget && rewindTarget.text.length > 80 ? '…' : ''}&rdquo;
+          </span>
+          ? Everything after this message will be removed from the conversation. This cannot be
+          undone.
+        </p>
+        <div className="mt-4 flex justify-end gap-2">
+          <Button variant="ghost" onClick={() => setRewindTarget(null)}>
+            Cancel
+          </Button>
+          <Button
+            variant="danger"
+            onClick={() => {
+              const t = rewindTarget;
+              setRewindTarget(null);
+              if (t) void rewindTo(t.key);
+            }}
+          >
+            Rewind
+          </Button>
+        </div>
+      </Dialog>
 
       {lightbox && (
         <ImageLightbox url={lightbox.url} name={lightbox.name} onClose={() => setLightbox(null)} />

@@ -72,3 +72,31 @@ func Capture(ctx context.Context, url string) ([]byte, error) {
 	}
 	return png, nil
 }
+
+// RenderText navigates to url in a fresh tab and returns the rendered page's
+// HTML (document.documentElement.outerHTML) after the app has had a moment
+// to mount and hydrate — for extracting text from JS-rendered pages whose
+// static response carries no content.
+func RenderText(ctx context.Context, url string) (string, error) {
+	mu.Lock()
+	defer mu.Unlock()
+	b, err := ensureBrowser()
+	if err != nil {
+		return "", fmt.Errorf("starting headless Chrome (set V1_CHROME_PATH to a Chrome/Chromium binary): %w", err)
+	}
+	tabCtx, cancel := chromedp.NewContext(b)
+	defer cancel()
+	ctx, cancelTimeout := context.WithTimeout(tabCtx, 30*time.Second)
+	defer cancelTimeout()
+	var html string
+	if err := chromedp.Run(ctx,
+		chromedp.EmulateViewport(1280, 800),
+		chromedp.Navigate(url),
+		chromedp.WaitReady("body", chromedp.ByQuery),
+		chromedp.Sleep(2000*time.Millisecond),
+		chromedp.Evaluate(`document.documentElement.outerHTML`, &html),
+	); err != nil {
+		return "", err
+	}
+	return html, nil
+}

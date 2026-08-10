@@ -179,6 +179,12 @@ export const IconChevronDown = (p: SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
+export const IconChevronUp = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}>
+    <path d="m18 15-6-6-6 6" />
+  </svg>
+);
+
 export const IconChevronRight = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}>
     <path d="m9 18 6-6-6-6" />
@@ -212,6 +218,33 @@ export const IconDots = (p: SVGProps<SVGSVGElement>) => (
     <circle cx="12" cy="5" r="1" fill="currentColor" />
     <circle cx="12" cy="12" r="1" fill="currentColor" />
     <circle cx="12" cy="19" r="1" fill="currentColor" />
+  </svg>
+);
+
+export const IconGrip = (p: SVGProps<SVGSVGElement>) => (
+  <svg viewBox="0 0 24 24" fill="currentColor" stroke="none" {...p}>
+    <circle cx="9" cy="6" r="1.6" />
+    <circle cx="15" cy="6" r="1.6" />
+    <circle cx="9" cy="12" r="1.6" />
+    <circle cx="15" cy="12" r="1.6" />
+    <circle cx="9" cy="18" r="1.6" />
+    <circle cx="15" cy="18" r="1.6" />
+  </svg>
+);
+
+export const IconEye = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}>
+    <path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z" />
+    <circle cx="12" cy="12" r="2.6" />
+  </svg>
+);
+
+export const IconEyeOff = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}>
+    <path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z" />
+    <path d="M10.6 6.3A8.6 8.6 0 0 1 12 5.5c6 0 9.5 6.5 9.5 6.5a15.6 15.6 0 0 1-2.1 2.9M6.7 6.7A15.6 15.6 0 0 0 2.5 12S6 18.5 12 18.5c1.5 0 2.9-.4 4.2-1" />
+    <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" />
+    <path d="m4 4 16 16" />
   </svg>
 );
 

@@ -103,20 +103,28 @@ func (s *Server) handleListProjects(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Name     string `json:"name"`
-		Template string `json:"template"`
+		Name        string `json:"name"`
+		Template    string `json:"template"`
+		Description string `json:"description"`
 	}
 	if !decodeJSON(w, r, &body) {
 		return
 	}
 	name := strings.TrimSpace(body.Name)
 	if name == "" {
-		writeError(w, http.StatusBadRequest, "name is required")
+		name = deriveName(body.Description)
+	}
+	if name == "" {
+		writeError(w, http.StatusBadRequest, "name or description is required")
 		return
 	}
 	template := body.Template
 	if template == "" {
-		template = "vite-react"
+		if body.Description != "" {
+			template = "empty"
+		} else {
+			template = "vite-react"
+		}
 	}
 	id := store.NewID()
 	dir := filepath.Join(s.cfg.DataDir, "projects", id)
@@ -129,13 +137,28 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	p := &store.Project{ID: id, Name: name, Path: dir}
+	p := &store.Project{ID: id, Name: name, Path: dir, Instructions: body.Description}
 	if err := s.st.CreateProject(p); err != nil {
 		os.RemoveAll(dir)
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusCreated, toProjectJSON(p))
+}
+
+// deriveName turns a "what do you want to create?" description into a short
+// project name: the first line, capped at 48 runes.
+func deriveName(description string) string {
+	line := description
+	if i := strings.IndexAny(line, "\r\n"); i >= 0 {
+		line = line[:i]
+	}
+	line = strings.TrimSpace(line)
+	r := []rune(line)
+	if len(r) > 48 {
+		return string(r[:48]) + "…"
+	}
+	return line
 }
 
 func (s *Server) handleGetProject(w http.ResponseWriter, r *http.Request) {

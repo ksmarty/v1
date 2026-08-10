@@ -120,6 +120,7 @@ func (s *Server) routes(m *http.ServeMux) {
 
 	m.HandleFunc("GET /api/providers", s.handleListProviders)
 	m.HandleFunc("POST /api/providers/refresh", s.handleRefreshProviders)
+	m.HandleFunc("GET /api/providers/thinking", s.handleProviderThinking)
 	m.HandleFunc("GET /api/providers/search", s.handleSearchProviders)
 	m.HandleFunc("POST /api/providers/add", s.handleAddProvider)
 	m.HandleFunc("POST /api/providers/remove", s.handleRemoveProvider)
@@ -248,6 +249,10 @@ const (
 	keyMCP                 = "mcp_servers"
 	keySkills              = "skills_installed"
 	keyPermissionMode      = "permission_mode"
+	keyRewindApproval      = "rewind_approval"
+	keyThinkingDefault     = "thinking_default"
+	keyToonEnabled         = "toon_enabled"
+	keySystemPrompt        = "system_prompt"
 )
 
 // oidcEnabled reports whether the OIDC flow is active: it needs auth enabled
@@ -327,6 +332,41 @@ func (s *Server) githubToken() string {
 		return v
 	}
 	return s.cfg.GitHubToken
+}
+
+// globalSystemPrompt resolves the user's global system prompt (sqlite
+// overrides env).
+func (s *Server) globalSystemPrompt() string {
+	if v, ok, _ := s.st.GetSetting(keySystemPrompt); ok && v != "" {
+		return v
+	}
+	return s.cfg.SystemPrompt
+}
+
+// rewindApproval reports whether rewinding chat history requires approval.
+func (s *Server) rewindApproval() bool {
+	v, ok, _ := s.st.GetSetting(keyRewindApproval)
+	return ok && v == "1"
+}
+
+// defaultThinking resolves the global default thinking level ('' = the
+// model's lowest level).
+func (s *Server) defaultThinking() string {
+	v, ok, _ := s.st.GetSetting(keyThinkingDefault)
+	if !ok || v == "" {
+		return ""
+	}
+	return v
+}
+
+// toonEnabled reports whether tool results are TOON-encoded for the model.
+// Enabled by default; only an explicit "0" disables it.
+func (s *Server) toonEnabled() bool {
+	v, ok, _ := s.st.GetSetting(keyToonEnabled)
+	if !ok || v == "" {
+		return true
+	}
+	return v == "1"
 }
 
 // githubTokenSource reports how the current token got configured:

@@ -3,7 +3,11 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -127,5 +131,181 @@ func TestListFilesSkipsAndCaps(t *testing.T) {
 	}
 	if !strings.Contains(res, "src/") {
 		t.Fatalf("expected src/ in %q", res)
+	}
+}
+
+func TestSearchFilesRequiresQuery(t *testing.T) {
+	e := newTestExecutor(t)
+	if _, err := e.Execute(context.Background(), "search_files", `{}`); err == nil {
+		t.Fatal("expected error for missing query")
+	}
+}
+
+func TestDeleteAndMoveFile(t *testing.T) {
+	e := newTestExecutor(t)
+	if _, err := e.Execute(context.Background(), "write_file", `{"path":"sub/a.txt","content":"hello"}`); err != nil {
+		t.Fatal(err)
+	}
+	// Move to a new path whose parent directory does not exist yet.
+	if _, err := e.Execute(context.Background(), "move_file", `{"path":"sub/a.txt","newPath":"deep/place/b.txt"}`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(e.Root, "sub/a.txt")); !os.IsNotExist(err) {
+		t.Fatalf("source still exists after move")
+	}
+	if data, err := os.ReadFile(filepath.Join(e.Root, "deep/place/b.txt")); err != nil || string(data) != "hello" {
+		t.Fatalf("moved file = %q, err=%v", data, err)
+	}
+	// Move to the same path is rejected.
+	if _, err := e.Execute(context.Background(), "move_file", `{"path":"deep/place/b.txt","newPath":"deep/place/b.txt"}`); err == nil {
+		t.Fatal("expected error for moving onto itself")
+	}
+	// Traversal-looking paths are normalized into the workspace, never escape.
+	if _, err := e.Execute(context.Background(), "move_file", `{"path":"deep/place/b.txt","newPath":"../escape.txt"}`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(e.Root, "escape.txt")); err != nil {
+		t.Fatal("expected normalized destination inside the workspace")
+	}
+	// Delete the file.
+	if _, err := e.Execute(context.Background(), "delete_file", `{"path":"escape.txt"}`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(e.Root, "escape.txt")); !os.IsNotExist(err) {
+		t.Fatal("file still exists after delete")
+	}
+	// Deleting a missing file and a directory both error.
+	if _, err := e.Execute(context.Background(), "delete_file", `{"path":"escape.txt"}`); err == nil {
+		t.Fatal("expected error deleting a missing file")
+	}
+	if _, err := e.Execute(context.Background(), "delete_file", `{"path":"deep"}`); err == nil {
+		t.Fatal("expected error deleting a directory")
+	}
+}
+
+func TestFetchURLValidatesAndStrips(t *testing.T) {
+	e := newTestExecutor(t)
+	if _, err := e.Execute(context.Background(), "fetch_url", `{"url":"file:///etc/passwd"}`); err == nil {
+		t.Fatal("expected non-http URL to be rejected")
+	}
+	if _, err := e.Execute(context.Background(), "fetch_url", `{"url":"not a url"}`); err == nil {
+		t.Fatal("expected malformed URL to be rejected")
+	}
+	got := htmlToText(`<html><head><title>Test Page</title></head><body><h1>Title</h1><p>Hello <b>world</b> &amp; friends</p><ul><li>one</li><li>two</li></ul><pre>const x = 1;</pre><script>var y=1;</script></body></html>`)
+	for _, want := range []string{"Test Page", "Title", "Hello", "world", "& friends", "- one", "- two", "```", "const x = 1;"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("htmlToText = %q, missing %q", got, want)
+		}
+	}
+	if strings.Contains(got, "var y=1") {
+		t.Fatalf("script content leaked: %q", got)
+	}
+}
+
+func TestFetchURLRendersSPAShell(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte(`<html><head><title>App</title></head><body><div id="root"></div><script src="/app.js"></script></body></html>`))
+	}))
+	defer srv.Close()
+	calls := 0
+	e := newTestExecutor(t)
+	e.RenderPage = func(ctx context.Context, url string) (string, error) {
+		calls++
+		return `<html><body><h1>Rendered Title</h1><p>Content from the JS render.</p><pre>const x = 1;</pre></body></html>`, nil
+	}
+	res, err := e.Execute(context.Background(), "fetch_url", fmt.Sprintf(`{"url":%q}`, srv.URL))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 {
+		t.Fatalf("RenderPage calls = %d, want 1", calls)
+	}
+	for _, want := range []string{"Rendered Title", "Content from the JS render.", "```", "const x = 1;"} {
+		if !strings.Contains(res, want) {
+			t.Fatalf("result missing %q: %s", want, res)
+		}
+	}
+}
+
+func TestFetchURLSkipsRenderForStaticText(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte(`<html><body><h1>Static Page</h1><p>Plenty of server-rendered content here.</p></body></html>`))
+	}))
+	defer srv.Close()
+	calls := 0
+	e := newTestExecutor(t)
+	e.RenderPage = func(ctx context.Context, url string) (string, error) {
+		calls++
+		return "", nil
+	}
+	res, err := e.Execute(context.Background(), "fetch_url", fmt.Sprintf(`{"url":%q}`, srv.URL))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls != 0 {
+		t.Fatalf("RenderPage should not be called for static content, calls = %d", calls)
+	}
+	if !strings.Contains(res, "Static Page") {
+		t.Fatalf("result missing static content: %s", res)
+	}
+}
+
+func TestFetchURLRendersOnHTTPError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "challenge", http.StatusForbidden)
+	}))
+	defer srv.Close()
+	e := newTestExecutor(t)
+	e.RenderPage = func(ctx context.Context, url string) (string, error) {
+		return `<html><body><h1>Rendered Despite 403</h1></body></html>`, nil
+	}
+	res, err := e.Execute(context.Background(), "fetch_url", fmt.Sprintf(`{"url":%q}`, srv.URL))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(res, "Rendered Despite 403") {
+		t.Fatalf("result missing rendered content: %s", res)
+	}
+}
+
+func TestSearchFilesFallsBackToFdRg(t *testing.T) {
+	if _, err := exec.LookPath("fd"); err != nil {
+		t.Skip("fd not installed")
+	}
+	if _, err := exec.LookPath("rg"); err != nil {
+		t.Skip("rg not installed")
+	}
+	e := newTestExecutor(t)
+	os.MkdirAll(filepath.Join(e.Root, "src"), 0o755)
+	os.WriteFile(filepath.Join(e.Root, "src/button.tsx"), []byte("export function Button() {}\n"), 0o644)
+	os.WriteFile(filepath.Join(e.Root, "src/a.ts"), []byte("const x = 1\n"), 0o644)
+	res, err := e.searchFilesRgFd("Button", e.Root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var parsed struct {
+		Files   []string `json:"files"`
+		Matches []struct {
+			Path string `json:"path"`
+			Line int    `json:"line"`
+			Text string `json:"text"`
+		} `json:"matches"`
+	}
+	if err := json.Unmarshal([]byte(res), &parsed); err != nil {
+		t.Fatal(err)
+	}
+	if len(parsed.Files) == 0 || parsed.Files[0] != "src/button.tsx" {
+		t.Fatalf("files = %v", parsed.Files)
+	}
+	found := false
+	for _, m := range parsed.Matches {
+		if m.Path == "src/button.tsx" && m.Line == 1 && strings.Contains(m.Text, "Button") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected content match in src/button.tsx, got %+v", parsed.Matches)
 	}
 }

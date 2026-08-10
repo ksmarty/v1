@@ -57,7 +57,9 @@ type Client struct {
 	BaseURL string
 	APIKey  string
 	Model   string
-	HTTP    *http.Client
+	// ReasoningEffort is sent as reasoning_effort when set (thinking level).
+	ReasoningEffort string
+	HTTP            *http.Client
 }
 
 // NewClient creates a client for the given base URL, key and model.
@@ -188,6 +190,9 @@ func (c *Client) postStream(ctx context.Context, messages []Message, tools []Too
 		"model":    c.Model,
 		"messages": messages,
 		"stream":   true,
+	}
+	if c.ReasoningEffort != "" {
+		body["reasoning_effort"] = c.ReasoningEffort
 	}
 	if streamOptions {
 		body["stream_options"] = map[string]any{"include_usage": true}

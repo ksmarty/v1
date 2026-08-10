@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useLocation, useParams } from 'react-router-dom';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import { api } from '../api';
 import type { Project as ProjectType } from '../types';
 import { errMsg, getChatSide, getDebugHud } from '../utils';
 import { useMediaQuery } from '../hooks/useMediaQuery';
-import { Button, Center } from '../components/ui';
+import { Button, Center, Spinner } from '../components/ui';
 import { IconChat, IconChevronLeft, IconMonitor } from '../components/icons';
 import ChatPanel from '../components/ChatPanel';
 import PreviewPane from '../components/PreviewPane';
@@ -52,6 +52,9 @@ function DebugHud() {
 
 export default function Project() {
   const { id = '' } = useParams();
+  const location = useLocation();
+  // Description from the New project dialog, auto-sent as the first message.
+  const initialPrompt = (location.state as { prompt?: string } | null)?.prompt;
   const isDesktop = useMediaQuery('(min-width: 768px)');
   const [project, setProject] = useState<ProjectType | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -60,7 +63,7 @@ export default function Project() {
   const [previewRefreshKey, setPreviewRefreshKey] = useState(0);
   const [chatSide] = useState<'left' | 'right'>(() => getChatSide());
   const [debugHud] = useState(() => getDebugHud());
-  const [llmReady, setLlmReady] = useState(false);
+  const [llmReady, setLlmReady] = useState<boolean | null>(null);
 
   useEffect(() => {
     api
@@ -91,6 +94,17 @@ export default function Project() {
     );
   }
 
+  if (!project) {
+    return (
+      <Center>
+        <div className="flex flex-col items-center gap-3">
+          <Spinner className="h-6 w-6" />
+          <p className="text-sm text-dim">Loading project…</p>
+        </div>
+      </Center>
+    );
+  }
+
   const chatSidePanel = (
     <ChatPanel
       projectId={id}
@@ -100,6 +114,7 @@ export default function Project() {
       onCollapse={() => setChatCollapsed(true)}
       onPreviewRestart={() => setPreviewRefreshKey((k) => k + 1)}
       onProjectChange={setProject}
+      initialPrompt={initialPrompt}
     />
   );
 

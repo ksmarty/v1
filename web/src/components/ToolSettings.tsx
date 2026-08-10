@@ -181,6 +181,9 @@ function ToolSettings({
   const [permSaving, setPermSaving] = useState(false);
   const [permSaved, setPermSaved] = useState(false);
   const [permError, setPermError] = useState<string | null>(null);
+  // Rewind approval (deleting chat history)
+  const [rewindApproval, setRewindApproval] = useState(false);
+  const [savedRewind, setSavedRewind] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -189,6 +192,8 @@ function ToolSettings({
       setSkills(s.skills ?? []);
       setPermissionMode(s.permissionMode ?? 'ask');
       setSavedMode(s.permissionMode ?? 'ask');
+      setRewindApproval(s.rewindApproval ?? false);
+      setSavedRewind(s.rewindApproval ?? false);
       const byId: Record<string, MCPServerStatus> = {};
       for (const sv of st.servers) byId[sv.id] = sv;
       setStatus(byId);
@@ -324,9 +329,10 @@ function ToolSettings({
     setPermSaved(false);
     setPermError(null);
     try {
-      await api.updateSettings({ permissionMode });
+      await api.updateSettings({ permissionMode, rewindApproval });
       setPermSaved(true);
       setSavedMode(permissionMode);
+      setSavedRewind(rewindApproval);
       onPermissionSaved?.(permissionMode);
     } catch (err) {
       setPermError(errMsg(err));
@@ -627,11 +633,40 @@ function ToolSettings({
           );
         })}
       </div>
+      <label className="flex items-center gap-3 rounded-xl border border-border p-3">
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-medium text-text">
+            Require approval to rewind a chat
+          </span>
+          <span className="block text-xs leading-relaxed text-subtle">
+            Shows a confirmation prompt before rewinding to an earlier message, which deletes
+            everything after it from the conversation.
+          </span>
+        </span>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={rewindApproval}
+          onClick={() => {
+            setRewindApproval((v) => !v);
+            setPermSaved(false);
+          }}
+          className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${
+            rewindApproval ? 'bg-accent' : 'bg-border'
+          }`}
+        >
+          <span
+            className={`absolute top-0.5 h-4 w-4 rounded-full bg-bg transition-all ${
+              rewindApproval ? 'left-[18px]' : 'left-0.5'
+            }`}
+          />
+        </button>
+      </label>
       <SaveRow
         saving={permSaving}
         saved={permSaved}
         error={permError}
-        pulse={permissionMode !== savedMode}
+        pulse={permissionMode !== savedMode || rewindApproval !== savedRewind}
       />
     </form>
   );

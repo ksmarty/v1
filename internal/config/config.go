@@ -31,6 +31,7 @@ type Config struct {
 	MaxPreviews         int
 	ContextBudget       int
 	ContextThreshold    float64
+	SystemPrompt        string
 	Version             string
 	Commit              string
 }
@@ -106,5 +107,6 @@ func Load(version, commit string) Config {
 			c.ContextThreshold = n
 		}
 	}
+	c.SystemPrompt = os.Getenv("V1_SYSTEM_PROMPT")
 	return c
 }

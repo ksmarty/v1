@@ -38,6 +38,10 @@ export interface Settings {
   mcp: MCPServer[];
   skills: InstalledSkill[];
   permissionMode: PermissionMode;
+  rewindApproval: boolean;
+  defaultThinking: string;
+  toonEnabled: boolean;
+  systemPrompt: string;
   version: string;
   commit: string;
 }
@@ -80,6 +84,8 @@ export interface ProviderModel {
   name: string;
   /** Model accepts image input (vision) per models.dev. */
   imageInput?: boolean;
+  /** Thinking support per models.dev (reasoning models; levels and default when published). */
+  reasoning?: { effort?: boolean; levels?: string[]; default?: string };
 }
 
 export interface Provider {

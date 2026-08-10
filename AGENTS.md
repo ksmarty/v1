@@ -62,7 +62,12 @@ or `make dev`), then report: (1) the new stamped build version (`v1 <version>
   prompt each turn, browsable in the Memories tab); `ask_user` blocks the
   turn on a user question via the `askRegistry` (mirrors the permission
   pattern) and renders as an in-chat answer card; `screenshot_app` is
-  vision-gated (above).
+  vision-gated (above); `fetch_url` fetches web pages for the model
+  (HTML → text via `golang.org/x/net/html`).
+- Tool results are stored as JSON (the UI parses them) but re-encoded as
+  TOON (spec: toon-format/spec) when fed to the model — encoder in
+  `internal/agent/toon.go`, applied in `RunChat` history building. The model
+  is told about the format in the system prompt.
 - SQLite is accessed only through `internal/store`. Settings are key/value
   strings; env vars are fallbacks, sqlite overrides env. Prefix settings keys
   with a domain (`keyLLM...`, `keyGitHub...`).

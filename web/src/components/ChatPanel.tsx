@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import type { Project as ProjectType } from '../types';
+import { getChatTabLayout, type ChatTab } from '../utils';
 import ChatPane from './ChatPane';
 import FilesPane from './FilesPane';
 import TerminalPane from './TerminalPane';
@@ -20,8 +21,6 @@ import {
   IconSettings,
   IconTerminal,
 } from './icons';
-
-export type ChatTab = 'chat' | 'files' | 'terminal' | 'git' | 'memories' | 'project';
 
 const iconLinkClass =
   'inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-dim transition-colors hover:bg-border hover:text-text md:h-9 md:w-9';
@@ -43,21 +42,31 @@ export default function ChatPanel({
   onCollapse,
   onPreviewRestart,
   onProjectChange,
+  initialPrompt,
 }: {
   projectId: string;
   project: ProjectType | null;
-  llmReady: boolean;
+  /** null while the LLM configuration is still loading. */
+  llmReady: boolean | null;
   showCollapse: boolean;
   onCollapse: () => void;
   onPreviewRestart: () => void;
   onProjectChange: (p: ProjectType) => void;
+  /** Description from the New project dialog — auto-sent as the first message. */
+  initialPrompt?: string;
 }) {
-  const [tab, setTab] = useState<ChatTab>('chat');
+  const [tabLayout] = useState(() => getChatTabLayout());
+  // Tabs in the user's chosen order, minus the ones they excluded.
+  const tabs = TABS.filter((t) => !tabLayout.hidden.includes(t.id)).sort(
+    (a, b) => tabLayout.order.indexOf(a.id) - tabLayout.order.indexOf(b.id),
+  );
+  const initialTab = tabLayout.order[0] ?? 'chat';
+  const [tab, setTab] = useState<ChatTab>(initialTab);
   // Live memory list pushed up from the chat stream when the agent uses the
   // remember/forget tools — forwarded to the Memories tab.
   const [liveMemories, setLiveMemories] = useState<Memory[] | null>(null);
   const [visited, setVisited] = useState<ReadonlySet<ChatTab>>(
-    () => new Set<ChatTab>(['chat']),
+    () => new Set<ChatTab>([initialTab]),
   );
 
   useEffect(() => {
@@ -106,7 +115,7 @@ export default function ChatPanel({
       </header>
 
       <div className="fade-x v1-no-scrollbar flex h-10 shrink-0 items-center gap-0.5 overflow-x-auto overflow-y-hidden border-b border-border px-2">
-        {TABS.map((t) => (
+        {tabs.map((t) => (
           <button
             key={t.id}
             type="button"
@@ -132,6 +141,7 @@ export default function ChatPanel({
             onPreviewRestart={onPreviewRestart}
             onMemories={setLiveMemories}
             llmReady={llmReady}
+            initialPrompt={initialPrompt}
           />
         </div>
         {visited.has('files') && (

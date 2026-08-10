@@ -96,55 +96,80 @@ export function setNotifyEnabled(on: boolean): void {
   }
 }
 
-// Working-border (composer rainbow track) tunables, set in Settings → Chat.
-export type TrackSettings = {
-  /** Seconds per lap around the border. */
-  lap: number;
-  /** Arc length, percent of the circumference. */
-  arc: number;
-  /** Seconds per hue cycle; 0 = colors stay fixed. */
-  hue: number;
-  /** Stroke width in px. */
-  width: number;
-  /** Corner radius in px. */
-  radius: number;
-  /** Number of arc segments on the track (1 = single comet). */
-  dashes: number;
-  /** Palette id from TRACK_PALETTES. */
-  palette: string;
-  /** Counter-clockwise travel. */
-  reverse: boolean;
-  /** Soft glow around the track. */
-  glow: boolean;
-};
+// Whether chat tool call/result JSON starts pretty-printed (Settings →
+// Appearance → Tool calls). The per-block Raw/Pretty toggle still overrides.
+const JSON_PRETTY_KEY = 'v1.jsonPretty';
 
-const TRACK_KEY = 'v1.workingTrack';
-
-export const TRACK_DEFAULTS: TrackSettings = {
-  lap: 1.2,
-  arc: 33,
-  hue: 2.5,
-  width: 1.5,
-  radius: 12,
-  dashes: 1,
-  palette: 'rainbow',
-  reverse: false,
-  glow: true,
-};
-
-export function getTrackSettings(): TrackSettings {
+export function getJsonPretty(): boolean {
   try {
-    const v = JSON.parse(localStorage.getItem(TRACK_KEY) ?? 'null');
-    if (v && typeof v === 'object') return { ...TRACK_DEFAULTS, ...(v as Partial<TrackSettings>) };
+    return localStorage.getItem(JSON_PRETTY_KEY) !== '0';
+  } catch {
+    return true;
+  }
+}
+
+export function setJsonPretty(on: boolean): void {
+  try {
+    localStorage.setItem(JSON_PRETTY_KEY, on ? '1' : '0');
+  } catch {
+    // ignore (private mode etc.)
+  }
+}
+
+// iOS detection (iPadOS 13+ masks its user agent as a Mac — touch is the tell).
+export function isIOS(): boolean {
+  return (
+    /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+  );
+}
+
+// True when running as an installed PWA (e.g. iOS Add to Home Screen).
+export function isStandalone(): boolean {
+  return (
+    window.matchMedia('(display-mode: standalone)').matches ||
+    (navigator as Navigator & { standalone?: boolean }).standalone === true
+  );
+}
+
+// Project-view tabs: which tabs appear in the chat/files/terminal bar and in
+// what order (Settings → Appearance → Chat tabs).
+export type ChatTab = 'chat' | 'files' | 'terminal' | 'git' | 'memories' | 'project';
+
+export type ChatTabLayout = {
+  /** Tabs shown in the bar, in display order. */
+  order: ChatTab[];
+  /** Tabs excluded from the bar. */
+  hidden: ChatTab[];
+};
+
+const CHAT_TABS_KEY = 'v1.chatTabs';
+
+const CHAT_TAB_IDS: ChatTab[] = ['chat', 'files', 'terminal', 'git', 'memories', 'project'];
+
+export function getChatTabLayout(): ChatTabLayout {
+  try {
+    const v = JSON.parse(localStorage.getItem(CHAT_TABS_KEY) ?? 'null') as {
+      order?: unknown;
+      hidden?: unknown;
+    } | null;
+    const known = (x: unknown): x is ChatTab =>
+      typeof x === 'string' && (CHAT_TAB_IDS as string[]).includes(x);
+    if (v && Array.isArray(v.order)) {
+      return {
+        order: v.order.filter(known),
+        hidden: Array.isArray(v.hidden) ? v.hidden.filter(known) : [],
+      };
+    }
   } catch {
     // ignore
   }
-  return TRACK_DEFAULTS;
+  return { order: [...CHAT_TAB_IDS], hidden: [] };
 }
 
-export function setTrackSettings(s: TrackSettings): void {
+export function setChatTabLayout(l: ChatTabLayout): void {
   try {
-    localStorage.setItem(TRACK_KEY, JSON.stringify(s));
+    localStorage.setItem(CHAT_TABS_KEY, JSON.stringify(l));
   } catch {
     // ignore (private mode etc.)
   }

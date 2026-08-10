@@ -13,7 +13,7 @@ import (
 // existed are refreshed lazily so the model lists carry vision flags.
 func (s *Server) handleListProviders(w http.ResponseWriter, r *http.Request) {
 	cat := s.providerCatalog()
-	if cat == nil || !llm.CatalogHasVision(cat) {
+	if cat == nil || !llm.CatalogHasVision(cat) || !llm.CatalogHasReasoning(cat) || !llm.CatalogHasReasoningLevels(cat) {
 		if fresh, err := llm.RefreshCatalog(r.Context()); err == nil {
 			cat = fresh
 			if data, err := json.Marshal(fresh); err == nil {
@@ -59,6 +59,31 @@ func (s *Server) handleRefreshProviders(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "count": len(cat.Providers)})
+}
+
+// handleProviderThinking resolves a model's thinking options from the
+// provider's own /models endpoint (family fallback when it publishes none).
+func (s *Server) handleProviderThinking(w http.ResponseWriter, r *http.Request) {
+	model := r.URL.Query().Get("model")
+	if model == "" {
+		writeError(w, http.StatusBadRequest, "model is required")
+		return
+	}
+	baseURL, apiKey, _ := s.llmConfig()
+	if pid := r.URL.Query().Get("providerId"); pid != "" {
+		if p := s.findLLMProvider(pid); p != nil {
+			baseURL, apiKey = p.BaseURL, p.APIKey
+		}
+	}
+	if baseURL == "" {
+		writeError(w, http.StatusBadRequest, "provider is required")
+		return
+	}
+	opts := llm.ProviderThinking(r.Context(), baseURL, apiKey, model)
+	if opts == nil {
+		opts = &llm.ThinkingOptions{}
+	}
+	writeJSON(w, http.StatusOK, opts)
 }
 
 // handleSearchProviders lists OpenAI-compatible providers from the live

@@ -1,22 +1,26 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type DragEvent, type FormEvent, type ReactNode } from 'react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { SiVercel } from 'react-icons/si';
 import { api, type SettingsUpdate } from '../api';
+import { testNotification } from '../notify';
 import type { Settings as SettingsType } from '../types';
 import {
   errMsg,
   getChatSide,
+  getChatTabLayout,
   getDebugHud,
+  getJsonPretty,
   getNotifyEnabled,
-  getTrackSettings,
+  isIOS,
+  isStandalone,
   randomId,
   setChatSide,
+  setChatTabLayout,
   setDebugHud,
+  setJsonPretty,
   setNotifyEnabled,
-  setTrackSettings,
-  TRACK_DEFAULTS,
   type ChatSide,
-  type TrackSettings,
+  type ChatTab,
 } from '../utils';
 import {
   applyTheme,
@@ -36,30 +40,36 @@ import {
 } from '../components/ui';
 import {
   IconArrowLeft,
+  IconBrain,
   IconChat,
   IconCheck,
   IconChevronDown,
+  IconChevronUp,
   IconDots,
   IconExternalLink,
+  IconEye,
+  IconEyeOff,
+  IconFolder,
+  IconGitBranch,
   IconGitHub,
+  IconGrip,
   IconLock,
   IconLogout,
   IconModel,
   IconSettings,
+  IconTerminal,
   IconWrench,
   IconX,
 } from '../components/icons';
 import ProviderSelector from '../components/ProviderSelector';
 import GitHubConnect from '../components/GitHubConnect';
 import ToolSettings from '../components/ToolSettings';
-import TrackBorder, { TRACK_PALETTES, TRACK_PALETTE_LABELS } from '../components/TrackBorder';
 
 const NAV = [
   { id: 'llm', label: 'LLM & providers', icon: <IconModel className="h-4 w-4" /> },
   { id: 'github', label: 'GitHub', icon: <IconGitHub className="h-4 w-4" /> },
   { id: 'vercel', label: 'Vercel', icon: <SiVercel className="h-4 w-4" /> },
   { id: 'tools', label: 'Tools & permissions', icon: <IconWrench className="h-4 w-4" /> },
-  { id: 'chat', label: 'Chat', icon: <IconChat className="h-4 w-4" /> },
   { id: 'appearance', label: 'Appearance', icon: <IconSettings className="h-4 w-4" /> },
   { id: 'auth', label: 'Auth', icon: <IconLock className="h-4 w-4" /> },
   { id: 'about', label: 'About', icon: <IconDots className="h-4 w-4" /> },
@@ -137,6 +147,87 @@ function ChatSideControl() {
   );
 }
 
+// Whether chat tool call/result JSON starts pretty-printed (Settings →
+// Appearance → Tool calls).
+function JsonPrettyControl() {
+  const [on, setOn] = useState(() => getJsonPretty());
+
+  const choose = (v: boolean) => {
+    setOn(v);
+    setJsonPretty(v);
+  };
+
+  return (
+    <div className="grid w-full max-w-xs grid-cols-2 gap-1 rounded-lg border border-border bg-surface p-1">
+      {([false, true] as const).map((v) => (
+        <button
+          key={String(v)}
+          type="button"
+          onClick={() => choose(v)}
+          className={`min-h-[36px] rounded-md text-sm transition-colors ${
+            on === v ? 'bg-border text-text' : 'text-dim hover:text-text'
+          }`}
+        >
+          {v ? 'On' : 'Off'}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// Whether tool results are TOON-encoded for the model (Settings → Appearance
+// → Tool calls). Server-backed so the agent loop reads it too.
+function ToonControl() {
+  const [on, setOn] = useState(true);
+  const [loaded, setLoaded] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    api
+      .getSettings()
+      .then((s) => {
+        setOn(s.toonEnabled ?? true);
+        setLoaded(true);
+      })
+      .catch(() => setLoaded(true));
+  }, []);
+
+  const choose = async (v: boolean) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.updateSettings({ toonEnabled: v });
+      setOn(v);
+    } catch (err) {
+      setError(errMsg(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="grid w-full max-w-xs grid-cols-2 gap-1 rounded-lg border border-border bg-surface p-1">
+        {([false, true] as const).map((v) => (
+          <button
+            key={String(v)}
+            type="button"
+            disabled={!loaded || busy}
+            onClick={() => void choose(v)}
+            className={`min-h-[36px] rounded-md text-sm transition-colors disabled:opacity-50 ${
+              on === v ? 'bg-border text-text' : 'text-dim hover:text-text'
+            }`}
+          >
+            {v ? 'On' : 'Off'}
+          </button>
+        ))}
+      </div>
+      {error && <p className="text-xs text-red-400">{error}</p>}
+    </div>
+  );
+}
+
 function DebugHudControl() {
   const [on, setOn] = useState(() => getDebugHud());
 
@@ -163,131 +254,14 @@ function DebugHudControl() {
   );
 }
 
-function TrackSettingsControl() {
-  const [ts, setTs] = useState<TrackSettings>(() => getTrackSettings());
-
-  const update = (patch: Partial<TrackSettings>) => {
-    setTs((prev) => {
-      const next = { ...prev, ...patch };
-      setTrackSettings(next);
-      return next;
-    });
-  };
-
-  const slider = (
-    label: string,
-    value: number,
-    min: number,
-    max: number,
-    step: number,
-    format: (v: number) => string,
-    onChange: (v: number) => void,
-  ) => (
-    <label className="block">
-      <span className="mb-1 flex items-center justify-between text-xs text-subtle">
-        {label}
-        <span className="font-mono text-faint">{format(value)}</span>
-      </span>
-      <input
-        type="range"
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
-        className="w-full accent-accent"
-      />
-    </label>
-  );
-
-  const toggle = (label: string, value: boolean, onChange: (v: boolean) => void) => (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={value}
-      onClick={() => onChange(!value)}
-      className="flex items-center gap-2 text-sm text-text"
-    >
-      <span
-        className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${
-          value ? 'bg-accent' : 'bg-border'
-        }`}
-      >
-        <span
-          className={`absolute top-0.5 h-4 w-4 rounded-full bg-bg transition-all ${
-            value ? 'left-[18px]' : 'left-0.5'
-          }`}
-        />
-      </span>
-      {label}
-    </button>
-  );
-
-  return (
-    <div className="flex flex-col gap-4">
-      {/* Live preview of the working border on a mock composer. */}
-      <div className="v1-working relative rounded-xl border bg-surface p-1.5">
-        <TrackBorder ts={ts} id="v1-track-preview" />
-        <div className="px-1.5 py-1.5 text-sm text-faint">Describe what to build…</div>
-      </div>
-      <div>
-        <span className="mb-1.5 block text-xs text-subtle">Palette</span>
-        <div className="flex flex-wrap gap-1.5">
-          {Object.keys(TRACK_PALETTES).map((p) => (
-            <button
-              key={p}
-              type="button"
-              onClick={() => update({ palette: p })}
-              className={`flex flex-col items-center gap-1 rounded-lg border p-2 transition-colors ${
-                ts.palette === p
-                  ? 'border-accent ring-1 ring-accent'
-                  : 'border-border hover:border-border-strong'
-              }`}
-            >
-              <span className="flex h-3.5 w-16 overflow-hidden rounded">
-                {TRACK_PALETTES[p].map((c, i) => (
-                  <span key={i} className="h-full flex-1" style={{ backgroundColor: c }} />
-                ))}
-              </span>
-              <span
-                className={`text-[10px] ${ts.palette === p ? 'text-text' : 'text-faint'}`}
-              >
-                {TRACK_PALETTE_LABELS[p] ?? p}
-              </span>
-            </button>
-          ))}
-        </div>
-      </div>
-      {slider('Lap duration', ts.lap, 0.4, 5, 0.1, (v) => `${v.toFixed(1)}s`, (v) => update({ lap: v }))}
-      {slider('Arc length', ts.arc, 10, 100, 1, (v) => `${v}%`, (v) => update({ arc: v }))}
-      {slider('Segments', ts.dashes, 1, 6, 1, (v) => (v === 1 ? 'comet' : `${v}`), (v) => update({ dashes: v }))}
-      {slider('Thickness', ts.width, 1, 6, 0.5, (v) => `${v}px`, (v) => update({ width: v }))}
-      {slider('Corner radius', ts.radius, 0, 24, 1, (v) => `${v}px`, (v) => update({ radius: v }))}
-      {slider(
-        'Hue cycle',
-        ts.hue,
-        0,
-        8,
-        0.5,
-        (v) => (v === 0 ? 'off' : `${v.toFixed(1)}s`),
-        (v) => update({ hue: v }),
-      )}
-      <div className="flex items-center gap-6">
-        {toggle('Counter-clockwise', ts.reverse, (v) => update({ reverse: v }))}
-        {toggle('Glow', ts.glow, (v) => update({ glow: v }))}
-      </div>
-      <div>
-        <Button variant="ghost" className="h-8 px-3 text-xs" onClick={() => update(TRACK_DEFAULTS)}>
-          Reset to defaults
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-function NotificationsControl() {  const supported = 'Notification' in window;
+function NotificationsControl() {
+  const supported = 'Notification' in window;
+  const ios = isIOS();
+  const standalone = isStandalone();
   const [on, setOn] = useState(() => getNotifyEnabled());
   const [perm, setPerm] = useState(() => (supported ? Notification.permission : 'denied'));
+  const [testing, setTesting] = useState(false);
+  const [tested, setTested] = useState<'ok' | 'fail' | null>(null);
 
   const choose = async (v: boolean) => {
     if (!v) {
@@ -307,6 +281,16 @@ function NotificationsControl() {  const supported = 'Notification' in window;
     }
   };
 
+  const sendTest = async () => {
+    setTesting(true);
+    setTested(null);
+    try {
+      setTested((await testNotification()) ? 'ok' : 'fail');
+    } finally {
+      setTesting(false);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-2">
       <div className="grid w-full max-w-xs grid-cols-2 gap-1 rounded-lg border border-border bg-surface p-1">
@@ -323,11 +307,217 @@ function NotificationsControl() {  const supported = 'Notification' in window;
           </button>
         ))}
       </div>
-      {!supported && <p className="text-xs text-faint">This browser does not support notifications.</p>}
+      {ios && !standalone && (
+        <p className="text-xs leading-relaxed text-faint">
+          iOS only supports notifications in the installed app: tap{' '}
+          <span className="text-dim">Share → Add to Home Screen</span>, then open v1 from the
+          home screen icon.
+        </p>
+      )}
+      {!supported && (
+        <p className="text-xs text-faint">This browser does not support notifications.</p>
+      )}
       {supported && perm === 'denied' && (
         <p className="text-xs text-faint">
-          Notifications are blocked — allow them in the browser or system settings.
+          {ios
+            ? 'Open iOS Settings → v1 → Notifications to allow them.'
+            : 'Notifications are blocked — allow them in the browser or system settings.'}
         </p>
+      )}
+      {supported && perm === 'granted' && ios && (
+        <p className="text-xs text-faint">
+          If notifications don&apos;t arrive, check iOS Settings → v1 → Notifications.
+        </p>
+      )}
+      {supported && perm === 'granted' && (
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            className="h-8 px-3 text-xs"
+            disabled={testing}
+            onClick={() => void sendTest()}
+          >
+            {testing ? <Spinner className="h-3.5 w-3.5" /> : 'Send test notification'}
+          </Button>
+          {tested === 'ok' && (
+            <span className="flex items-center gap-1 text-xs text-emerald-500">
+              <IconCheck className="h-3.5 w-3.5" /> Sent
+            </span>
+          )}
+          {tested === 'fail' && <span className="text-xs text-red-400">Could not send</span>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Tab metadata for the chat tabs control (mirrors the bar in ChatPanel).
+const CHAT_TAB_META: Record<ChatTab, { label: string; icon: ReactNode }> = {
+  chat: { label: 'Chat', icon: <IconChat className="h-4 w-4" /> },
+  files: { label: 'Files', icon: <IconFolder className="h-4 w-4" /> },
+  terminal: { label: 'Terminal', icon: <IconTerminal className="h-4 w-4" /> },
+  git: { label: 'Git', icon: <IconGitBranch className="h-4 w-4" /> },
+  memories: { label: 'Memories', icon: <IconBrain className="h-4 w-4" /> },
+  project: { label: 'Project', icon: <IconSettings className="h-4 w-4" /> },
+};
+
+// Chat tabs control: reorder (drag & drop, or the arrows) and show/hide the
+// project view's tabs. Hidden tabs sit in a dashed group below a divider.
+function ChatTabsControl() {
+  const [tabs, setTabs] = useState<{ id: ChatTab; hidden: boolean }[]>(() => {
+    const l = getChatTabLayout();
+    return [
+      ...l.order.map((id) => ({ id, hidden: false })),
+      ...l.hidden.map((id) => ({ id, hidden: true })),
+    ];
+  });
+  const [dragId, setDragId] = useState<ChatTab | null>(null);
+  const [drop, setDrop] = useState<{ id: ChatTab; side: 'before' | 'after' } | null>(null);
+
+  const persist = (next: { id: ChatTab; hidden: boolean }[]) => {
+    setTabs(next);
+    setChatTabLayout({
+      order: next.filter((t) => !t.hidden).map((t) => t.id),
+      hidden: next.filter((t) => t.hidden).map((t) => t.id),
+    });
+  };
+
+  const hiddenOf = (id: ChatTab) => tabs.find((t) => t.id === id)?.hidden ?? false;
+
+  const toggleHidden = (id: ChatTab) => {
+    const t = tabs.find((x) => x.id === id);
+    if (!t) return;
+    // Keep at least one tab visible so the bar never empties out.
+    if (!t.hidden && tabs.filter((x) => !x.hidden).length === 1) return;
+    persist(tabs.map((x) => (x.id === id ? { ...x, hidden: !x.hidden } : x)));
+  };
+
+  // Move id next to toId within its own group (visible or hidden).
+  const move = (id: ChatTab, toId: ChatTab, side: 'before' | 'after') => {
+    if (id === toId || hiddenOf(id) !== hiddenOf(toId)) return;
+    const item = tabs.find((t) => t.id === id);
+    if (!item) return;
+    const rest = tabs.filter((t) => t.id !== id);
+    const at = rest.findIndex((t) => t.id === toId);
+    rest.splice(at + (side === 'after' ? 1 : 0), 0, item);
+    persist(rest);
+  };
+
+  const shift = (id: ChatTab, dir: -1 | 1) => {
+    const idx = tabs.findIndex((t) => t.id === id);
+    const item = tabs[idx];
+    if (!item) return;
+    const group = tabs.filter((t) => t.hidden === item.hidden);
+    const gIdx = group.findIndex((t) => t.id === id);
+    const target = gIdx + dir;
+    if (target < 0 || target >= group.length) return;
+    const next = [...tabs];
+    const otherIdx = next.findIndex((t) => t.id === group[target].id);
+    [next[idx], next[otherIdx]] = [next[otherIdx], next[idx]];
+    persist(next);
+  };
+
+  const row = (t: { id: ChatTab; hidden: boolean }, i: number, groupLen: number) => {
+    const meta = CHAT_TAB_META[t.id];
+    return (
+      <div
+        key={t.id}
+        draggable
+        onDragStart={(e) => {
+          setDragId(t.id);
+          setDrop(null);
+          e.dataTransfer.effectAllowed = 'move';
+        }}
+        onDragEnd={() => {
+          setDragId(null);
+          setDrop(null);
+        }}
+        onDragOver={(e: DragEvent<HTMLDivElement>) => {
+          if (!dragId || hiddenOf(dragId) !== t.hidden) return;
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'move';
+          const rect = e.currentTarget.getBoundingClientRect();
+          const side = e.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
+          setDrop((d) => (d && d.id === t.id && d.side === side ? d : { id: t.id, side }));
+        }}
+        onDrop={(e: DragEvent<HTMLDivElement>) => {
+          e.preventDefault();
+          if (dragId && drop) move(dragId, drop.id, drop.side);
+          setDragId(null);
+          setDrop(null);
+        }}
+        className={`relative flex cursor-grab items-center gap-2 rounded-lg border px-2.5 py-2 transition-colors active:cursor-grabbing ${
+          dragId === t.id ? 'opacity-40' : ''
+        } ${t.hidden ? 'border-dashed border-border' : 'border-border bg-surface'}`}
+      >
+        {drop && drop.id === t.id && (
+          <span
+            className={`pointer-events-none absolute inset-x-1.5 h-0.5 rounded-full bg-accent ${
+              drop.side === 'before' ? '-top-0.5' : '-bottom-0.5'
+            }`}
+          />
+        )}
+        <IconGrip className="h-4 w-4 shrink-0 text-faint" />
+        <span
+          className={`flex min-w-0 items-center gap-2 text-sm ${
+            t.hidden ? 'text-faint' : 'text-text'
+          }`}
+        >
+          {meta.icon}
+          {meta.label}
+        </span>
+        <div className="ml-auto flex shrink-0 items-center gap-0.5">
+          {!t.hidden && (
+            <>
+              <button
+                type="button"
+                aria-label={`Move ${meta.label} up`}
+                disabled={i === 0}
+                onClick={() => shift(t.id, -1)}
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-dim transition-colors hover:bg-border hover:text-text disabled:opacity-30"
+              >
+                <IconChevronUp className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                aria-label={`Move ${meta.label} down`}
+                disabled={i === groupLen - 1}
+                onClick={() => shift(t.id, 1)}
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-dim transition-colors hover:bg-border hover:text-text disabled:opacity-30"
+              >
+                <IconChevronDown className="h-3.5 w-3.5" />
+              </button>
+            </>
+          )}
+          <button
+            type="button"
+            aria-label={t.hidden ? `Show ${meta.label} tab` : `Hide ${meta.label} tab`}
+            title={t.hidden ? 'Show tab' : 'Hide tab'}
+            disabled={!t.hidden && tabs.filter((x) => !x.hidden).length === 1}
+            onClick={() => toggleHidden(t.id)}
+            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-dim transition-colors hover:bg-border hover:text-text disabled:opacity-30"
+          >
+            {t.hidden ? <IconEyeOff className="h-3.5 w-3.5" /> : <IconEye className="h-3.5 w-3.5" />}
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  const visible = tabs.filter((t) => !t.hidden);
+  const hidden = tabs.filter((t) => t.hidden);
+
+  return (
+    <div className="flex max-w-md flex-col gap-1.5">
+      {visible.map((t, i) => row(t, i, visible.length))}
+      {hidden.length > 0 && (
+        <>
+          <div className="mt-2 flex items-center gap-2 text-[11px] text-faint">
+            Hidden
+            <div className="h-px flex-1 bg-border" />
+          </div>
+          {hidden.map((t, i) => row(t, i, hidden.length))}
+        </>
       )}
     </div>
   );
@@ -389,6 +579,18 @@ export default function Settings() {
   const [pwSaved, setPwSaved] = useState(false);
   const [pwError, setPwError] = useState<string | null>(null);
 
+  // Global system prompt
+  const [sysPrompt, setSysPrompt] = useState('');
+  const [sysSaving, setSysSaving] = useState(false);
+  const [sysSaved, setSysSaved] = useState(false);
+  const [sysError, setSysError] = useState<string | null>(null);
+
+  // Default thinking level ('' = the model's lowest level)
+  const [defThinking, setDefThinking] = useState('');
+  const [dtSaving, setDtSaving] = useState(false);
+  const [dtSaved, setDtSaved] = useState(false);
+  const [dtError, setDtError] = useState<string | null>(null);
+
   const location = useLocation();
   const from = (location.state as { from?: string } | null)?.from;
   const backTo = from && from.startsWith('/') ? from : '/';
@@ -420,6 +622,8 @@ export default function Settings() {
         setVercelClientId(s.vercel.oauthClientId);
         setProviders(s.llm.providers ?? []);
         setActiveProviderId(s.llm.activeProviderId ?? '');
+        setSysPrompt(s.systemPrompt ?? '');
+        setDefThinking(s.defaultThinking ?? '');
       })
       .catch((e) => setLoadError(errMsg(e)));
   };
@@ -672,6 +876,38 @@ export default function Settings() {
     }
   };
 
+  const saveSystemPrompt = async (e: FormEvent) => {
+    e.preventDefault();
+    setSysSaving(true);
+    setSysSaved(false);
+    setSysError(null);
+    try {
+      await api.updateSettings({ systemPrompt: sysPrompt.trim() });
+      setSysSaved(true);
+      setSettings((prev) => (prev ? { ...prev, systemPrompt: sysPrompt.trim() } : prev));
+    } catch (err) {
+      setSysError(errMsg(err));
+    } finally {
+      setSysSaving(false);
+    }
+  };
+
+  const saveDefaultThinking = async (e: FormEvent) => {
+    e.preventDefault();
+    setDtSaving(true);
+    setDtSaved(false);
+    setDtError(null);
+    try {
+      await api.updateSettings({ defaultThinking: defThinking });
+      setDtSaved(true);
+      setSettings((prev) => (prev ? { ...prev, defaultThinking: defThinking } : prev));
+    } catch (err) {
+      setDtError(errMsg(err));
+    } finally {
+      setDtSaving(false);
+    }
+  };
+
   const logout = async () => {
     try {
       await api.logout();
@@ -798,7 +1034,7 @@ export default function Settings() {
               page === 'tools' ? 'min-h-0 flex-1' : 'gap-4 p-4 md:p-6'
             }`}
           >
-            <div className={page === 'llm' ? '' : 'hidden'}>
+            <div className={page === 'llm' ? 'flex flex-col gap-4' : 'hidden'}>
               <Section title="LLM" description="The OpenAI-compatible endpoint v1 uses to generate apps. The model is picked per project in the chat.">
           <form onSubmit={(e) => void saveLLM(e)} className="flex flex-col gap-3">
             <ProviderSelector
@@ -824,6 +1060,7 @@ export default function Settings() {
               saving={llmSaving}
               saved={llmSaved}
               error={llmError}
+              pulse={settings ? baseURL !== settings.llm.baseURL || model !== settings.llm.model || apiKey !== '' : false}
               extra={
                 <Button variant="outline" onClick={() => void testLLM()} disabled={testing}>
                   {testing ? <Spinner className="h-4 w-4" /> : 'Test connection'}
@@ -920,7 +1157,12 @@ export default function Settings() {
                 />
               </Field>
             </div>
-            <Button type="submit" variant="outline" disabled={provSaving}>
+            <Button
+              type="submit"
+              variant="outline"
+              disabled={provSaving}
+              className={provName.trim() ? 'v1-save-breathe' : ''}
+            >
               {provSaving ? <Spinner className="h-4 w-4" /> : 'Save as provider'}
             </Button>
           </form>
@@ -934,6 +1176,60 @@ export default function Settings() {
               {provError && <span className="text-red-400">{provError}</span>}
             </div>
           )}
+        </Section>
+
+        <Section
+          title="Global system prompt"
+          description="Extra instructions appended to the system prompt of every chat, across all projects."
+        >
+          <form onSubmit={(e) => void saveSystemPrompt(e)} className="flex flex-col gap-3">
+            <textarea
+              value={sysPrompt}
+              onChange={(e) => setSysPrompt(e.target.value)}
+              rows={7}
+              placeholder="e.g. Always use TypeScript. Never use crypto.randomUUID() — it throws on insecure origins like the preview iframe."
+              className="w-full resize-y rounded-lg border border-border-strong bg-surface px-3 py-2 text-sm text-text outline-none transition-colors focus:border-subtle"
+            />
+            <SaveRow
+              saving={sysSaving}
+              saved={sysSaved}
+              error={sysError}
+              pulse={settings ? sysPrompt !== settings.systemPrompt : false}
+            />
+          </form>
+        </Section>
+
+        <Section
+          title="Default thinking level"
+          description="The thinking level used when you pick a model. Falls back to the model's lowest level when it doesn't support the chosen one; per-model selections in the chat override this."
+        >
+          <form onSubmit={(e) => void saveDefaultThinking(e)} className="flex flex-col gap-3">
+            <select
+              value={defThinking}
+              onChange={(e) => setDefThinking(e.target.value)}
+              className="w-full min-w-0 max-w-xs rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text outline-none transition-colors focus:border-subtle"
+            >
+              <option value="">Lowest</option>
+              <option value="off">Off</option>
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+              <option value="xhigh">XHigh</option>
+              <option value="max">Max</option>
+            </select>
+            <SaveRow
+              saving={dtSaving}
+              saved={dtSaved}
+              error={dtError}
+              pulse={settings ? defThinking !== settings.defaultThinking : false}
+            />
+          </form>
+        </Section>
+        <Section
+          title="TOON"
+          description="Encode tool results as TOON — a compact, token-efficient format — when feeding them to the model. The chat keeps showing the original JSON either way."
+        >
+          <ToonControl />
         </Section>
             </div>
 
@@ -976,7 +1272,7 @@ export default function Settings() {
                 Create a token <IconExternalLink className="h-3 w-3" />
               </a>
             </p>
-            <SaveRow saving={ghSaving} saved={ghSaved} error={ghError} />
+            <SaveRow saving={ghSaving} saved={ghSaved} error={ghError} pulse={token !== ''} />
           </form>
 
           <div className="my-1 flex items-center gap-3 text-xs text-faint">
@@ -1011,6 +1307,7 @@ export default function Settings() {
               saving={cidSaving}
               saved={cidSaved}
               error={cidError}
+              pulse={settings ? oauthClientId !== settings.github.oauthClientId : false}
               extra={
                 <GitHubConnect
                   enabled={settings.github.oauthClientId !== ''}
@@ -1065,6 +1362,13 @@ export default function Settings() {
               saving={vercelSaving}
               saved={vercelSaved}
               error={vercelError}
+              pulse={
+                settings
+                  ? vercelToken !== '' ||
+                    vercelClientId !== settings.vercel.oauthClientId ||
+                    vercelClientSecret !== ''
+                  : false
+              }
               extra={
                 settings.vercel.tokenSet ? (
                   <Button variant="ghost" onClick={() => void disconnectVercel()}>
@@ -1147,16 +1451,7 @@ export default function Settings() {
               <ToolSettings initialTab="mcp" />
             </div>
 
-            <div className={page === 'chat' ? '' : 'hidden'}>
-              <Section
-                title="Working border"
-                description="The animation around the composer while the agent runs. Applies to new chat views (navigate or reload to refresh)."
-              >
-                <TrackSettingsControl />
-              </Section>
-            </div>
-
-            <div className={page === 'appearance' ? '' : 'hidden'}>
+            <div className={page === 'appearance' ? 'flex flex-col gap-4' : 'hidden'}>
               <Section title="Appearance" description="Theme applies instantly and is remembered.">
           <div>
             <span className="mb-1 block text-xs text-subtle">Chat side (desktop)</span>
@@ -1165,6 +1460,21 @@ export default function Settings() {
           <div>
             <span className="mb-2 block text-xs text-subtle">Theme</span>
             <ThemePicker />
+          </div>
+        </Section>
+        <Section
+          title="Chat tabs"
+          description="Choose which tabs appear in the project view and their order. Drag to reorder; the eye toggles a tab on or off."
+        >
+          <ChatTabsControl />
+        </Section>
+        <Section
+          title="Tool calls"
+          description="Pretty-print the JSON arguments and results of chat tool calls. The Raw/Pretty toggle on each block still overrides per call."
+        >
+          <div>
+            <span className="mb-1 block text-xs text-subtle">Pretty-print JSON</span>
+            <JsonPrettyControl />
           </div>
         </Section>
             </div>
@@ -1193,7 +1503,12 @@ export default function Settings() {
                   autoComplete="new-password"
                 />
               </Field>
-              <SaveRow saving={pwSaving} saved={pwSaved} error={pwError} />
+              <SaveRow
+                saving={pwSaving}
+                saved={pwSaved}
+                error={pwError}
+                pulse={pw !== '' || pw2 !== ''}
+              />
               <div>
                 <Button variant="ghost" onClick={() => void logout()}>
                   <IconLogout className="h-4 w-4" /> Sign out

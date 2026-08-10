@@ -16,12 +16,30 @@ import (
 //go:embed providers.json
 var embeddedCatalog []byte
 
+// reasoningOption is one entry of a model's reasoning_options array:
+// {"type":"toggle"} means thinking is on/off, {"type":"effort","values":[…]}
+// publishes the supported effort levels.
+type reasoningOption struct {
+	Type   string   `json:"type"`
+	Values []string `json:"values"`
+}
+
+// ReasoningInfo is a model's thinking configuration per models.dev: Effort
+// reports that thinking can be toggled, Levels the published effort levels
+// (low/high/max etc.).
+type ReasoningInfo struct {
+	Effort bool     `json:"effort,omitempty"`
+	Levels []string `json:"levels,omitempty"`
+}
+
 // ProviderModel is one model entry of a provider. ImageInput reports whether
-// the model accepts image input (vision) according to models.dev.
+// the model accepts image input (vision) according to models.dev; Reasoning
+// reports thinking support.
 type ProviderModel struct {
-	ID         string `json:"id"`
-	Name       string `json:"name"`
-	ImageInput bool   `json:"imageInput,omitempty"`
+	ID         string         `json:"id"`
+	Name       string         `json:"name"`
+	ImageInput bool           `json:"imageInput,omitempty"`
+	Reasoning  *ReasoningInfo `json:"reasoning,omitempty"`
 }
 
 // Provider is one LLM provider in the catalog.
@@ -160,12 +178,272 @@ type modelsDevDoc struct {
 	Env    []string `json:"env"`
 	Doc    string   `json:"doc"`
 	Models map[string]struct {
-		Name       string `json:"name"`
-		ToolCall   bool   `json:"tool_call"`
-		Modalities struct {
+		Name             string           `json:"name"`
+		ToolCall         bool             `json:"tool_call"`
+		Modalities       struct {
 			Input []string `json:"input"`
 		} `json:"modalities"`
+		Reasoning        json.RawMessage  `json:"reasoning"`
+		ReasoningOptions []reasoningOption `json:"reasoning_options"`
 	} `json:"models"`
+}
+
+// parseReasoning interprets a models.dev `reasoning` value (a boolean, or an
+// {effort, levels} object) together with `reasoning_options`. nil when the
+// model does not reason.
+func parseReasoning(reasoning json.RawMessage, options []reasoningOption) *ReasoningInfo {
+	if len(reasoning) == 0 || string(reasoning) == "null" {
+		return nil
+	}
+	var b bool
+	reasons := false
+	if err := json.Unmarshal(reasoning, &b); err == nil {
+		reasons = b
+	} else {
+		var r ReasoningInfo
+		if err := json.Unmarshal(reasoning, &r); err == nil {
+			reasons = r.Effort || len(r.Levels) > 0
+		}
+	}
+	if !reasons {
+		return nil
+	}
+	info := &ReasoningInfo{Effort: true}
+	for _, o := range options {
+		if o.Type != "effort" || len(o.Values) == 0 {
+			continue
+		}
+		info.Levels = o.Values
+		break
+	}
+	return info
+}
+
+// ThinkingOptions is a model's thinking configuration resolved from the
+// provider's own /models endpoint. Off reports that thinking can be disabled.
+type ThinkingOptions struct {
+	Levels []string `json:"levels,omitempty"`
+	Off    bool     `json:"off,omitempty"`
+}
+
+// thinkingCache caches resolved options per provider+model for a short TTL.
+type thinkingEntry struct {
+	opts      *ThinkingOptions
+	fetchedAt time.Time
+}
+
+var thinkingCache struct {
+	mu      sync.Mutex
+	entries map[string]thinkingEntry
+}
+
+const thinkingCacheTTL = 10 * time.Minute
+
+// ProviderThinking resolves a model's thinking options from the provider's
+// /models endpoint (the standard OpenAI-compatible model list). The metadata
+// shape varies by provider — reasoning_options (models.dev-style),
+// reasoning {effort,levels} or {mandatory} (OpenRouter) — or is absent
+// entirely (opencode, OpenAI, Anthropic publish none). When the endpoint
+// publishes nothing, the model family determines the levels (the same
+// convention Kimi Code applies to Claude), and unknown models get nil.
+func ProviderThinking(ctx context.Context, baseURL, apiKey, model string) *ThinkingOptions {
+	key := baseURL + "|" + model
+	thinkingCache.mu.Lock()
+	if e, ok := thinkingCache.entries[key]; ok && time.Since(e.fetchedAt) < thinkingCacheTTL {
+		opts := e.opts
+		thinkingCache.mu.Unlock()
+		return opts
+	}
+	thinkingCache.mu.Unlock()
+
+	opts := fetchThinking(ctx, baseURL, apiKey, model)
+
+	thinkingCache.mu.Lock()
+	if thinkingCache.entries == nil {
+		thinkingCache.entries = map[string]thinkingEntry{}
+	}
+	thinkingCache.entries[key] = thinkingEntry{opts: opts, fetchedAt: time.Now()}
+	thinkingCache.mu.Unlock()
+	return opts
+}
+
+// thinkingModelEntry mirrors one entry of a /models response.
+type thinkingModelEntry struct {
+	ID               string `json:"id"`
+	Reasoning        json.RawMessage `json:"reasoning"`
+	ReasoningOptions []struct {
+		Type   string   `json:"type"`
+		Values []string `json:"values"`
+	} `json:"reasoning_options"`
+}
+
+func fetchThinking(ctx context.Context, baseURL, apiKey, model string) *ThinkingOptions {
+	var list struct {
+		Data []thinkingModelEntry `json:"data"`
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimSuffix(baseURL, "/")+"/models", nil)
+	if err != nil {
+		return nil
+	}
+	if apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+	}
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 8<<20)).Decode(&list); err != nil {
+		return nil
+	}
+	for i := range list.Data {
+		if list.Data[i].ID != model && !strings.HasSuffix(list.Data[i].ID, "/"+model) {
+			continue
+		}
+		if opts := parseEndpointThinking(&list.Data[i]); opts != nil {
+			return opts
+		}
+	}
+	// The provider's endpoint was silent — OpenRouter's public model list
+	// publishes reasoning metadata for the models it serves (supported_efforts
+	// etc.), which describes the model itself, not the router.
+	if opts := openRouterThinking(ctx, model); opts != nil {
+		return opts
+	}
+	return familyThinking(model)
+}
+
+// openRouterCache caches the public OpenRouter model list briefly.
+var openRouterCache struct {
+	mu        sync.Mutex
+	data      map[string]*ThinkingOptions
+	fetchedAt time.Time
+}
+
+// openRouterThinking looks up a model in OpenRouter's public /api/v1/models
+// and returns its thinking options, or nil when absent.
+func openRouterThinking(ctx context.Context, model string) *ThinkingOptions {
+	openRouterCache.mu.Lock()
+	if openRouterCache.data != nil && time.Since(openRouterCache.fetchedAt) < thinkingCacheTTL {
+		opts := openRouterCache.data[model]
+		openRouterCache.mu.Unlock()
+		return opts
+	}
+	openRouterCache.mu.Unlock()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://openrouter.ai/api/v1/models", nil)
+	if err != nil {
+		return nil
+	}
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil
+	}
+	var list struct {
+		Data []thinkingModelEntry `json:"data"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 32<<20)).Decode(&list); err != nil {
+		return nil
+	}
+	byModel := map[string]*ThinkingOptions{}
+	for i := range list.Data {
+		entry := &list.Data[i]
+		if opts := parseEndpointThinking(entry); opts != nil {
+			byModel[entry.ID] = opts
+			// Also index by the bare model name (anthropic/claude-fable-5
+			// → claude-fable-5) so provider-local ids resolve.
+			if j := strings.LastIndex(entry.ID, "/"); j >= 0 && j+1 < len(entry.ID) {
+				byModel[entry.ID[j+1:]] = opts
+			}
+		}
+	}
+
+	openRouterCache.mu.Lock()
+	openRouterCache.data = byModel
+	openRouterCache.fetchedAt = time.Now()
+	opts := byModel[model]
+	openRouterCache.mu.Unlock()
+	return opts
+}
+
+// parseEndpointThinking extracts thinking options from one /models entry,
+// handling the shapes providers actually publish: reasoning_options
+// (models.dev-style), reasoning {effort,levels}, and OpenRouter's
+// {mandatory, supported_efforts, default_effort}. nil when the entry carries
+// no thinking metadata.
+func parseEndpointThinking(e *thinkingModelEntry) *ThinkingOptions {
+	opts := &ThinkingOptions{}
+	found := false
+	if len(e.Reasoning) > 0 && string(e.Reasoning) != "null" {
+		var b bool
+		if err := json.Unmarshal(e.Reasoning, &b); err == nil {
+			found = b
+		} else {
+			var r struct {
+				Effort           *bool    `json:"effort"`
+				Levels           []string `json:"levels"`
+				Mandatory        *bool    `json:"mandatory"`
+				SupportedEfforts []string `json:"supported_efforts"`
+				DefaultEffort    string   `json:"default_effort"`
+			}
+			if err := json.Unmarshal(e.Reasoning, &r); err == nil {
+				found = (r.Effort != nil && *r.Effort) || len(r.Levels) > 0 ||
+					r.Mandatory != nil || len(r.SupportedEfforts) > 0
+				opts.Levels = r.Levels
+				if len(r.SupportedEfforts) > 0 {
+					// OpenRouter lists them high→low; present low→high.
+					opts.Levels = append([]string(nil), r.SupportedEfforts...)
+					for i, j := 0, len(opts.Levels)-1; i < j; i, j = i+1, j-1 {
+						opts.Levels[i], opts.Levels[j] = opts.Levels[j], opts.Levels[i]
+					}
+				}
+				if r.Mandatory != nil && !*r.Mandatory {
+					opts.Off = true
+				}
+			}
+		}
+	}
+	for _, o := range e.ReasoningOptions {
+		switch o.Type {
+		case "toggle", "budget_tokens":
+			opts.Off = true
+			found = true
+		case "effort":
+			if len(o.Values) > 0 {
+				opts.Levels = o.Values
+			}
+			found = true
+		}
+	}
+	if !found {
+		return nil
+	}
+	return opts
+}
+
+// familyThinking is the fallback when a provider's /models endpoint publishes
+// no reasoning metadata: known reasoning families map to concrete levels
+// (the same convention Kimi Code applies to Claude). Unknown models get nil.
+func familyThinking(model string) *ThinkingOptions {
+	id := strings.ToLower(model)
+	switch {
+	case strings.HasPrefix(id, "claude-"):
+		return &ThinkingOptions{Levels: []string{"low", "medium", "high"}, Off: true}
+	case strings.HasPrefix(id, "deepseek-reasoner"), strings.Contains(id, "deepseek-v4"):
+		return &ThinkingOptions{Levels: []string{"low", "high", "max"}, Off: true}
+	case strings.HasPrefix(id, "o3"), strings.HasPrefix(id, "o4"), strings.HasPrefix(id, "gpt-5"):
+		return &ThinkingOptions{Levels: []string{"low", "medium", "high"}, Off: true}
+	}
+	return nil
 }
 
 // liveCache holds the last successful models.dev fetch.
@@ -255,9 +533,41 @@ func modelSubset(fp modelsDevDoc) []ProviderModel {
 				break
 			}
 		}
-		models = append(models, ProviderModel{ID: id, Name: name, ImageInput: image})
+		models = append(models, ProviderModel{
+			ID:         id,
+			Name:       name,
+			ImageInput: image,
+			Reasoning:  parseReasoning(m.Reasoning, m.ReasoningOptions),
+		})
 	}
 	return models
+}
+
+// CatalogHasReasoning reports whether any model in the catalog carries
+// reasoning metadata — used to detect stale caches built before the field
+// existed.
+func CatalogHasReasoning(c *Catalog) bool {
+	for _, p := range c.Providers {
+		for _, m := range p.Models {
+			if m.Reasoning != nil {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// CatalogHasReasoningLevels reports whether any model publishes effort
+// levels — used to detect caches built before reasoning_options was parsed.
+func CatalogHasReasoningLevels(c *Catalog) bool {
+	for _, p := range c.Providers {
+		for _, m := range p.Models {
+			if m.Reasoning != nil && len(m.Reasoning.Levels) > 0 {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // CatalogHasVision reports whether any model in the catalog carries image-input

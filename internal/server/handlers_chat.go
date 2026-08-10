@@ -213,6 +213,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		Model         string             `json:"model"`
 		ProviderID    string             `json:"providerId"`
 		EditMessageID int64              `json:"editMessageId"`
+		Thinking      string             `json:"thinking"`
 		Attachments   []agent.Attachment `json:"attachments"`
 	}
 	if !decodeJSON(w, r, &body) {
@@ -243,13 +244,14 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	params := agent.ChatParams{
-		Store:       s.st,
-		Project:     p,
-		Client:      s.llmClientFor(body.ProviderID),
-		Message:     body.Message,
-		Attachments: body.Attachments,
-		Model:       body.Model,
-		Vision:      s.modelSupportsImages(body.ProviderID, body.Model),
+		Store:           s.st,
+		Project:         p,
+		Client:          s.llmClientFor(body.ProviderID),
+		Message:         body.Message,
+		Attachments:     body.Attachments,
+		Model:           body.Model,
+		Vision:          s.modelSupportsImages(body.ProviderID, body.Model),
+		ReasoningEffort: body.Thinking,
 	}
 	// Editing an existing user message rewinds the thread to it and re-runs
 	// from the edited text: update its content, then run with LastUserID set so
@@ -390,6 +392,8 @@ func (s *Server) streamChatTurn(w http.ResponseWriter, r *http.Request, p *store
 	mcpTools, _ := s.mcp.Sync(ctx)
 	params.ExtraTools = mcpTools
 	params.SkillsPrompt = s.skillsSystemPrompt()
+	params.GlobalPrompt = s.globalSystemPrompt()
+	params.ToonEnabled = s.toonEnabled()
 	if mems, err := s.st.ListMemories(p.ID); err == nil {
 		params.MemoriesPrompt = memoryPrompt(mems)
 	}
@@ -413,6 +417,9 @@ func (s *Server) streamChatTurn(w http.ResponseWriter, r *http.Request, p *store
 		},
 		OnFileChange: func() { s.previews.TouchRevision(p.ID) },
 		OnAsk:        s.turnAsk(emit),
+		RenderPage: func(ctx context.Context, url string) (string, error) {
+			return screenshot.RenderText(ctx, url)
+		},
 	}
 	if params.Vision {
 		params.Exec.Screenshot = func(ctx context.Context, path string) ([]byte, error) {
