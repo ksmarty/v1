@@ -20,7 +20,7 @@ import type {
   SavedProvider,
   Todo,
 } from '../types';
-import { errMsg } from '../utils';
+import { errMsg, getTrackSettings } from '../utils';
 import { notifyTurnDone } from '../notify';
 import { permissionMeta } from '../permissions';
 import { Button, Dialog, ErrorBox, IconButton, Input, Spinner } from './ui';
@@ -668,6 +668,7 @@ export default function ChatPane({
   // Mobile-only: the composer can cover the chat pane for long messages.
   const [expanded, setExpanded] = useState(false);
   const [lightbox, setLightbox] = useState<{ url: string; name: string } | null>(null);
+  const [track] = useState(() => getTrackSettings());
   const [permissionMode, setPermissionMode] = useState<PermissionMode>('ask');
   const [permPrompt, setPermPrompt] = useState<{
     requestId: string;
@@ -2182,14 +2183,20 @@ export default function ChatPane({
                   </defs>
                   <rect
                     className="v1-track-rect"
-                    style={{ x: 1.25, y: 1.25, width: 'calc(100% - 2.5px)', height: 'calc(100% - 2.5px)' }}
+                    style={{
+                      x: 1.25,
+                      y: 1.25,
+                      width: 'calc(100% - 2.5px)',
+                      height: 'calc(100% - 2.5px)',
+                      animationDuration: `${track.lap}s, ${track.hue}s`,
+                    }}
                     rx="10"
                     fill="none"
                     stroke="url(#v1-track-grad)"
                     strokeWidth="2"
                     strokeLinecap="round"
                     pathLength={100}
-                    strokeDasharray="65 35"
+                    strokeDasharray={`${track.arc} ${100 - track.arc}`}
                   />
                 </svg>
               )}

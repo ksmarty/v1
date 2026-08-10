@@ -95,3 +95,35 @@ export function setNotifyEnabled(on: boolean): void {
     // ignore (private mode etc.)
   }
 }
+
+// Working-border (composer rainbow track) tunables, set in Settings → Chat.
+export type TrackSettings = {
+  /** Seconds per lap around the border. */
+  lap: number;
+  /** Arc length, percent of the circumference. */
+  arc: number;
+  /** Seconds per hue cycle; 0 = colors stay fixed. */
+  hue: number;
+};
+
+const TRACK_KEY = 'v1.workingTrack';
+
+export const TRACK_DEFAULTS: TrackSettings = { lap: 1.2, arc: 65, hue: 3 };
+
+export function getTrackSettings(): TrackSettings {
+  try {
+    const v = JSON.parse(localStorage.getItem(TRACK_KEY) ?? 'null');
+    if (v && typeof v === 'object') return { ...TRACK_DEFAULTS, ...(v as Partial<TrackSettings>) };
+  } catch {
+    // ignore
+  }
+  return TRACK_DEFAULTS;
+}
+
+export function setTrackSettings(s: TrackSettings): void {
+  try {
+    localStorage.setItem(TRACK_KEY, JSON.stringify(s));
+  } catch {
+    // ignore (private mode etc.)
+  }
+}

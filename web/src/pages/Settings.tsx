@@ -8,11 +8,15 @@ import {
   getChatSide,
   getDebugHud,
   getNotifyEnabled,
+  getTrackSettings,
   randomId,
   setChatSide,
   setDebugHud,
   setNotifyEnabled,
+  setTrackSettings,
+  TRACK_DEFAULTS,
   type ChatSide,
+  type TrackSettings,
 } from '../utils';
 import {
   applyTheme,
@@ -32,6 +36,7 @@ import {
 } from '../components/ui';
 import {
   IconArrowLeft,
+  IconChat,
   IconCheck,
   IconChevronDown,
   IconDots,
@@ -53,6 +58,7 @@ const NAV = [
   { id: 'github', label: 'GitHub', icon: <IconGitHub className="h-4 w-4" /> },
   { id: 'vercel', label: 'Vercel', icon: <SiVercel className="h-4 w-4" /> },
   { id: 'tools', label: 'Tools & permissions', icon: <IconWrench className="h-4 w-4" /> },
+  { id: 'chat', label: 'Chat', icon: <IconChat className="h-4 w-4" /> },
   { id: 'appearance', label: 'Appearance', icon: <IconSettings className="h-4 w-4" /> },
   { id: 'auth', label: 'Auth', icon: <IconLock className="h-4 w-4" /> },
   { id: 'about', label: 'About', icon: <IconDots className="h-4 w-4" /> },
@@ -156,8 +162,97 @@ function DebugHudControl() {
   );
 }
 
-function NotificationsControl() {
-  const supported = 'Notification' in window;
+function TrackSettingsControl() {
+  const [ts, setTs] = useState<TrackSettings>(() => getTrackSettings());
+
+  const update = (patch: Partial<TrackSettings>) => {
+    setTs((prev) => {
+      const next = { ...prev, ...patch };
+      setTrackSettings(next);
+      return next;
+    });
+  };
+
+  const slider = (
+    label: string,
+    value: number,
+    min: number,
+    max: number,
+    step: number,
+    format: (v: number) => string,
+    onChange: (v: number) => void,
+  ) => (
+    <label className="block">
+      <span className="mb-1 flex items-center justify-between text-xs text-subtle">
+        {label}
+        <span className="font-mono text-faint">{format(value)}</span>
+      </span>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className="w-full accent-accent"
+      />
+    </label>
+  );
+
+  return (
+    <div className="flex flex-col gap-4">
+      {/* Live preview of the working border on a mock composer. */}
+      <div className="v1-working relative rounded-xl border bg-surface p-1.5">
+        <svg className="pointer-events-none absolute inset-0 h-full w-full" aria-hidden>
+          <defs>
+            <linearGradient id="v1-track-grad-preview" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stopColor="var(--v1-accent)" />
+              <stop offset="40%" stopColor="#a855f7" />
+              <stop offset="70%" stopColor="#ec4899" />
+              <stop offset="100%" stopColor="#f59e0b" />
+            </linearGradient>
+          </defs>
+          <rect
+            className="v1-track-rect"
+            style={{
+              x: 1.25,
+              y: 1.25,
+              width: 'calc(100% - 2.5px)',
+              height: 'calc(100% - 2.5px)',
+              animationDuration: `${ts.lap}s, ${ts.hue}s`,
+            }}
+            rx="10"
+            fill="none"
+            stroke="url(#v1-track-grad-preview)"
+            strokeWidth="2"
+            strokeLinecap="round"
+            pathLength={100}
+            strokeDasharray={`${ts.arc} ${100 - ts.arc}`}
+          />
+        </svg>
+        <div className="px-1.5 py-1.5 text-sm text-faint">Describe what to build…</div>
+      </div>
+      {slider('Lap duration', ts.lap, 0.4, 5, 0.1, (v) => `${v.toFixed(1)}s`, (v) => update({ lap: v }))}
+      {slider('Arc length', ts.arc, 10, 95, 1, (v) => `${v}%`, (v) => update({ arc: v }))}
+      {slider(
+        'Hue cycle',
+        ts.hue,
+        0,
+        8,
+        0.5,
+        (v) => (v === 0 ? 'off' : `${v.toFixed(1)}s`),
+        (v) => update({ hue: v }),
+      )}
+      <div>
+        <Button variant="ghost" className="h-8 px-3 text-xs" onClick={() => update(TRACK_DEFAULTS)}>
+          Reset to defaults
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function NotificationsControl() {  const supported = 'Notification' in window;
   const [on, setOn] = useState(() => getNotifyEnabled());
   const [perm, setPerm] = useState(() => (supported ? Notification.permission : 'denied'));
 
@@ -1017,6 +1112,15 @@ export default function Settings() {
 
             <div className={page === 'tools' ? 'flex min-h-0 flex-1 flex-col' : 'hidden'}>
               <ToolSettings initialTab="mcp" />
+            </div>
+
+            <div className={page === 'chat' ? '' : 'hidden'}>
+              <Section
+                title="Working border"
+                description="The animation around the composer while the agent runs. Applies to new chat views (navigate or reload to refresh)."
+              >
+                <TrackSettingsControl />
+              </Section>
             </div>
 
             <div className={page === 'appearance' ? '' : 'hidden'}>
