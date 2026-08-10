@@ -27,6 +27,7 @@ import { Button, Dialog, ErrorBox, IconButton, Input, Spinner } from './ui';
 import ToolSettings, { type ToolsTab } from './ToolSettings';
 import Markdown from './Markdown';
 import ModelPicker from './ModelPicker';
+import TrackBorder from './TrackBorder';
 import {
   IconArrowUp,
   IconChat,
@@ -2168,39 +2169,7 @@ export default function ChatPane({
                   e.target.value = '';
                 }}
               />
-              {streaming && (
-                <svg
-                  className="v1-track-hue pointer-events-none absolute inset-0 h-full w-full"
-                  style={{ animationDuration: `${track.hue}s` }}
-                  aria-hidden
-                >
-                  <defs>
-                    <linearGradient id="v1-track-grad" x1="0%" y1="0%" x2="100%" y2="0%">
-                      <stop offset="0%" stopColor="var(--v1-accent)" />
-                      <stop offset="40%" stopColor="#a855f7" />
-                      <stop offset="70%" stopColor="#ec4899" />
-                      <stop offset="100%" stopColor="#f59e0b" />
-                    </linearGradient>
-                  </defs>
-                  <rect
-                    className="v1-track-rect"
-                    style={{
-                      x: 0.5,
-                      y: 0.5,
-                      width: 'calc(100% - 1px)',
-                      height: 'calc(100% - 1px)',
-                      animationDuration: `${track.lap}s`,
-                    }}
-                    rx="11"
-                    fill="none"
-                    stroke="url(#v1-track-grad)"
-                    strokeWidth="3"
-                    strokeLinecap="round"
-                    pathLength={100}
-                    strokeDasharray={`${track.arc} ${100 - track.arc}`}
-                  />
-                </svg>
-              )}
+              {streaming && <TrackBorder ts={track} id="v1-track-grad" />}
               {expanded ? (
                 <>
                   <div className="flex shrink-0 items-center justify-between">

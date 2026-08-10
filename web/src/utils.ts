@@ -104,11 +104,33 @@ export type TrackSettings = {
   arc: number;
   /** Seconds per hue cycle; 0 = colors stay fixed. */
   hue: number;
+  /** Stroke width in px. */
+  width: number;
+  /** Corner radius in px. */
+  radius: number;
+  /** Number of arc segments on the track (1 = single comet). */
+  dashes: number;
+  /** Palette id from TRACK_PALETTES. */
+  palette: string;
+  /** Counter-clockwise travel. */
+  reverse: boolean;
+  /** Soft glow around the track. */
+  glow: boolean;
 };
 
 const TRACK_KEY = 'v1.workingTrack';
 
-export const TRACK_DEFAULTS: TrackSettings = { lap: 1.2, arc: 65, hue: 3 };
+export const TRACK_DEFAULTS: TrackSettings = {
+  lap: 1.2,
+  arc: 65,
+  hue: 3,
+  width: 3,
+  radius: 12,
+  dashes: 1,
+  palette: 'rainbow',
+  reverse: false,
+  glow: false,
+};
 
 export function getTrackSettings(): TrackSettings {
   try {

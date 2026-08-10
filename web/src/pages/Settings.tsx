@@ -52,6 +52,7 @@ import {
 import ProviderSelector from '../components/ProviderSelector';
 import GitHubConnect from '../components/GitHubConnect';
 import ToolSettings from '../components/ToolSettings';
+import TrackBorder, { TRACK_PALETTES, TRACK_PALETTE_LABELS } from '../components/TrackBorder';
 
 const NAV = [
   { id: 'llm', label: 'LLM & providers', icon: <IconModel className="h-4 w-4" /> },
@@ -199,45 +200,69 @@ function TrackSettingsControl() {
     </label>
   );
 
+  const toggle = (label: string, value: boolean, onChange: (v: boolean) => void) => (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={value}
+      onClick={() => onChange(!value)}
+      className="flex items-center gap-2 text-sm text-text"
+    >
+      <span
+        className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${
+          value ? 'bg-accent' : 'bg-border'
+        }`}
+      >
+        <span
+          className={`absolute top-0.5 h-4 w-4 rounded-full bg-bg transition-all ${
+            value ? 'left-[18px]' : 'left-0.5'
+          }`}
+        />
+      </span>
+      {label}
+    </button>
+  );
+
   return (
     <div className="flex flex-col gap-4">
       {/* Live preview of the working border on a mock composer. */}
       <div className="v1-working relative rounded-xl border bg-surface p-1.5">
-        <svg
-          className="v1-track-hue pointer-events-none absolute inset-0 h-full w-full"
-          style={{ animationDuration: `${ts.hue}s` }}
-          aria-hidden
-        >
-          <defs>
-            <linearGradient id="v1-track-grad-preview" x1="0%" y1="0%" x2="100%" y2="0%">
-              <stop offset="0%" stopColor="var(--v1-accent)" />
-              <stop offset="40%" stopColor="#a855f7" />
-              <stop offset="70%" stopColor="#ec4899" />
-              <stop offset="100%" stopColor="#f59e0b" />
-            </linearGradient>
-          </defs>
-          <rect
-            className="v1-track-rect"
-            style={{
-              x: 0.5,
-              y: 0.5,
-              width: 'calc(100% - 1px)',
-              height: 'calc(100% - 1px)',
-              animationDuration: `${ts.lap}s`,
-            }}
-            rx="11"
-            fill="none"
-            stroke="url(#v1-track-grad-preview)"
-            strokeWidth="3"
-            strokeLinecap="round"
-            pathLength={100}
-            strokeDasharray={`${ts.arc} ${100 - ts.arc}`}
-          />
-        </svg>
+        <TrackBorder ts={ts} id="v1-track-preview" />
         <div className="px-1.5 py-1.5 text-sm text-faint">Describe what to build…</div>
+      </div>
+      <div>
+        <span className="mb-1.5 block text-xs text-subtle">Palette</span>
+        <div className="flex flex-wrap gap-1.5">
+          {Object.keys(TRACK_PALETTES).map((p) => (
+            <button
+              key={p}
+              type="button"
+              onClick={() => update({ palette: p })}
+              className={`flex flex-col items-center gap-1 rounded-lg border p-2 transition-colors ${
+                ts.palette === p
+                  ? 'border-accent ring-1 ring-accent'
+                  : 'border-border hover:border-border-strong'
+              }`}
+            >
+              <span className="flex h-3.5 w-16 overflow-hidden rounded">
+                {TRACK_PALETTES[p].map((c, i) => (
+                  <span key={i} className="h-full flex-1" style={{ backgroundColor: c }} />
+                ))}
+              </span>
+              <span
+                className={`text-[10px] ${ts.palette === p ? 'text-text' : 'text-faint'}`}
+              >
+                {TRACK_PALETTE_LABELS[p] ?? p}
+              </span>
+            </button>
+          ))}
+        </div>
       </div>
       {slider('Lap duration', ts.lap, 0.4, 5, 0.1, (v) => `${v.toFixed(1)}s`, (v) => update({ lap: v }))}
       {slider('Arc length', ts.arc, 10, 100, 1, (v) => `${v}%`, (v) => update({ arc: v }))}
+      {slider('Segments', ts.dashes, 1, 6, 1, (v) => (v === 1 ? 'comet' : `${v}`), (v) => update({ dashes: v }))}
+      {slider('Thickness', ts.width, 1, 6, 0.5, (v) => `${v}px`, (v) => update({ width: v }))}
+      {slider('Corner radius', ts.radius, 0, 24, 1, (v) => `${v}px`, (v) => update({ radius: v }))}
       {slider(
         'Hue cycle',
         ts.hue,
@@ -247,6 +272,10 @@ function TrackSettingsControl() {
         (v) => (v === 0 ? 'off' : `${v.toFixed(1)}s`),
         (v) => update({ hue: v }),
       )}
+      <div className="flex items-center gap-6">
+        {toggle('Counter-clockwise', ts.reverse, (v) => update({ reverse: v }))}
+        {toggle('Glow', ts.glow, (v) => update({ glow: v }))}
+      </div>
       <div>
         <Button variant="ghost" className="h-8 px-3 text-xs" onClick={() => update(TRACK_DEFAULTS)}>
           Reset to defaults

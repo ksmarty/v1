@@ -346,10 +346,8 @@ body {
   50% { opacity: 0; }
 }
 
-/* Composer highlight while the agent runs: an SVG rect stroke (rendered by
-   the composer) traveling the border like a track over the box's faint accent
-   border. pathLength=100 normalizes the perimeter so the lap speed is
-   uniform — the conic-gradient version sped up and slowed down per edge. */
+/* Composer highlight while the agent runs: see TrackBorder.tsx. The box
+   border is the faint base track. */
 .v1-working {
   border-color: color-mix(in srgb, var(--v1-accent) 35%, transparent);
 }
@@ -360,6 +358,9 @@ body {
    is unreliable. */
 .v1-track-hue {
   animation: v1-track-hue 3s linear infinite;
+}
+.v1-track-glow {
+  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--v1-accent) 60%, transparent));
 }
 @keyframes v1-track {
   to {
