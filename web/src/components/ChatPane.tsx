@@ -325,9 +325,47 @@ function DiffContext({ lines, side }: { lines: string[]; side: 'before' | 'after
   );
 }
 
+// The label shown on a plain tool chip: the meaningful arg (command, path)
+// rather than the raw JSON arguments.
+function chipLabel(detail: string): string {
+  try {
+    const a = JSON.parse(detail) as Record<string, unknown>;
+    const v = a.command ?? a.path ?? a.query;
+    return typeof v === 'string' ? v : detail;
+  } catch {
+    return detail;
+  }
+}
+
 function ToolChip({ name, detail }: ToolCall) {
   const [open, setOpen] = useState(false);
   const diff = name === 'edit_file' ? parseEditDiff(detail) : null;
+  const command = name === 'run_command' ? chipLabel(detail) : null;
+  if (command) {
+    return (
+      <div className="w-full overflow-hidden rounded-md border border-border bg-surface/50 font-mono text-[10px]">
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          className="flex min-h-[26px] w-full items-center gap-1.5 px-2 py-1 text-left text-dim transition-colors hover:text-text"
+        >
+          {open ? (
+            <IconChevronDown className="h-3 w-3 shrink-0" />
+          ) : (
+            <IconChevronRight className="h-3 w-3 shrink-0" />
+          )}
+          <IconWrench className="h-3 w-3 shrink-0 text-faint" />
+          <span className="shrink-0 text-text">{name}</span>
+          <span className="min-w-0 flex-1 truncate text-faint">{command}</span>
+        </button>
+        {open && (
+          <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-words border-t border-border/80 px-2 py-1.5 leading-relaxed text-subtle">
+            {detail}
+          </pre>
+        )}
+      </div>
+    );
+  }
   if (diff) {
     return (
       <div className="w-full overflow-hidden rounded-md border border-border bg-surface/50 font-mono text-[10px]">
@@ -370,7 +408,7 @@ function ToolChip({ name, detail }: ToolCall) {
     <span className="inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-md border border-border bg-surface/50 px-2 py-0.5 font-mono text-[10px] text-dim">
       <IconWrench className="h-3 w-3 shrink-0 text-faint" />
       <span className="shrink-0 text-text">{name}</span>
-      {detail && <span className="min-w-0 flex-1 truncate text-faint">{detail}</span>}
+      {detail && <span className="min-w-0 flex-1 truncate text-faint">{chipLabel(detail)}</span>}
     </span>
   );
 }
