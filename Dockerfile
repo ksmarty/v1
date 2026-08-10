@@ -12,7 +12,7 @@ COPY web/ ./
 RUN --mount=type=cache,target=/root/.npm npm run build
 
 # ---------- Stage 2: build the Go backend (cross-compiled) ----------
-FROM --platform=$BUILDPLATFORM golang:1.23-alpine AS build
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS build
 ARG TARGETOS TARGETARCH
 ARG VERSION=dev
 ARG COMMIT=unknown
@@ -37,7 +37,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 # cross-building; both build stages above run natively on $BUILDPLATFORM.
 FROM node:22-alpine AS final
 
-RUN apk add --no-cache git bash ca-certificates chromium \
+RUN apk add --no-cache git bash ca-certificates chromium ripgrep fd \
     && corepack enable \
     && corepack prepare pnpm@latest --activate
 

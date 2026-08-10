@@ -221,7 +221,7 @@ Deploys are made from the project's current files on disk (`.git`, `node_modules
 
 ## Local development
 
-Requires Go 1.23+ and Node 22+.
+Requires Go 1.26+ and Node 22+.
 
 ```bash
 make dev      # backend (:8080, auth disabled, ./data) + frontend dev server
