@@ -354,11 +354,12 @@ body {
   border-color: color-mix(in srgb, var(--v1-accent) 35%, transparent);
 }
 .v1-track-rect {
-  /* Lap around the perimeter + continuous hue shift so the rainbow reads as
-     changing color, not a fixed gradient sliding past. */
-  animation:
-    v1-track 1.2s linear infinite,
-    v1-track-hue 3s linear infinite;
+  animation: v1-track 1.2s linear infinite;
+}
+/* Hue rotation goes on the <svg> element — animating filter on an SVG child
+   is unreliable. */
+.v1-track-hue {
+  animation: v1-track-hue 3s linear infinite;
 }
 @keyframes v1-track {
   to {

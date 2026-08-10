@@ -2170,7 +2170,8 @@ export default function ChatPane({
               />
               {streaming && (
                 <svg
-                  className="pointer-events-none absolute inset-0 h-full w-full"
+                  className="v1-track-hue pointer-events-none absolute inset-0 h-full w-full"
+                  style={{ animationDuration: `${track.hue}s` }}
                   aria-hidden
                 >
                   <defs>
@@ -2184,16 +2185,16 @@ export default function ChatPane({
                   <rect
                     className="v1-track-rect"
                     style={{
-                      x: 1.25,
-                      y: 1.25,
-                      width: 'calc(100% - 2.5px)',
-                      height: 'calc(100% - 2.5px)',
-                      animationDuration: `${track.lap}s, ${track.hue}s`,
+                      x: 0.5,
+                      y: 0.5,
+                      width: 'calc(100% - 1px)',
+                      height: 'calc(100% - 1px)',
+                      animationDuration: `${track.lap}s`,
                     }}
-                    rx="10"
+                    rx="11"
                     fill="none"
                     stroke="url(#v1-track-grad)"
-                    strokeWidth="2"
+                    strokeWidth="3"
                     strokeLinecap="round"
                     pathLength={100}
                     strokeDasharray={`${track.arc} ${100 - track.arc}`}

@@ -203,7 +203,11 @@ function TrackSettingsControl() {
     <div className="flex flex-col gap-4">
       {/* Live preview of the working border on a mock composer. */}
       <div className="v1-working relative rounded-xl border bg-surface p-1.5">
-        <svg className="pointer-events-none absolute inset-0 h-full w-full" aria-hidden>
+        <svg
+          className="v1-track-hue pointer-events-none absolute inset-0 h-full w-full"
+          style={{ animationDuration: `${ts.hue}s` }}
+          aria-hidden
+        >
           <defs>
             <linearGradient id="v1-track-grad-preview" x1="0%" y1="0%" x2="100%" y2="0%">
               <stop offset="0%" stopColor="var(--v1-accent)" />
@@ -215,16 +219,16 @@ function TrackSettingsControl() {
           <rect
             className="v1-track-rect"
             style={{
-              x: 1.25,
-              y: 1.25,
-              width: 'calc(100% - 2.5px)',
-              height: 'calc(100% - 2.5px)',
-              animationDuration: `${ts.lap}s, ${ts.hue}s`,
+              x: 0.5,
+              y: 0.5,
+              width: 'calc(100% - 1px)',
+              height: 'calc(100% - 1px)',
+              animationDuration: `${ts.lap}s`,
             }}
-            rx="10"
+            rx="11"
             fill="none"
             stroke="url(#v1-track-grad-preview)"
-            strokeWidth="2"
+            strokeWidth="3"
             strokeLinecap="round"
             pathLength={100}
             strokeDasharray={`${ts.arc} ${100 - ts.arc}`}
@@ -233,7 +237,7 @@ function TrackSettingsControl() {
         <div className="px-1.5 py-1.5 text-sm text-faint">Describe what to build…</div>
       </div>
       {slider('Lap duration', ts.lap, 0.4, 5, 0.1, (v) => `${v.toFixed(1)}s`, (v) => update({ lap: v }))}
-      {slider('Arc length', ts.arc, 10, 95, 1, (v) => `${v}%`, (v) => update({ arc: v }))}
+      {slider('Arc length', ts.arc, 10, 100, 1, (v) => `${v}%`, (v) => update({ arc: v }))}
       {slider(
         'Hue cycle',
         ts.hue,
