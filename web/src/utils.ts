@@ -122,14 +122,14 @@ const TRACK_KEY = 'v1.workingTrack';
 
 export const TRACK_DEFAULTS: TrackSettings = {
   lap: 1.2,
-  arc: 65,
-  hue: 3,
-  width: 3,
+  arc: 33,
+  hue: 2.5,
+  width: 1.5,
   radius: 12,
   dashes: 1,
   palette: 'rainbow',
   reverse: false,
-  glow: false,
+  glow: true,
 };
 
 export function getTrackSettings(): TrackSettings {
