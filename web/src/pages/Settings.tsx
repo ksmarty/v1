@@ -1354,7 +1354,7 @@ export default function Settings() {
   const oauthReady = settings.vercel.oauthClientId !== '' && settings.vercel.clientSecretSet;
 
   return (
-    <div className="v1-safe-top flex h-dvh flex-col">
+    <div className="v1-safe-top flex h-[max(var(--v1-app-height,0px),100dvh)] flex-col overflow-hidden">
       <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-3 md:h-12 md:px-5">
         <Link
           to={backTo}
@@ -1464,7 +1464,7 @@ export default function Settings() {
 
         <main
           className={`flex min-h-0 flex-1 flex-col ${
-            page === 'tools' ? 'overflow-hidden' : 'fade-y overflow-y-auto'
+            page === 'tools' ? 'overflow-hidden' : 'fade-y overflow-y-auto overscroll-contain'
           }`}
         >
           <div

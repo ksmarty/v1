@@ -50,6 +50,13 @@ body,
   height: 100%;
 }
 
+/* App-shell pages never bounce: gestures over non-scrollable areas (nav,
+   header, short content) must not rubber-band the whole UI. */
+html,
+body {
+  overscroll-behavior: none;
+}
+
 body {
   margin: 0;
   background-color: var(--v1-bg);
