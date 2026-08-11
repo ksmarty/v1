@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -54,6 +55,11 @@ type Executor struct {
 	// HTML — the fetch_url tool falls back to it for JS-rendered pages whose
 	// static response carries no readable text.
 	RenderPage func(ctx context.Context, url string) (string, error)
+	// FetchGuard validates URLs before fetch_url touches them. When nil, the
+	// built-in guard applies: http/https only, loopback and link-local
+	// addresses rejected (the fetch runs server-side, so a project must not
+	// reach the v1 instance or other previews through it).
+	FetchGuard func(rawURL string) error
 }
 
 // Execute runs one tool call and returns the result string fed back to the LLM.
@@ -279,7 +285,7 @@ func (e *Executor) setTodos(argsJSON string) (string, error) {
 }
 
 // resolve maps a workspace-relative path to an absolute path, rejecting
-// anything that escapes the workspace root.
+// anything that escapes the workspace root — lexically or through symlinks.
 func (e *Executor) resolve(rel string) (string, error) {
 	root := e.Root
 	if rel == "" || rel == "." {
@@ -290,6 +296,33 @@ func (e *Executor) resolve(rel string) (string, error) {
 	if full != root && !strings.HasPrefix(full, root+string(filepath.Separator)) {
 		return "", fmt.Errorf("path %q escapes the workspace", rel)
 	}
+	// The lexical check misses symlinks: a link inside the workspace can
+	// point anywhere. Walk up to the deepest existing ancestor, resolve it,
+	// and confirm the target still sits under the workspace root.
+	resolvedRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		resolvedRoot = root
+	}
+	anc := full
+	for {
+		if _, err := os.Lstat(anc); err == nil {
+			break
+		}
+		parent := filepath.Dir(anc)
+		if parent == anc {
+			break
+		}
+		anc = parent
+	}
+	resolved, err := filepath.EvalSymlinks(anc)
+	if err != nil {
+		resolved = anc
+	}
+	resolved = filepath.Join(resolved, strings.TrimPrefix(full, anc))
+	if resolved != resolvedRoot && !strings.HasPrefix(resolved, resolvedRoot+string(filepath.Separator)) {
+		return "", fmt.Errorf("path %q escapes the workspace", rel)
+	}
+	// Return the original spelling so relative paths and displays stay stable.
 	return full, nil
 }
 
@@ -719,6 +752,35 @@ func (e *Executor) fetchURL(ctx context.Context, argsJSON string) (string, error
 	return toolResult(map[string]any{"ok": true, "url": u.String(), "text": text}), nil
 }
 
+// validateFetchURL is the default FetchGuard: only http(s) is allowed, and
+// the host must not resolve to a loopback, link-local, multicast or
+// unspecified address. The fetch runs server-side, so without this a project
+// could reach the v1 instance itself or other previews through fetch_url.
+func validateFetchURL(rawURL string) error {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return err
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("unsupported URL scheme %q", u.Scheme)
+	}
+	host := u.Hostname()
+	if host == "" {
+		return fmt.Errorf("URL has no host")
+	}
+	ips, err := net.LookupIP(host)
+	if err != nil {
+		// Resolution failure: the fetch itself will report it.
+		return nil
+	}
+	for _, ip := range ips {
+		if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() || ip.IsMulticast() {
+			return fmt.Errorf("refusing to fetch non-routable address %s (%s)", ip, host)
+		}
+	}
+	return nil
+}
+
 // fetchPageText fetches the page and extracts readable text. When the static
 // response is empty, too thin, or fails outright, the page is rendered in
 // headless Chrome (via RenderPage) and the text is extracted from the
@@ -726,6 +788,13 @@ func (e *Executor) fetchURL(ctx context.Context, argsJSON string) (string, error
 func (e *Executor) fetchPageText(ctx context.Context, rawURL string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
+	guard := e.FetchGuard
+	if guard == nil {
+		guard = validateFetchURL
+	}
+	if err := guard(rawURL); err != nil {
+		return "", err
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
 		return "", err

@@ -230,6 +230,24 @@ make build    # production build → bin/v1 (frontend built and embedded)
 make docker   # local docker build (tags v1:local)
 ```
 
+## Security
+
+v1 is a dev tool that executes AI-generated code — **the Docker container is
+the isolation boundary**. Treat it as such:
+
+- The agent's shell, terminal, and preview dev servers run with your user's
+  privileges. Outside Docker there is no sandbox: a project can read anything
+  your user can read.
+- `npm install` / `pnpm install` run package lifecycle scripts at first
+  preview. Only open projects you trust, or run v1 in the container.
+- Agent file tools reject paths that escape the project directory, including
+  via symlinks, and `fetch_url` refuses loopback/link-local addresses
+  (server-side fetch). The remaining surface — arbitrary shell — is the
+  product, not a bug.
+- The bundled image runs the server as an unprivileged user against `/data`;
+  mount a named volume there and keep secrets (API keys, tokens) out of
+  project files.
+
 ## Releases
 
 Fully automated, zero manual steps:

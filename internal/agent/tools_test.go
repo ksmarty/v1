@@ -32,6 +32,30 @@ func TestResolveRejectsTraversal(t *testing.T) {
 	}
 }
 
+func TestResolveRejectsSymlinkEscape(t *testing.T) {
+	e := newTestExecutor(t)
+	outside := filepath.Join(t.TempDir(), "outside.txt")
+	if err := os.WriteFile(outside, []byte("secret"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Dir(outside), filepath.Join(e.Root, "escape")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Execute(context.Background(), "read_file", `{"path":"escape/outside.txt"}`); err == nil {
+		t.Fatal("expected symlink escape to be rejected")
+	}
+	if err := os.WriteFile(filepath.Join(e.Root, "ok.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// A symlink that stays inside the workspace still works.
+	if err := os.Symlink(filepath.Join(e.Root, "ok.txt"), filepath.Join(e.Root, "link.txt")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Execute(context.Background(), "read_file", `{"path":"link.txt"}`); err != nil {
+		t.Fatalf("in-workspace symlink rejected: %v", err)
+	}
+}
+
 func TestWriteReadEditFile(t *testing.T) {
 	e := newTestExecutor(t)
 	if _, err := e.Execute(context.Background(), "write_file", `{"path":"sub/dir/a.txt","content":"hello world"}`); err != nil {
@@ -202,6 +226,21 @@ func TestFetchURLValidatesAndStrips(t *testing.T) {
 	}
 }
 
+func TestFetchURLBlocksNonRoutable(t *testing.T) {
+	e := newTestExecutor(t)
+	for _, u := range []string{
+		"http://127.0.0.1:1/",
+		"http://[::1]:1/",
+		"http://localhost:1/",
+		"http://169.254.169.254/latest/meta-data",
+		"http://0.0.0.0:1/",
+	} {
+		if _, err := e.Execute(context.Background(), "fetch_url", fmt.Sprintf(`{"url":%q}`, u)); err == nil {
+			t.Fatalf("expected %s to be blocked", u)
+		}
+	}
+}
+
 func TestFetchURLRendersSPAShell(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
@@ -210,6 +249,7 @@ func TestFetchURLRendersSPAShell(t *testing.T) {
 	defer srv.Close()
 	calls := 0
 	e := newTestExecutor(t)
+	e.FetchGuard = func(string) error { return nil } // httptest binds 127.0.0.1
 	e.RenderPage = func(ctx context.Context, url string) (string, error) {
 		calls++
 		return `<html><body><h1>Rendered Title</h1><p>Content from the JS render.</p><pre>const x = 1;</pre></body></html>`, nil
@@ -236,6 +276,7 @@ func TestFetchURLSkipsRenderForStaticText(t *testing.T) {
 	defer srv.Close()
 	calls := 0
 	e := newTestExecutor(t)
+	e.FetchGuard = func(string) error { return nil } // httptest binds 127.0.0.1
 	e.RenderPage = func(ctx context.Context, url string) (string, error) {
 		calls++
 		return "", nil
@@ -258,6 +299,7 @@ func TestFetchURLRendersOnHTTPError(t *testing.T) {
 	}))
 	defer srv.Close()
 	e := newTestExecutor(t)
+	e.FetchGuard = func(string) error { return nil } // httptest binds 127.0.0.1
 	e.RenderPage = func(ctx context.Context, url string) (string, error) {
 		return `<html><body><h1>Rendered Despite 403</h1></body></html>`, nil
 	}

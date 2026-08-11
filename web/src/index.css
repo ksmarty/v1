@@ -382,3 +382,9 @@ body {
     box-shadow: 0 0 12px 3px color-mix(in srgb, var(--v1-accent) 35%, transparent);
   }
 }
+
+/* Settings deep-link target: brief accent ring after search navigation. */
+.v1-section-flash {
+  box-shadow: 0 0 0 2px var(--v1-accent);
+  transition: box-shadow 0.3s ease;
+}

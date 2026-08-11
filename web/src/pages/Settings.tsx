@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type DragEvent, type FormEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type FormEvent, type ReactNode } from 'react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { SiVercel } from 'react-icons/si';
 import { api, type SettingsUpdate } from '../api';
@@ -11,6 +11,7 @@ import {
   getDebugHud,
   getJsonPretty,
   getNotifyEnabled,
+  iosVersion,
   isIOS,
   isStandalone,
   randomId,
@@ -63,7 +64,7 @@ import {
 } from '../components/icons';
 import ProviderSelector from '../components/ProviderSelector';
 import GitHubConnect from '../components/GitHubConnect';
-import ToolSettings from '../components/ToolSettings';
+import ToolSettings, { type ToolsTab } from '../components/ToolSettings';
 
 const NAV = [
   { id: 'llm', label: 'LLM & providers', icon: <IconModel className="h-4 w-4" /> },
@@ -81,9 +82,63 @@ const navItemClass = (active: boolean) =>
     active ? 'bg-border text-text' : 'text-subtle hover:bg-border/60 hover:text-text'
   }`;
 
+// Searchable catalog of every setting on the page. The id doubles as the
+// section anchor for deep links (?page=…&section=…); keywords carry the
+// loose phrasing users actually type ("tokens", "approve", "ios banner").
+const SETTINGS_SEARCH: {
+  id: string;
+  page: NavId;
+  label: string;
+  hint: string;
+  keywords: string;
+}[] = [
+  { id: 'sec-llm', page: 'llm', label: 'LLM provider', hint: 'Base URL, API key, model', keywords: 'openai compatible endpoint api key base url model provider connection test' },
+  { id: 'sec-system-prompt', page: 'llm', label: 'Global system prompt', hint: 'Extra instructions for every chat', keywords: 'prompt instructions behavior context rules system agent' },
+  { id: 'sec-thinking-default', page: 'llm', label: 'Default thinking level', hint: 'Off / low / medium / high / xhigh / max', keywords: 'thinking reasoning effort level default tokens model' },
+  { id: 'sec-toon', page: 'llm', label: 'TOON', hint: 'Token-efficient tool result encoding', keywords: 'toon tokens efficient encode tool results format compact json' },
+  { id: 'sec-github', page: 'github', label: 'GitHub', hint: 'Personal access token', keywords: 'github token pat repo import push auth' },
+  { id: 'sec-github', page: 'github', label: 'GitHub OAuth', hint: 'OAuth App client ID', keywords: 'github oauth client id connect login' },
+  { id: 'sec-vercel', page: 'vercel', label: 'Vercel', hint: 'Deploy token', keywords: 'vercel deploy token push hosting deploy' },
+  { id: 'sec-tools-mcp', page: 'tools', label: 'MCP servers', hint: 'Model Context Protocol servers', keywords: 'mcp servers tools context protocol connect' },
+  { id: 'sec-tools-skills', page: 'tools', label: 'Skills', hint: 'Install skills from SkillsMP', keywords: 'skills skillsmp install markdown' },
+  { id: 'sec-tools-perms', page: 'tools', label: 'Permissions', hint: 'Approval mode, rewind approval', keywords: 'permission approve ask auto yolo tools rewind approval confirm' },
+  { id: 'sec-appearance', page: 'appearance', label: 'Appearance', hint: 'Theme, chat side', keywords: 'theme dark light chat side left right appearance color' },
+  { id: 'sec-chat-tabs', page: 'appearance', label: 'Chat tabs', hint: 'Reorder and hide project tabs', keywords: 'tabs chat files terminal git memories project order hide drag' },
+  { id: 'sec-tool-calls', page: 'appearance', label: 'Tool calls', hint: 'Pretty-print JSON', keywords: 'tool calls json pretty print format result arguments' },
+  { id: 'sec-auth', page: 'auth', label: 'Auth', hint: 'Change the password', keywords: 'password auth login security change password' },
+  { id: 'sec-notifications', page: 'appearance', label: 'Notifications', hint: 'Turn-finished alerts', keywords: 'notifications notify alerts push ios pwa banner turn' },
+  { id: 'sec-debug-hud', page: 'about', label: 'Debug HUD', hint: 'Viewport metrics overlay', keywords: 'debug hud viewport metrics overlay diagnostics' },
+];
+
+// Scores an entry against a loose query: exact substrings weigh most, then
+// token and prefix matches across the title, hint and keywords.
+function scoreSettings(query: string, e: (typeof SETTINGS_SEARCH)[number]): number {
+  const q = query.toLowerCase().trim();
+  if (!q) return 0;
+  const hay = `${e.label} ${e.hint} ${e.keywords}`.toLowerCase();
+  let score = 0;
+  if (hay.includes(q)) score += 50;
+  if (e.label.toLowerCase().includes(q)) score += 30;
+  for (const tok of q.split(/\s+/)) {
+    if (tok.length < 2) continue;
+    if (hay.includes(tok)) score += 10;
+    if (tok.length >= 3) {
+      for (const word of hay.split(/[^a-z0-9]+/)) {
+        if (word.startsWith(tok)) {
+          score += 4;
+          break;
+        }
+      }
+    }
+  }
+  return score;
+}
+
 function ThemePicker() {
   const [selected, setSelected] = useState<string>(() => getStoredTheme());
+  const [expanded, setExpanded] = useState(false);
   const options = listThemeOptions();
+  const current = options.find((t) => t.name === selected) ?? options[0];
 
   const choose = (name: string) => {
     setSelected(name);
@@ -91,32 +146,51 @@ function ThemePicker() {
     applyTheme(name);
   };
 
+  const swatch = (t: { name: string; swatches: string[] }) => (
+    <span className="flex h-4 overflow-hidden rounded">
+      {t.swatches.map((c, i) => (
+        <span key={i} className="h-full flex-1" style={{ backgroundColor: c }} />
+      ))}
+    </span>
+  );
+
   return (
-    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-      {options.map((t) => {
-        const active = t.name === selected;
-        return (
-          <button
-            key={t.name}
-            type="button"
-            onClick={() => choose(t.name)}
-            className={`rounded-lg border p-2.5 text-left transition-colors ${
-              active
-                ? 'border-accent ring-1 ring-accent'
-                : 'border-border hover:border-border-strong'
-            }`}
-          >
-            <span className="mb-2 flex h-4 overflow-hidden rounded">
-              {t.swatches.map((c, i) => (
-                <span key={i} className="h-full flex-1" style={{ backgroundColor: c }} />
-              ))}
-            </span>
-            <span className={`block truncate text-xs ${active ? 'text-text' : 'text-dim'}`}>
-              {t.name}
-            </span>
-          </button>
-        );
-      })}
+    <div className="flex flex-col gap-2">
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="flex w-full items-center gap-2.5 rounded-lg border border-border p-2.5 text-left transition-colors hover:border-border-strong"
+      >
+        <span className="w-10 shrink-0">{swatch(current)}</span>
+        <span className="flex-1 truncate text-xs text-text">{current.name}</span>
+        <IconChevronDown
+          className={`h-4 w-4 shrink-0 text-dim transition-transform ${expanded ? 'rotate-180' : ''}`}
+        />
+      </button>
+      {expanded && (
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          {options.map((t) => {
+            const active = t.name === selected;
+            return (
+              <button
+                key={t.name}
+                type="button"
+                onClick={() => choose(t.name)}
+                className={`rounded-lg border p-2.5 text-left transition-colors ${
+                  active
+                    ? 'border-accent ring-1 ring-accent'
+                    : 'border-border hover:border-border-strong'
+                }`}
+              >
+                <span className="mb-2">{swatch(t)}</span>
+                <span className={`block truncate text-xs ${active ? 'text-text' : 'text-dim'}`}>
+                  {t.name}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -258,10 +332,23 @@ function NotificationsControl() {
   const supported = 'Notification' in window;
   const ios = isIOS();
   const standalone = isStandalone();
+  const ver = iosVersion();
   const [on, setOn] = useState(() => getNotifyEnabled());
   const [perm, setPerm] = useState(() => (supported ? Notification.permission : 'denied'));
   const [testing, setTesting] = useState(false);
   const [tested, setTested] = useState<'ok' | 'fail' | null>(null);
+  const [swReady, setSwReady] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) {
+      setSwReady(false);
+      return;
+    }
+    navigator.serviceWorker
+      .getRegistration()
+      .then((r) => setSwReady(r != null))
+      .catch(() => setSwReady(false));
+  }, []);
 
   const choose = async (v: boolean) => {
     if (!v) {
@@ -317,16 +404,37 @@ function NotificationsControl() {
       {!supported && (
         <p className="text-xs text-faint">This browser does not support notifications.</p>
       )}
-      {supported && perm === 'denied' && (
+      {supported && ios && ver > 0 && ver < 16.4 && (
         <p className="text-xs text-faint">
-          {ios
-            ? 'Open iOS Settings → v1 → Notifications to allow them.'
-            : 'Notifications are blocked — allow them in the browser or system settings.'}
+          Notifications on iOS require iOS 16.4 or later — update your iPhone first.
+        </p>
+      )}
+      {supported && ios && ver >= 16.4 && ver < 16.5 && (
+        <p className="text-xs text-faint">
+          iOS 16.4 has a known bug where the permission prompt may not appear at all. Update to
+          iOS 16.5 or later, then try again.
+        </p>
+      )}
+      {supported && perm === 'denied' && (
+        <p className="text-xs leading-relaxed text-faint">
+          {ios && !standalone
+            ? 'Open v1 from your Home Screen to be able to request notification permission.'
+            : ios
+              ? 'iOS shows the permission prompt only once per install. If it was denied or dismissed — or never appeared — delete the app from your Home Screen (long-press the icon → Remove) and add it again via Share → Add to Home Screen. A fresh install can request permission again.'
+              : 'Notifications are blocked — allow them in the browser or system settings.'}
         </p>
       )}
       {supported && perm === 'granted' && ios && (
+        <p className="text-xs leading-relaxed text-faint">
+          If notifications don&apos;t arrive, open iOS Settings → v1 → Notifications and make
+          sure it&apos;s enabled. The entry appears under the app&apos;s home screen name once
+          permission has been granted.
+        </p>
+      )}
+      {supported && swReady === false && (
         <p className="text-xs text-faint">
-          If notifications don&apos;t arrive, check iOS Settings → v1 → Notifications.
+          No service worker is active — iOS requires one for notifications. Reload the page
+          once, then try again.
         </p>
       )}
       {supported && perm === 'granted' && (
@@ -594,11 +702,48 @@ export default function Settings() {
   const location = useLocation();
   const from = (location.state as { from?: string } | null)?.from;
   const backTo = from && from.startsWith('/') ? from : '/';
-  const [params] = useSearchParams();
+  const [params, setSearchParams] = useSearchParams();
   const initialPage = params.get('page');
   const [page, setPage] = useState<NavId>(
     NAV.some((n) => n.id === initialPage) ? (initialPage as NavId) : 'llm',
   );
+  // Settings search: a loose query over the catalog; picking a result
+  // deep-links to ?page=…&section=… which switches the tab and scrolls.
+  const [query, setQuery] = useState('');
+  const searchResults = useMemo(() => {
+    if (!query.trim()) return [] as (typeof SETTINGS_SEARCH)[number][];
+    return SETTINGS_SEARCH.map((e) => ({ e, s: scoreSettings(query, e) }))
+      .filter((x) => x.s > 0)
+      .sort((a, b) => b.s - a.s)
+      .slice(0, 5)
+      .map((x) => x.e);
+  }, [query]);
+  const goToSetting = (e: (typeof SETTINGS_SEARCH)[number]) => {
+    setQuery('');
+    setSearchParams({ page: e.page, section: e.id });
+  };
+  // Deep links can land while another tab is showing — follow the page param.
+  useEffect(() => {
+    const p = params.get('page');
+    if (p && NAV.some((n) => n.id === p)) setPage(p as NavId);
+  }, [params]);
+  // Tools deep links pick the MCP/skills/perms tab.
+  const toolsSection = params.get('section');
+  const toolsInitialTab: ToolsTab =
+    toolsSection === 'skills' ? 'skills' : toolsSection === 'perms' ? 'perms' : 'mcp';
+  // Scroll the target section into view and flash it once the page renders.
+  const sectionParam = params.get('section');
+  useEffect(() => {
+    if (!sectionParam) return;
+    const t = setTimeout(() => {
+      const el = document.getElementById(sectionParam);
+      if (!el) return;
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      el.classList.add('v1-section-flash');
+      setTimeout(() => el.classList.remove('v1-section-flash'), 2600);
+    }, 150);
+    return () => clearTimeout(t);
+  }, [sectionParam, page]);
   const [mobileOpen, setMobileOpen] = useState(false);
   const ddRef = useRef<HTMLDivElement>(null);
 
@@ -962,6 +1107,42 @@ export default function Settings() {
           <IconArrowLeft className="h-5 w-5" />
         </Link>
         <h1 className="text-sm font-semibold text-text">Settings</h1>
+        <div className="relative ml-auto w-full max-w-[16rem] sm:max-w-xs md:max-w-sm">
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') setQuery('');
+              if (e.key === 'Enter' && searchResults.length > 0) goToSetting(searchResults[0]);
+            }}
+            placeholder="Search settings…"
+            className="!py-1.5 text-sm"
+          />
+          {query.trim() !== '' && (
+            <div className="absolute inset-x-0 top-full z-50 mt-1 overflow-hidden rounded-lg border border-border bg-bg shadow-2xl">
+              {searchResults.length === 0 ? (
+                <p className="px-3 py-2 text-xs text-faint">No settings found</p>
+              ) : (
+                searchResults.map((r) => (
+                  <button
+                    key={r.id}
+                    type="button"
+                    onClick={() => goToSetting(r)}
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-surface"
+                  >
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm text-text">{r.label}</span>
+                      <span className="block truncate text-[11px] text-faint">{r.hint}</span>
+                    </span>
+                    <span className="shrink-0 text-[10px] text-faint">
+                      {NAV.find((n) => n.id === r.page)?.label}
+                    </span>
+                  </button>
+                ))
+              )}
+            </div>
+          )}
+        </div>
       </header>
 
       <div className="flex min-h-0 flex-1 flex-col md:flex-row">
@@ -1035,7 +1216,7 @@ export default function Settings() {
             }`}
           >
             <div className={page === 'llm' ? 'flex flex-col gap-4' : 'hidden'}>
-              <Section title="LLM" description="The OpenAI-compatible endpoint v1 uses to generate apps. The model is picked per project in the chat.">
+              <Section id="sec-llm" title="LLM" description="The OpenAI-compatible endpoint v1 uses to generate apps. The model is picked per project in the chat.">
           <form onSubmit={(e) => void saveLLM(e)} className="flex flex-col gap-3">
             <ProviderSelector
               baseURL={baseURL}
@@ -1179,6 +1360,7 @@ export default function Settings() {
         </Section>
 
         <Section
+          id="sec-system-prompt"
           title="Global system prompt"
           description="Extra instructions appended to the system prompt of every chat, across all projects."
         >
@@ -1200,6 +1382,7 @@ export default function Settings() {
         </Section>
 
         <Section
+          id="sec-thinking-default"
           title="Default thinking level"
           description="The thinking level used when you pick a model. Falls back to the model's lowest level when it doesn't support the chosen one; per-model selections in the chat override this."
         >
@@ -1226,6 +1409,7 @@ export default function Settings() {
           </form>
         </Section>
         <Section
+          id="sec-toon"
           title="TOON"
           description="Encode tool results as TOON — a compact, token-efficient format — when feeding them to the model. The chat keeps showing the original JSON either way."
         >
@@ -1235,6 +1419,7 @@ export default function Settings() {
 
             <div className={page === 'github' ? '' : 'hidden'}>
               <Section
+          id="sec-github"
           title="GitHub"
           description="Used for repo import, create, and push."
           badge={ghBadge}
@@ -1322,6 +1507,7 @@ export default function Settings() {
 
             <div className={page === 'vercel' ? '' : 'hidden'}>
               <Section
+                id="sec-vercel"
                 title="Vercel"
                 description="Deploy this instance's projects to Vercel."
                 badge={vercelBadge}
@@ -1448,11 +1634,11 @@ export default function Settings() {
             </div>
 
             <div className={page === 'tools' ? 'flex min-h-0 flex-1 flex-col' : 'hidden'}>
-              <ToolSettings initialTab="mcp" />
+              <ToolSettings initialTab={toolsInitialTab} />
             </div>
 
             <div className={page === 'appearance' ? 'flex flex-col gap-4' : 'hidden'}>
-              <Section title="Appearance" description="Theme applies instantly and is remembered.">
+              <Section id="sec-appearance" title="Appearance" description="Theme applies instantly and is remembered.">
           <div>
             <span className="mb-1 block text-xs text-subtle">Chat side (desktop)</span>
             <ChatSideControl />
@@ -1463,12 +1649,21 @@ export default function Settings() {
           </div>
         </Section>
         <Section
+          id="sec-notifications"
+          title="Notifications"
+          description="Get a system notification when a chat turn finishes while the app is in the background."
+        >
+          <NotificationsControl />
+        </Section>
+        <Section
+          id="sec-chat-tabs"
           title="Chat tabs"
           description="Choose which tabs appear in the project view and their order. Drag to reorder; the eye toggles a tab on or off."
         >
           <ChatTabsControl />
         </Section>
         <Section
+          id="sec-tool-calls"
           title="Tool calls"
           description="Pretty-print the JSON arguments and results of chat tool calls. The Raw/Pretty toggle on each block still overrides per call."
         >
@@ -1480,7 +1675,7 @@ export default function Settings() {
             </div>
 
             <div className={page === 'auth' ? '' : 'hidden'}>
-              <Section title="Auth">
+              <Section id="sec-auth" title="Auth">
           {settings.auth.disabled ? (
             <p className="text-sm text-dim">
               Password authentication is disabled for this instance.
@@ -1535,12 +1730,7 @@ export default function Settings() {
                 </div>
               </Section>
               <Section
-                title="Notifications"
-                description="Get a system notification when a chat turn finishes while the app is in the background."
-              >
-                <NotificationsControl />
-              </Section>
-              <Section
+                id="sec-debug-hud"
                 title="Debug HUD"
                 description="Shows live viewport metrics in the project view. Applies on reload."
               >

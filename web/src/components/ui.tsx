@@ -170,14 +170,20 @@ export function Section({
   description,
   badge,
   children,
+  id,
 }: {
   title: string;
   description?: string;
   badge?: ReactNode;
   children: ReactNode;
+  /** Anchor for settings deep links (scroll target). */
+  id?: string;
 }) {
   return (
-    <section className="rounded-xl border border-border bg-surface p-4 md:p-5">
+    <section
+      id={id}
+      className="scroll-mt-16 rounded-xl border border-border bg-surface p-4 md:p-5"
+    >
       <div className="flex items-center gap-2">
         <h2 className="text-sm font-semibold text-text">{title}</h2>
         {badge}

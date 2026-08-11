@@ -124,6 +124,13 @@ export function isIOS(): boolean {
   );
 }
 
+// iOS major.minor version (e.g. 17.5), or 0 on other platforms (and iPadOS,
+// whose user agent no longer carries the OS version).
+export function iosVersion(): number {
+  const m = navigator.userAgent.match(/OS (\d+)[_.](\d+)/);
+  return m ? parseFloat(`${m[1]}.${m[2]}`) : 0;
+}
+
 // True when running as an installed PWA (e.g. iOS Add to Home Screen).
 export function isStandalone(): boolean {
   return (

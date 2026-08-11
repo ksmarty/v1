@@ -235,14 +235,21 @@ func (m *Manager) Start(projectID, dir, previewCommand string) (string, error) {
 		}
 	}
 
-	p.Vite = hasViteDep(filepath.Join(dir, "package.json"))
+	p.Vite = hasDep(filepath.Join(dir, "package.json"), "vite")
+	usesNext := hasDep(filepath.Join(dir, "package.json"), "next")
 
 	var cmd *exec.Cmd
 	if previewCommand != "" {
 		cmd = exec.Command("sh", "-c", previewCommand)
 	} else {
 		pm := packageManager()
-		devArgs := []string{"--port", fmt.Sprint(port), "--host", "127.0.0.1"}
+		devArgs := []string{"--port", fmt.Sprint(port)}
+		hostFlag := "--host"
+		if usesNext {
+			// next dev calls the flag --hostname; --host was dropped in Next 15+.
+			hostFlag = "--hostname"
+		}
+		devArgs = append(devArgs, hostFlag, "127.0.0.1")
 		if p.Vite {
 			// vite needs a base path to be proxied under a subpath.
 			devArgs = append(devArgs, "--base", "/preview/"+projectID+"/")
@@ -468,8 +475,8 @@ func (m *Manager) installDeps(dir string, logs *ringLog) error {
 	return lastErr
 }
 
-// hasViteDep reports whether package.json lists vite in its dependencies.
-func hasViteDep(pkgPath string) bool {
+// hasDep reports whether package.json lists name in its dependencies.
+func hasDep(pkgPath, name string) bool {
 	data, err := os.ReadFile(pkgPath)
 	if err != nil {
 		return false
@@ -481,7 +488,7 @@ func hasViteDep(pkgPath string) bool {
 	if json.Unmarshal(data, &pkg) != nil {
 		return false
 	}
-	_, inDeps := pkg.Dependencies["vite"]
-	_, inDev := pkg.DevDependencies["vite"]
+	_, inDeps := pkg.Dependencies[name]
+	_, inDev := pkg.DevDependencies[name]
 	return inDeps || inDev
 }
