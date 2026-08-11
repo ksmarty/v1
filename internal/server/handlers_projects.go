@@ -71,7 +71,13 @@ func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListProjects(w http.ResponseWriter, r *http.Request) {
-	projects, err := s.st.ListProjects()
+	var projects []*store.Project
+	var err error
+	if s.cfg.AuthDisabled {
+		projects, err = s.st.ListProjects()
+	} else {
+		projects, err = s.st.ListProjectsByOwner(s.currentUser(r).ID)
+	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -137,7 +143,7 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	p := &store.Project{ID: id, Name: name, Path: dir, Instructions: body.Description}
+	p := &store.Project{ID: id, Name: name, Path: dir, Instructions: body.Description, OwnerID: s.currentUser(r).ID}
 	if err := s.st.CreateProject(p); err != nil {
 		os.RemoveAll(dir)
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -206,12 +212,12 @@ func (s *Server) handleImportProject(w http.ResponseWriter, r *http.Request) {
 	}
 	id := store.NewID()
 	dir := filepath.Join(s.cfg.DataDir, "projects", id)
-	if err := gitops.Clone(r.Context(), repoURL, s.githubToken(), dir); err != nil {
+	if err := gitops.Clone(r.Context(), repoURL, s.githubToken(s.currentUser(r).ID), dir); err != nil {
 		os.RemoveAll(dir)
 		writeError(w, http.StatusBadRequest, "clone failed: "+err.Error())
 		return
 	}
-	p := &store.Project{ID: id, Name: name, Path: dir, RepoURL: repoURL}
+	p := &store.Project{ID: id, Name: name, Path: dir, RepoURL: repoURL, OwnerID: s.currentUser(r).ID}
 	if err := s.st.CreateProject(p); err != nil {
 		os.RemoveAll(dir)
 		writeError(w, http.StatusInternalServerError, err.Error())

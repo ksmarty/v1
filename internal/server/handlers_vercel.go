@@ -109,17 +109,23 @@ func (s *Server) handleVercelOAuthCallback(w http.ResponseWriter, r *http.Reques
 		fail()
 		return
 	}
-	if err := s.st.SetSetting(keyVercelToken, tok.AccessToken); err != nil {
+	u, ok := s.auth.User(r)
+	if !ok {
+		log.Printf("vercel: no session for OAuth callback")
+		fail()
+		return
+	}
+	if err := s.st.SetUserSetting(u.ID, keyVercelToken, tok.AccessToken); err != nil {
 		log.Printf("vercel: storing token: %v", err)
 		fail()
 		return
 	}
 	if tok.RefreshToken != "" {
-		if err := s.st.SetSetting(keyVercelRefreshToken, tok.RefreshToken); err != nil {
+		if err := s.st.SetUserSetting(u.ID, keyVercelRefreshToken, tok.RefreshToken); err != nil {
 			log.Printf("vercel: storing refresh token: %v", err)
 		}
 	}
-	if err := s.st.SetSetting(keyVercelTokenSource, "oauth"); err != nil {
+	if err := s.st.SetUserSetting(u.ID, keyVercelTokenSource, "oauth"); err != nil {
 		log.Printf("vercel: storing token source: %v", err)
 	}
 	http.Redirect(w, r, "/settings?page=vercel", http.StatusFound)
@@ -128,11 +134,12 @@ func (s *Server) handleVercelOAuthCallback(w http.ResponseWriter, r *http.Reques
 // handleVercelUser reports whether a token is configured and, when possible,
 // the connected Vercel username.
 func (s *Server) handleVercelUser(w http.ResponseWriter, r *http.Request) {
-	if s.vercelToken() == "" {
+	userID := s.currentUser(r).ID
+	if s.vercelToken(userID) == "" {
 		writeJSON(w, http.StatusOK, map[string]any{"connected": false})
 		return
 	}
-	login, err := s.vercelClient().User(r.Context())
+	login, err := s.vercelClient(userID).User(r.Context())
 	if err != nil {
 		writeJSON(w, http.StatusOK, map[string]any{"connected": false, "error": err.Error()})
 		return
@@ -219,7 +226,8 @@ func (s *Server) handleVercelDeploy(w http.ResponseWriter, r *http.Request) {
 	if p == nil {
 		return
 	}
-	if s.vercelToken() == "" {
+	userID := s.currentUser(r).ID
+	if s.vercelToken(userID) == "" {
 		writeError(w, http.StatusBadRequest, "no Vercel token configured (connect Vercel in Settings)")
 		return
 	}
@@ -251,7 +259,7 @@ func (s *Server) handleVercelDeploy(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 12*time.Minute)
 		defer cancel()
-		dep, derr := s.vercelClient().Deploy(ctx, slugify(p.Name), files, body.Target)
+		dep, derr := s.vercelClient(userID).Deploy(ctx, slugify(p.Name), files, body.Target)
 		state.mu.Lock()
 		state.done = true
 		if derr != nil {
@@ -272,6 +280,7 @@ func (s *Server) handleVercelDeployments(w http.ResponseWriter, r *http.Request)
 	if p == nil {
 		return
 	}
+	userID := s.currentUser(r).ID
 	s.vercelMu.Lock()
 	st := s.vercelDeploys[p.ID]
 	s.vercelMu.Unlock()
@@ -291,8 +300,8 @@ func (s *Server) handleVercelDeployments(w http.ResponseWriter, r *http.Request)
 	}
 
 	recent := []vercel.Deployment{}
-	if s.vercelToken() != "" {
-		deps, err := s.vercelClient().ListDeployments(r.Context(), slugify(p.Name), 10)
+	if s.vercelToken(userID) != "" {
+		deps, err := s.vercelClient(userID).ListDeployments(r.Context(), slugify(p.Name), 10)
 		if err != nil {
 			writeJSON(w, http.StatusOK, map[string]any{
 				"connected": true,
@@ -306,7 +315,7 @@ func (s *Server) handleVercelDeployments(w http.ResponseWriter, r *http.Request)
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"connected": s.vercelToken() != "",
+		"connected": s.vercelToken(userID) != "",
 		"active":    active,
 		"recent":    recent,
 	})

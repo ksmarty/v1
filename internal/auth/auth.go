@@ -1,7 +1,8 @@
-// Package auth implements password login, sessions and the auth middleware.
+// Package auth implements user login, sessions and the auth middleware.
 package auth
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"net/http"
@@ -16,9 +17,10 @@ import (
 // CookieName is the session cookie name.
 const CookieName = "v1_session"
 
-const passwordHashKey = "password_hash"
-
 const sessionTTL = 30 * 24 * time.Hour
+
+// userCtxKey carries the authenticated *store.User through the middleware.
+type userCtxKey struct{}
 
 // Manager handles authentication state.
 type Manager struct {
@@ -45,21 +47,32 @@ func HashPassword(pw string) (string, error) {
 	return string(b), err
 }
 
-// EnsureEnvPassword hashes the env-provided password into the settings table
-// on first use (when no hash is stored yet).
-func (m *Manager) EnsureEnvPassword() {
-	if _, ok, _ := m.st.GetSetting(passwordHashKey); ok {
-		return
-	}
+// BootstrapAdmin creates the admin user from the env-provided password on
+// first start (when no users exist yet). Setup remains required otherwise.
+func (m *Manager) BootstrapAdmin() {
 	if m.envPass == "" {
 		return
 	}
-	if h, err := HashPassword(m.envPass); err == nil {
-		_ = m.st.SetSetting(passwordHashKey, h)
+	if n, err := m.st.UserCount(); err != nil || n > 0 {
+		return
 	}
+	h, err := HashPassword(m.envPass)
+	if err != nil {
+		return
+	}
+	u := &store.User{
+		ID:           store.NewID(),
+		Username:     "admin",
+		PasswordHash: h,
+		IsAdmin:      true,
+	}
+	if err := m.st.CreateUser(u); err != nil {
+		return
+	}
+	_ = m.st.ClaimOwnerlessProjects(u.ID)
 }
 
-// SetupRequired reports whether no password exists anywhere yet.
+// SetupRequired reports whether no user account exists anywhere yet.
 func (m *Manager) SetupRequired() bool {
 	if m.disabled {
 		return false
@@ -67,26 +80,47 @@ func (m *Manager) SetupRequired() bool {
 	if m.oidcEnabled {
 		return false
 	}
-	_, ok, _ := m.st.GetSetting(passwordHashKey)
-	return !ok && m.envPass == ""
+	n, err := m.st.UserCount()
+	return err == nil && n == 0
 }
 
-// Verify checks a plaintext password against the stored bcrypt hash.
-func (m *Manager) Verify(password string) bool {
-	hash, ok, err := m.st.GetSetting(passwordHashKey)
-	if err != nil || !ok || hash == "" {
-		return false
+// Login verifies a username/password pair and returns the user.
+func (m *Manager) Login(username, password string) (*store.User, bool) {
+	u, err := m.st.GetUserByUsername(username)
+	if err != nil {
+		return nil, false
 	}
-	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) == nil
+	if bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(password)) != nil {
+		return nil, false
+	}
+	return u, true
 }
 
-// SetPassword stores a new bcrypt password hash.
-func (m *Manager) SetPassword(password string) error {
+// SetPassword stores a new bcrypt password hash for a user.
+func (m *Manager) SetPassword(userID, password string) error {
 	h, err := HashPassword(password)
 	if err != nil {
 		return err
 	}
-	return m.st.SetSetting(passwordHashKey, h)
+	return m.st.SetUserPassword(userID, h)
+}
+
+// CreateUser creates a user with a bcrypt-hashed password.
+func (m *Manager) CreateUser(username, password string, isAdmin bool) (*store.User, error) {
+	h, err := HashPassword(password)
+	if err != nil {
+		return nil, err
+	}
+	u := &store.User{
+		ID:           store.NewID(),
+		Username:     username,
+		PasswordHash: h,
+		IsAdmin:      isAdmin,
+	}
+	if err := m.st.CreateUser(u); err != nil {
+		return nil, err
+	}
+	return u, nil
 }
 
 func newToken() string {
@@ -101,10 +135,10 @@ func isSecure(r *http.Request) bool {
 	return r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
 }
 
-// CreateSession stores a new session and sets the session cookie.
-func (m *Manager) CreateSession(w http.ResponseWriter, r *http.Request) error {
+// CreateSession stores a session for the user and sets the session cookie.
+func (m *Manager) CreateSession(w http.ResponseWriter, r *http.Request, userID string) error {
 	token := newToken()
-	if err := m.st.CreateSession(token, sessionTTL); err != nil {
+	if err := m.st.CreateSession(token, userID, sessionTTL); err != nil {
 		return err
 	}
 	http.SetCookie(w, &http.Cookie{
@@ -135,32 +169,63 @@ func (m *Manager) DestroySession(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// Authenticated reports whether the request carries a valid session.
-func (m *Manager) Authenticated(r *http.Request) bool {
+// User resolves the authenticated user from the request, or (nil, false).
+func (m *Manager) User(r *http.Request) (*store.User, bool) {
 	if m.disabled {
-		return true
+		u := &store.User{ID: "local", Username: "local", IsAdmin: true}
+		return u, true
+	}
+	if u, ok := UserFromContext(r.Context()); ok {
+		return u, true
 	}
 	c, err := r.Cookie(CookieName)
 	if err != nil || c.Value == "" {
-		return false
+		return nil, false
 	}
-	ok, err := m.st.SessionValid(c.Value)
-	return err == nil && ok
+	userID, ok, err := m.st.SessionUser(c.Value)
+	if err != nil || !ok {
+		return nil, false
+	}
+	u, err := m.st.GetUserByID(userID)
+	if err != nil {
+		return nil, false
+	}
+	return u, true
 }
 
-// Middleware protects everything except /api/auth/* and /api/healthz.
+// UserFromContext returns the user the middleware attached to the request.
+func UserFromContext(ctx context.Context) (*store.User, bool) {
+	u, ok := ctx.Value(userCtxKey{}).(*store.User)
+	return u, ok
+}
+
+// Authenticated reports whether the request carries a valid session.
+func (m *Manager) Authenticated(r *http.Request) bool {
+	_, ok := m.User(r)
+	return ok
+}
+
+// Middleware protects everything except /api/auth/* and /api/healthz. The
+// authenticated user is attached to the request context (the local dev user
+// when auth is disabled).
 func (m *Manager) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if m.disabled || r.URL.Path == "/api/healthz" || strings.HasPrefix(r.URL.Path, "/api/auth/") {
+		if m.disabled {
+			u := &store.User{ID: "local", Username: "local", IsAdmin: true}
+			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), userCtxKey{}, u)))
+			return
+		}
+		if r.URL.Path == "/api/healthz" || strings.HasPrefix(r.URL.Path, "/api/auth/") {
 			next.ServeHTTP(w, r)
 			return
 		}
-		if !m.Authenticated(r) {
+		u, ok := m.User(r)
+		if !ok {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusUnauthorized)
 			_, _ = w.Write([]byte(`{"error":"unauthorized"}`))
 			return
 		}
-		next.ServeHTTP(w, r)
+		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), userCtxKey{}, u)))
 	})
 }

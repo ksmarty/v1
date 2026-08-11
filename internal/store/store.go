@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -17,6 +18,10 @@ import (
 
 // ErrNotFound is returned when a row does not exist.
 var ErrNotFound = errors.New("not found")
+
+// ErrConflict is returned when a unique constraint rejects a row (duplicate
+// username, etc.).
+var ErrConflict = errors.New("conflict")
 
 // Store provides typed access to the v1 database.
 type Store struct {
@@ -54,6 +59,19 @@ func migrate(db *sql.DB) error {
 CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS users (
+  id TEXT PRIMARY KEY,
+  username TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  is_admin INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS user_settings (
+  user_id TEXT NOT NULL,
+  key TEXT NOT NULL,
+  value TEXT NOT NULL,
+  PRIMARY KEY (user_id, key)
 );
 CREATE TABLE IF NOT EXISTS sessions (
   token TEXT PRIMARY KEY,
@@ -111,9 +129,74 @@ CREATE INDEX IF NOT EXISTS idx_memories_project ON memories(project_id, id);
 	}); err != nil {
 		return err
 	}
+	if err := migrateAddColumns(db, "sessions", map[string]string{
+		"user_id": "ALTER TABLE sessions ADD COLUMN user_id TEXT",
+	}); err != nil {
+		return err
+	}
+	if err := migrateAddColumns(db, "projects", map[string]string{
+		"owner_id": "ALTER TABLE projects ADD COLUMN owner_id TEXT",
+	}); err != nil {
+		return err
+	}
+	if err := migrateLegacyUsers(db); err != nil {
+		return err
+	}
 	return migrateAddColumns(db, "memories", map[string]string{
 		"enabled": "ALTER TABLE memories ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1",
 	})
+}
+
+// migrateLegacyUsers converts a pre-multi-user database: the single stored
+// password becomes the admin user, anonymous sessions are dropped, and
+// ownerless projects are claimed by an admin (or the oldest user). Idempotent.
+func migrateLegacyUsers(db *sql.DB) error {
+	if _, err := db.Exec(`DELETE FROM sessions WHERE user_id IS NULL`); err != nil {
+		return err
+	}
+	var count int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM users`).Scan(&count); err != nil {
+		return err
+	}
+	ownerID := ""
+	if count == 0 {
+		var hash string
+		err := db.QueryRow(`SELECT value FROM settings WHERE key = 'password_hash'`).Scan(&hash)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil // setup screen still required
+		}
+		if err != nil {
+			return err
+		}
+		ownerID = NewID()
+		if _, err := db.Exec(`INSERT INTO users (id, username, password_hash, is_admin, created_at) VALUES (?, 'admin', ?, 1, ?)`,
+			ownerID, hash, now()); err != nil {
+			return err
+		}
+		if _, err := db.Exec(`DELETE FROM settings WHERE key = 'password_hash'`); err != nil {
+			return err
+		}
+	} else {
+		// Ownerless projects (e.g. created while auth was disabled) go to the
+		// first admin, or the oldest user when no admin exists.
+		err := db.QueryRow(`SELECT id FROM users WHERE is_admin = 1 ORDER BY created_at LIMIT 1`).Scan(&ownerID)
+		if errors.Is(err, sql.ErrNoRows) {
+			ownerID = ""
+		} else if err != nil {
+			return err
+		}
+		if ownerID == "" {
+			err = db.QueryRow(`SELECT id FROM users ORDER BY created_at LIMIT 1`).Scan(&ownerID)
+			if errors.Is(err, sql.ErrNoRows) {
+				return nil
+			}
+			if err != nil {
+				return err
+			}
+		}
+	}
+	_, err := db.Exec(`UPDATE projects SET owner_id = ? WHERE owner_id IS NULL`, ownerID)
+	return err
 }
 
 // migrateAddColumns ALTERs the given columns onto table when missing.
@@ -191,6 +274,174 @@ func (s *Store) DeleteSetting(key string) error {
 	return err
 }
 
+// ---- users ----
+
+// User is a row of the users table.
+type User struct {
+	ID           string
+	Username     string
+	PasswordHash string
+	IsAdmin      bool
+	CreatedAt    int64
+}
+
+// CreateUser inserts a user; ErrConflict when the username is taken.
+func (s *Store) CreateUser(u *User) error {
+	if _, err := s.db.Exec(`INSERT INTO users (id, username, password_hash, is_admin, created_at) VALUES (?, ?, ?, ?, ?)`,
+		u.ID, u.Username, u.PasswordHash, boolInt(u.IsAdmin), now()); err != nil {
+		if isUniqueErr(err) {
+			return ErrConflict
+		}
+		return err
+	}
+	return nil
+}
+
+// GetUserByUsername returns a user by exact username, or ErrNotFound.
+func (s *Store) GetUserByUsername(username string) (*User, error) {
+	return scanUser(s.db.QueryRow(`SELECT id, username, password_hash, is_admin, created_at FROM users WHERE username = ?`, username))
+}
+
+// GetUserByID returns a user by id, or ErrNotFound.
+func (s *Store) GetUserByID(id string) (*User, error) {
+	return scanUser(s.db.QueryRow(`SELECT id, username, password_hash, is_admin, created_at FROM users WHERE id = ?`, id))
+}
+
+// ListUsers returns all users, oldest first.
+func (s *Store) ListUsers() ([]*User, error) {
+	rows, err := s.db.Query(`SELECT id, username, password_hash, is_admin, created_at FROM users ORDER BY created_at, username`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []*User{}
+	for rows.Next() {
+		u, err := scanUser(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, u)
+	}
+	return out, rows.Err()
+}
+
+// SetUserPassword replaces a user's password hash, or returns ErrNotFound.
+func (s *Store) SetUserPassword(id, hash string) error {
+	res, err := s.db.Exec(`UPDATE users SET password_hash = ? WHERE id = ?`, hash, id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// SetUserAdmin flips a user's admin flag, or returns ErrNotFound.
+func (s *Store) SetUserAdmin(id string, isAdmin bool) error {
+	res, err := s.db.Exec(`UPDATE users SET is_admin = ? WHERE id = ?`, boolInt(isAdmin), id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// AdminCount returns the number of admin users.
+func (s *Store) AdminCount() (int, error) {
+	var n int
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM users WHERE is_admin = 1`).Scan(&n)
+	return n, err
+}
+
+// DeleteUser removes a user, their user settings and their projects (rows
+// only — the caller removes the project directories).
+func (s *Store) DeleteUser(id string) error {
+	projects, err := s.ListProjectsByOwner(id)
+	if err != nil {
+		return err
+	}
+	for _, p := range projects {
+		if err := s.DeleteProject(p.ID); err != nil {
+			return err
+		}
+	}
+	if _, err := s.db.Exec(`DELETE FROM user_settings WHERE user_id = ?`, id); err != nil {
+		return err
+	}
+	_, err = s.db.Exec(`DELETE FROM users WHERE id = ?`, id)
+	return err
+}
+
+// UserCount returns the number of users.
+func (s *Store) UserCount() (int, error) {
+	var n int
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM users`).Scan(&n)
+	return n, err
+}
+
+// ClaimOwnerlessProjects assigns every project without an owner (legacy
+// rows, or projects created while auth was disabled) to ownerID.
+func (s *Store) ClaimOwnerlessProjects(ownerID string) error {
+	_, err := s.db.Exec(`UPDATE projects SET owner_id = ? WHERE owner_id IS NULL OR owner_id = ''`, ownerID)
+	return err
+}
+
+// ---- user settings ----
+
+// GetUserSetting returns a user's value for key and whether it exists.
+// Global settings (shared) act as the fallback layer below these.
+func (s *Store) GetUserSetting(userID, key string) (string, bool, error) {
+	var v string
+	err := s.db.QueryRow(`SELECT value FROM user_settings WHERE user_id = ? AND key = ?`, userID, key).Scan(&v)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	return v, true, nil
+}
+
+// SetUserSetting upserts a user's settings value.
+func (s *Store) SetUserSetting(userID, key, value string) error {
+	_, err := s.db.Exec(`INSERT INTO user_settings (user_id, key, value) VALUES (?, ?, ?)
+		ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value`, userID, key, value)
+	return err
+}
+
+// DeleteUserSetting removes a user's settings key.
+func (s *Store) DeleteUserSetting(userID, key string) error {
+	_, err := s.db.Exec(`DELETE FROM user_settings WHERE user_id = ? AND key = ?`, userID, key)
+	return err
+}
+
+func scanUser(row scanner) (*User, error) {
+	var u User
+	var isAdmin int
+	if err := row.Scan(&u.ID, &u.Username, &u.PasswordHash, &isAdmin, &u.CreatedAt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	u.IsAdmin = isAdmin != 0
+	return &u, nil
+}
+
+func boolInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
+
+func isUniqueErr(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "UNIQUE")
+}
+
 // ---- todos ----
 
 // Todo is one item in a project's task list maintained by the agent.
@@ -229,29 +480,32 @@ func (s *Store) SetTodos(projectID string, todos []Todo) error {
 
 // ---- sessions ----
 
-// CreateSession stores a session token with the given TTL.
-func (s *Store) CreateSession(token string, ttl time.Duration) error {
+// CreateSession stores a session token for a user with the given TTL.
+func (s *Store) CreateSession(token, userID string, ttl time.Duration) error {
 	t := time.Now()
-	_, err := s.db.Exec(`INSERT INTO sessions (token, created_at, expires_at) VALUES (?, ?, ?)`,
-		token, t.Unix(), t.Add(ttl).Unix())
+	_, err := s.db.Exec(`INSERT INTO sessions (token, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)`,
+		token, userID, t.Unix(), t.Add(ttl).Unix())
 	return err
 }
 
-// SessionValid reports whether the token exists and has not expired.
-func (s *Store) SessionValid(token string) (bool, error) {
+// SessionUser returns the user id of a valid, unexpired session token, or
+// ("", false) when the token is missing, expired or orphaned. Expired and
+// orphaned rows are cleaned up on the way.
+func (s *Store) SessionUser(token string) (string, bool, error) {
+	var userID sql.NullString
 	var expires int64
-	err := s.db.QueryRow(`SELECT expires_at FROM sessions WHERE token = ?`, token).Scan(&expires)
+	err := s.db.QueryRow(`SELECT user_id, expires_at FROM sessions WHERE token = ?`, token).Scan(&userID, &expires)
 	if errors.Is(err, sql.ErrNoRows) {
-		return false, nil
+		return "", false, nil
 	}
 	if err != nil {
-		return false, err
+		return "", false, err
 	}
-	if time.Now().Unix() > expires {
+	if !userID.Valid || time.Now().Unix() > expires {
 		_, _ = s.db.Exec(`DELETE FROM sessions WHERE token = ?`, token)
-		return false, nil
+		return "", false, nil
 	}
-	return true, nil
+	return userID.String, true, nil
 }
 
 // DeleteSession removes a session token.
@@ -270,6 +524,7 @@ type Project struct {
 	RepoURL        string
 	PreviewCommand string
 	Instructions   string
+	OwnerID        string
 	CreatedAt      int64
 	UpdatedAt      int64
 }
@@ -279,9 +534,9 @@ func (s *Store) CreateProject(p *Project) error {
 	t := now()
 	p.CreatedAt = t
 	p.UpdatedAt = t
-	_, err := s.db.Exec(`INSERT INTO projects (id, name, path, repo_url, preview_command, instructions, created_at, updated_at)
-		VALUES (?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?, ?)`,
-		p.ID, p.Name, p.Path, p.RepoURL, p.PreviewCommand, p.Instructions, p.CreatedAt, p.UpdatedAt)
+	_, err := s.db.Exec(`INSERT INTO projects (id, name, path, repo_url, preview_command, instructions, owner_id, created_at, updated_at)
+		VALUES (?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?, ?)`,
+		p.ID, p.Name, p.Path, p.RepoURL, p.PreviewCommand, p.Instructions, p.OwnerID, p.CreatedAt, p.UpdatedAt)
 	return err
 }
 
@@ -291,17 +546,18 @@ type scanner interface {
 
 func scanProject(row scanner) (*Project, error) {
 	var p Project
-	var repoURL, previewCmd, instructions sql.NullString
-	if err := row.Scan(&p.ID, &p.Name, &p.Path, &repoURL, &previewCmd, &instructions, &p.CreatedAt, &p.UpdatedAt); err != nil {
+	var repoURL, previewCmd, instructions, ownerID sql.NullString
+	if err := row.Scan(&p.ID, &p.Name, &p.Path, &repoURL, &previewCmd, &instructions, &ownerID, &p.CreatedAt, &p.UpdatedAt); err != nil {
 		return nil, err
 	}
 	p.RepoURL = repoURL.String
 	p.PreviewCommand = previewCmd.String
 	p.Instructions = instructions.String
+	p.OwnerID = ownerID.String
 	return &p, nil
 }
 
-const projectCols = `id, name, path, repo_url, preview_command, instructions, created_at, updated_at`
+const projectCols = `id, name, path, repo_url, preview_command, instructions, owner_id, created_at, updated_at`
 
 // UpdateProjectSettings rewrites the user-editable project fields.
 func (s *Store) UpdateProjectSettings(id, name, previewCommand, instructions string) error {
@@ -321,7 +577,25 @@ func (s *Store) GetProject(id string) (*Project, error) {
 
 // ListProjects returns all projects sorted by updated_at descending.
 func (s *Store) ListProjects() ([]*Project, error) {
-	rows, err := s.db.Query(`SELECT ` + projectCols + ` FROM projects ORDER BY updated_at DESC`)
+	return s.listProjects(`SELECT ` + projectCols + ` FROM projects ORDER BY updated_at DESC`, nil)
+}
+
+// ListProjectsByOwner returns a user's projects sorted by updated_at
+// descending.
+func (s *Store) ListProjectsByOwner(ownerID string) ([]*Project, error) {
+	return s.listProjects(`SELECT `+projectCols+` FROM projects WHERE owner_id = ? ORDER BY updated_at DESC`, ownerID)
+}
+
+func (s *Store) listProjects(query string, arg any) ([]*Project, error) {
+	var (
+		rows *sql.Rows
+		err  error
+	)
+	if arg == nil {
+		rows, err = s.db.Query(query)
+	} else {
+		rows, err = s.db.Query(query, arg)
+	}
 	if err != nil {
 		return nil, err
 	}

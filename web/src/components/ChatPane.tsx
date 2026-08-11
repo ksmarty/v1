@@ -30,20 +30,34 @@ import ModelPicker from './ModelPicker';
 import TrackBorder, { TRACK_DEFAULTS } from './TrackBorder';
 import {
   IconArrowUp,
+  IconBookmark,
+  IconBookmarkOff,
   IconBrain,
+  IconCamera,
   IconChat,
   IconCheck,
+  IconCheckSquare,
   IconChevronDown,
   IconChevronRight,
+  IconCode,
   IconCompress,
   IconExpand,
+  IconFile,
+  IconGlobe,
+  IconList,
   IconLock,
   IconMap,
   IconModel,
+  IconMoveRight,
   IconPaperclip,
+  IconPencil,
   IconPlus,
   IconRefresh,
+  IconSearch,
   IconSquare,
+  IconTerminal,
+  IconTrash,
+  IconUser,
   IconWrench,
   IconX,
 } from './icons';
@@ -121,6 +135,30 @@ const TOOL_LABELS: Record<string, string> = {
 
 function toolLabel(name: string): string {
   return TOOL_LABELS[name] ?? name;
+}
+
+// One icon per agent tool shown in the chat; unknown tools (e.g. mcp_*)
+// keep the generic wrench.
+const TOOL_ICONS: Record<string, typeof IconWrench> = {
+  list_files: IconList,
+  search_files: IconSearch,
+  read_file: IconFile,
+  write_file: IconPencil,
+  edit_file: IconCode,
+  delete_file: IconTrash,
+  move_file: IconMoveRight,
+  fetch_url: IconGlobe,
+  run_command: IconTerminal,
+  restart_preview: IconRefresh,
+  screenshot_app: IconCamera,
+  set_todos: IconCheckSquare,
+  remember: IconBookmark,
+  forget: IconBookmarkOff,
+  ask_user: IconUser,
+};
+
+function toolIcon(name: string): typeof IconWrench {
+  return TOOL_ICONS[name] ?? IconWrench;
 }
 
 // Renders user message text with @file / #skill tags pill-highlighted. Tag
@@ -275,6 +313,7 @@ function readAttachment(file: File): Promise<{ value: ChatAttachmentInput } | { 
 
 function ToolRow({ item }: { item: ToolItem }) {
   const [open, setOpen] = useState(false);
+  const Icon = toolIcon(item.name);
   return (
     <div className="rounded-lg border border-border/80 bg-surface/50 text-xs">
       <button
@@ -287,7 +326,7 @@ function ToolRow({ item }: { item: ToolItem }) {
         ) : (
           <IconChevronRight className="h-3.5 w-3.5 shrink-0" />
         )}
-        <IconWrench className="h-3.5 w-3.5 shrink-0" />
+        <Icon className="h-3.5 w-3.5 shrink-0" />
         <span className="shrink-0 font-mono text-text">{toolLabel(item.name)}</span>
         <span className="min-w-0 flex-1 truncate text-faint">{item.detail}</span>
         {item.running ? (
@@ -398,6 +437,7 @@ function chipLabel(detail: string): string {
 
 function ToolChip({ name, detail }: ToolCall) {
   const [open, setOpen] = useState(false);
+  const Icon = toolIcon(name);
   const diff = name === 'edit_file' ? parseEditDiff(detail) : null;
   const label = diff ? diff.path : chipLabel(detail);
   return (
@@ -412,7 +452,7 @@ function ToolChip({ name, detail }: ToolCall) {
         ) : (
           <IconChevronRight className="h-3 w-3 shrink-0" />
         )}
-        <IconWrench className="h-3 w-3 shrink-0 text-faint" />
+        <Icon className="h-3 w-3 shrink-0 text-faint" />
         <span className="shrink-0 text-text">{toolLabel(name)}</span>
         {label && <span className="min-w-0 flex-1 truncate text-faint">{label}</span>}
         {diff && (
@@ -513,7 +553,7 @@ function RunCommandBlock({ command, result }: { command: string; result: ToolCal
         ) : (
           <IconChevronRight className="h-3 w-3 shrink-0" />
         )}
-        <IconWrench className="h-3 w-3 shrink-0 text-faint" />
+        <IconTerminal className="h-3 w-3 shrink-0 text-faint" />
         <span className="shrink-0 text-text">{toolLabel('run_command')}</span>
         <span className="min-w-0 flex-1 truncate text-faint">{command}</span>
         {exitCode === 0 && <IconCheck className="h-3 w-3 shrink-0 text-emerald-500" />}
@@ -554,6 +594,7 @@ function ToolBlocks({ calls, results }: { calls: ToolCall[]; results: ToolCall[]
 
 function ToolResultBlock({ name, detail }: ToolCall) {
   const [open, setOpen] = useState(false);
+  const Icon = toolIcon(name);
   return (
     <div className="rounded-lg border border-border/80 bg-surface/50 text-xs">
       <button
@@ -566,7 +607,7 @@ function ToolResultBlock({ name, detail }: ToolCall) {
         ) : (
           <IconChevronRight className="h-3.5 w-3.5 shrink-0" />
         )}
-        <IconWrench className="h-3.5 w-3.5 shrink-0" />
+        <Icon className="h-3.5 w-3.5 shrink-0" />
         <span className="shrink-0 font-mono text-text">{toolLabel(name)}</span>
         <span className="text-faint">result</span>
       </button>

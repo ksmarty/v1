@@ -1,12 +1,14 @@
 package server
 
 import (
+	"errors"
 	"log"
 	"net/http"
 	"strings"
 	"time"
 
 	"v1/internal/auth"
+	"v1/internal/store"
 )
 
 // OIDC authorization-code flow with PKCE (Authentik and other providers).
@@ -132,7 +134,19 @@ func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 		fail("denied")
 		return
 	}
-	if err := s.auth.CreateSession(w, r); err != nil {
+	u, err := s.st.GetUserByUsername(email)
+	if errors.Is(err, store.ErrNotFound) {
+		// Auto-provision: the first OIDC sign-in for an email creates the
+		// account. The random hash keeps the row valid for users that never
+		// use a password.
+		u, err = s.auth.CreateUser(email, store.NewID(), false)
+	}
+	if err != nil {
+		log.Printf("oidc: resolving user %s: %v", email, err)
+		fail("error")
+		return
+	}
+	if err := s.auth.CreateSession(w, r, u.ID); err != nil {
 		log.Printf("oidc: creating session: %v", err)
 		fail("error")
 		return

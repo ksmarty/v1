@@ -75,7 +75,7 @@ func (s *Server) handleSkillsInstall(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "skill is missing name or source")
 		return
 	}
-	installed, err := skills.Install(r.Context(), s.ghForSkills(), body.Skill, s.skillsRoot())
+	installed, err := skills.Install(r.Context(), s.ghForSkills(s.currentUser(r).ID), body.Skill, s.skillsRoot())
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "install failed: "+err.Error())
 		return
@@ -179,6 +179,6 @@ func (s *Server) handleSkillsToggle(w http.ResponseWriter, r *http.Request) {
 
 // ghForSkills returns a GitHub client (token optional) for public-repo raw
 // downloads during skill install.
-func (s *Server) ghForSkills() *gitops.GHClient {
-	return gitops.NewGHClient(s.githubToken())
+func (s *Server) ghForSkills(userID string) *gitops.GHClient {
+	return gitops.NewGHClient(s.githubToken(userID))
 }

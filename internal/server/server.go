@@ -82,7 +82,7 @@ func New(cfg config.Config, st *store.Store) *Server {
 		ask:  askRegistry{reqs: map[string]*askRequest{}},
 	}
 	s.mcp = mcp.NewManager(s.mcpServers)
-	s.auth.EnsureEnvPassword()
+	s.auth.BootstrapAdmin()
 	s.auth.SetOIDCEnabled(s.oidcEnabled())
 	s.pruneOIDCFlows()
 	s.pruneVercelFlows()
@@ -108,11 +108,17 @@ func (s *Server) routes(m *http.ServeMux) {
 	m.HandleFunc("GET /api/auth/status", s.handleAuthStatus)
 	m.HandleFunc("POST /api/auth/login", s.handleLogin)
 	m.HandleFunc("POST /api/auth/setup", s.handleSetup)
+	m.HandleFunc("POST /api/auth/signup", s.handleSignup)
 	m.HandleFunc("POST /api/auth/logout", s.handleLogout)
 	m.HandleFunc("GET /api/auth/oidc/start", s.handleOIDCStart)
 	m.HandleFunc("GET /api/auth/oidc/callback", s.handleOIDCCallback)
 	m.HandleFunc("GET /api/auth/vercel/oauth/start", s.handleVercelOAuthStart)
 	m.HandleFunc("GET /api/auth/vercel/oauth/callback", s.handleVercelOAuthCallback)
+
+	m.HandleFunc("GET /api/users", s.handleListUsers)
+	m.HandleFunc("POST /api/users", s.handleCreateUser)
+	m.HandleFunc("PATCH /api/users/{id}", s.handleUpdateUser)
+	m.HandleFunc("DELETE /api/users/{id}", s.handleDeleteUser)
 
 	m.HandleFunc("GET /api/settings", s.handleGetSettings)
 	m.HandleFunc("PUT /api/settings", s.handlePutSettings)
@@ -215,6 +221,23 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, v any) bool {
 	return true
 }
 
+// currentUser returns the authenticated user of the request. The middleware
+// guarantees one for protected routes (and the local dev user when auth is
+// disabled), so callers can use it directly.
+func (s *Server) currentUser(r *http.Request) *store.User {
+	u, _ := auth.UserFromContext(r.Context())
+	return u
+}
+
+// requireAdmin writes a 403 and returns false when the caller is not an admin.
+func (s *Server) requireAdmin(w http.ResponseWriter, r *http.Request) bool {
+	if u := s.currentUser(r); u != nil && u.IsAdmin {
+		return true
+	}
+	writeError(w, http.StatusForbidden, "admin required")
+	return false
+}
+
 func (s *Server) projectOr404(w http.ResponseWriter, r *http.Request) *store.Project {
 	p, err := s.st.GetProject(r.PathValue("id"))
 	if errors.Is(err, store.ErrNotFound) {
@@ -224,6 +247,14 @@ func (s *Server) projectOr404(w http.ResponseWriter, r *http.Request) *store.Pro
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return nil
+	}
+	// Strict isolation when auth is on: every user only sees their own
+	// projects. Auth-disabled (dev) mode stays open, as before.
+	if !s.cfg.AuthDisabled {
+		if u := s.currentUser(r); u == nil || p.OwnerID != u.ID {
+			writeError(w, http.StatusNotFound, "project not found")
+			return nil
+		}
 	}
 	return p
 }
@@ -262,23 +293,34 @@ func (s *Server) oidcEnabled() bool {
 	return !s.cfg.AuthDisabled && s.oidc != nil && s.oidc.Enabled()
 }
 
-// llmConfig resolves the effective LLM settings (sqlite overrides env).
-func (s *Server) llmConfig() (baseURL, apiKey, model string) {
+// userSetting resolves a setting for a user: the user's own value wins, then
+// the shared/global value (legacy pre-multi-user data or admin-set values).
+func (s *Server) userSetting(userID, key string) (string, bool) {
+	if v, ok, err := s.st.GetUserSetting(userID, key); err == nil && ok && v != "" {
+		return v, true
+	}
+	v, ok, _ := s.st.GetSetting(key)
+	return v, ok
+}
+
+// llmConfig resolves the effective LLM settings for a user (user settings
+// override global settings, which override env).
+func (s *Server) llmConfig(userID string) (baseURL, apiKey, model string) {
 	baseURL, apiKey, model = s.cfg.OpenAIBase, s.cfg.OpenAIKey, s.cfg.Model
-	if v, ok, _ := s.st.GetSetting(keyLLMBaseURL); ok && v != "" {
+	if v, ok := s.userSetting(userID, keyLLMBaseURL); ok && v != "" {
 		baseURL = v
 	}
-	if v, ok, _ := s.st.GetSetting(keyLLMAPIKey); ok && v != "" {
+	if v, ok := s.userSetting(userID, keyLLMAPIKey); ok && v != "" {
 		apiKey = v
 	}
-	if v, ok, _ := s.st.GetSetting(keyLLMModel); ok && v != "" {
+	if v, ok := s.userSetting(userID, keyLLMModel); ok && v != "" {
 		model = v
 	}
 	return baseURL, apiKey, model
 }
 
-func (s *Server) llmClient() *llm.Client {
-	baseURL, apiKey, model := s.llmConfig()
+func (s *Server) llmClient(userID string) *llm.Client {
+	baseURL, apiKey, model := s.llmConfig(userID)
 	return llm.NewClient(baseURL, apiKey, model)
 }
 
@@ -292,9 +334,9 @@ type llmProviderRecord struct {
 	Model   string `json:"model"`
 }
 
-// llmProviders loads the saved provider list (nil when none are saved).
-func (s *Server) llmProviders() []llmProviderRecord {
-	v, ok, _ := s.st.GetSetting(keyLLMProviders)
+// llmProviders loads the user's saved provider list (nil when none saved).
+func (s *Server) llmProviders(userID string) []llmProviderRecord {
+	v, ok := s.userSetting(userID, keyLLMProviders)
 	if !ok || v == "" {
 		return nil
 	}
@@ -305,11 +347,11 @@ func (s *Server) llmProviders() []llmProviderRecord {
 	return out
 }
 
-func (s *Server) findLLMProvider(id string) *llmProviderRecord {
+func (s *Server) findLLMProvider(userID, id string) *llmProviderRecord {
 	if id == "" {
 		return nil
 	}
-	for _, p := range s.llmProviders() {
+	for _, p := range s.llmProviders(userID) {
 		if p.ID == id {
 			return &p
 		}
@@ -319,40 +361,41 @@ func (s *Server) findLLMProvider(id string) *llmProviderRecord {
 
 // llmClientFor builds a client for a saved provider id, falling back to the
 // legacy single-provider settings when the id is empty or unknown.
-func (s *Server) llmClientFor(providerID string) *llm.Client {
-	if p := s.findLLMProvider(providerID); p != nil {
+func (s *Server) llmClientFor(userID, providerID string) *llm.Client {
+	if p := s.findLLMProvider(userID, providerID); p != nil {
 		return llm.NewClient(p.BaseURL, p.APIKey, p.Model)
 	}
-	return s.llmClient()
+	return s.llmClient(userID)
 }
 
-// githubToken resolves the effective GitHub token (sqlite overrides env).
-func (s *Server) githubToken() string {
-	if v, ok, _ := s.st.GetSetting(keyGitHubToken); ok && v != "" {
+// githubToken resolves the user's effective GitHub token (user settings
+// override global settings, which override env).
+func (s *Server) githubToken(userID string) string {
+	if v, ok := s.userSetting(userID, keyGitHubToken); ok && v != "" {
 		return v
 	}
 	return s.cfg.GitHubToken
 }
 
-// globalSystemPrompt resolves the user's global system prompt (sqlite
-// overrides env).
-func (s *Server) globalSystemPrompt() string {
-	if v, ok, _ := s.st.GetSetting(keySystemPrompt); ok && v != "" {
+// globalSystemPrompt resolves the user's global system prompt (user settings
+// override env).
+func (s *Server) globalSystemPrompt(userID string) string {
+	if v, ok := s.userSetting(userID, keySystemPrompt); ok && v != "" {
 		return v
 	}
 	return s.cfg.SystemPrompt
 }
 
 // rewindApproval reports whether rewinding chat history requires approval.
-func (s *Server) rewindApproval() bool {
-	v, ok, _ := s.st.GetSetting(keyRewindApproval)
+func (s *Server) rewindApproval(userID string) bool {
+	v, ok := s.userSetting(userID, keyRewindApproval)
 	return ok && v == "1"
 }
 
-// defaultThinking resolves the global default thinking level ('' = the
+// defaultThinking resolves the user's default thinking level ('' = the
 // model's lowest level).
-func (s *Server) defaultThinking() string {
-	v, ok, _ := s.st.GetSetting(keyThinkingDefault)
+func (s *Server) defaultThinking(userID string) string {
+	v, ok := s.userSetting(userID, keyThinkingDefault)
 	if !ok || v == "" {
 		return ""
 	}
@@ -361,8 +404,8 @@ func (s *Server) defaultThinking() string {
 
 // toonEnabled reports whether tool results are TOON-encoded for the model.
 // Enabled by default; only an explicit "0" disables it.
-func (s *Server) toonEnabled() bool {
-	v, ok, _ := s.st.GetSetting(keyToonEnabled)
+func (s *Server) toonEnabled(userID string) bool {
+	v, ok := s.userSetting(userID, keyToonEnabled)
 	if !ok || v == "" {
 		return true
 	}
@@ -372,9 +415,9 @@ func (s *Server) toonEnabled() bool {
 // githubTokenSource reports how the current token got configured:
 // "oauth"/"pat" for a settings-stored token, "env" for an env-only token,
 // or nil when no token exists.
-func (s *Server) githubTokenSource() *string {
-	if v, ok, _ := s.st.GetSetting(keyGitHubToken); ok && v != "" {
-		src, ok, _ := s.st.GetSetting(keyGitHubTokenSource)
+func (s *Server) githubTokenSource(userID string) *string {
+	if v, ok := s.userSetting(userID, keyGitHubToken); ok && v != "" {
+		src, ok := s.userSetting(userID, keyGitHubTokenSource)
 		if !ok || (src != "oauth" && src != "pat") {
 			src = "pat"
 		}
@@ -396,9 +439,10 @@ func (s *Server) githubOAuthClientID() string {
 	return s.cfg.GitHubOAuthClientID
 }
 
-// vercelToken resolves the effective Vercel token (sqlite overrides env).
-func (s *Server) vercelToken() string {
-	if v, ok, _ := s.st.GetSetting(keyVercelToken); ok && v != "" {
+// vercelToken resolves the user's effective Vercel token (user settings
+// override env).
+func (s *Server) vercelToken(userID string) string {
+	if v, ok := s.userSetting(userID, keyVercelToken); ok && v != "" {
 		return v
 	}
 	return s.cfg.VercelToken
@@ -407,9 +451,9 @@ func (s *Server) vercelToken() string {
 // vercelTokenSource reports how the current token got configured:
 // "oauth"/"pat" for a settings-stored token, "env" for an env-only token,
 // or nil when no token exists.
-func (s *Server) vercelTokenSource() *string {
-	if v, ok, _ := s.st.GetSetting(keyVercelToken); ok && v != "" {
-		src, ok, _ := s.st.GetSetting(keyVercelTokenSource)
+func (s *Server) vercelTokenSource(userID string) *string {
+	if v, ok := s.userSetting(userID, keyVercelToken); ok && v != "" {
+		src, ok := s.userSetting(userID, keyVercelTokenSource)
 		if !ok || (src != "oauth" && src != "pat") {
 			src = "pat"
 		}
@@ -422,8 +466,11 @@ func (s *Server) vercelTokenSource() *string {
 	return nil
 }
 
-func (s *Server) vercelRefreshToken() string {
-	v, _, _ := s.st.GetSetting(keyVercelRefreshToken)
+func (s *Server) vercelRefreshToken(userID string) string {
+	v, ok := s.userSetting(userID, keyVercelRefreshToken)
+	if !ok {
+		return ""
+	}
 	return v
 }
 
@@ -444,11 +491,11 @@ func (s *Server) vercelOAuthClientSecret() string {
 	return s.cfg.VercelClientSecret
 }
 
-// vercelClient builds a Vercel API client from the effective settings.
-func (s *Server) vercelClient() *vercel.Client {
+// vercelClient builds a Vercel API client from the user's effective settings.
+func (s *Server) vercelClient(userID string) *vercel.Client {
 	return &vercel.Client{
-		Token:        s.vercelToken(),
-		RefreshToken: s.vercelRefreshToken(),
+		Token:        s.vercelToken(userID),
+		RefreshToken: s.vercelRefreshToken(userID),
 		ClientID:     s.vercelOAuthClientID(),
 		ClientSecret: s.vercelOAuthClientSecret(),
 	}
@@ -517,6 +564,10 @@ func (s *Server) handlePreviewProxy(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if u := s.currentUser(r); !s.cfg.AuthDisabled && (u == nil || p.OwnerID != u.ID) {
+		writeError(w, http.StatusNotFound, "project not found")
 		return
 	}
 	pv := s.previews.Get(id)

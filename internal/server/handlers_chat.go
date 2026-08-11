@@ -193,9 +193,10 @@ func (s *Server) handleCompact(w http.ResponseWriter, r *http.Request) {
 	if p == nil {
 		return
 	}
+	userID := s.currentUser(r).ID
 	ctx, cancel := context.WithTimeout(r.Context(), chatTimeout)
 	defer cancel()
-	id, err := agent.CompactProject(ctx, s.st, p.ID, s.llmClient())
+	id, err := agent.CompactProject(ctx, s.st, p.ID, s.llmClient(userID))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -208,6 +209,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	if p == nil {
 		return
 	}
+	userID := s.currentUser(r).ID
 	var body struct {
 		Message       string             `json:"message"`
 		Model         string             `json:"model"`
@@ -229,7 +231,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if body.ProviderID != "" {
-		prov := s.findLLMProvider(body.ProviderID)
+		prov := s.findLLMProvider(userID, body.ProviderID)
 		if prov == nil {
 			writeError(w, http.StatusBadRequest, "unknown_provider")
 			return
@@ -238,7 +240,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "no_api_key")
 			return
 		}
-	} else if _, apiKey, _ := s.llmConfig(); apiKey == "" {
+	} else if _, apiKey, _ := s.llmConfig(userID); apiKey == "" {
 		writeError(w, http.StatusBadRequest, "no_api_key")
 		return
 	}
@@ -246,11 +248,11 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	params := agent.ChatParams{
 		Store:           s.st,
 		Project:         p,
-		Client:          s.llmClientFor(body.ProviderID),
+		Client:          s.llmClientFor(userID, body.ProviderID),
 		Message:         body.Message,
 		Attachments:     body.Attachments,
 		Model:           body.Model,
-		Vision:          s.modelSupportsImages(body.ProviderID, body.Model),
+		Vision:          s.modelSupportsImages(userID, body.ProviderID, body.Model),
 		ReasoningEffort: body.Thinking,
 	}
 	// Editing an existing user message rewinds the thread to it and re-runs
@@ -289,7 +291,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusAccepted, map[string]any{"queued": true})
 		return
 	}
-	s.streamChatTurn(w, r, p, params, q)
+	s.streamChatTurn(w, r, p, userID, params, q)
 }
 
 // handleTruncateMessages deletes every message after the given id — the
@@ -322,7 +324,8 @@ func (s *Server) handleChatRetry(w http.ResponseWriter, r *http.Request) {
 	if p == nil {
 		return
 	}
-	if _, apiKey, _ := s.llmConfig(); apiKey == "" {
+	userID := s.currentUser(r).ID
+	if _, apiKey, _ := s.llmConfig(userID); apiKey == "" {
 		writeError(w, http.StatusBadRequest, "no_api_key")
 		return
 	}
@@ -342,15 +345,15 @@ func (s *Server) handleChatRetry(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "run_active")
 		return
 	}
-	s.streamChatTurn(w, r, p, agent.ChatParams{
+	s.streamChatTurn(w, r, p, userID, agent.ChatParams{
 		Store:        s.st,
 		Project:      p,
-		Client:       s.llmClient(),
+		Client:       s.llmClient(userID),
 		Message:      last.Content,
 		Attachments:  agent.ParseAttachments(last.Attachments),
 		Model:        last.Model,
 		LastUserID:   last.ID,
-		Vision:       s.modelSupportsImages("", last.Model),
+		Vision:       s.modelSupportsImages(userID, "", last.Model),
 		SkipSnapshot: true,
 	}, q)
 }
@@ -358,7 +361,7 @@ func (s *Server) handleChatRetry(w http.ResponseWriter, r *http.Request) {
 // streamChatTurn runs one chat turn and streams it as SSE: reasoning and text
 // deltas, tool events, then a done event carrying usage. Messages queued onto
 // the run while it executes become follow-up turns on the same stream.
-func (s *Server) streamChatTurn(w http.ResponseWriter, r *http.Request, p *store.Project, params agent.ChatParams, q *turnQueue) {
+func (s *Server) streamChatTurn(w http.ResponseWriter, r *http.Request, p *store.Project, userID string, params agent.ChatParams, q *turnQueue) {
 	defer s.turns.end(p.ID)
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -392,8 +395,8 @@ func (s *Server) streamChatTurn(w http.ResponseWriter, r *http.Request, p *store
 	mcpTools, _ := s.mcp.Sync(ctx)
 	params.ExtraTools = mcpTools
 	params.SkillsPrompt = s.skillsSystemPrompt()
-	params.GlobalPrompt = s.globalSystemPrompt()
-	params.ToonEnabled = s.toonEnabled()
+	params.GlobalPrompt = s.globalSystemPrompt(userID)
+	params.ToonEnabled = s.toonEnabled(userID)
 	if mems, err := s.st.ListMemories(p.ID); err == nil {
 		params.MemoriesPrompt = memoryPrompt(mems)
 	}
@@ -408,7 +411,7 @@ func (s *Server) streamChatTurn(w http.ResponseWriter, r *http.Request, p *store
 		Previews:       s.previews,
 		Store:          s.st,
 		MCP:            s.mcp,
-		Perm:           &turnPerm{s: s, emit: emit},
+		Perm:           &turnPerm{s: s, emit: emit, userID: userID},
 		OnTodos: func(t []store.Todo) {
 			emit(agent.ChatEvent{Type: "todos", Todos: t})
 		},
@@ -483,12 +486,12 @@ func (s *Server) capturePreview(ctx context.Context, p *store.Project, path stri
 
 // modelSupportsImages reports whether the given model carries image-input
 // metadata in the provider catalog — gates the screenshot_app tool.
-func (s *Server) modelSupportsImages(providerID, model string) bool {
+func (s *Server) modelSupportsImages(userID, providerID, model string) bool {
 	if model == "" {
-		if p := s.findLLMProvider(providerID); p != nil {
+		if p := s.findLLMProvider(userID, providerID); p != nil {
 			model = p.Model
 		} else {
-			_, _, model = s.llmConfig()
+			_, _, model = s.llmConfig(userID)
 		}
 	}
 	cat := s.providerCatalog()

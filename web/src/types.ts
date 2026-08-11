@@ -3,6 +3,15 @@ export interface AuthStatus {
   authenticated: boolean;
   setupRequired: boolean;
   oidcEnabled: boolean;
+  signupEnabled: boolean;
+  user: { username: string; isAdmin: boolean } | null;
+}
+
+export interface UserInfo {
+  id: string;
+  username: string;
+  isAdmin: boolean;
+  createdAt: number;
 }
 
 export interface SavedProvider {
@@ -219,6 +228,8 @@ export interface MCPServer {
   name: string;
   command: string;
   args: string[];
+  /** Missing means enabled (servers saved before the toggle existed). */
+  enabled?: boolean;
 }
 
 export interface MCPServerStatus {

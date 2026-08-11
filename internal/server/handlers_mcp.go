@@ -76,11 +76,11 @@ func (s *Server) handleMCPStatus(w http.ResponseWriter, r *http.Request) {
 
 // ---- permission mode (ask / auto / yolo) ----
 
-// permissionMode returns the agent's tool approval mode. "ask" pauses the
-// chat and prompts the user for each tool call; "auto" and "yolo" approve
+// permissionMode returns the user's agent tool approval mode. "ask" pauses
+// the chat and prompts the user for each tool call; "auto" and "yolo" approve
 // everything without prompting. The default is "ask".
-func (s *Server) permissionMode() string {
-	v, ok, _ := s.st.GetSetting(keyPermissionMode)
+func (s *Server) permissionMode(userID string) string {
+	v, ok := s.userSetting(userID, keyPermissionMode)
 	if !ok || v == "" {
 		return "ask"
 	}
@@ -125,15 +125,16 @@ func (r *permRegistry) resolve(id string, allow bool) *permRequest {
 }
 
 // turnPerm implements agent.Resolver for one chat stream: it reads the
-// permission mode from settings and surfaces "ask" decisions as SSE events
-// answered through the permission endpoint.
+// caller's permission mode from settings and surfaces "ask" decisions as SSE
+// events answered through the permission endpoint.
 type turnPerm struct {
-	s    *Server
-	emit func(agent.ChatEvent)
+	s      *Server
+	emit   func(agent.ChatEvent)
+	userID string
 }
 
 func (t *turnPerm) Request(ctx context.Context, tool, detail string) (bool, error) {
-	switch t.s.permissionMode() {
+	switch t.s.permissionMode(t.userID) {
 	case "ask":
 		id := store.NewID()
 		pr := t.s.perm.register(id, tool)

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"v1/internal/llm"
@@ -13,17 +14,41 @@ import (
 
 // ---- auth ----
 
+var usernameRe = regexp.MustCompile(`^[a-zA-Z0-9._-]{3,32}$`)
+
+// validateUsername returns an error message for invalid usernames, or "".
+func validateUsername(name string) string {
+	if !usernameRe.MatchString(name) {
+		return "username must be 3–32 characters: letters, digits, . _ -"
+	}
+	return ""
+}
+
 func (s *Server) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
+	var user *struct {
+		Username string `json:"username"`
+		IsAdmin  bool   `json:"isAdmin"`
+	}
+	u, ok := s.auth.User(r)
+	if ok && u != nil {
+		user = &struct {
+			Username string `json:"username"`
+			IsAdmin  bool   `json:"isAdmin"`
+		}{Username: u.Username, IsAdmin: u.IsAdmin}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"authRequired":  !s.cfg.AuthDisabled,
-		"authenticated": s.auth.Authenticated(r),
+		"authenticated": ok,
 		"setupRequired": s.auth.SetupRequired(),
 		"oidcEnabled":   s.oidcEnabled(),
+		"signupEnabled": s.cfg.AllowSignup,
+		"user":          user,
 	})
 }
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	var body struct {
+		Username string `json:"username"`
 		Password string `json:"password"`
 	}
 	if !decodeJSON(w, r, &body) {
@@ -33,11 +58,12 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 		return
 	}
-	if !s.auth.Verify(body.Password) {
-		writeError(w, http.StatusUnauthorized, "invalid password")
+	u, ok := s.auth.Login(strings.TrimSpace(body.Username), body.Password)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "invalid username or password")
 		return
 	}
-	if err := s.auth.CreateSession(w, r); err != nil {
+	if err := s.auth.CreateSession(w, r, u.ID); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -50,20 +76,70 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
+		Username string `json:"username"`
 		Password string `json:"password"`
 	}
 	if !decodeJSON(w, r, &body) {
+		return
+	}
+	username := strings.TrimSpace(body.Username)
+	if msg := validateUsername(username); msg != "" {
+		writeError(w, http.StatusBadRequest, msg)
 		return
 	}
 	if body.Password == "" {
 		writeError(w, http.StatusBadRequest, "password must not be empty")
 		return
 	}
-	if err := s.auth.SetPassword(body.Password); err != nil {
+	// The first account is the admin — it also claims any legacy ownerless
+	// projects (created before multi-user, or while auth was disabled).
+	u, err := s.auth.CreateUser(username, body.Password, true)
+	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if err := s.auth.CreateSession(w, r); err != nil {
+	_ = s.st.ClaimOwnerlessProjects(u.ID)
+	if err := s.auth.CreateSession(w, r, u.ID); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
+	if s.cfg.AuthDisabled || !s.cfg.AllowSignup {
+		writeError(w, http.StatusForbidden, "signup is disabled")
+		return
+	}
+	var body struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+	if !decodeJSON(w, r, &body) {
+		return
+	}
+	username := strings.TrimSpace(body.Username)
+	if msg := validateUsername(username); msg != "" {
+		writeError(w, http.StatusBadRequest, msg)
+		return
+	}
+	if body.Password == "" {
+		writeError(w, http.StatusBadRequest, "password must not be empty")
+		return
+	}
+	// Open registration creates a plain user — unless no account exists yet:
+	// the first account is always an admin (mirrors the setup flow and the
+	// "can't demote the last admin" guard).
+	isAdmin := false
+	if n, err := s.st.UserCount(); err == nil && n == 0 {
+		isAdmin = true
+	}
+	u, err := s.auth.CreateUser(username, body.Password, isAdmin)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err := s.auth.CreateSession(w, r, u.ID); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -78,12 +154,13 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 // ---- settings ----
 
 func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
-	baseURL, apiKey, model := s.llmConfig()
+	userID := s.currentUser(r).ID
+	baseURL, apiKey, model := s.llmConfig(userID)
 	models := llm.ModelsForBaseURL(baseURL)
 	if models == nil {
 		models = []llm.ProviderModel{}
 	}
-	providers := s.llmProviders()
+	providers := s.llmProviders(userID)
 	providerJSON := make([]map[string]any, 0, len(providers))
 	for _, p := range providers {
 		providerJSON = append(providerJSON, map[string]any{
@@ -94,7 +171,7 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 			"apiKeySet": p.APIKey != "",
 		})
 	}
-	activeProviderID, _, _ := s.st.GetSetting(keyLLMActiveProvider)
+	activeProviderID, _, _ := s.st.GetUserSetting(userID, keyLLMActiveProvider)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"llm": map[string]any{
 			"baseURL":          baseURL,
@@ -105,30 +182,31 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 			"activeProviderId": activeProviderID,
 		},
 		"github": map[string]any{
-			"tokenSet":      s.githubToken() != "",
+			"tokenSet":      s.githubToken(userID) != "",
 			"oauthClientId": s.githubOAuthClientID(),
-			"source":        s.githubTokenSource(),
+			"source":        s.githubTokenSource(userID),
 		},
 		"vercel": map[string]any{
-			"tokenSet":        s.vercelToken() != "",
+			"tokenSet":        s.vercelToken(userID) != "",
 			"oauthClientId":   s.vercelOAuthClientID(),
 			"clientSecretSet": s.vercelOAuthClientSecret() != "",
-			"source":          s.vercelTokenSource(),
+			"source":          s.vercelTokenSource(userID),
 		},
-		"auth":           map[string]any{"disabled": s.cfg.AuthDisabled},
-		"mcp":            s.mcpServers(),
-		"skills":         s.installedSkills(),
-		"permissionMode": s.permissionMode(),
-		"rewindApproval": s.rewindApproval(),
-		"defaultThinking": s.defaultThinking(),
-		"toonEnabled":     s.toonEnabled(),
-		"systemPrompt":   s.globalSystemPrompt(),
-		"version":        s.cfg.Version,
-		"commit":         s.cfg.Commit,
+		"auth":            map[string]any{"disabled": s.cfg.AuthDisabled},
+		"mcp":             s.mcpServers(),
+		"skills":          s.installedSkills(),
+		"permissionMode":  s.permissionMode(userID),
+		"rewindApproval":  s.rewindApproval(userID),
+		"defaultThinking": s.defaultThinking(userID),
+		"toonEnabled":     s.toonEnabled(userID),
+		"systemPrompt":    s.globalSystemPrompt(userID),
+		"version":         s.cfg.Version,
+		"commit":          s.cfg.Commit,
 	})
 }
 
 func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
+	userID := s.currentUser(r).ID
 	var body struct {
 		LLM *struct {
 			BaseURL          *string              `json:"baseURL"`
@@ -153,8 +231,19 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &body) {
 		return
 	}
-	// set applies a nullable string to a settings key; empty string clears it.
+	// set applies a nullable string to a user setting; empty string clears it
+	// back to the shared/global fallback.
 	set := func(key string, v *string) error {
+		if v == nil {
+			return nil
+		}
+		if *v == "" {
+			return s.st.DeleteUserSetting(userID, key)
+		}
+		return s.st.SetUserSetting(userID, key, *v)
+	}
+	// setGlobal writes an instance-level setting (shared by all users).
+	setGlobal := func(key string, v *string) error {
 		if v == nil {
 			return nil
 		}
@@ -169,14 +258,14 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		// or inherits the legacy key for a brand-new record (the settings form
 		// never shows the stored key back).
 		if body.LLM.Providers != nil {
-			_, legacyKey, _ := s.llmConfig()
+			_, legacyKey, _ := s.llmConfig(userID)
 			merged := make([]llmProviderRecord, 0, len(*body.LLM.Providers))
 			for _, inc := range *body.LLM.Providers {
 				if inc.ID == "" {
 					inc.ID = store.NewID()
 				}
 				if inc.APIKey == "" {
-					if cur := s.findLLMProvider(inc.ID); cur != nil {
+					if cur := s.findLLMProvider(userID, inc.ID); cur != nil {
 						inc.APIKey = cur.APIKey
 					} else if legacyKey != "" {
 						inc.APIKey = legacyKey
@@ -189,7 +278,7 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 				writeError(w, http.StatusInternalServerError, err.Error())
 				return
 			}
-			if err := s.st.SetSetting(keyLLMProviders, string(raw)); err != nil {
+			if err := s.st.SetUserSetting(userID, keyLLMProviders, string(raw)); err != nil {
 				writeError(w, http.StatusInternalServerError, err.Error())
 				return
 			}
@@ -198,12 +287,12 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		// keys so every existing code path (chat gating, retries, test) works.
 		if body.LLM.ActiveProviderID != nil {
 			if *body.LLM.ActiveProviderID == "" {
-				if err := s.st.DeleteSetting(keyLLMActiveProvider); err != nil {
+				if err := s.st.DeleteUserSetting(userID, keyLLMActiveProvider); err != nil {
 					writeError(w, http.StatusInternalServerError, err.Error())
 					return
 				}
 			} else {
-				p := s.findLLMProvider(*body.LLM.ActiveProviderID)
+				p := s.findLLMProvider(userID, *body.LLM.ActiveProviderID)
 				if p == nil {
 					writeError(w, http.StatusBadRequest, "unknown provider id")
 					return
@@ -213,12 +302,12 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 					keyLLMAPIKey:  p.APIKey,
 					keyLLMModel:   p.Model,
 				} {
-					if err := s.st.SetSetting(key, v); err != nil {
+					if err := s.st.SetUserSetting(userID, key, v); err != nil {
 						writeError(w, http.StatusInternalServerError, err.Error())
 						return
 					}
 				}
-				if err := s.st.SetSetting(keyLLMActiveProvider, p.ID); err != nil {
+				if err := s.st.SetUserSetting(userID, keyLLMActiveProvider, p.ID); err != nil {
 					writeError(w, http.StatusInternalServerError, err.Error())
 					return
 				}
@@ -239,56 +328,64 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	if body.GitHubToken != nil {
 		if *body.GitHubToken == "" {
 			// Clearing the token also clears its source.
-			if err := s.st.DeleteSetting(keyGitHubToken); err != nil {
+			if err := s.st.DeleteUserSetting(userID, keyGitHubToken); err != nil {
 				writeError(w, http.StatusInternalServerError, err.Error())
 				return
 			}
-			if err := s.st.DeleteSetting(keyGitHubTokenSource); err != nil {
+			if err := s.st.DeleteUserSetting(userID, keyGitHubTokenSource); err != nil {
 				writeError(w, http.StatusInternalServerError, err.Error())
 				return
 			}
 		} else {
-			if err := s.st.SetSetting(keyGitHubToken, *body.GitHubToken); err != nil {
+			if err := s.st.SetUserSetting(userID, keyGitHubToken, *body.GitHubToken); err != nil {
 				writeError(w, http.StatusInternalServerError, err.Error())
 				return
 			}
-			if err := s.st.SetSetting(keyGitHubTokenSource, "pat"); err != nil {
+			if err := s.st.SetUserSetting(userID, keyGitHubTokenSource, "pat"); err != nil {
 				writeError(w, http.StatusInternalServerError, err.Error())
 				return
 			}
 		}
 	}
-	if err := set(keyGitHubOAuthClientID, body.GitHubOAuthClientID); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
+	// OAuth app credentials are instance-level (one OAuth app per install):
+	// they stay in the shared settings table.
+	if body.GitHubOAuthClientID != nil {
+		if err := setGlobal(keyGitHubOAuthClientID, body.GitHubOAuthClientID); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
 	}
 	if body.VercelToken != nil {
 		if *body.VercelToken == "" {
 			// Clearing the token also clears its refresh token and source.
 			for _, key := range []string{keyVercelToken, keyVercelRefreshToken, keyVercelTokenSource} {
-				if err := s.st.DeleteSetting(key); err != nil {
+				if err := s.st.DeleteUserSetting(userID, key); err != nil {
 					writeError(w, http.StatusInternalServerError, err.Error())
 					return
 				}
 			}
 		} else {
-			if err := s.st.SetSetting(keyVercelToken, *body.VercelToken); err != nil {
+			if err := s.st.SetUserSetting(userID, keyVercelToken, *body.VercelToken); err != nil {
 				writeError(w, http.StatusInternalServerError, err.Error())
 				return
 			}
-			if err := s.st.SetSetting(keyVercelTokenSource, "pat"); err != nil {
+			if err := s.st.SetUserSetting(userID, keyVercelTokenSource, "pat"); err != nil {
 				writeError(w, http.StatusInternalServerError, err.Error())
 				return
 			}
 		}
 	}
-	if err := set(keyVercelOAuthClientID, body.VercelOAuthClientID); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
+	if body.VercelOAuthClientID != nil {
+		if err := setGlobal(keyVercelOAuthClientID, body.VercelOAuthClientID); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
 	}
-	if err := set(keyVercelClientSecret, body.VercelClientSecret); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
+	if body.VercelClientSecret != nil {
+		if err := setGlobal(keyVercelClientSecret, body.VercelClientSecret); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
 	}
 	if body.MCP != nil {
 		if err := s.saveMCPServers(*body.MCP); err != nil {
@@ -313,7 +410,7 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		if *body.RewindApproval {
 			val = "1"
 		}
-		if err := s.st.SetSetting(keyRewindApproval, val); err != nil {
+		if err := s.st.SetUserSetting(userID, keyRewindApproval, val); err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
@@ -329,13 +426,13 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		if *body.ToonEnabled {
 			val = "1"
 		}
-		if err := s.st.SetSetting(keyToonEnabled, val); err != nil {
+		if err := s.st.SetUserSetting(userID, keyToonEnabled, val); err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
 	}
 	if body.Password != nil && *body.Password != "" {
-		if err := s.auth.SetPassword(*body.Password); err != nil {
+		if err := s.auth.SetPassword(userID, *body.Password); err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
@@ -344,6 +441,7 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleTestLLM(w http.ResponseWriter, r *http.Request) {
+	userID := s.currentUser(r).ID
 	// Optional body: non-empty fields override the stored/env configuration.
 	var body struct {
 		BaseURL string `json:"baseURL"`
@@ -363,7 +461,7 @@ func (s *Server) handleTestLLM(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	baseURL, apiKey, model := s.llmConfig()
+	baseURL, apiKey, model := s.llmConfig(userID)
 	if body.BaseURL != "" {
 		baseURL = body.BaseURL
 	}

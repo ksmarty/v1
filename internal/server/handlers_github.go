@@ -8,8 +8,8 @@ import (
 )
 
 // ghClient returns a GitHub client or writes a 400 error when no token is set.
-func (s *Server) ghClient(w http.ResponseWriter) *gitops.GHClient {
-	token := s.githubToken()
+func (s *Server) ghClient(w http.ResponseWriter, userID string) *gitops.GHClient {
+	token := s.githubToken(userID)
 	if token == "" {
 		writeError(w, http.StatusBadRequest, "no GitHub token configured (set one in settings)")
 		return nil
@@ -18,7 +18,7 @@ func (s *Server) ghClient(w http.ResponseWriter) *gitops.GHClient {
 }
 
 func (s *Server) handleGitHubRepos(w http.ResponseWriter, r *http.Request) {
-	c := s.ghClient(w)
+	c := s.ghClient(w, s.currentUser(r).ID)
 	if c == nil {
 		return
 	}
@@ -31,7 +31,7 @@ func (s *Server) handleGitHubRepos(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGitHubUser(w http.ResponseWriter, r *http.Request) {
-	c := s.ghClient(w)
+	c := s.ghClient(w, s.currentUser(r).ID)
 	if c == nil {
 		return
 	}
@@ -48,7 +48,7 @@ func (s *Server) handleGitHubCreate(w http.ResponseWriter, r *http.Request) {
 	if p == nil {
 		return
 	}
-	c := s.ghClient(w)
+	c := s.ghClient(w, s.currentUser(r).ID)
 	if c == nil {
 		return
 	}
@@ -93,7 +93,7 @@ func (s *Server) handleGitHubPush(w http.ResponseWriter, r *http.Request) {
 	if p == nil {
 		return
 	}
-	c := s.ghClient(w)
+	c := s.ghClient(w, s.currentUser(r).ID)
 	if c == nil {
 		return
 	}
@@ -135,7 +135,7 @@ func (s *Server) handleGitHubLink(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "repoUrl is required")
 		return
 	}
-	if err := gitops.LinkRepo(r.Context(), repoURL, s.githubToken(), p.Path); err != nil {
+	if err := gitops.LinkRepo(r.Context(), repoURL, s.githubToken(s.currentUser(r).ID), p.Path); err != nil {
 		writeError(w, http.StatusBadGateway, "link failed: "+err.Error())
 		return
 	}

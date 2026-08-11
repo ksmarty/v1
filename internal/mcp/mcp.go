@@ -24,6 +24,14 @@ type ServerConfig struct {
 	Name    string   `json:"name"`
 	Command string   `json:"command"`
 	Args    []string `json:"args"`
+	// Enabled is nil when the field predates the toggle; nil means enabled.
+	Enabled *bool `json:"enabled,omitempty"`
+}
+
+// IsEnabled reports whether the server should be connected. Missing means
+// enabled — configs saved before the toggle existed keep working.
+func (c ServerConfig) IsEnabled() bool {
+	return c.Enabled == nil || *c.Enabled
 }
 
 // Tool is one tool exposed by an MCP server.
@@ -307,6 +315,14 @@ func (m *Manager) Sync(ctx context.Context) ([]llm.Tool, error) {
 	var tools []llm.Tool
 	for _, cfg := range cfgList {
 		seen[cfg.ID] = true
+		if !cfg.IsEnabled() {
+			// Disabled: never connect, and tear down a leftover connection.
+			if e := m.clients[cfg.ID]; e != nil && e.cl != nil {
+				_ = e.cl.Close()
+			}
+			delete(m.clients, cfg.ID)
+			continue
+		}
 		e := m.clients[cfg.ID]
 		if e != nil && e.cfg.Command == cfg.Command && equalStrings(e.cfg.Args, cfg.Args) && e.cl != nil {
 			for _, t := range e.tools {
@@ -369,7 +385,7 @@ func (m *Manager) Status() []map[string]any {
 	m.mu.Lock()
 	for _, cfg := range cfgList {
 		e := m.clients[cfg.ID]
-		st := map[string]any{"id": cfg.ID, "name": cfg.Name, "connected": false, "toolCount": 0}
+		st := map[string]any{"id": cfg.ID, "name": cfg.Name, "enabled": cfg.IsEnabled(), "connected": false, "toolCount": 0}
 		if e != nil {
 			st["connected"] = e.cl != nil
 			st["toolCount"] = len(e.tools)

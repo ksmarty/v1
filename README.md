@@ -80,11 +80,32 @@ If you already use a provider through its OpenAI-compatible endpoint (the way op
 
 ## Auth
 
-Three ways to handle authentication (plus one, below):
+v1 is multi-user: each person gets their own account, settings and projects.
 
-1. **First-run setup** (default) — the first browser to hit a fresh instance sets the admin password.
-2. **`V1_PASSWORD`** — set a fixed password via env; the login screen asks for it.
-3. **`V1_AUTH_DISABLED=true`** — no auth at all. Only for localhost or networks you fully trust.
+1. **First-run setup** (default) — the first browser to hit a fresh instance
+   creates the **admin** account (username + password).
+2. **`V1_PASSWORD`** — sets up the admin account (`admin` / this password)
+   automatically on first start.
+3. **`V1_AUTH_DISABLED=true`** — no auth at all. Only for localhost or
+   networks you fully trust.
+
+### Accounts
+
+- The first account is the admin. Admins manage accounts from
+  **Settings → Users**: create users (optionally admins) and delete accounts
+  (deleting a user removes their projects).
+- **Open registration** — set `V1_ALLOW_SIGNUP=true` to let anyone create an
+  account from the login page (non-admin).
+- **Isolation** — every user sees only their own projects, even admins.
+  Projects, chat history, memories and todos are per-owner; previews,
+  terminals and agent runs are scoped to the project.
+- **Settings are per-user** — LLM providers and keys, GitHub/Vercel tokens,
+  the global system prompt, thinking defaults and permission modes are
+  personal. Anything a user hasn't set falls back to the shared/global value
+  (or the environment). Instance-level configuration (OAuth app credentials,
+  MCP servers, skills) is shared.
+- **OIDC sign-in** auto-provisions an account on first login (keyed by the
+  verified email).
 
 ### Authentik / OIDC login
 

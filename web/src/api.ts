@@ -23,6 +23,7 @@ import type {
   SkillSearchResult,
   Memory,
   Todo,
+  UserInfo,
   VercelDeploymentsResponse,
   VercelUserInfo,
 } from './types';
@@ -128,9 +129,23 @@ export interface SettingsUpdate {
 export const api = {
   // Auth
   getAuthStatus: () => request<AuthStatus>('/api/auth/status'),
-  login: (password: string) => post<void>('/api/auth/login', { password }),
-  setup: (password: string) => post<void>('/api/auth/setup', { password }),
+  login: (username: string, password: string) =>
+    post<void>('/api/auth/login', { username, password }),
+  setup: (username: string, password: string) =>
+    post<void>('/api/auth/setup', { username, password }),
+  signup: (username: string, password: string) =>
+    post<void>('/api/auth/signup', { username, password }),
   logout: () => post<void>('/api/auth/logout'),
+  listUsers: () => request<UserInfo[]>('/api/users'),
+  createUser: (username: string, password: string, isAdmin: boolean) =>
+    post<void>('/api/users', { username, password, isAdmin }),
+  updateUser: (id: string, patch: { password?: string; isAdmin?: boolean }) =>
+    request<UserInfo>(`/api/users/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    }),
+  deleteUser: (id: string) => request<void>(`/api/users/${id}`, { method: 'DELETE' }),
 
   // Settings
   getSettings: () => request<Settings>('/api/settings'),

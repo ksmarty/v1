@@ -211,11 +211,12 @@ func (s *Server) handleOAuthDevicePoll(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"status": "error", "error": "GitHub returned no access token"})
 		return
 	}
-	if err := s.st.SetSetting(keyGitHubToken, token); err != nil {
+	userID := s.currentUser(r).ID
+	if err := s.st.SetUserSetting(userID, keyGitHubToken, token); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-	if err := s.st.SetSetting(keyGitHubTokenSource, "oauth"); err != nil {
+	if err := s.st.SetUserSetting(userID, keyGitHubTokenSource, "oauth"); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}

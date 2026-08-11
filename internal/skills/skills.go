@@ -178,8 +178,13 @@ func Install(ctx context.Context, gh *gitops.GHClient, s Skill, root string) (Sk
 		} `json:"tree"`
 		Truncated bool `json:"truncated"`
 	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 8<<20)).Decode(&tree); err != nil {
-		return Skill{}, err
+	// The recursive tree can be tens of MB for large repos — a small cap made
+	// big repositories fail with "unexpected EOF" mid-decode.
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 64<<20)).Decode(&tree); err != nil {
+		return Skill{}, fmt.Errorf("reading repository tree: %w", err)
+	}
+	if tree.Truncated {
+		return Skill{}, fmt.Errorf("repository tree is too large to install")
 	}
 
 	prefix := strings.Trim(s.SourcePath, "/")
@@ -253,6 +258,9 @@ func download(ctx context.Context, c *http.Client, url, dest string) error {
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("GitHub raw error (HTTP %d) for %s", resp.StatusCode, url)
 	}
+	if resp.ContentLength > 4<<20 {
+		return fmt.Errorf("file %s is too large (over 4 MB)", url)
+	}
 	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 		return err
 	}
@@ -261,8 +269,14 @@ func download(ctx context.Context, c *http.Client, url, dest string) error {
 		return err
 	}
 	defer f.Close()
-	_, err = io.Copy(f, io.LimitReader(resp.Body, 4<<20))
-	return err
+	n, err := io.Copy(f, io.LimitReader(resp.Body, 4<<20+1))
+	if err != nil {
+		return err
+	}
+	if n > 4<<20 {
+		return fmt.Errorf("file %s is too large (over 4 MB)", url)
+	}
+	return nil
 }
 
 // SystemPrompt renders the SKILL.md contents of every enabled installed skill

@@ -69,9 +69,10 @@ func (s *Server) handleProviderThinking(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, "model is required")
 		return
 	}
-	baseURL, apiKey, _ := s.llmConfig()
+	userID := s.currentUser(r).ID
+	baseURL, apiKey, _ := s.llmConfig(userID)
 	if pid := r.URL.Query().Get("providerId"); pid != "" {
-		if p := s.findLLMProvider(pid); p != nil {
+		if p := s.findLLMProvider(userID, pid); p != nil {
 			baseURL, apiKey = p.BaseURL, p.APIKey
 		}
 	}

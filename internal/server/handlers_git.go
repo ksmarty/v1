@@ -10,8 +10,8 @@ import (
 
 // githubLogin returns the authenticated GitHub login for commit authorship,
 // or "" when no token is configured (commits then use the v1 identity).
-func (s *Server) githubLogin() string {
-	tok := s.githubToken()
+func (s *Server) githubLogin(userID string) string {
+	tok := s.githubToken(userID)
 	if tok == "" {
 		return ""
 	}
@@ -52,7 +52,7 @@ func (s *Server) handleGitInit(w http.ResponseWriter, r *http.Request) {
 	if p == nil {
 		return
 	}
-	login := s.githubLogin()
+	login := s.githubLogin(s.currentUser(r).ID)
 	if err := gitops.InitRepo(p.Path, login); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

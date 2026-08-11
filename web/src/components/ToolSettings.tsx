@@ -11,7 +11,7 @@ import { errMsg, randomId } from '../utils';
 import { PERMISSION_MODES } from '../permissions';
 import { Button, Dialog, Field, Input, SaveRow, Spinner } from './ui';
 import Markdown from './Markdown';
-import { IconCheck, IconExternalLink, IconX } from './icons';
+import { IconCheck, IconExternalLink, IconFlask, IconPencil, IconX } from './icons';
 
 const TABS = [
   { id: 'mcp', label: 'MCP servers' },
@@ -165,6 +165,21 @@ function ToolSettings({
     tools?: { name: string; description: string }[];
     error?: string;
   } | null>(null);
+  // Editing an existing server happens inline on the card; saving replaces it
+  // in place (the id stays stable).
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editCommand, setEditCommand] = useState('');
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+  // Per-card connectivity test result and the card currently testing.
+  const [cardTest, setCardTest] = useState<{
+    id: string;
+    ok: boolean;
+    tools?: { name: string; description: string }[];
+    error?: string;
+  } | null>(null);
+  const [cardTestingId, setCardTestingId] = useState<string | null>(null);
 
   // Skills (skillsmp)
   const [skills, setSkills] = useState<InstalledSkill[]>([]);
@@ -188,7 +203,7 @@ function ToolSettings({
   const load = useCallback(async () => {
     try {
       const [s, st] = await Promise.all([api.getSettings(), api.mcpStatus()]);
-      setServers(s.mcp ?? []);
+      setServers((s.mcp ?? []).map((sv) => ({ ...sv, enabled: sv.enabled !== false })));
       setSkills(s.skills ?? []);
       setPermissionMode(s.permissionMode ?? 'ask');
       setSavedMode(s.permissionMode ?? 'ask');
@@ -217,6 +232,7 @@ function ToolSettings({
       name: mcpName.trim() || parts[0] || 'server',
       command: parts[0] ?? '',
       args: parts.slice(1),
+      enabled: true,
     };
   };
 
@@ -258,7 +274,73 @@ function ToolSettings({
     }
   };
 
+  const toggleMCP = async (id: string, enabled: boolean) => {
+    setMcpError(null);
+    try {
+      await api.updateSettings({ mcp: servers.map((s) => (s.id === id ? { ...s, enabled } : s)) });
+      await load();
+    } catch (err) {
+      setMcpError(errMsg(err));
+    }
+  };
+
+  const editMCP = (srv: MCPServer) => {
+    if (editingId === srv.id) {
+      setEditingId(null);
+      return;
+    }
+    setEditingId(srv.id);
+    setEditName(srv.name);
+    setEditCommand([srv.command, ...srv.args].join(' '));
+    setEditError(null);
+    setCardTest(null);
+  };
+
+  const saveEdit = async (srv: MCPServer) => {
+    if (!editCommand.trim()) {
+      setEditError('Enter a command line.');
+      return;
+    }
+    setEditSaving(true);
+    setEditError(null);
+    try {
+      const parts = editCommand.trim().split(/\s+/).filter(Boolean);
+      const updated = servers.map((s) =>
+        s.id === srv.id
+          ? {
+              ...s,
+              name: editName.trim() || parts[0] || s.name,
+              command: parts[0] ?? '',
+              args: parts.slice(1),
+            }
+          : s,
+      );
+      await api.updateSettings({ mcp: updated });
+      setEditingId(null);
+      await load();
+    } catch (err) {
+      setEditError(errMsg(err));
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
+  const testCard = async (srv: MCPServer) => {
+    setCardTestingId(srv.id);
+    setCardTest(null);
+    setMcpError(null);
+    try {
+      setCardTest({ id: srv.id, ...(await api.mcpTest(srv)) });
+    } catch (err) {
+      setCardTest({ id: srv.id, ok: false, error: errMsg(err) });
+    } finally {
+      setCardTestingId(null);
+    }
+  };
+
   const removeMCP = async (id: string) => {
+    const srv = servers.find((s) => s.id === id);
+    if (srv && !window.confirm(`Remove MCP server ${srv.name}?`)) return;
     setMcpError(null);
     try {
       await api.updateSettings({ mcp: servers.filter((s) => s.id !== id) });
@@ -300,6 +382,8 @@ function ToolSettings({
   };
 
   const removeSkill = async (id: string) => {
+    const sk = skills.find((s) => s.id === id);
+    if (sk && !window.confirm(`Remove skill ${sk.name}?`)) return;
     setSkillError(null);
     try {
       const r = await api.skillRemove(id);
@@ -359,6 +443,9 @@ function ToolSettings({
               onChange={(e) => setMcpCommand(e.target.value)}
               placeholder="npx -y @modelcontextprotocol/server-filesystem /tmp"
               autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
             />
           </Field>
         </div>
@@ -370,6 +457,7 @@ function ToolSettings({
           saving={mcpSaving}
           saved={false}
           error={mcpError}
+          pulse={mcpCommand.trim() !== ''}
           extra={
             <Button
               type="button"
@@ -415,27 +503,80 @@ function ToolSettings({
           <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             {servers.map((srv) => {
               const st = status[srv.id];
+              const enabled = srv.enabled !== false;
               return (
-                <li key={srv.id} className="flex flex-col gap-1.5 rounded-xl border border-border p-3">
+                <li key={srv.id} className="flex flex-col gap-1.5 rounded-xl border border-border bg-surface p-3">
                   <div className="flex items-center gap-2">
                     <span
                       className={`h-2 w-2 shrink-0 rounded-full ${
-                        st?.connected ? 'bg-emerald-500' : 'bg-border'
+                        enabled && st?.connected ? 'bg-emerald-500' : 'bg-border'
                       }`}
                       title={
-                        st?.connected
-                          ? `Connected — ${st.toolCount} tools`
-                          : 'Not connected (connects on the next chat)'
+                        !enabled
+                          ? 'Disabled'
+                          : st?.connected
+                            ? `Connected — ${st.toolCount} tools`
+                            : 'Not connected (connects on the next chat)'
                       }
                     />
-                    <span className="min-w-0 flex-1 truncate text-sm font-medium text-text">
+                    <span
+                      className={`min-w-0 flex-1 truncate text-sm font-medium ${
+                        enabled ? 'text-text' : 'text-dim'
+                      }`}
+                    >
                       {srv.name}
                     </span>
-                    {st?.connected && (
+                    {!enabled && (
+                      <span className="shrink-0 rounded-full bg-border px-1.5 py-0.5 text-[10px] text-dim">
+                        disabled
+                      </span>
+                    )}
+                    {enabled && st?.connected && (
                       <span className="shrink-0 rounded-full bg-emerald-950 px-1.5 py-0.5 text-[10px] text-emerald-400">
                         {st.toolCount} tools
                       </span>
                     )}
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={enabled}
+                      aria-label={`${enabled ? 'Disable' : 'Enable'} MCP server ${srv.name}`}
+                      title={enabled ? 'Disable server' : 'Enable server'}
+                      onClick={() => void toggleMCP(srv.id, !enabled)}
+                      className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${
+                        enabled ? 'bg-accent' : 'bg-border'
+                      }`}
+                    >
+                      <span
+                        className={`absolute top-0.5 h-4 w-4 rounded-full bg-bg transition-all ${
+                          enabled ? 'left-[18px]' : 'left-0.5'
+                        }`}
+                      />
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={`Test MCP server ${srv.name}`}
+                      title="Test connection"
+                      onClick={() => void testCard(srv)}
+                      className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-dim transition-colors hover:bg-border hover:text-text"
+                    >
+                      {cardTestingId === srv.id ? (
+                        <Spinner className="h-3.5 w-3.5" />
+                      ) : (
+                        <IconFlask className="h-3.5 w-3.5" />
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={`Edit MCP server ${srv.name}`}
+                      title="Edit server"
+                      onClick={() => editMCP(srv)}
+                      className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-dim transition-colors hover:bg-border hover:text-text ${
+                        editingId === srv.id ? 'bg-border text-text' : ''
+                      }`}
+                    >
+                      <IconPencil className="h-3.5 w-3.5" />
+                    </button>
                     <button
                       type="button"
                       aria-label={`Remove MCP server ${srv.name}`}
@@ -449,11 +590,91 @@ function ToolSettings({
                   <div className="truncate font-mono text-[11px] text-faint">
                     {srv.command} {srv.args.join(' ')}
                   </div>
-                  {!st?.connected && (
+                  {!enabled ? (
                     <span className="text-[10px] text-faint">
-                      Not connected — connects on the next chat
+                      Disabled — connects on the next chat once enabled
                     </span>
+                  ) : (
+                    !st?.connected && (
+                      <span className="text-[10px] text-faint">
+                        Not connected — connects on the next chat
+                      </span>
+                    )
                   )}
+                  {editingId === srv.id && (
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        void saveEdit(srv);
+                      }}
+                      className="flex flex-col gap-2 border-t border-border pt-2"
+                    >
+                      <Input
+                        value={editName}
+                        onChange={(e) => setEditName(e.target.value)}
+                        placeholder="Name (optional)"
+                        autoComplete="off"
+                        className="h-8 text-sm"
+                      />
+                      <Input
+                        value={editCommand}
+                        onChange={(e) => setEditCommand(e.target.value)}
+                        placeholder="Command line"
+                        autoComplete="off"
+                        autoCorrect="off"
+                        autoCapitalize="off"
+                        spellCheck={false}
+                        className="h-8 font-mono text-sm"
+                      />
+                      {editError && <p className="text-xs text-red-400">{editError}</p>}
+                      <div className="flex items-center gap-2">
+                        <Button
+                          type="submit"
+                          variant="outline"
+                          className="h-8 px-3 text-xs"
+                          disabled={editSaving}
+                        >
+                          {editSaving ? <Spinner className="h-3.5 w-3.5" /> : 'Save'}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          className="h-8 px-3 text-xs"
+                          onClick={() => setEditingId(null)}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </form>
+                  )}
+                  {cardTest && cardTest.id === srv.id &&
+                    (cardTest.ok ? (
+                      <p className="flex items-start gap-1.5 text-xs text-emerald-500">
+                        <IconCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                        <span>
+                          Connected — {cardTest.tools?.length ?? 0} tool
+                          {(cardTest.tools?.length ?? 0) === 1 ? '' : 's'}
+                          {cardTest.tools && cardTest.tools.length > 0 && (
+                            <span className="text-faint">
+                              {' '}
+                              ({cardTest.tools
+                                .slice(0, 5)
+                                .map((t) => t.name)
+                                .join(', ')}
+                              {cardTest.tools.length > 5
+                                ? ` +${cardTest.tools.length - 5} more`
+                                : ''}
+                              )
+                            </span>
+                          )}
+                        </span>
+                      </p>
+                    ) : (
+                      <p className="flex items-start gap-1.5 text-xs text-red-400">
+                        <IconX className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                        <span>{cardTest.error || 'Connection failed'}</span>
+                      </p>
+                    ))}
                 </li>
               );
             })}
@@ -489,7 +710,7 @@ function ToolSettings({
             {skillResults.map((sk) => (
               <li
                 key={sk.id}
-                className="flex items-center gap-2 rounded-xl border border-border px-3 py-2"
+                className="flex items-center gap-2 rounded-xl border border-border bg-surface px-3 py-2"
               >
                 <button
                   type="button"
@@ -538,7 +759,7 @@ function ToolSettings({
               {skills.map((sk) => (
                 <li
                   key={sk.id}
-                  className="flex items-center gap-2 rounded-lg border border-border px-3 py-2"
+                  className="flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2"
                 >
                   <button
                     type="button"

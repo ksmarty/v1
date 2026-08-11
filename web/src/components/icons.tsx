@@ -133,6 +133,14 @@ export const IconKey = (p: SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
+export const IconFlask = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}>
+    <path d="M10 2v7.527a2 2 0 0 1-.211.896L4.72 20.55a1 1 0 0 0 .9 1.45h12.76a1 1 0 0 0 .9-1.45l-5.069-10.127A2 2 0 0 1 14 9.527V2" />
+    <path d="M8.5 2h7" />
+    <path d="M7 16h10" />
+  </svg>
+);
+
 export const IconPlay = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}>
     <polygon points="6 3 20 12 6 21 6 3" />
@@ -194,6 +202,22 @@ export const IconChevronRight = (p: SVGProps<SVGSVGElement>) => (
 export const IconChevronLeft = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}>
     <path d="m15 18-6-6 6-6" />
+  </svg>
+);
+
+export const IconUser = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}>
+    <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
+    <circle cx="12" cy="7" r="4" />
+  </svg>
+);
+
+export const IconUsers = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}>
+    <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+    <circle cx="9" cy="7" r="4" />
+    <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+    <path d="M16 3.13a4 4 0 0 1 0 7.75" />
   </svg>
 );
 
@@ -316,5 +340,73 @@ export const IconModel = (p: SVGProps<SVGSVGElement>) => (
     <path d="M20 15h3" />
     <path d="M1 9h3" />
     <path d="M1 15h3" />
+  </svg>
+);
+
+export const IconCamera = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}>
+    <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z" />
+    <circle cx="12" cy="13" r="3" />
+  </svg>
+);
+
+export const IconSearch = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}>
+    <circle cx="11" cy="11" r="8" />
+    <path d="m21 21-4.3-4.3" />
+  </svg>
+);
+
+export const IconGlobe = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}>
+    <circle cx="12" cy="12" r="10" />
+    <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" />
+    <path d="M2 12h20" />
+  </svg>
+);
+
+export const IconList = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}>
+    <path d="M3 6h.01" />
+    <path d="M3 12h.01" />
+    <path d="M3 18h.01" />
+    <path d="M8 6h13" />
+    <path d="M8 12h13" />
+    <path d="M8 18h13" />
+  </svg>
+);
+
+export const IconCode = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}>
+    <path d="m16 18 6-6-6-6" />
+    <path d="m8 6-6 6 6 6" />
+  </svg>
+);
+
+export const IconCheckSquare = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}>
+    <path d="m9 11 3 3L22 4" />
+    <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+  </svg>
+);
+
+export const IconBookmark = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}>
+    <path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z" />
+  </svg>
+);
+
+export const IconBookmarkOff = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}>
+    <path d="m19 13.5V21l-7-4-7 4V5a2 2 0 0 1 2-2h3" />
+    <path d="m14.5 3 5 5" />
+    <path d="m9.5 3 5 5" />
+  </svg>
+);
+
+export const IconMoveRight = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}>
+    <path d="M18 8 22 12 18 16" />
+    <path d="M2 12h20" />
   </svg>
 );

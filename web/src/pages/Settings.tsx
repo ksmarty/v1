@@ -3,7 +3,7 @@ import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { SiVercel } from 'react-icons/si';
 import { api, type SettingsUpdate } from '../api';
 import { testNotification } from '../notify';
-import type { Settings as SettingsType } from '../types';
+import type { Settings as SettingsType, UserInfo } from '../types';
 import {
   errMsg,
   getChatSide,
@@ -54,11 +54,14 @@ import {
   IconGitBranch,
   IconGitHub,
   IconGrip,
+  IconKey,
   IconLock,
   IconLogout,
   IconModel,
   IconSettings,
   IconTerminal,
+  IconTrash,
+  IconUsers,
   IconWrench,
   IconX,
 } from '../components/icons';
@@ -73,6 +76,7 @@ const NAV = [
   { id: 'tools', label: 'Tools & permissions', icon: <IconWrench className="h-4 w-4" /> },
   { id: 'appearance', label: 'Appearance', icon: <IconSettings className="h-4 w-4" /> },
   { id: 'auth', label: 'Auth', icon: <IconLock className="h-4 w-4" /> },
+  { id: 'users', label: 'Users', icon: <IconUsers className="h-4 w-4" />, admin: true },
   { id: 'about', label: 'About', icon: <IconDots className="h-4 w-4" /> },
 ] as const;
 type NavId = (typeof NAV)[number]['id'];
@@ -102,10 +106,12 @@ const SETTINGS_SEARCH: {
   { id: 'sec-tools-mcp', page: 'tools', label: 'MCP servers', hint: 'Model Context Protocol servers', keywords: 'mcp servers tools context protocol connect' },
   { id: 'sec-tools-skills', page: 'tools', label: 'Skills', hint: 'Install skills from SkillsMP', keywords: 'skills skillsmp install markdown' },
   { id: 'sec-tools-perms', page: 'tools', label: 'Permissions', hint: 'Approval mode, rewind approval', keywords: 'permission approve ask auto yolo tools rewind approval confirm' },
-  { id: 'sec-appearance', page: 'appearance', label: 'Appearance', hint: 'Theme, chat side', keywords: 'theme dark light chat side left right appearance color' },
+  { id: 'sec-theme', page: 'appearance', label: 'Theme', hint: 'Dark, light, custom swatches', keywords: 'theme dark light color appearance swatch applies instantly remembered' },
+  { id: 'sec-chat-side', page: 'appearance', label: 'Chat side', hint: 'Chat pane left or right', keywords: 'chat side left right desktop layout appearance' },
   { id: 'sec-chat-tabs', page: 'appearance', label: 'Chat tabs', hint: 'Reorder and hide project tabs', keywords: 'tabs chat files terminal git memories project order hide drag' },
   { id: 'sec-tool-calls', page: 'appearance', label: 'Tool calls', hint: 'Pretty-print JSON', keywords: 'tool calls json pretty print format result arguments' },
   { id: 'sec-auth', page: 'auth', label: 'Auth', hint: 'Change the password', keywords: 'password auth login security change password' },
+  { id: 'sec-users', page: 'users', label: 'Users', hint: 'Admin: create and delete accounts', keywords: 'users accounts admin create delete signup password login' },
   { id: 'sec-notifications', page: 'appearance', label: 'Notifications', hint: 'Turn-finished alerts', keywords: 'notifications notify alerts push ios pwa banner turn' },
   { id: 'sec-debug-hud', page: 'about', label: 'Debug HUD', hint: 'Viewport metrics overlay', keywords: 'debug hud viewport metrics overlay diagnostics' },
 ];
@@ -324,6 +330,275 @@ function DebugHudControl() {
           {v ? 'On' : 'Off'}
         </button>
       ))}
+    </div>
+  );
+}
+
+function UsersControl() {
+  const [users, setUsers] = useState<UserInfo[] | null>(null);
+  const [me, setMe] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(() => {
+    api
+      .listUsers()
+      .then(setUsers)
+      .catch((e) => setError(errMsg(e)));
+  }, []);
+
+  useEffect(() => {
+    load();
+    api
+      .getAuthStatus()
+      .then((s) => setMe(s.user?.username ?? ''))
+      .catch(() => {});
+  }, [load]);
+
+  const create = async (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await api.createUser(username.trim(), password, firstUser || isAdmin);
+      setUsername('');
+      setPassword('');
+      setIsAdmin(false);
+      await load();
+    } catch (err) {
+      setError(errMsg(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async (u: UserInfo) => {
+    if (!window.confirm(`Delete ${u.username}? Their projects will be removed with them.`)) {
+      return;
+    }
+    setError(null);
+    try {
+      await api.deleteUser(u.id);
+      await load();
+    } catch (err) {
+      setError(errMsg(err));
+    }
+  };
+
+  // Row actions: toggle the admin flag and reset another user's password.
+  const [rowBusy, setRowBusy] = useState<string | null>(null);
+  const [pwFor, setPwFor] = useState<string | null>(null);
+  const [newPw, setNewPw] = useState('');
+
+  const toggleAdmin = async (u: UserInfo, admin: boolean) => {
+    if (u.username === me) return;
+    setRowBusy(u.id);
+    setError(null);
+    try {
+      await api.updateUser(u.id, { isAdmin: admin });
+      await load();
+    } catch (err) {
+      setError(errMsg(err));
+    } finally {
+      setRowBusy(null);
+    }
+  };
+
+  const savePassword = async (u: UserInfo) => {
+    if (!newPw) return;
+    setRowBusy(u.id);
+    setError(null);
+    try {
+      await api.updateUser(u.id, { password: newPw });
+      setPwFor(null);
+      setNewPw('');
+      await load();
+    } catch (err) {
+      setError(errMsg(err));
+    } finally {
+      setRowBusy(null);
+    }
+  };
+
+  // The first account of an instance must be an admin.
+  const firstUser = users !== null && users.length === 0;
+  // The last admin cannot be demoted (mirrors the server-side guard).
+  const lastAdmin = (u: UserInfo) =>
+    u.isAdmin && (users?.filter((x) => x.isAdmin).length ?? 0) <= 1;
+
+  return (
+    <div className="flex flex-col">
+      <form onSubmit={create} className="flex flex-col gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <Field label="Username">
+            <Input
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              placeholder="e.g. alice"
+              autoComplete="off"
+            />
+          </Field>
+          <Field label="Password">
+            <Input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="New account password"
+              autoComplete="new-password"
+            />
+          </Field>
+        </div>
+        <div className="flex items-center justify-between gap-2">
+          <label className="flex items-center gap-2 text-xs text-dim">
+            Admin
+            <button
+              type="button"
+              role="switch"
+              aria-checked={firstUser || isAdmin}
+              aria-label="Make the new user an admin"
+              disabled={firstUser}
+              onClick={() => setIsAdmin((v) => !v)}
+              className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${
+                firstUser || isAdmin ? 'bg-accent' : 'bg-border'
+              } ${firstUser ? 'cursor-not-allowed opacity-60' : ''}`}
+            >
+              <span
+                className={`absolute top-0.5 h-4 w-4 rounded-full bg-bg transition-all ${
+                  firstUser || isAdmin ? 'left-[18px]' : 'left-0.5'
+                }`}
+              />
+            </button>
+          </label>
+          {firstUser && (
+            <p className="text-xs text-faint">The first user must be an admin.</p>
+          )}
+          <Button type="submit" disabled={busy} className="h-8 whitespace-nowrap px-3 text-sm">
+            {busy ? <Spinner className="h-3.5 w-3.5" /> : 'Add user'}
+          </Button>
+        </div>
+        {error && <ErrorBox message={error} />}
+      </form>
+
+      {users !== null && users.length > 0 && (
+        <>
+          <div className="my-4 border-t border-border" />
+          <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {users.map((u) => {
+              const isMe = u.username === me;
+              return (
+                <li
+                  key={u.id}
+                  className="flex flex-col gap-2.5 rounded-xl border border-border bg-surface p-3"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-border text-xs font-semibold text-dim">
+                      {(u.username[0] ?? '?').toUpperCase()}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-sm font-medium text-text">
+                      {u.username}
+                    </span>
+                    {isMe && (
+                      <span className="shrink-0 rounded-full bg-border px-1.5 py-0.5 text-[10px] text-dim">
+                        you
+                      </span>
+                    )}
+                    <label
+                      className={`flex items-center gap-1.5 text-[11px] text-subtle ${
+                        isMe || lastAdmin(u) ? 'opacity-60' : ''
+                      }`}
+                    >
+                      Admin
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={u.isAdmin}
+                        aria-label={`${u.isAdmin ? 'Remove admin role from' : 'Grant admin role to'} ${u.username}`}
+                        title={
+                          isMe
+                            ? 'You cannot change your own role'
+                            : lastAdmin(u)
+                              ? 'Cannot demote the last admin'
+                              : u.isAdmin
+                                ? 'Remove admin role'
+                                : 'Grant admin role'
+                        }
+                        disabled={isMe || rowBusy === u.id || lastAdmin(u)}
+                        onClick={() => void toggleAdmin(u, !u.isAdmin)}
+                        className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${
+                          u.isAdmin ? 'bg-accent' : 'bg-border'
+                        } ${isMe ? 'cursor-not-allowed' : ''}`}
+                      >
+                        <span
+                          className={`absolute top-0.5 h-4 w-4 rounded-full bg-bg transition-all ${
+                            u.isAdmin ? 'left-[18px]' : 'left-0.5'
+                          }`}
+                        />
+                      </button>
+                    </label>
+                    {!isMe && (
+                      <>
+                        <button
+                          type="button"
+                          aria-label={`Set password for ${u.username}`}
+                          title={pwFor === u.id ? 'Cancel' : 'Set password'}
+                          onClick={() => {
+                            setPwFor(pwFor === u.id ? null : u.id);
+                            setNewPw('');
+                          }}
+                          className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-dim transition-colors hover:bg-border hover:text-text ${
+                            pwFor === u.id ? 'bg-border text-text' : ''
+                          }`}
+                        >
+                          <IconKey className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={`Delete ${u.username}`}
+                          title="Delete user"
+                          onClick={() => void remove(u)}
+                          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-dim transition-colors hover:bg-border hover:text-red-400"
+                        >
+                          <IconTrash className="h-3.5 w-3.5" />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                  {pwFor === u.id && (
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="password"
+                        value={newPw}
+                        onChange={(e) => setNewPw(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && newPw) void savePassword(u);
+                        }}
+                        placeholder="New password"
+                        autoFocus
+                        className="h-8 text-sm"
+                      />
+                      <Button
+                        variant="outline"
+                        className="h-8 shrink-0 px-3 text-xs"
+                        disabled={!newPw || rowBusy === u.id}
+                        onClick={() => void savePassword(u)}
+                      >
+                        {rowBusy === u.id ? <Spinner className="h-3 w-3" /> : 'Save'}
+                      </Button>
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </>
+      )}
+      {users === null && <Spinner className="h-4 w-4" />}
+      {users !== null && users.length === 0 && (
+        <p className="text-sm text-faint">No users yet.</p>
+      )}
     </div>
   );
 }
@@ -654,8 +929,6 @@ export default function Settings() {
   const [activeProviderId, setActiveProviderId] = useState('');
   const [provName, setProvName] = useState('');
   const [provBusyId, setProvBusyId] = useState<string | null>(null);
-  const [provSaving, setProvSaving] = useState(false);
-  const [provSaved, setProvSaved] = useState(false);
   const [provError, setProvError] = useState<string | null>(null);
 
   // GitHub PAT
@@ -686,6 +959,19 @@ export default function Settings() {
   const [pwSaving, setPwSaving] = useState(false);
   const [pwSaved, setPwSaved] = useState(false);
   const [pwError, setPwError] = useState<string | null>(null);
+
+  // Current user — the Users page is admin-only and About shows the identity.
+  const [me, setMe] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+  useEffect(() => {
+    api
+      .getAuthStatus()
+      .then((s) => {
+        setMe(s.user?.username ?? null);
+        setIsAdmin(s.user?.isAdmin ?? false);
+      })
+      .catch(() => {});
+  }, []);
 
   // Global system prompt
   const [sysPrompt, setSysPrompt] = useState('');
@@ -727,6 +1013,11 @@ export default function Settings() {
     const p = params.get('page');
     if (p && NAV.some((n) => n.id === p)) setPage(p as NavId);
   }, [params]);
+  // Non-admins can't open the Users page.
+  useEffect(() => {
+    if (!isAdmin && page === 'users') setPage('llm');
+  }, [isAdmin, page]);
+  const visibleNav = NAV.filter((n) => !('admin' in n) || !n.admin || isAdmin);
   // Tools deep links pick the MCP/skills/perms tab.
   const toolsSection = params.get('section');
   const toolsInitialTab: ToolsTab =
@@ -767,6 +1058,8 @@ export default function Settings() {
         setVercelClientId(s.vercel.oauthClientId);
         setProviders(s.llm.providers ?? []);
         setActiveProviderId(s.llm.activeProviderId ?? '');
+        const active = (s.llm.providers ?? []).find((p) => p.id === s.llm.activeProviderId);
+        setProvName(active?.name ?? '');
         setSysPrompt(s.systemPrompt ?? '');
         setDefThinking(s.defaultThinking ?? '');
       })
@@ -794,30 +1087,26 @@ export default function Settings() {
     setLlmSaved(false);
     setLlmError(null);
     try {
+      let host = '';
+      try {
+        host = new URL(baseURL).hostname;
+      } catch {
+        host = '';
+      }
+      const name = provName.trim() || host || 'Provider';
       const active = providers.find((p) => p.id === activeProviderId) ?? null;
-      if (providers.length === 0) {
-        // No saved providers yet — plain single-configuration save.
-        await api.updateSettings({
-          llm: { baseURL, model, ...(apiKey ? { apiKey } : {}) },
-        });
-      } else if (active) {
+      if (active) {
         // Save into the active provider and keep it active.
         const list = providers.map((p) =>
           p.id === active.id
-            ? { id: p.id, name: p.name, baseURL, model, ...(apiKey ? { apiKey } : {}) }
+            ? { id: p.id, name, baseURL, model, ...(apiKey ? { apiKey } : {}) }
             : { id: p.id, name: p.name, baseURL: p.baseURL, model: p.model },
         );
         await api.updateSettings({ llm: { providers: list, activeProviderId: active.id } });
       } else {
-        // Providers exist but none is active — create one from the form.
+        // No active provider: the save creates one from the form and
+        // activates it (also the first provider of a fresh setup).
         const newId = randomId();
-        let host = '';
-        try {
-          host = new URL(baseURL).hostname;
-        } catch {
-          host = '';
-        }
-        const name = provName.trim() || host || 'Provider';
         const list = providers.map((p) => ({
           id: p.id,
           name: p.name,
@@ -834,37 +1123,6 @@ export default function Settings() {
       setLlmError(errMsg(err));
     } finally {
       setLlmSaving(false);
-    }
-  };
-
-  const saveAsProvider = async (e: FormEvent) => {
-    e.preventDefault();
-    const name = provName.trim();
-    if (!name) {
-      setProvError('Enter a provider name.');
-      return;
-    }
-    setProvSaving(true);
-    setProvSaved(false);
-    setProvError(null);
-    try {
-      const newId = randomId();
-      const list = providers.map((p) => ({
-        id: p.id,
-        name: p.name,
-        baseURL: p.baseURL,
-        model: p.model,
-      }));
-      list.push({ id: newId, name, baseURL, model, ...(apiKey ? { apiKey } : {}) });
-      await api.updateSettings({ llm: { providers: list, activeProviderId: newId } });
-      setProvSaved(true);
-      setProvName('');
-      setApiKey('');
-      reloadSettings();
-    } catch (err) {
-      setProvError(errMsg(err));
-    } finally {
-      setProvSaving(false);
     }
   };
 
@@ -1037,15 +1295,14 @@ export default function Settings() {
     }
   };
 
-  const saveDefaultThinking = async (e: FormEvent) => {
-    e.preventDefault();
+  const saveDefaultThinking = async (value: string) => {
     setDtSaving(true);
     setDtSaved(false);
     setDtError(null);
     try {
-      await api.updateSettings({ defaultThinking: defThinking });
+      await api.updateSettings({ defaultThinking: value });
+      setDefThinking(value);
       setDtSaved(true);
-      setSettings((prev) => (prev ? { ...prev, defaultThinking: defThinking } : prev));
     } catch (err) {
       setDtError(errMsg(err));
     } finally {
@@ -1135,7 +1392,7 @@ export default function Settings() {
                       <span className="block truncate text-[11px] text-faint">{r.hint}</span>
                     </span>
                     <span className="shrink-0 text-[10px] text-faint">
-                      {NAV.find((n) => n.id === r.page)?.label}
+                      {visibleNav.find((n) => n.id === r.page)?.label}
                     </span>
                   </button>
                 ))
@@ -1154,8 +1411,8 @@ export default function Settings() {
             aria-expanded={mobileOpen}
             className="flex w-full items-center gap-2.5 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text transition-colors focus:border-subtle"
           >
-            {NAV.find((n) => n.id === page)?.icon}
-            <span className="flex-1 text-left">{NAV.find((n) => n.id === page)?.label}</span>
+            {visibleNav.find((n) => n.id === page)?.icon}
+            <span className="flex-1 text-left">{visibleNav.find((n) => n.id === page)?.label}</span>
             <IconChevronDown
               className={`h-4 w-4 shrink-0 text-dim transition-transform ${
                 mobileOpen ? 'rotate-180' : ''
@@ -1167,7 +1424,7 @@ export default function Settings() {
               role="listbox"
               className="absolute inset-x-2 top-full z-40 mt-1 max-h-[60vh] overflow-y-auto rounded-xl border border-border bg-bg p-1.5 shadow-2xl"
             >
-              {NAV.map((n) => (
+              {visibleNav.map((n) => (
                 <button
                   key={n.id}
                   type="button"
@@ -1192,7 +1449,7 @@ export default function Settings() {
           )}
         </nav>
         <nav className="hidden w-52 shrink-0 flex-col gap-1 border-r border-border p-3 md:flex">
-          {NAV.map((n) => (
+          {visibleNav.map((n) => (
             <button
               key={n.id}
               type="button"
@@ -1207,7 +1464,7 @@ export default function Settings() {
 
         <main
           className={`flex min-h-0 flex-1 flex-col ${
-            page === 'tools' ? 'overflow-hidden' : 'overflow-y-auto'
+            page === 'tools' ? 'overflow-hidden' : 'fade-y overflow-y-auto'
           }`}
         >
           <div
@@ -1225,6 +1482,17 @@ export default function Settings() {
               onModelChange={setModel}
               hideModel
             >
+              <Field label="Provider name (optional)">
+                <Input
+                  value={provName}
+                  onChange={(e) => setProvName(e.target.value)}
+                  placeholder="e.g. opencode"
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                />
+              </Field>
               <Field label="API key">
                 <Input
                   type="password"
@@ -1241,7 +1509,14 @@ export default function Settings() {
               saving={llmSaving}
               saved={llmSaved}
               error={llmError}
-              pulse={settings ? baseURL !== settings.llm.baseURL || model !== settings.llm.model || apiKey !== '' : false}
+              pulse={
+                settings
+                  ? baseURL !== settings.llm.baseURL ||
+                    model !== settings.llm.model ||
+                    apiKey !== '' ||
+                    provName !== (providers.find((p) => p.id === activeProviderId)?.name ?? '')
+                  : false
+              }
               extra={
                 <Button variant="outline" onClick={() => void testLLM()} disabled={testing}>
                   {testing ? <Spinner className="h-4 w-4" /> : 'Test connection'}
@@ -1271,6 +1546,7 @@ export default function Settings() {
                 <span className="text-xs text-subtle">Saved providers</span>
                 <span className="text-[11px] text-faint">{providers.length}</span>
               </div>
+              {provError && <p className="mb-2 text-xs text-red-400">{provError}</p>}
               <ul className="flex flex-col gap-1.5">
                 {providers.map((p) => (
                   <li
@@ -1326,37 +1602,6 @@ export default function Settings() {
               </ul>
             </div>
           )}
-
-          <form onSubmit={(e) => void saveAsProvider(e)} className="flex items-end gap-2">
-            <div className="flex-1">
-              <Field label="Save current config as provider">
-                <Input
-                  value={provName}
-                  onChange={(e) => setProvName(e.target.value)}
-                  placeholder="e.g. opencode"
-                  autoComplete="off"
-                />
-              </Field>
-            </div>
-            <Button
-              type="submit"
-              variant="outline"
-              disabled={provSaving}
-              className={provName.trim() ? 'v1-save-breathe' : ''}
-            >
-              {provSaving ? <Spinner className="h-4 w-4" /> : 'Save as provider'}
-            </Button>
-          </form>
-          {(provError || provSaved) && (
-            <div className="flex items-center gap-2 text-xs">
-              {provSaved && (
-                <span className="flex items-center gap-1 text-emerald-500">
-                  <IconCheck className="h-3.5 w-3.5" /> Provider saved
-                </span>
-              )}
-              {provError && <span className="text-red-400">{provError}</span>}
-            </div>
-          )}
         </Section>
 
         <Section
@@ -1384,13 +1629,14 @@ export default function Settings() {
         <Section
           id="sec-thinking-default"
           title="Default thinking level"
-          description="The thinking level used when you pick a model. Falls back to the model's lowest level when it doesn't support the chosen one; per-model selections in the chat override this."
+          description="The thinking level used when you pick a model. Falls back to the model's lowest level when it doesn't support the chosen one; per-model selections in the chat override this. Saves automatically."
         >
-          <form onSubmit={(e) => void saveDefaultThinking(e)} className="flex flex-col gap-3">
+          <div className="flex flex-col gap-2">
             <select
               value={defThinking}
-              onChange={(e) => setDefThinking(e.target.value)}
-              className="w-full min-w-0 max-w-xs rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text outline-none transition-colors focus:border-subtle"
+              disabled={dtSaving}
+              onChange={(e) => void saveDefaultThinking(e.target.value)}
+              className="w-full min-w-0 max-w-xs rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text outline-none transition-colors focus:border-subtle disabled:opacity-60"
             >
               <option value="">Lowest</option>
               <option value="off">Off</option>
@@ -1400,13 +1646,15 @@ export default function Settings() {
               <option value="xhigh">XHigh</option>
               <option value="max">Max</option>
             </select>
-            <SaveRow
-              saving={dtSaving}
-              saved={dtSaved}
-              error={dtError}
-              pulse={settings ? defThinking !== settings.defaultThinking : false}
-            />
-          </form>
+            <div className="flex items-center gap-2 text-xs">
+              {dtSaved && (
+                <span className="flex items-center gap-1 text-emerald-500">
+                  <IconCheck className="h-3.5 w-3.5" /> Saved
+                </span>
+              )}
+              {dtError && <span className="text-red-400">{dtError}</span>}
+            </div>
+          </div>
         </Section>
         <Section
           id="sec-toon"
@@ -1604,11 +1852,11 @@ export default function Settings() {
             >
               console.vercel.co
             </a>{' '}
-            (Settings → OAuth) with callback URL{' '}
-            <code className="font-mono text-dim">
+            (Settings → OAuth) and use this callback URL:
+            <code className="mt-1 block break-all rounded-md bg-surface px-2 py-1 font-mono text-[11px] leading-relaxed text-dim">
               {window.location.origin}/api/auth/vercel/oauth/callback
             </code>
-            , then save the Client ID and Secret above and hit Save. Access tokens
+            Then save the Client ID and Secret above and hit Save. Access tokens
             expire after an hour; v1 refreshes them automatically.
           </p>
           <div className="flex items-center gap-2">
@@ -1638,16 +1886,12 @@ export default function Settings() {
             </div>
 
             <div className={page === 'appearance' ? 'flex flex-col gap-4' : 'hidden'}>
-              <Section id="sec-appearance" title="Appearance" description="Theme applies instantly and is remembered.">
-          <div>
-            <span className="mb-1 block text-xs text-subtle">Chat side (desktop)</span>
-            <ChatSideControl />
-          </div>
-          <div>
-            <span className="mb-2 block text-xs text-subtle">Theme</span>
-            <ThemePicker />
-          </div>
-        </Section>
+              <Section id="sec-theme" title="Theme" description="Applies instantly and is remembered.">
+                <ThemePicker />
+              </Section>
+              <Section id="sec-chat-side" title="Chat side" description="Which side of the preview the chat pane sits on (desktop).">
+                <ChatSideControl />
+              </Section>
         <Section
           id="sec-notifications"
           title="Notifications"
@@ -1714,6 +1958,13 @@ export default function Settings() {
         </Section>
             </div>
 
+            <div
+              id="sec-users"
+              className={page === 'users' ? 'flex flex-col' : 'hidden'}
+            >
+              <UsersControl />
+            </div>
+
             <div className={page === 'about' ? 'flex flex-col gap-4' : 'hidden'}>
               <Section title="About">
                 <div className="flex flex-col gap-1">
@@ -1726,6 +1977,10 @@ export default function Settings() {
                     <span className="font-mono text-subtle">
                       {settings.commit ? settings.commit.slice(0, 7) : 'dev'}
                     </span>
+                  </p>
+                  <p className="text-xs text-faint">
+                    signed in as <span className="text-dim">{me ?? '…'}</span>
+                    {isAdmin ? ' (admin)' : ''}
                   </p>
                 </div>
               </Section>

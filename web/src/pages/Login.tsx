@@ -4,15 +4,17 @@ import { api } from '../api';
 import type { AuthStatus } from '../types';
 import { errMsg } from '../utils';
 import { Button, Center, ErrorBox, Input, Spinner } from '../components/ui';
-import { IconLock } from '../components/icons';
+import { IconLock, IconUser } from '../components/icons';
 
 export default function Login({ mode }: { mode: 'login' | 'setup' }) {
   const navigate = useNavigate();
   const [authStatus, setAuthStatus] = useState<AuthStatus | null>(null);
   const [checking, setChecking] = useState(true);
   const [checkError, setCheckError] = useState<string | null>(null);
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
+  const [signingUp, setSigningUp] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -55,6 +57,10 @@ export default function Login({ mode }: { mode: 'login' | 'setup' }) {
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
+    if (!username.trim()) {
+      setError('Username is required.');
+      return;
+    }
     if (!password) {
       setError('Password is required.');
       return;
@@ -65,8 +71,9 @@ export default function Login({ mode }: { mode: 'login' | 'setup' }) {
     }
     setBusy(true);
     try {
-      if (mode === 'setup') await api.setup(password);
-      else await api.login(password);
+      if (mode === 'setup') await api.setup(username.trim(), password);
+      else if (signingUp) await api.signup(username.trim(), password);
+      else await api.login(username.trim(), password);
       navigate('/', { replace: true });
     } catch (err) {
       setError(errMsg(err));
@@ -94,6 +101,7 @@ export default function Login({ mode }: { mode: 'login' | 'setup' }) {
   }
 
   const isSetup = mode === 'setup';
+  const canSignup = !isSetup && (authStatus?.signupEnabled ?? false);
 
   return (
     <div className="v1-safe-top flex min-h-dvh items-center justify-center p-4">
@@ -103,16 +111,22 @@ export default function Login({ mode }: { mode: 'login' | 'setup' }) {
             v1
           </div>
           <h1 className="text-lg font-semibold text-text">
-            {isSetup ? 'Create your password' : 'Sign in to v1'}
+            {isSetup
+              ? 'Create your account'
+              : signingUp
+                ? 'Create an account'
+                : 'Sign in to v1'}
           </h1>
           <p className="mt-1 text-sm text-subtle">
             {isSetup
-              ? 'This password protects your v1 instance.'
-              : 'Enter your password to continue.'}
+              ? 'The first account is the admin.'
+              : signingUp
+                ? 'Anyone can join this instance.'
+                : 'Enter your username and password to continue.'}
           </p>
         </div>
 
-        {!isSetup && authStatus?.oidcEnabled && (
+        {!isSetup && !signingUp && authStatus?.oidcEnabled && (
           <>
             <Button
               variant="outline"
@@ -137,18 +151,31 @@ export default function Login({ mode }: { mode: 'login' | 'setup' }) {
         >
           <div className="flex flex-col gap-3">
             <div className="relative">
+              <IconUser className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-faint" />
+              <Input
+                type="text"
+                autoFocus
+                autoComplete="username"
+                placeholder="Username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                className="pl-9"
+              />
+            </div>
+            <div className="relative">
               <IconLock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-faint" />
               <Input
                 type="password"
-                autoFocus
-                autoComplete={isSetup ? 'new-password' : 'current-password'}
+                autoComplete={
+                  isSetup || signingUp ? 'new-password' : 'current-password'
+                }
                 placeholder="Password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="pl-9"
               />
             </div>
-            {isSetup && (
+            {(isSetup || signingUp) && (
               <div className="relative">
                 <IconLock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-faint" />
                 <Input
@@ -163,10 +190,52 @@ export default function Login({ mode }: { mode: 'login' | 'setup' }) {
             )}
             {error && <ErrorBox message={error} />}
             <Button type="submit" disabled={busy} className="w-full">
-              {busy ? <Spinner className="h-4 w-4" /> : isSetup ? 'Create password' : 'Sign in'}
+              {busy ? (
+                <Spinner className="h-4 w-4" />
+              ) : isSetup ? (
+                'Create account'
+              ) : signingUp ? (
+                'Sign up'
+              ) : (
+                'Sign in'
+              )}
             </Button>
           </div>
         </form>
+
+        {canSignup && (
+          <p className="mt-4 text-center text-sm text-subtle">
+            {signingUp ? (
+              <>
+                Already have an account?{' '}
+                <button
+                  type="button"
+                  className="text-accent hover:underline"
+                  onClick={() => {
+                    setSigningUp(false);
+                    setError(null);
+                  }}
+                >
+                  Sign in
+                </button>
+              </>
+            ) : (
+              <>
+                No account yet?{' '}
+                <button
+                  type="button"
+                  className="text-accent hover:underline"
+                  onClick={() => {
+                    setSigningUp(true);
+                    setError(null);
+                  }}
+                >
+                  Create one
+                </button>
+              </>
+            )}
+          </p>
+        )}
       </div>
     </div>
   );

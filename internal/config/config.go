@@ -13,6 +13,7 @@ type Config struct {
 	DataDir             string
 	AuthDisabled        bool
 	Password            string
+	AllowSignup         bool
 	OpenAIKey           string
 	OpenAIBase          string
 	Model               string
@@ -61,6 +62,9 @@ func Load(version, commit string) Config {
 		c.AuthDisabled = true
 	}
 	c.Password = os.Getenv("V1_PASSWORD")
+	if v := os.Getenv("V1_ALLOW_SIGNUP"); v == "true" || v == "1" || v == "yes" {
+		c.AllowSignup = true
+	}
 	c.OpenAIKey = os.Getenv("OPENAI_API_KEY")
 	if v := os.Getenv("OPENAI_BASE_URL"); v != "" {
 		c.OpenAIBase = v
