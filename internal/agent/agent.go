@@ -238,10 +238,11 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 			// conversation doesn't exhaust the provider's output window and
 			// stall mid-stream. The model already acted on these historical
 			// results; the workspace files remain the live source of truth.
-			msg.Content = elideHistoricalToolResult(msg.Name, m.Content)
+			toolContent := elideHistoricalToolResult(msg.Name, m.Content)
 			if p.ToonEnabled {
-				msg.Content = toonJSON(fmt.Sprint(msg.Content))
+				toolContent = toonJSON(toolContent)
 			}
+			msg.Content = toolContent
 			history = append(history, msg)
 		}
 	}
@@ -408,7 +409,7 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 // carry in the request to the model. Results under the cap pass through whole;
 // larger ones collapse to a compact pointer that preserves the tool name and
 // size without paying the full context cost.
-func elideHistoricalToolResult(name, content string) any {
+func elideHistoricalToolResult(name, content string) string {
 	if content == "" {
 		return ""
 	}
