@@ -341,26 +341,24 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 				usageJSON = string(b)
 			}
 		}
+		// If the provider's output window ran out mid-reply with no tool call
+		// to continue from (finish_reason "length" — the classic cause of
+		// "chats stop prematurely"), don't persist the truncated partial and
+		// don't treat it as a completed turn. Retry the round; the next call
+		// has no partial to play back and can complete normally. The round
+		// budget bounds retries, so this can't loop forever.
+		truncated := len(res.ToolCalls) == 0 && res.StopReason == "length"
+		if truncated {
+			p.Emit(ChatEvent{Type: "info", Text: "Output window hit mid-reply; continuing turn."})
+			continue
+		}
+
 		if _, err := p.Store.AddMessage(p.Project.ID, p.SessionID, "assistant", res.Text, toolJSON, p.Client.Model, res.Reasoning, usageJSON, ""); err != nil {
 			return nil, err
 		}
 		history = append(history, llm.Message{Role: "assistant", Content: res.Text, ReasoningContent: res.Reasoning, ToolCalls: res.ToolCalls})
 
-		// Detect a stream that was truncated because the provider's output
-		// window ran out mid-reply (finish_reason "length") with no tool call
-		// to continue from. This is the classic cause of "chats stop
-		// prematurely": the model spits out as many tokens as it's allowed and
-		// the turn silently ends. Instead of aborting, drop the partial text
-		// and retry with the reduced context, and flag it so the caller can
-		// surface a hint. Without this, a cap-hit looks exactly like a normal
-		// completed turn.
-		if len(res.ToolCalls) == 0 && (res.StopReason == "length" || res.StopReason == "") {
-			// "" means a provider ended the stream without telling us why — be
-			// conservative only when there's still room in the round budget.
-			if res.StopReason == "length" {
-				p.Emit(ChatEvent{Type: "info", Text: "Output window hit mid-reply; continuing turn."})
-				continue
-			}
+		if len(res.ToolCalls) == 0 {
 			return &TurnResult{Usage: usage, Model: p.Client.Model}, nil
 		}
 		for _, tc := range res.ToolCalls {
