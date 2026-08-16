@@ -86,6 +86,10 @@ type StreamResult struct {
 	Reasoning string
 	ToolCalls []ToolCall
 	Usage     *Usage
+	// StopReason is the provider's finish_reason (e.g. "length" when the
+	// output window was exhausted mid-reply). It lets the agent tell a genuine
+	// end-of-turn apart from a stream that was truncated.
+	StopReason string
 }
 
 // chatRetries is how many times the initial HTTP request is attempted
@@ -242,7 +246,8 @@ func scanStream(r io.Reader, res *StreamResult, onDelta func(string), onReasonin
 		}
 		var chunk struct {
 			Choices []struct {
-				Delta struct {
+				FinishReason *string `json:"finish_reason"`
+				Delta        struct {
 					Content          string `json:"content"`
 					ReasoningContent string `json:"reasoning_content"`
 					ToolCalls        []struct {
@@ -272,6 +277,9 @@ func scanStream(r io.Reader, res *StreamResult, onDelta func(string), onReasonin
 		}
 		if len(chunk.Choices) == 0 {
 			continue
+		}
+		if chunk.Choices[0].FinishReason != nil {
+			res.StopReason = *chunk.Choices[0].FinishReason
 		}
 		d := chunk.Choices[0].Delta
 		if d.Content != "" {
