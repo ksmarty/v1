@@ -97,6 +97,14 @@ type ChatParams struct {
 	Emit             func(ChatEvent)
 }
 
+// maxHistoricalToolResult is the largest a replayed (pre-turn) tool result may
+// be in the request to the model. Larger historical results are elided to a
+// one-line pointer: the model already processed them and the filesystem is
+// the live source of truth, so the only cost is a leaner context. This keeps a
+// long, tool-heavy conversation from exhausting the provider's output window
+// and stalling mid-stream.
+const maxHistoricalToolResult = 256
+
 // planModeNote is injected into the system prompt while the user plans: the
 // agent investigates with read-only tools and produces a plan, changing
 // nothing.
@@ -217,10 +225,7 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 			}
 			history = append(history, msg)
 		case "tool":
-			msg := llm.Message{Role: "tool", Content: m.Content}
-			if p.ToonEnabled {
-				msg.Content = toonJSON(m.Content)
-			}
+			msg := llm.Message{Role: "tool"}
 			var tj struct {
 				ToolCallID string `json:"tool_call_id"`
 				Name       string `json:"name"`
@@ -228,6 +233,14 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 			if json.Unmarshal([]byte(m.ToolJSON), &tj) == nil {
 				msg.ToolCallID = tj.ToolCallID
 				msg.Name = tj.Name
+			}
+			// Elide oversized replayed tool results so a long, tool-heavy
+			// conversation doesn't exhaust the provider's output window and
+			// stall mid-stream. The model already acted on these historical
+			// results; the workspace files remain the live source of truth.
+			msg.Content = elideHistoricalToolResult(msg.Name, m.Content)
+			if p.ToonEnabled {
+				msg.Content = toonJSON(fmt.Sprint(msg.Content))
 			}
 			history = append(history, msg)
 		}
@@ -389,6 +402,20 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 		}
 	}
 	return &TurnResult{Usage: usage, Model: p.Client.Model}, nil
+}
+
+// elideHistoricalToolResult returns the value a replayed tool result should
+// carry in the request to the model. Results under the cap pass through whole;
+// larger ones collapse to a compact pointer that preserves the tool name and
+// size without paying the full context cost.
+func elideHistoricalToolResult(name, content string) any {
+	if content == "" {
+		return ""
+	}
+	if len(content) <= maxHistoricalToolResult {
+		return content
+	}
+	return fmt.Sprintf("[%s result omitted — %d bytes; re-read the file if you need it again]", name, len(content))
 }
 
 // toolDetail extracts a short human-readable detail for a tool call.
