@@ -49,6 +49,15 @@ func (q *turnQueue) list() []queuedMsg {
 	return out
 }
 
+// listSteers returns the messages waiting to be injected into the run.
+func (q *turnQueue) listSteers() []queuedMsg {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	out := make([]queuedMsg, len(q.steers))
+	copy(out, q.steers)
+	return out
+}
+
 // reorder replaces the pending order with the given id list, which must be a
 // permutation of the current ids.
 func (q *turnQueue) reorder(ids []string) error {

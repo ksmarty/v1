@@ -74,20 +74,13 @@ func New(cfg config.Config, st *store.Store) *Server {
 		oidcFlows:     map[string]*oidcFlow{},
 		vercelFlows:   map[string]*vercelFlow{},
 		vercelDeploys: map[string]*deployState{},
-		oidc: auth.NewOIDC(auth.OIDCConfig{
-			Enabled:       cfg.AuthOIDCEnabled,
-			Issuer:        cfg.OIDCIssuer,
-			ClientID:      cfg.OIDCClientID,
-			ClientSecret:  cfg.OIDCClientSecret,
-			RedirectURI:   cfg.OIDCRedirectURI,
-			AllowedEmails: cfg.OIDCAllowedEmails,
-		}),
+		oidc: auth.NewOIDC(auth.OIDCConfig{}),
 		perm: permRegistry{reqs: map[string]*permRequest{}},
 		ask:  askRegistry{reqs: map[string]*askRequest{}},
 	}
 	s.mcp = mcp.NewManager(s.mcpServers)
 	s.auth.BootstrapAdmin()
-	s.auth.SetOIDCEnabled(s.oidcEnabled())
+	s.rebuildOIDC()
 	s.pruneOIDCFlows()
 	s.pruneVercelFlows()
 	mux := http.NewServeMux()
@@ -116,6 +109,8 @@ func (s *Server) routes(m *http.ServeMux) {
 	m.HandleFunc("POST /api/auth/logout", s.handleLogout)
 	m.HandleFunc("GET /api/auth/oidc/start", s.handleOIDCStart)
 	m.HandleFunc("GET /api/auth/oidc/callback", s.handleOIDCCallback)
+	m.HandleFunc("GET /api/settings/oidc", s.handleOIDCSettings)
+	m.HandleFunc("POST /api/settings/oidc", s.handleOIDCSettingsSave)
 	m.HandleFunc("GET /api/auth/vercel/oauth/start", s.handleVercelOAuthStart)
 	m.HandleFunc("GET /api/auth/vercel/oauth/callback", s.handleVercelOAuthCallback)
 
@@ -310,6 +305,54 @@ const (
 // specified via the V1_OIDC_* values).
 func (s *Server) oidcEnabled() bool {
 	return !s.cfg.AuthDisabled && s.oidc != nil && s.oidc.Enabled()
+}
+
+// Instance-level OIDC settings (admin-savable in Settings → Auth → OIDC).
+// Saved settings override the environment; empty values fall back to env, and
+// an empty callback URI is derived per request.
+const (
+	keyOIDCIssuer        = "oidc_issuer"
+	keyOIDCClientID      = "oidc_client_id"
+	keyOIDCClientSecret  = "oidc_client_secret"
+	keyOIDCCallbackURI   = "oidc_callback_uri"
+	keyOIDCAllowedEmails = "oidc_allowed_emails"
+)
+
+// oidcConfig merges the admin-saved OIDC settings over the environment.
+func (s *Server) oidcConfig() auth.OIDCConfig {
+	cfg := auth.OIDCConfig{
+		Enabled:       s.cfg.AuthOIDCEnabled,
+		Issuer:        s.cfg.OIDCIssuer,
+		ClientID:      s.cfg.OIDCClientID,
+		ClientSecret:  s.cfg.OIDCClientSecret,
+		RedirectURI:   s.cfg.OIDCRedirectURI,
+		AllowedEmails: s.cfg.OIDCAllowedEmails,
+	}
+	if v, _, _ := s.st.GetSetting(keyOIDCIssuer); v != "" {
+		cfg.Issuer = v
+	}
+	if v, _, _ := s.st.GetSetting(keyOIDCClientID); v != "" {
+		cfg.ClientID = v
+	}
+	if v, _, _ := s.st.GetSetting(keyOIDCClientSecret); v != "" {
+		cfg.ClientSecret = v
+	}
+	if v, _, _ := s.st.GetSetting(keyOIDCCallbackURI); v != "" {
+		cfg.RedirectURI = v
+	}
+	if v, _, _ := s.st.GetSetting(keyOIDCAllowedEmails); v != "" {
+		cfg.AllowedEmails = splitCSV(v)
+	}
+	return cfg
+}
+
+// rebuildOIDC swaps in a fresh OIDC client from the effective config — called
+// at startup and whenever an admin saves the OIDC settings. The provider is
+// resolved lazily, so a misconfigured issuer doesn't break anything until a
+// login is attempted.
+func (s *Server) rebuildOIDC() {
+	s.oidc = auth.NewOIDC(s.oidcConfig())
+	s.auth.SetOIDCEnabled(s.oidcEnabled())
 }
 
 // userSetting resolves a setting for a user: the user's own value wins, then

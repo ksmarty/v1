@@ -6,6 +6,7 @@ import { errMsg, formatBytes } from '../utils';
 import { useMediaQuery } from '../hooks/useMediaQuery';
 import { ErrorBox, IconButton, Spinner } from './ui';
 import CodeEditor from './CodeEditor';
+import Markdown from './Markdown';
 import FileIcon from './FileIcon';
 import {
   IconArrowLeft,
@@ -129,9 +130,12 @@ export default function FilesPane({ projectId }: { projectId: string }) {
   const [fileError, setFileError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
+  // README files open in a rendered markdown preview with an Edit toggle.
+  const [preview, setPreview] = useState(true);
   const expandedRef = useRef<Set<string>>(new Set());
 
   const dirty = content !== savedContent;
+  const isReadme = !!selected && /^readme(\.|$)/i.test(selected.path.split('/').pop() ?? '');
 
   const loadRoot = useCallback(async () => {
     try {
@@ -218,6 +222,7 @@ export default function FilesPane({ projectId }: { projectId: string }) {
 
   const openFile = async (entry: FileEntry) => {
     setSelected({ path: entry.path, size: entry.size });
+    setPreview(true);
     setFileLoading(true);
     setFileError(null);
     setSavedFlash(false);
@@ -310,20 +315,40 @@ export default function FilesPane({ projectId }: { projectId: string }) {
         {selected && (
           <span className="shrink-0 text-xs text-faint">{formatBytes(selected.size)}</span>
         )}
+        {isReadme && (
+          <div className="flex shrink-0 items-center gap-0.5 rounded-md border border-border p-0.5">
+            {(['preview', 'edit'] as const).map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => setPreview(m === 'preview')}
+                className={`rounded px-2 py-0.5 text-[11px] capitalize transition-colors ${
+                  (m === 'preview') === preview
+                    ? 'bg-border text-text'
+                    : 'text-faint hover:text-text'
+                }`}
+              >
+                {m}
+              </button>
+            ))}
+          </div>
+        )}
         {savedFlash && !dirty && (
           <span className="flex shrink-0 items-center gap-1 text-xs text-emerald-500">
             <IconCheck className="h-3.5 w-3.5" /> Saved
           </span>
         )}
         {dirty && <span className="h-2 w-2 shrink-0 rounded-full bg-amber-500" title="Unsaved" />}
-        <button
-          type="button"
-          onClick={() => void save()}
-          disabled={!dirty || saving || fileLoading}
-          className="h-7 shrink-0 rounded-md border border-border-strong px-2.5 text-xs text-text transition-colors hover:bg-border disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {saving ? <Spinner className="h-3.5 w-3.5" /> : 'Save'}
-        </button>
+        {!preview && (
+          <button
+            type="button"
+            onClick={() => void save()}
+            disabled={!dirty || saving || fileLoading}
+            className="h-7 shrink-0 rounded-md border border-border-strong px-2.5 text-xs text-text transition-colors hover:bg-border disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {saving ? <Spinner className="h-3.5 w-3.5" /> : 'Save'}
+          </button>
+        )}
       </div>
       <div className="min-h-0 flex-1">
         {fileLoading ? (
@@ -333,6 +358,12 @@ export default function FilesPane({ projectId }: { projectId: string }) {
         ) : fileError ? (
           <div className="p-3">
             <ErrorBox message={fileError} />
+          </div>
+        ) : isReadme && preview ? (
+          <div className="h-full overflow-y-auto overscroll-contain">
+            <div className="mx-auto max-w-3xl px-5 py-5">
+              <Markdown text={content} />
+            </div>
           </div>
         ) : (
           <CodeEditor

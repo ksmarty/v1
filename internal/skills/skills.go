@@ -28,6 +28,7 @@ type Skill struct {
 	Description string `json:"description"`
 	GitHubURL   string `json:"githubUrl"`
 	SkillsMPURL string `json:"skillsmpUrl"`
+	Stars       int64  `json:"stars"`
 	Branch      string `json:"branch"`
 	SourcePath  string `json:"sourcePath"`
 	Owner       string `json:"owner"`
@@ -62,6 +63,7 @@ func Search(ctx context.Context, q string, limit int) ([]Skill, error) {
 			Author      string `json:"author"`
 			Description string `json:"description"`
 			GitHubURL   string `json:"githubUrl"`
+			Stars       int64  `json:"stars"`
 			Branch      string `json:"branch"`
 			Route       struct {
 				OwnerSlug        string `json:"ownerSlug"`
@@ -82,6 +84,7 @@ func Search(ctx context.Context, q string, limit int) ([]Skill, error) {
 			Author:      s.Author,
 			Description: s.Description,
 			GitHubURL:   s.GitHubURL,
+			Stars:       s.Stars,
 			Branch:      s.Branch,
 			Owner:       s.Route.OwnerSlug,
 			Repo:        s.Route.RepoSlug,

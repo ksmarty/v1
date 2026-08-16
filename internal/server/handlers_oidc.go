@@ -22,18 +22,79 @@ type oidcFlow struct {
 
 const oidcFlowTTL = 10 * time.Minute
 
-// oidcRedirectURI resolves the callback URI: the configured
-// V1_OIDC_REDIRECT_URI wins, otherwise it is derived from the request
+// oidcRedirectURI resolves the callback URI: the configured (env or
+// admin-saved) callback URI wins, otherwise it is derived from the request
 // (X-Forwarded-Proto when present, else the TLS state).
 func (s *Server) oidcRedirectURI(r *http.Request) string {
-	if s.cfg.OIDCRedirectURI != "" {
-		return s.cfg.OIDCRedirectURI
+	if uri := s.oidcConfig().RedirectURI; uri != "" {
+		return uri
 	}
 	scheme := "http"
 	if r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
 		scheme = "https"
 	}
 	return scheme + "://" + r.Host + "/api/auth/oidc/callback"
+}
+
+// splitCSV splits a comma-separated list, trimming whitespace and dropping
+// empties.
+func splitCSV(s string) []string {
+	var out []string
+	for _, part := range strings.Split(s, ",") {
+		if p := strings.TrimSpace(part); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// handleOIDCSettings returns the effective OIDC configuration for the
+// settings UI (admin only). The client secret is only reported as a boolean;
+// an empty callbackUri means the per-request default is used.
+func (s *Server) handleOIDCSettings(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAdmin(w, r) {
+		return
+	}
+	cfg := s.oidcConfig()
+	writeJSON(w, http.StatusOK, map[string]any{
+		"issuer":          cfg.Issuer,
+		"clientId":        cfg.ClientID,
+		"clientSecretSet": cfg.ClientSecret != "",
+		"callbackUri":     cfg.RedirectURI,
+		"allowedEmails":   strings.Join(cfg.AllowedEmails, ", "),
+		"enabled":         s.oidcEnabled(),
+	})
+}
+
+// handleOIDCSettingsSave stores the admin-saved OIDC configuration and
+// rebuilds the OIDC client. Empty fields fall back to the environment; an
+// empty client secret keeps the previously saved one.
+func (s *Server) handleOIDCSettingsSave(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAdmin(w, r) {
+		return
+	}
+	var body struct {
+		Issuer        string `json:"issuer"`
+		ClientID      string `json:"clientId"`
+		ClientSecret  string `json:"clientSecret"`
+		CallbackURI   string `json:"callbackUri"`
+		AllowedEmails string `json:"allowedEmails"`
+	}
+	if !decodeJSON(w, r, &body) {
+		return
+	}
+	set := func(key, val string) {
+		_ = s.st.SetSetting(key, strings.TrimSpace(val))
+	}
+	set(keyOIDCIssuer, body.Issuer)
+	set(keyOIDCClientID, body.ClientID)
+	if body.ClientSecret != "" {
+		set(keyOIDCClientSecret, body.ClientSecret)
+	}
+	set(keyOIDCCallbackURI, body.CallbackURI)
+	set(keyOIDCAllowedEmails, body.AllowedEmails)
+	s.rebuildOIDC()
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "enabled": s.oidcEnabled()})
 }
 
 // pruneOIDCFlows drops expired flows so the in-memory map cannot grow without
@@ -87,7 +148,7 @@ func (s *Server) handleOIDCStart(w http.ResponseWriter, r *http.Request) {
 	redirect := s.oidcRedirectURI(r)
 	authURL, err := s.oidc.AuthCodeURL(r.Context(), state, verifier, nonce, redirect)
 	if err != nil {
-		log.Printf("oidc: discovering issuer %s: %v", s.cfg.OIDCIssuer, err)
+		log.Printf("oidc: discovering issuer %s: %v", s.oidcConfig().Issuer, err)
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}

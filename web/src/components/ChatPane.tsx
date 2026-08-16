@@ -357,6 +357,8 @@ type MsgItem = {
   /** When the message was sent (ms epoch; live items use the send time). */
   sentAt?: number;
   streaming?: boolean;
+  /** Collapsed when a newer thinking block started (live rounds only). */
+  reasoningCollapsed?: boolean;
   stale?: boolean;
   editing?: boolean;
 };
@@ -1403,7 +1405,10 @@ const MessageRow = memo(function MessageRow({
       ) : (
         <>
           {item.reasoning && (
-            <ReasoningBlock text={item.reasoning} autoOpen={item.streaming ?? false} />
+            <ReasoningBlock
+              text={item.reasoning}
+              autoOpen={(item.streaming ?? false) && !item.reasoningCollapsed}
+            />
           )}
           {hasTools && (
             <ToolBlocks calls={calls} results={results} />
@@ -1538,6 +1543,9 @@ export default function ChatPane({
   // follow-up turns when the run finishes; the steer button injects one into
   // the current run immediately.
   const [queued, setQueued] = useState<{ id: string; text: string }[]>([]);
+  // Messages steered into the current run, waiting to be injected at the next
+  // round boundary.
+  const [steering, setSteering] = useState<{ id: string; text: string }[]>([]);
   const [queueEditId, setQueueEditId] = useState<string | null>(null);
   const [queueEditText, setQueueEditText] = useState('');
   const queueEditIdRef = useRef<string | null>(null);
@@ -1855,6 +1863,7 @@ export default function ChatPane({
     try {
       const q = await api.chatQueue(projectId, sessionId);
       setQueued(q.messages ?? []);
+      setSteering(q.steering ?? []);
     } catch {
       // transient — the block catches up on the next refresh
     }
@@ -1993,11 +2002,11 @@ export default function ChatPane({
   }, [projectId]);
 
   // Keep the queue block in sync while a run is active — messages drain to
-  // follow-up turns as they finish.
+  // follow-up turns as they finish. The status poll above refreshes it every
+  // 3s regardless of streaming state, so a detached tab never goes stale.
   useEffect(() => {
     if (!streaming) return;
-    const t = window.setInterval(() => void refreshQueue(), 3000);
-    return () => window.clearInterval(t);
+    return () => void refreshQueue();
   }, [streaming, refreshQueue]);
 
   // Context fill for the ring: on mount, after each finished turn, when the
@@ -2028,7 +2037,8 @@ export default function ChatPane({
   // poll the run status: if a run is active and we are not already streaming
   // it, attach to its live stream — the chat then behaves exactly as if we
   // had never left (thinking, tool rows, composer spinner, all live). When
-  // no run is active, refresh the transcript the moment it finishes.
+  // no run is active, refresh the transcript the moment it finishes. The
+  // queue/steering block syncs on the same tick so it never goes stale.
   useEffect(() => {
     if (!sessionId) return;
     let cancelled = false;
@@ -2036,6 +2046,7 @@ export default function ChatPane({
     let wasRunning = false;
     const tick = async () => {
       if (cancelled) return;
+      void refreshQueue();
       try {
         const st = await api.chatStatus(projectId, sessionId);
         if (cancelled) return;
@@ -2059,7 +2070,7 @@ export default function ChatPane({
       if (timer) window.clearTimeout(timer);
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [projectId, sessionId, load, streaming]);
+  }, [projectId, sessionId, load, refreshQueue, streaming]);
 
   // Load the agent-maintained todo list for this project.
   useEffect(() => {
@@ -2279,18 +2290,33 @@ export default function ChatPane({
             k = `s${++counterRef.current}`;
             assistantKeyRef.current = k;
             const nk = k;
-            update((prev) => [
-              ...prev,
-              {
-                kind: 'msg',
-                key: nk,
-                role: 'assistant',
-                content: '',
-                reasoning: ev.text,
-                sentAt: Date.now(),
-                streaming: true,
-              },
-            ]);
+            update((prev) => {
+              // A new thinking block starts a new round — collapse the
+              // previous assistant message's block so only the live one is
+              // open.
+              let prevKey: string | null = null;
+              for (let i = prev.length - 1; i >= 0; i--) {
+                const it = prev[i];
+                if (it.kind === 'msg' && it.role === 'assistant') {
+                  prevKey = it.key;
+                  break;
+                }
+              }
+              return [
+                ...prev.map((it) =>
+                  it.kind === 'msg' && it.key === prevKey ? { ...it, reasoningCollapsed: true } : it,
+                ),
+                {
+                  kind: 'msg',
+                  key: nk,
+                  role: 'assistant',
+                  content: '',
+                  reasoning: ev.text,
+                  sentAt: Date.now(),
+                  streaming: true,
+                },
+              ];
+            });
           } else {
             const ck = k;
             update((prev) =>
@@ -2438,6 +2464,7 @@ export default function ChatPane({
           void notifyTurnDone(projectId, projectName, snippet);
           void loadContext(true); // bypass the cache: usage changed this turn
           setAskPrompt(null); // the turn ended — no question can be pending
+          setSteering([]); // the turn ended — nothing is pending injection
           void refreshQueue(); // queued messages drained into follow-up turns
           finish();
           break;
@@ -2448,14 +2475,17 @@ export default function ChatPane({
             { kind: 'msg', key: `e${++counterRef.current}`, role: 'error', content: ev.error },
           ]);
           setAskPrompt(null);
+          setSteering([]);
           void refreshQueue();
           finish();
           break;
         }
         case 'injected_message': {
           // The agent added a user message mid-turn (a screenshot from the
-          // screenshot_app tool) — render it like any other user turn.
+          // screenshot_app tool) — render it like any other user turn. If the
+          // text matches a pending steer, that steer has landed.
           const id = ev.messageId ?? 0;
+          if (ev.text) setSteering((prev) => prev.filter((s) => s.text !== ev.text));
           update((prev) => [
             ...prev,
             {
@@ -2868,17 +2898,20 @@ export default function ChatPane({
   }, [projectId, sessionId]);
 
   // Steers one queued message into the current run: the agent picks it up at
-  // the next round boundary instead of waiting for the queue.
+  // the next round boundary instead of waiting for the queue. The message
+  // shows as "steering" until it lands as an injected message.
   const steerQueued = useCallback(
     async (id: string) => {
+      const entry = queued.find((m) => m.id === id);
       try {
         await api.chatQueueSteer(projectId, sessionId, id);
         setQueued((prev) => prev.filter((m) => m.id !== id));
+        if (entry) setSteering((prev) => [...prev, { id: entry.id, text: entry.text }]);
       } catch {
         void refreshQueue();
       }
     },
-    [projectId, refreshQueue],
+    [projectId, queued, refreshQueue],
   );
 
   const updateSuggestions = useCallback((value: string) => {
@@ -3155,18 +3188,23 @@ export default function ChatPane({
   const turnEndKeys = useMemo(() => {
     const keys = new Set<string>();
     let pending = true;
+    let lastMsg = true; // the newest message in the list
     for (let i = items.length - 1; i >= 0; i--) {
       const it = items[i];
       if (it.kind !== 'msg') continue;
       if (it.role === 'user') {
         pending = true;
       } else if (it.role === 'assistant') {
-        if (pending) keys.add(it.key);
+        // While a run is active, the newest message is mid-turn (its text
+        // isn't persisted until the round ends, so the last row looks final
+        // on a return/reload) — its totals must not print yet.
+        if (pending && !(lastMsg && (streaming || runActive))) keys.add(it.key);
         pending = false;
       }
+      lastMsg = false;
     }
     return keys;
-  }, [items]);
+  }, [items, streaming, runActive]);
 
   // True when a message renders as a collapsed tool summary row (the tool
   // collapse setting is on and the message carries tools, ask included).
@@ -3615,7 +3653,7 @@ export default function ChatPane({
       )}
 
       {localStatus && <div className="px-3 py-1 text-center text-xs text-subtle">{localStatus}</div>}
-      {queued.length > 0 && (
+      {(queued.length > 0 || steering.length > 0) && (
         <div className="shrink-0 border-t border-accent/30 bg-bg px-2 pt-2 pb-1 md:px-3">
           <div className="mx-auto w-full max-w-2xl rounded-lg border border-accent/40 bg-surface p-2 text-xs shadow-lg shadow-black/20">
             <div className="mb-1.5 flex items-center gap-1.5 px-1 text-[10px] font-medium uppercase tracking-wider text-faint">
@@ -3707,6 +3745,23 @@ export default function ChatPane({
                 </button>
               </div>
             ))}
+            {steering.length > 0 && (
+              <>
+                <div className="mt-2 mb-1 flex items-center gap-1.5 px-1 text-[10px] font-medium uppercase tracking-wider text-accent">
+                  <IconSend className="h-3 w-3 text-accent" />
+                  Steering
+                </div>
+                {steering.map((m) => (
+                  <div
+                    key={m.id}
+                    className="mb-1 flex items-center gap-1.5 rounded-md border border-accent/40 bg-accent/5 px-2 py-1.5 last:mb-0"
+                  >
+                    <Spinner className="h-3 w-3 shrink-0 text-accent" />
+                    <span className="min-w-0 flex-1 truncate text-dim">{m.text}</span>
+                  </div>
+                ))}
+              </>
+            )}
           </div>
         </div>
       )}

@@ -245,9 +245,10 @@ renderer.code = ({ text, lang, escaped }: Tokens.Code): string => {
 // Escape raw HTML so model output cannot inject markup/scripts.
 renderer.html = ({ text }: Tokens.HTML | Tokens.Tag): string => escapeHtml(text);
 
-// Drop javascript: and other non-http(s) links.
-renderer.link = ({ href, title, tokens }: Tokens.Link): string => {
-  const text = renderer.parser.parseInline(tokens);
+// Drop javascript: and other non-http(s) links. `this.parser` (not the
+// module-level renderer) — marked binds a clone whose parser is set.
+renderer.link = function (this: Renderer, { href, title, tokens }: Tokens.Link): string {
+  const text = this.parser.parseInline(tokens);
   if (href && /^(?:https?:|mailto:|#|\/)/i.test(href)) {
     return `<a href="${escapeHtml(href)}"${title ? ` title="${escapeHtml(title)}"` : ''}>${text}</a>`;
   }

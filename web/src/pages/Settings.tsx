@@ -119,6 +119,7 @@ const SETTINGS_SEARCH: {
   { id: 'sec-thinking-collapsed', page: 'appearance', label: 'Thinking', hint: 'Collapse reasoning blocks by default', keywords: 'thinking reasoning collapse blocks default stream hide' },
   { id: 'sec-clear-cache', page: 'llm', label: 'Cached data', hint: 'Clear the provider catalog cache', keywords: 'cache clear providers catalog thinking metadata refetch reset' },
   { id: 'sec-auth', page: 'auth', label: 'Auth', hint: 'Change the password', keywords: 'password auth login security change password' },
+  { id: 'sec-oidc', page: 'auth', label: 'OIDC login', hint: 'Single sign-on (admin)', keywords: 'oidc sso single sign on authentik keycloak google issuer client id secret callback redirect allowed emails login' },
   { id: 'sec-users', page: 'users', label: 'Users', hint: 'Admin: create and delete accounts', keywords: 'users accounts admin create delete signup password login' },
   { id: 'sec-notifications', page: 'appearance', label: 'Notifications', hint: 'Turn-finished alerts', keywords: 'notifications notify alerts push ios pwa banner turn' },
   { id: 'sec-debug-hud', page: 'about', label: 'Debug HUD', hint: 'Viewport metrics overlay', keywords: 'debug hud viewport metrics overlay diagnostics' },
@@ -542,6 +543,145 @@ function DebugHudControl() {
         </button>
       ))}
     </div>
+  );
+}
+
+// OIDC single sign-on configuration, admin-only. Minimal required fields are
+// issuer + client id + secret; the callback URI defaults to
+// <origin>/api/auth/oidc/callback and allowed emails defaults to everyone.
+function OidcControl() {
+  const [issuer, setIssuer] = useState('');
+  const [clientId, setClientId] = useState('');
+  const [clientSecret, setClientSecret] = useState('');
+  const [secretSet, setSecretSet] = useState(false);
+  const [callbackUri, setCallbackUri] = useState('');
+  const [allowedEmails, setAllowedEmails] = useState('');
+  const [enabled, setEnabled] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    api
+      .oidcSettings()
+      .then((c) => {
+        setIssuer(c.issuer);
+        setClientId(c.clientId);
+        setSecretSet(c.clientSecretSet);
+        setCallbackUri(c.callbackUri);
+        setAllowedEmails(c.allowedEmails);
+        setEnabled(c.enabled);
+      })
+      .catch(() => {});
+  }, []);
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const defaultCallback = `${window.location.origin}/api/auth/oidc/callback`;
+  const dirty =
+    issuer.trim() !== '' ||
+    clientId.trim() !== '' ||
+    clientSecret.trim() !== '' ||
+    callbackUri.trim() !== '' ||
+    allowedEmails.trim() !== '';
+
+  const save = async () => {
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await api.oidcSettingsSave({
+        issuer: issuer.trim(),
+        clientId: clientId.trim(),
+        clientSecret: clientSecret.trim(),
+        callbackUri: callbackUri.trim(),
+        allowedEmails: allowedEmails.trim(),
+      });
+      setClientSecret('');
+      setSecretSet(true);
+      setEnabled(res.enabled);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (e) {
+      setError(errMsg(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <form onSubmit={(e) => { e.preventDefault(); void save(); }} className="flex flex-col gap-3">
+      <p className="text-xs text-faint">
+        Sign in with any OIDC provider (Authentik, Keycloak, Google…). The
+        required fields are <span className="text-dim">Issuer</span>,{' '}
+        <span className="text-dim">Client ID</span> and{' '}
+        <span className="text-dim">Client secret</span> — the callback URI and
+        allowed emails are optional.
+      </p>
+      {enabled ? (
+        <p className="text-xs text-emerald-400">OIDC login is enabled.</p>
+      ) : (
+        <p className="text-xs text-faint">OIDC login is not configured yet.</p>
+      )}
+      <Field label="Issuer URL (required)">
+        <Input
+          value={issuer}
+          onChange={(e) => setIssuer(e.target.value)}
+          placeholder="https://auth.example.com/application/o/<slug>/"
+          spellCheck={false}
+          autoComplete="off"
+        />
+      </Field>
+      <Field label="Client ID (required)">
+        <Input
+          value={clientId}
+          onChange={(e) => setClientId(e.target.value)}
+          placeholder="OIDC client ID from your provider"
+          spellCheck={false}
+          autoComplete="off"
+        />
+      </Field>
+      <Field label="Client secret (required)">
+        <Input
+          type="password"
+          value={clientSecret}
+          onChange={(e) => setClientSecret(e.target.value)}
+          placeholder={secretSet ? '(saved — leave blank to keep it)' : 'OIDC client secret'}
+          autoComplete="new-password"
+        />
+      </Field>
+      <Field label="Callback URI">
+        <Input
+          value={callbackUri}
+          onChange={(e) => setCallbackUri(e.target.value)}
+          placeholder={defaultCallback}
+          spellCheck={false}
+          autoComplete="off"
+        />
+        <span className="mt-1 block text-[11px] text-faint">
+          Leave blank to use the default: <span className="font-mono">{defaultCallback}</span>
+        </span>
+      </Field>
+      <Field label="Allowed emails">
+        <Input
+          value={allowedEmails}
+          onChange={(e) => setAllowedEmails(e.target.value)}
+          placeholder="you@example.com, teammate@example.com"
+          spellCheck={false}
+          autoComplete="off"
+        />
+        <span className="mt-1 block text-[11px] text-faint">
+          Comma-separated list; blank allows any authenticated user.
+        </span>
+      </Field>
+      <div className="rounded-lg border border-border/70 bg-surface/60 px-3 py-2 text-xs text-dim">
+        Register this URI with your provider:{' '}
+        <span className="break-all font-mono text-text">
+          {callbackUri.trim() || defaultCallback}
+        </span>
+      </div>
+      <SaveRow saving={saving} saved={saved} error={error} pulse={dirty} />
+    </form>
   );
 }
 
@@ -2168,7 +2308,12 @@ export default function Settings() {
         </Section>
             </div>
 
-            <div className={page === 'auth' ? '' : 'hidden'}>
+            <div className={page === 'auth' ? 'flex flex-col gap-4' : 'hidden'}>
+              {isAdmin && (
+                <Section id="sec-oidc" title="OIDC login">
+                  <OidcControl />
+                </Section>
+              )}
               <Section id="sec-auth" title="Auth">
           {settings.auth.disabled ? (
             <p className="text-sm text-dim">

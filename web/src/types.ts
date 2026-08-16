@@ -284,6 +284,7 @@ export interface SkillSearchResult {
   description: string;
   githubUrl: string;
   skillsmpUrl?: string;
+  stars?: number;
   branch: string;
   sourcePath: string;
   owner: string;

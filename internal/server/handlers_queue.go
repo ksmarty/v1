@@ -7,19 +7,24 @@ import (
 )
 
 // handleChatQueue returns the run's queued messages in processing order, or
-// an empty list when the session is idle.
+// an empty list when the session is idle. `steering` lists the messages that
+// have been steered into the run and are waiting to be injected.
 func (s *Server) handleChatQueue(w http.ResponseWriter, r *http.Request) {
 	p := s.projectOr404(w, r)
 	if p == nil {
 		return
 	}
 	messages := []map[string]any{}
+	steering := []map[string]any{}
 	if q := s.turns.get(p.ID, s.chatSessionID(p, r.URL.Query().Get("sessionId"))); q != nil {
 		for _, m := range q.list() {
 			messages = append(messages, map[string]any{"id": m.ID, "text": m.Text})
 		}
+		for _, m := range q.listSteers() {
+			steering = append(steering, map[string]any{"id": m.ID, "text": m.Text})
+		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"messages": messages})
+	writeJSON(w, http.StatusOK, map[string]any{"messages": messages, "steering": steering})
 }
 
 // handleChatQueueReorder reorders the pending queue to match the given id

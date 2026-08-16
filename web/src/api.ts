@@ -208,6 +208,22 @@ export const api = {
   // Settings
   getSettings: () => request<Settings>('/api/settings'),
   updateSettings: (body: SettingsUpdate) => put<void>('/api/settings', body),
+  oidcSettings: () =>
+    request<{
+      issuer: string;
+      clientId: string;
+      clientSecretSet: boolean;
+      callbackUri: string;
+      allowedEmails: string;
+      enabled: boolean;
+    }>('/api/settings/oidc'),
+  oidcSettingsSave: (body: {
+    issuer?: string;
+    clientId?: string;
+    clientSecret?: string;
+    callbackUri?: string;
+    allowedEmails?: string;
+  }) => post<{ enabled: boolean }>('/api/settings/oidc', body),
   testLLM: (opts?: { baseURL?: string; apiKey?: string; model?: string }) =>
     post<{ ok: boolean; error?: string }>('/api/settings/test-llm', opts),
 
@@ -298,7 +314,7 @@ export const api = {
       `/api/projects/${id}/chat/status?sessionId=${encodeURIComponent(sessionId)}`,
     ),
   chatQueue: (id: string, sessionId: string) =>
-    request<{ messages: { id: string; text: string }[] }>(
+    request<{ messages: { id: string; text: string }[]; steering: { id: string; text: string }[] }>(
       `/api/projects/${id}/chat/queue?sessionId=${encodeURIComponent(sessionId)}`,
     ),
   chatQueueReorder: (id: string, sessionId: string, ids: string[]) =>

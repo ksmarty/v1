@@ -47,11 +47,12 @@ func NewOIDC(cfg OIDCConfig) *OIDC {
 }
 
 // Enabled reports whether the flow is configured: either forced on via
-// V1_AUTH_OIDC_ENABLED, or fully specified via the four V1_OIDC_* values.
-// The caller is still responsible for its own auth-disabled policy.
+// V1_AUTH_OIDC_ENABLED, or fully specified via issuer + client ID + client
+// secret (the callback URI may be empty — it is derived per request). The
+// caller is still responsible for its own auth-disabled policy.
 func (o *OIDC) Enabled() bool {
 	return o.cfg.Enabled ||
-		(o.cfg.Issuer != "" && o.cfg.ClientID != "" && o.cfg.ClientSecret != "" && o.cfg.RedirectURI != "")
+		(o.cfg.Issuer != "" && o.cfg.ClientID != "" && o.cfg.ClientSecret != "")
 }
 
 // Allowed reports whether the authenticated email may sign in. An empty

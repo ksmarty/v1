@@ -78,7 +78,9 @@ or `make dev`), then report: (1) the new stamped build version (`v1 <version>
   `POST /chat/queue/steer` — it is then injected into the running turn at the
   next round boundary (persisted and emitted as `injected_message`); unconsumed
   steers fall through to the follow-up queue. `GET /chat/queue` lists
-  the queue. The chat UI shows the queue as a pinned block above the
+  the queue and the pending steers (`steering` array, one entry per message
+  steered but not yet injected — the UI shows them as pending rows with a
+  spinner until the `injected_message` lands). The chat UI shows the queue as a pinned block above the
   composer. Sessions can be renamed (`POST /sessions/{id}/rename`). Edits and
   retries reject with `run_active` (409) while a run is active.
 - Agent tools beyond file/command work: `set_project_name` renames the

@@ -11,9 +11,9 @@ func TestOIDCEnabled(t *testing.T) {
 		{"empty config", OIDCConfig{}, false},
 		{"forced on", OIDCConfig{Enabled: true}, true},
 		{"forced on even when incomplete", OIDCConfig{Enabled: true, Issuer: "issuer"}, true},
-		{"partial config", OIDCConfig{Issuer: "issuer", ClientID: "id", ClientSecret: "secret"}, false},
+		{"partial config (no issuer)", OIDCConfig{ClientID: "id", ClientSecret: "secret"}, false},
 		{"missing secret", OIDCConfig{Issuer: "issuer", ClientID: "id", RedirectURI: "uri"}, false},
-		{"missing redirect", OIDCConfig{Issuer: "issuer", ClientID: "id", ClientSecret: "secret"}, false},
+		{"minimal config, no redirect", OIDCConfig{Issuer: "issuer", ClientID: "id", ClientSecret: "secret"}, true},
 		{"complete config", OIDCConfig{Issuer: "issuer", ClientID: "id", ClientSecret: "secret", RedirectURI: "uri"}, true},
 	}
 	for _, c := range cases {

@@ -38,6 +38,15 @@ function ViewOnSkillsMP({ href, name }: { href: string; name: string }) {
 
 // SkillsMP page URL for a skill, falling back to its GitHub repo when the
 // marketplace route is missing (e.g. skills installed before the URL existed).
+// 386158 -> "386k", 950 -> "950".
+function formatStars(n: number): string {
+  if (n >= 1000) {
+    const k = n / 1000;
+    return `${k >= 100 ? Math.round(k) : k.toFixed(1).replace(/\.0$/, '')}k`;
+  }
+  return String(n);
+}
+
 function skillsmpHref(sk: { skillsmpUrl?: string; githubUrl: string }): string {
   return sk.skillsmpUrl || sk.githubUrl;
 }
@@ -727,7 +736,14 @@ function ToolSettings({
                   title={`About ${sk.name}`}
                   className="min-w-0 flex-1 text-left"
                 >
-                  <div className="truncate text-sm text-text">{sk.name}</div>
+                  <div className="truncate text-sm text-text">
+                    {sk.name}
+                    {typeof sk.stars === 'number' && sk.stars > 0 && (
+                      <span className="ml-1.5 text-[10px] text-faint" title="GitHub stars">
+                        ★ {formatStars(sk.stars)}
+                      </span>
+                    )}
+                  </div>
                   <div className="truncate text-[11px] text-faint">
                     {sk.author}
                     {sk.description ? ` · ${sk.description}` : ''}

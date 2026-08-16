@@ -113,19 +113,29 @@ Sign in through your [Authentik](https://goauthentik.io) instance (or any
 other OIDC provider) as an alternative to — or instead of — the password:
 
 1. In Authentik, create an OAuth2/OpenID Connect **Provider**, then an
-   **Application** bound to it. For the provider, set the **Redirect URI** to
+   **Application** bound to it. For the provider, set the **Redirect URI** —
+   the **callback URI** v1 shows you (see below); by default it is
    `https://your-v1-host/api/auth/oidc/callback` (the exact origin v1 is
    served at, plus that path).
-2. Set the env vars:
+2. Configure v1 with the minimal fields — **Issuer**, **Client ID** and
+   **Client secret** — either in Settings → Auth → **OIDC login** (admin
+   only, applied without a restart) or via the env vars:
    - `V1_OIDC_ISSUER` — the provider's **Issuer URL** (found on the Authentik
      provider page; shaped `https://auth.example.com/application/o/<slug>/`).
    - `V1_OIDC_CLIENT_ID` and `V1_OIDC_CLIENT_SECRET` — from the provider page.
-   - `V1_OIDC_REDIRECT_URI` — the same callback URL as step 1 (auto-derived
-     from `X-Forwarded-Proto`/`Host` when omitted, which is fine behind a
-     proxy that forwards those headers).
-   - `V1_OIDC_ALLOWED_EMAILS` — optional comma list to restrict sign-in.
-3. Restart. The login screen shows **Sign in with Authentik** alongside the
-   password field. The sign-out button still ends the local session.
+   - `V1_OIDC_REDIRECT_URI` — optional; defaults to
+     `https://<host>/api/auth/oidc/callback`, derived from
+     `X-Forwarded-Proto`/`Host` (fine behind a proxy that forwards those
+     headers). The Settings page shows the effective URI.
+   - `V1_OIDC_ALLOWED_EMAILS` — optional comma list to restrict sign-in
+     (blank = any authenticated user).
+3. Restart (env vars only). The login screen shows **Sign in with Authentik**
+   alongside the password field. The sign-out button still ends the local
+   session.
+
+Settings saved in the UI override the env vars; the OIDC client is rebuilt
+immediately on save. An empty callback URI in the settings keeps the
+per-request default.
 
 OIDC auto-enables when `V1_AUTH_OIDC_ENABLED=true`, or when all of issuer /
 client ID / client secret / redirect URI are set. When OIDC is configured the
