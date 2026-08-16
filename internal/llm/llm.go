@@ -96,6 +96,12 @@ type StreamResult struct {
 // (network errors, 429/408 and 5xx are retried with backoff).
 const chatRetries = 3
 
+// defaultMaxTokens is the output ceiling requested from providers that don't
+// publish an output limit. Without an explicit max_tokens many providers apply
+// a small default and cut long replies off mid-stream (finish_reason
+// "length"); requesting a generous ceiling avoids that.
+const defaultMaxTokens = 8192
+
 // chatBackoffBase is the first retry delay, doubled per attempt.
 const chatBackoffBase = 500 * time.Millisecond
 
@@ -143,6 +149,7 @@ func (c *Client) Complete(ctx context.Context, messages []Message) (string, erro
 func (c *Client) ChatStream(ctx context.Context, messages []Message, tools []Tool, onDelta func(string), onReasoning func(string)) (*StreamResult, error) {
 	res := &StreamResult{}
 	streamOptions := true
+	maxTokens := true
 	attempt := 0
 	var lastErr error
 	for {
@@ -150,7 +157,7 @@ func (c *Client) ChatStream(ctx context.Context, messages []Message, tools []Too
 		if attempt > chatRetries {
 			return nil, lastErr
 		}
-		resp, retryAfter, err := c.postStream(ctx, messages, tools, streamOptions)
+		resp, retryAfter, err := c.postStream(ctx, messages, tools, streamOptions, maxTokens)
 		if err != nil {
 			lastErr = fmt.Errorf("LLM request failed: %w", err)
 			if err := waitBackoff(ctx, chatBackoffBase*time.Duration(1<<(attempt-1))); err != nil {
@@ -163,6 +170,16 @@ func (c *Client) ChatStream(ctx context.Context, messages []Message, tools []Too
 			_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
 			resp.Body.Close()
 			streamOptions = false
+			attempt--
+			lastErr = fmt.Errorf("LLM request failed (HTTP 400)")
+			continue
+		}
+		if resp.StatusCode == http.StatusBadRequest && maxTokens {
+			// Some gateways cap max_tokens below the default; fall back once
+			// without it so their own default applies.
+			_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+			resp.Body.Close()
+			maxTokens = false
 			attempt--
 			lastErr = fmt.Errorf("LLM request failed (HTTP 400)")
 			continue
@@ -192,7 +209,7 @@ func (c *Client) ChatStream(ctx context.Context, messages []Message, tools []Too
 
 // postStream issues one chat completions request and returns the response and
 // any Retry-After duration for rate-limited responses.
-func (c *Client) postStream(ctx context.Context, messages []Message, tools []Tool, streamOptions bool) (*http.Response, time.Duration, error) {
+func (c *Client) postStream(ctx context.Context, messages []Message, tools []Tool, streamOptions, maxTokens bool) (*http.Response, time.Duration, error) {
 	body := map[string]any{
 		"model":    c.Model,
 		"messages": messages,
@@ -200,6 +217,9 @@ func (c *Client) postStream(ctx context.Context, messages []Message, tools []Too
 	}
 	if c.ReasoningEffort != "" {
 		body["reasoning_effort"] = c.ReasoningEffort
+	}
+	if maxTokens {
+		body["max_tokens"] = defaultMaxTokens
 	}
 	if streamOptions {
 		body["stream_options"] = map[string]any{"include_usage": true}
@@ -348,7 +368,7 @@ func retryAfterDuration(resp *http.Response) time.Duration {
 
 // retryAfterDelay picks the retry delay, preferring Retry-After.
 func retryAfterDelay(after, fallback time.Duration) time.Duration {
-	if after > 0 {
+	if after > 0 && after <= 10*time.Second {
 		return after
 	}
 	return fallback

@@ -248,6 +248,13 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 	}
 
 	var usage *Usage
+	// When the provider's output window runs out mid-reply (finish_reason
+	// "length"), the partial stays in the model's view and a retry continues
+	// it instead of regenerating from scratch; the accumulated text is folded
+	// into the persisted reply so a cap-hit never reads as a finished turn or
+	// an empty one.
+	var partialText, partialReasoning string
+	assistantSaved := false
 	vision := hasImageParts(history)
 	// Continue mode: the history ends with the partial assistant reply — ask
 	// the model to pick up where it stopped instead of repeating itself.
@@ -349,13 +356,47 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 		// budget bounds retries, so this can't loop forever.
 		truncated := len(res.ToolCalls) == 0 && res.StopReason == "length"
 		if truncated {
+			if res.Text != "" || res.Reasoning != "" {
+				partialText += res.Text
+				if partialReasoning != "" && res.Reasoning != "" {
+					partialReasoning += "\n"
+				}
+				partialReasoning += res.Reasoning
+				history = append(history, llm.Message{Role: "assistant", Content: res.Text, ReasoningContent: res.Reasoning})
+				history = append(history, llm.Message{Role: "user", Content: "Continue from where you left off. Do not repeat what is already written above."})
+			}
 			p.Emit(ChatEvent{Type: "info", Text: "Output window hit mid-reply; continuing turn."})
 			continue
 		}
 
-		if _, err := p.Store.AddMessage(p.Project.ID, p.SessionID, "assistant", res.Text, toolJSON, p.Client.Model, res.Reasoning, usageJSON, ""); err != nil {
+		// A provider can end a stream successfully without producing anything
+		// (a gateway error body, a quota wall responding 200) — never treat
+		// that as a completed turn, or the chat ends prematurely with empty
+		// replies and no explanation.
+		if res.Text == "" && res.Reasoning == "" && len(res.ToolCalls) == 0 {
+			return nil, fmt.Errorf("LLM returned an empty response — the provider may have rejected the request or run out of quota")
+		}
+
+		// Fold any truncated partials into this message so the persisted reply
+		// matches what the model produced (UI-streamed) end to end.
+		persistText, persistReasoning := res.Text, res.Reasoning
+		if partialText != "" {
+			if persistText != "" {
+				persistText = strings.TrimRight(partialText, "\n") + "\n\n" + strings.TrimSpace(persistText)
+			} else {
+				persistText = partialText
+			}
+			if persistReasoning != "" {
+				persistReasoning = strings.TrimRight(partialReasoning, "\n") + "\n" + strings.TrimSpace(persistReasoning)
+			} else {
+				persistReasoning = partialReasoning
+			}
+			partialText, partialReasoning = "", ""
+		}
+		if _, err := p.Store.AddMessage(p.Project.ID, p.SessionID, "assistant", persistText, toolJSON, p.Client.Model, persistReasoning, usageJSON, ""); err != nil {
 			return nil, err
 		}
+		assistantSaved = true
 		history = append(history, llm.Message{Role: "assistant", Content: res.Text, ReasoningContent: res.Reasoning, ToolCalls: res.ToolCalls})
 
 		if len(res.ToolCalls) == 0 {
@@ -413,6 +454,11 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 				})
 			}
 		}
+	}
+	// The round budget ran out while the response was still being truncated —
+	// persist what made it out so the turn never silently vanishes.
+	if !assistantSaved && (partialText != "" || partialReasoning != "") {
+		_, _ = p.Store.AddMessage(p.Project.ID, p.SessionID, "assistant", partialText, "", p.Client.Model, partialReasoning, "", "")
 	}
 	return &TurnResult{Usage: usage, Model: p.Client.Model}, nil
 }

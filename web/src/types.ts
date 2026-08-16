@@ -228,6 +228,7 @@ export interface ChatMessage {
 export type ChatEvent =
   | { type: 'delta'; text: string }
   | { type: 'reasoning'; text: string }
+  | { type: 'info'; text: string }
   | { type: 'tool_start'; name: string; detail: string }
   | { type: 'tool_end'; name: string; ok: boolean; detail: string }
   | { type: 'todos'; todos: Todo[] }

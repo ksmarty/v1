@@ -2435,6 +2435,10 @@ export default function ChatPane({
           }
           break;
         }
+        case 'info': {
+          setLocalStatus(ev.text);
+          break;
+        }
         case 'done': {
           if (ev.usage) {
             const u = ev.usage;
@@ -2465,6 +2469,7 @@ export default function ChatPane({
           void loadContext(true); // bypass the cache: usage changed this turn
           setAskPrompt(null); // the turn ended — no question can be pending
           setSteering([]); // the turn ended — nothing is pending injection
+          setLocalStatus(null); // drop the transient info notice (e.g. continuation)
           void refreshQueue(); // queued messages drained into follow-up turns
           finish();
           break;
@@ -2476,6 +2481,7 @@ export default function ChatPane({
           ]);
           setAskPrompt(null);
           setSteering([]);
+          setLocalStatus(null);
           void refreshQueue();
           finish();
           break;

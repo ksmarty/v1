@@ -93,3 +93,93 @@ func TestLLMErrorFormat(t *testing.T) {
 		t.Fatalf("llmError not capped: %d chars", len(err.Error()))
 	}
 }
+
+// sseChunk renders one SSE data line from a JSON payload.
+func sseChunk(payload string) string { return "data: " + payload + "\n\n" }
+
+func TestChatStreamSendsMaxTokens(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request struct {
+			MaxTokens *int `json:"max_tokens"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		if request.MaxTokens == nil || *request.MaxTokens != defaultMaxTokens {
+			t.Errorf("max_tokens = %v, want %d", request.MaxTokens, defaultMaxTokens)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(
+			sseChunk(`{"choices":[{"delta":{"content":"hel"}}]}`) +
+				sseChunk(`{"choices":[{"delta":{"content":"lo"},"finish_reason":"stop"}]}`) +
+				"data: [DONE]\n\n",
+		))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "", "test-model")
+	res, err := client.ChatStream(context.Background(), []Message{{Role: "user", Content: "hi"}}, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("ChatStream() error = %v", err)
+	}
+	if res.Text != "hello" {
+		t.Errorf("Text = %q, want %q", res.Text, "hello")
+	}
+	if res.StopReason != "stop" {
+		t.Errorf("StopReason = %q, want %q", res.StopReason, "stop")
+	}
+}
+
+func TestChatStreamFallsBackWithoutMaxTokens(t *testing.T) {
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		var request struct {
+			MaxTokens     *int `json:"max_tokens"`
+			StreamOptions *struct {
+				IncludeUsage bool `json:"include_usage"`
+			} `json:"stream_options"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		switch calls {
+		case 1:
+			if request.MaxTokens == nil || request.StreamOptions == nil {
+				t.Fatal("first call should carry max_tokens and stream_options")
+			}
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"error":{"message":"unsupported option"}}`))
+		case 2:
+			if request.MaxTokens == nil || request.StreamOptions != nil {
+				t.Errorf("second call should keep max_tokens, drop stream_options: %+v", request)
+			}
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"error":{"message":"max_tokens too large"}}`))
+		case 3:
+			if request.MaxTokens != nil || request.StreamOptions != nil {
+				t.Errorf("third call should drop both: %+v", request)
+			}
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = w.Write([]byte(
+				sseChunk(`{"choices":[{"delta":{"content":"ok"}}]}`) +
+					"data: [DONE]\n\n",
+			))
+		default:
+			t.Fatalf("too many calls: %d", calls)
+		}
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "", "test-model")
+	res, err := client.ChatStream(context.Background(), []Message{{Role: "user", Content: "hi"}}, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("ChatStream() error = %v", err)
+	}
+	if res.Text != "ok" {
+		t.Errorf("Text = %q, want %q", res.Text, "ok")
+	}
+	if calls != 3 {
+		t.Errorf("server calls = %d, want 3", calls)
+	}
+}
