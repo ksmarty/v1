@@ -1,14 +1,17 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"v1/internal/gitops"
+	"v1/internal/llm"
 	"v1/internal/preview"
 	"v1/internal/scaffold"
 	"v1/internal/store"
@@ -118,6 +121,11 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 	}
 	name := strings.TrimSpace(body.Name)
 	if name == "" {
+		// Let the LLM name it from the description, falling back to the
+		// description's first line when the call fails or is unusable.
+		name = s.llmProjectName(r.Context(), s.currentUser(r).ID, body.Description)
+	}
+	if name == "" {
 		name = deriveName(body.Description)
 	}
 	if name == "" {
@@ -143,13 +151,45 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	p := &store.Project{ID: id, Name: name, Path: dir, Instructions: body.Description, OwnerID: s.currentUser(r).ID}
+	// Instructions are only what the user adds in the project settings — the
+	// initial description lives as the first chat message, not the system
+	// prompt.
+	p := &store.Project{ID: id, Name: name, Path: dir, OwnerID: s.currentUser(r).ID}
 	if err := s.st.CreateProject(p); err != nil {
 		os.RemoveAll(dir)
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusCreated, toProjectJSON(p))
+}
+
+// llmProjectName asks the LLM for a short project name for the description.
+// Any failure — no key, timeout, unusable reply — yields "" so the caller
+// falls back to the description-based derivation.
+func (s *Server) llmProjectName(ctx context.Context, userID, description string) string {
+	if description == "" {
+		return ""
+	}
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	text, err := s.llmClient(userID).Complete(ctx, []llm.Message{
+		{Role: "system", Content: "You name software projects. Reply with ONLY a short project name (3-40 characters). No quotes, no explanation, no markdown."},
+		{Role: "user", Content: "Name this project: " + description},
+	})
+	if err != nil {
+		return ""
+	}
+	// First line only, quotes/backticks stripped, length-capped like deriveName.
+	line := text
+	if i := strings.IndexAny(line, "\r\n"); i >= 0 {
+		line = line[:i]
+	}
+	line = strings.TrimSpace(strings.Trim(strings.TrimSpace(line), "\"'`"))
+	r := []rune(line)
+	if len(r) > 48 {
+		line = string(r[:48])
+	}
+	return strings.TrimSpace(line)
 }
 
 // deriveName turns a "what do you want to create?" description into a short

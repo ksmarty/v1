@@ -346,6 +346,120 @@ func TestFirstSignupIsAdmin(t *testing.T) {
 	}
 }
 
+func TestCreateProjectLLMNamed(t *testing.T) {
+	llmSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"My Cool App"}}]}`))
+	}))
+	defer llmSrv.Close()
+
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	s := New(config.Config{
+		DataDir:      t.TempDir(),
+		AuthDisabled: true,
+		OpenAIBase:   llmSrv.URL,
+		OpenAIKey:    "k",
+		Model:        "m",
+	}, st)
+	rr := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rr, httptest.NewRequest("POST", "/api/projects",
+		strings.NewReader(`{"description":"a to-do app with dark mode"}`)))
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("create = %d, body %s", rr.Code, rr.Body.String())
+	}
+	var created struct{ Name string }
+	if err := json.Unmarshal(rr.Body.Bytes(), &created); err != nil {
+		t.Fatal(err)
+	}
+	if created.Name != "My Cool App" {
+		t.Fatalf("name = %q, want the LLM's name", created.Name)
+	}
+}
+
+func TestCreateProjectLLMNameFallback(t *testing.T) {
+	// A dead LLM endpoint falls back to the description's first line.
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	s := New(config.Config{
+		DataDir:      t.TempDir(),
+		AuthDisabled: true,
+		OpenAIBase:   "http://127.0.0.1:1",
+		OpenAIKey:    "k",
+		Model:        "m",
+	}, st)
+	rr := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rr, httptest.NewRequest("POST", "/api/projects",
+		strings.NewReader(`{"description":"a to-do app with dark mode"}`)))
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("create = %d, body %s", rr.Code, rr.Body.String())
+	}
+	var created struct{ Name string }
+	if err := json.Unmarshal(rr.Body.Bytes(), &created); err != nil {
+		t.Fatal(err)
+	}
+	if created.Name != "a to-do app with dark mode" {
+		t.Fatalf("fallback name = %q", created.Name)
+	}
+}
+
+func TestChatErrorPersisted(t *testing.T) {
+	// A failing LLM endpoint: the turn errors and the failure must be
+	// persisted so returning viewers see it (the SSE stream is gone by then).
+	llmSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte(`{"error":{"message":"Rate limit exceeded."}}`))
+	}))
+	defer llmSrv.Close()
+
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	s := New(config.Config{
+		DataDir:      t.TempDir(),
+		AuthDisabled: true,
+		OpenAIBase:   llmSrv.URL,
+		OpenAIKey:    "k",
+		Model:        "m",
+	}, st)
+	p := &store.Project{ID: store.NewID(), Name: "err", Path: t.TempDir()}
+	if err := s.st.CreateProject(p); err != nil {
+		t.Fatal(err)
+	}
+
+	rr := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rr, httptest.NewRequest("POST", "/api/projects/"+p.ID+"/chat",
+		strings.NewReader(`{"message":"hello"}`)))
+	if !strings.Contains(rr.Body.String(), `"type":"error"`) {
+		t.Fatalf("SSE stream lacks an error event: %s", rr.Body.String())
+	}
+
+	session, _ := s.st.EnsureDefaultSession(p.ID)
+	msgs, err := s.st.ListMessages(p.ID, session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) < 2 {
+		t.Fatalf("expected user + error rows, got %d", len(msgs))
+	}
+	last := msgs[len(msgs)-1]
+	if last.Role != "error" {
+		t.Fatalf("last row role = %q, want error", last.Role)
+	}
+	if !strings.Contains(last.Content, "Rate limit exceeded") {
+		t.Fatalf("error content = %q", last.Content)
+	}
+}
+
 func TestAuthEndpoints(t *testing.T) {
 	s, _, _ := newAuthServer(t)
 	// Setup is no longer required — the first user exists.
@@ -379,4 +493,3 @@ func TestAuthEndpoints(t *testing.T) {
 		t.Fatalf("bad login = %d, want 401", rr.Code)
 	}
 }
-

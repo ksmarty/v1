@@ -22,6 +22,7 @@ import (
 	"v1/internal/config"
 	"v1/internal/llm"
 	"v1/internal/mcp"
+	"v1/internal/agent"
 	"v1/internal/preview"
 	"v1/internal/store"
 	"v1/internal/terminal"
@@ -40,6 +41,8 @@ type Server struct {
 	terminals *terminal.Manager
 	turns     *turnManager
 	handler   http.Handler
+
+	background *agent.BackgroundManager
 
 	mcp  *mcp.Manager
 	perm permRegistry
@@ -66,6 +69,7 @@ func New(cfg config.Config, st *store.Store) *Server {
 		previews:      preview.NewManager(cfg.MaxPreviews),
 		terminals:     terminal.NewManager(),
 		turns:         newTurnManager(),
+		background:    agent.NewBackgroundManager(),
 		oauthFlows:    map[string]*oauthFlow{},
 		oidcFlows:     map[string]*oidcFlow{},
 		vercelFlows:   map[string]*vercelFlow{},
@@ -144,6 +148,7 @@ func (s *Server) routes(m *http.ServeMux) {
 	m.HandleFunc("DELETE /api/projects/{id}/file", s.handleDeleteFile)
 
 	m.HandleFunc("GET /api/projects/{id}/messages", s.handleListMessages)
+	m.HandleFunc("GET /api/projects/{id}/context", s.handleContextUsage)
 	m.HandleFunc("GET /api/projects/{id}/messages/{msgId}/attachments/{idx}", s.handleMessageAttachment)
 	m.HandleFunc("POST /api/projects/{id}/messages/truncate", s.handleTruncateMessages)
 	m.HandleFunc("GET /api/projects/{id}/memories", s.handleListMemories)
@@ -152,10 +157,22 @@ func (s *Server) routes(m *http.ServeMux) {
 	m.HandleFunc("PUT /api/projects/{id}/memories/{memId}", s.handleUpdateMemory)
 	m.HandleFunc("DELETE /api/projects/{id}/memories/{memId}", s.handleDeleteMemory)
 	m.HandleFunc("POST /api/projects/{id}/ask/respond", s.handleAskRespond)
+	m.HandleFunc("GET /api/projects/{id}/ask/pending", s.handleAskPending)
+	m.HandleFunc("GET /api/projects/{id}/chat/queue", s.handleChatQueue)
+	m.HandleFunc("POST /api/projects/{id}/chat/queue/reorder", s.handleChatQueueReorder)
+	m.HandleFunc("POST /api/projects/{id}/chat/queue/steer", s.handleChatQueueSteer)
+	m.HandleFunc("POST /api/projects/{id}/chat/queue/edit", s.handleChatQueueEdit)
+	m.HandleFunc("POST /api/projects/{id}/chat/queue/hold", s.handleChatQueueHold)
+	m.HandleFunc("GET /api/projects/{id}/sessions", s.handleListSessions)
+	m.HandleFunc("POST /api/projects/{id}/sessions", s.handleCreateSession)
+	m.HandleFunc("POST /api/projects/{id}/sessions/{sessionId}/rename", s.handleRenameSession)
 	m.HandleFunc("POST /api/projects/{id}/compact", s.handleCompact)
 	m.HandleFunc("GET /api/projects/{id}/todos", s.handleGetTodos)
 	m.HandleFunc("POST /api/projects/{id}/chat", s.handleChat)
 	m.HandleFunc("POST /api/projects/{id}/chat/retry", s.handleChatRetry)
+	m.HandleFunc("POST /api/projects/{id}/chat/stop", s.handleChatStop)
+	m.HandleFunc("GET /api/projects/{id}/chat/status", s.handleChatStatus)
+	m.HandleFunc("GET /api/projects/{id}/chat/watch", s.handleChatWatch)
 
 	m.HandleFunc("GET /api/projects/{id}/preview/status", s.handlePreviewStatus)
 	m.HandleFunc("POST /api/projects/{id}/preview/start", s.handlePreviewStart)
@@ -283,7 +300,9 @@ const (
 	keyRewindApproval      = "rewind_approval"
 	keyThinkingDefault     = "thinking_default"
 	keyToonEnabled         = "toon_enabled"
+	keyRTKEnabled          = "rtk_enabled"
 	keySystemPrompt        = "system_prompt"
+	keyContextThreshold    = "context_threshold"
 )
 
 // oidcEnabled reports whether the OIDC flow is active: it needs auth enabled
@@ -410,6 +429,33 @@ func (s *Server) toonEnabled(userID string) bool {
 		return true
 	}
 	return v == "1"
+}
+
+// rtkEnabled reports whether run_command output is piped through RTK (Rust
+// Token Killer) when the binary is installed. Enabled by default; only an
+// explicit "0" disables it.
+func (s *Server) rtkEnabled(userID string) bool {
+	v, ok := s.userSetting(userID, keyRTKEnabled)
+	if !ok || v == "" {
+		return true
+	}
+	return v == "1"
+}
+
+// contextThreshold resolves the user's compaction threshold — the share of
+// the context budget at which compaction triggers — as a fraction. The user
+// setting stores a percent; env is the fallback.
+func (s *Server) contextThreshold(userID string) float64 {
+	if v, ok := s.userSetting(userID, keyContextThreshold); ok {
+		if n, err := strconv.ParseFloat(v, 64); err == nil && n > 0 && n <= 100 {
+			return n / 100
+		}
+	}
+	t := s.cfg.ContextThreshold
+	if t <= 0 || t > 1 {
+		t = 0.8
+	}
+	return t
 }
 
 // githubTokenSource reports how the current token got configured:

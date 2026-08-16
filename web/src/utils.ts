@@ -116,6 +116,46 @@ export function setJsonPretty(on: boolean): void {
   }
 }
 
+// Whether chat tool calls (incl. thinking) collapse into a one-line summary
+// (Settings → Appearance → Tool calls). Default on.
+const TOOL_CALLS_COLLAPSE_KEY = 'v1.toolCallsCollapsed';
+
+export function getToolCallsCollapsed(): boolean {
+  try {
+    return localStorage.getItem(TOOL_CALLS_COLLAPSE_KEY) !== '0';
+  } catch {
+    return true;
+  }
+}
+
+export function setToolCallsCollapsed(on: boolean): void {
+  try {
+    localStorage.setItem(TOOL_CALLS_COLLAPSE_KEY, on ? '1' : '0');
+  } catch {
+    // ignore (private mode etc.)
+  }
+}
+
+// Whether reasoning blocks start collapsed instead of following the stream
+// (Settings → Appearance → Thinking). Default off: thinking is visible.
+const THINKING_COLLAPSED_KEY = 'v1.thinkingCollapsed';
+
+export function getThinkingCollapsed(): boolean {
+  try {
+    return localStorage.getItem(THINKING_COLLAPSED_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export function setThinkingCollapsed(on: boolean): void {
+  try {
+    localStorage.setItem(THINKING_COLLAPSED_KEY, on ? '1' : '0');
+  } catch {
+    // ignore (private mode etc.)
+  }
+}
+
 // iOS detection (iPadOS 13+ masks its user agent as a Mac — touch is the tell).
 export function isIOS(): boolean {
   return (

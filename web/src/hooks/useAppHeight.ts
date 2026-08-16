@@ -33,7 +33,13 @@ export function useAppHeight() {
         return 0;
       }
     };
-    let best = standalone ? readStored() : 0;
+    // Full-screen standalone (window spans the screen width): the visible
+    // height is the screen height, so floor the shell there. Cold-launch
+    // metrics and 100dvh can read short — without a stored value that leaves
+    // a gap under the bottom bar until the first touch recalibrates WebKit.
+    const fullScreen =
+      standalone && Math.abs(window.screen.width - window.innerWidth) < 2;
+    let best = fullScreen ? Math.max(readStored(), cap()) : standalone ? readStored() : 0;
     const set = () => {
       // Force layout recalc before reading — sometimes nudges WebKit to
       // update stale metrics on iOS standalone PWAs.
@@ -66,18 +72,33 @@ export function useAppHeight() {
     const raf = requestAnimationFrame(() => requestAnimationFrame(set));
     const timers = [100, 300, 600, 1000].map((ms) => setTimeout(set, ms));
     const onOrientationChange = () => {
-      best = standalone ? readStored() : 0;
+      best = fullScreen ? Math.max(readStored(), cap()) : 0;
       set();
     };
     window.addEventListener('resize', set);
     window.addEventListener('orientationchange', onOrientationChange);
     window.visualViewport?.addEventListener('resize', set);
+    // iOS only recalibrates stale standalone viewport metrics once the user
+    // interacts — re-measure on touches so any residual gap under the bottom
+    // bar heals instead of persisting. Same when the app comes back to the
+    // foreground.
+    const heal = () => {
+      if (document.hidden) return;
+      set();
+    };
+    window.addEventListener('pointerdown', heal);
+    window.addEventListener('touchstart', heal);
+    // Same story after the app returns to the foreground.
+    document.addEventListener('visibilitychange', heal);
     return () => {
       cancelAnimationFrame(raf);
       timers.forEach(clearTimeout);
       window.removeEventListener('resize', set);
       window.removeEventListener('orientationchange', onOrientationChange);
       window.visualViewport?.removeEventListener('resize', set);
+      window.removeEventListener('pointerdown', heal);
+      window.removeEventListener('touchstart', heal);
+      document.removeEventListener('visibilitychange', heal);
     };
   }, []);
 }

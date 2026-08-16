@@ -113,19 +113,46 @@ func (p *Preview) exited() bool {
 
 // Manager tracks running previews and enforces the concurrency cap.
 type Manager struct {
-	max     int
-	mu      sync.Mutex
-	items   map[string]*Preview
-	startMu sync.Mutex
-	revs    map[string]int64
+	max         int
+	idleTimeout time.Duration
+	mu          sync.Mutex
+	items       map[string]*Preview
+	startMu     sync.Mutex
+	revs        map[string]int64
 }
 
-// NewManager creates a Manager allowing up to max concurrent previews.
+// NewManager creates a Manager allowing up to max concurrent previews. Idle
+// previews are stopped after previewIdleTimeout of inactivity.
 func NewManager(max int) *Manager {
 	if max <= 0 {
 		max = 3
 	}
-	return &Manager{max: max, items: map[string]*Preview{}, revs: map[string]int64{}}
+	m := &Manager{max: max, idleTimeout: previewIdleTimeout, items: map[string]*Preview{}, revs: map[string]int64{}}
+	go m.sweepIdle()
+	return m
+}
+
+// previewIdleTimeout stops previews that have had no activity for this long.
+const previewIdleTimeout = 15 * time.Minute
+
+// sweepIdle stops previews idle longer than idleTimeout, so abandoned dev
+// servers don't linger. Runs in the background.
+func (m *Manager) sweepIdle() {
+	for {
+		time.Sleep(time.Minute)
+		m.mu.Lock()
+		var idle []*Preview
+		cutoff := time.Now().Add(-m.idleTimeout)
+		for _, p := range m.items {
+			if p.isRunning() && p.lastUsed.Before(cutoff) {
+				idle = append(idle, p)
+			}
+		}
+		m.mu.Unlock()
+		for _, p := range idle {
+			m.Stop(p.ProjectID)
+		}
+	}
 }
 
 // TouchRevision bumps a project's file-revision counter. Every write to a

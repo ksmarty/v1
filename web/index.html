@@ -53,7 +53,15 @@
             return 0;
           }
         };
-        var best = standalone ? readStored() : 0;
+        // Full-screen standalone (window spans the screen width): the visible
+        // height is the screen height, so floor the shell there. Cold-launch
+        // metrics and 100dvh can read short — without a stored value that
+        // leaves a gap under the bottom bar until the first touch
+        // recalibrates WebKit.
+        var fullScreen = function () {
+          return standalone && Math.abs(window.screen.width - window.innerWidth) < 2;
+        };
+        var best = fullScreen() ? Math.max(readStored(), cap()) : standalone ? readStored() : 0;
         var set = function () {
           void document.body && document.body.offsetHeight;
           var h = Math.max(
@@ -85,12 +93,20 @@
         });
         window.addEventListener('resize', set);
         window.addEventListener('orientationchange', function () {
-          best = standalone ? readStored() : 0;
+          best = fullScreen() ? Math.max(readStored(), cap()) : 0;
           set();
         });
         if (window.visualViewport) {
           window.visualViewport.addEventListener('resize', set);
         }
+        // iOS only recalibrates stale standalone viewport metrics once the
+        // user interacts — re-measure on touches (and on foreground) so any
+        // residual gap under the bottom bar heals instead of persisting.
+        window.addEventListener('pointerdown', set);
+        window.addEventListener('touchstart', set);
+        document.addEventListener('visibilitychange', function () {
+          if (!document.hidden) set();
+        });
       })();
     </script>
   </head>

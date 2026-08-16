@@ -42,7 +42,11 @@ export default function ChatPanel({
   onCollapse,
   onPreviewRestart,
   onProjectChange,
+  onProjectRename,
   initialPrompt,
+  initialProviderId,
+  initialModel,
+  initialThinking,
 }: {
   projectId: string;
   project: ProjectType | null;
@@ -52,8 +56,14 @@ export default function ChatPanel({
   onCollapse: () => void;
   onPreviewRestart: () => void;
   onProjectChange: (p: ProjectType) => void;
+  /** The agent renamed the project (set_project_name). */
+  onProjectRename?: (name: string) => void;
   /** Description from the New project dialog — auto-sent as the first message. */
   initialPrompt?: string;
+  /** Optional model selection from the New project dialog. */
+  initialProviderId?: string;
+  initialModel?: string;
+  initialThinking?: string;
 }) {
   const [tabLayout] = useState(() => getChatTabLayout());
   // Tabs in the user's chosen order, minus the ones they excluded.
@@ -140,8 +150,12 @@ export default function ChatPanel({
             projectName={project?.name ?? ''}
             onPreviewRestart={onPreviewRestart}
             onMemories={setLiveMemories}
+            onProjectRename={onProjectRename}
             llmReady={llmReady}
             initialPrompt={initialPrompt}
+            initialProviderId={initialProviderId}
+            initialModel={initialModel}
+            initialThinking={initialThinking}
           />
         </div>
         {visited.has('files') && (

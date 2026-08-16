@@ -199,8 +199,8 @@ func fallbackSummary(messages []llm.Message) string {
 }
 
 // CompactProject summarizes the persisted transcript without adding a visible message.
-func CompactProject(ctx context.Context, st *store.Store, projectID string, client *llm.Client) (int64, error) {
-	messages, err := st.ListMessages(projectID)
+func CompactProject(ctx context.Context, st *store.Store, projectID, sessionID string, client *llm.Client) (int64, error) {
+	messages, err := st.ListMessages(projectID, sessionID)
 	if err != nil {
 		return 0, err
 	}
@@ -219,7 +219,7 @@ func CompactProject(ctx context.Context, st *store.Store, projectID string, clie
 		summary = fallbackSummary(history)
 	}
 	lastID := messages[len(messages)-1].ID
-	if err := st.SaveCompactionSnapshot(projectID, summary, lastID); err != nil {
+	if err := st.SaveCompactionSnapshot(projectID, sessionID, summary, lastID); err != nil {
 		return 0, err
 	}
 	return lastID, nil

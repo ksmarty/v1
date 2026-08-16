@@ -76,6 +76,21 @@ export const IconArrowUp = (p: SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
+export const IconSend = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}>
+    <path d="m22 2-7 20-4-9-9-4Z" />
+    <path d="M22 2 11 13" />
+  </svg>
+);
+
+export const IconLayers = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}>
+    <path d="m12 2 10 6-10 6L2 8Z" />
+    <path d="m2 13 10 6 10-6" />
+    <path d="m2 18 10 6 10-6" />
+  </svg>
+);
+
 export const IconExpand = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}>
     <path d="M15 3h6v6" />

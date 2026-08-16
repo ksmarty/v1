@@ -177,7 +177,10 @@ func (c *Client) ChatStream(ctx context.Context, messages []Message, tools []Too
 		}
 		defer resp.Body.Close()
 		if err := scanStream(resp.Body, res, onDelta, onReasoning); err != nil {
-			return nil, err
+			// Return what streamed so far — a mid-response failure (token
+			// limit, network drop) still leaves a partial reply the caller
+			// can persist and resume from.
+			return res, err
 		}
 		return res, nil
 	}
@@ -358,13 +361,51 @@ func waitBackoff(ctx context.Context, d time.Duration) error {
 	}
 }
 
-// llmError builds an error from a non-2xx response.
+// llmError builds an error from a non-2xx response, extracting the
+// provider's human-readable message when the body is JSON — OpenAI-style
+// {"error":{"message":...}} or wrapped shapes like
+// {"type":"error","error":{"type":"...","message":"..."}}.
 func llmError(code int, body []byte) error {
-	msg := strings.TrimSpace(string(body))
+	msg := extractErrorMessage(string(body))
+	if msg == "" {
+		msg = strings.TrimSpace(string(body))
+	}
 	if msg == "" {
 		msg = http.StatusText(code)
 	}
+	if r := []rune(msg); len(r) > 500 {
+		msg = string(r[:500]) + "…"
+	}
 	return fmt.Errorf("LLM request failed (HTTP %d): %s", code, msg)
+}
+
+// extractErrorMessage pulls the human message out of a provider error body,
+// or "" when the body is not a recognized JSON error shape. An SSE-style
+// "data:" prefix is tolerated.
+func extractErrorMessage(body string) string {
+	body = strings.TrimPrefix(strings.TrimSpace(body), "data:")
+	var v struct {
+		Message string `json:"message"`
+		Error   *struct {
+			Message string          `json:"message"`
+			Error   json.RawMessage `json:"error"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(body)), &v); err != nil {
+		return ""
+	}
+	if v.Error != nil {
+		if v.Error.Message != "" {
+			return v.Error.Message
+		}
+		var inner struct {
+			Message string `json:"message"`
+		}
+		if len(v.Error.Error) > 0 && json.Unmarshal(v.Error.Error, &inner) == nil {
+			return inner.Message
+		}
+	}
+	return v.Message
 }
 
 // TestModels performs GET {baseURL}/models with the configured key.

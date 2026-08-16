@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"v1/internal/store"
 )
 
 func newTestExecutor(t *testing.T) *Executor {
@@ -137,6 +139,78 @@ func TestRunCommandTimeoutKills(t *testing.T) {
 	}
 	if !strings.Contains(res, `"timedOut":true`) {
 		t.Fatalf("expected timedOut in %q", res)
+	}
+}
+
+// TestSetProjectName: the tool renames the project and notifies the UI.
+func TestSetProjectName(t *testing.T) {
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	p := &store.Project{ID: "proj1", Name: "Old Name", Path: t.TempDir()}
+	if err := st.CreateProject(p); err != nil {
+		t.Fatal(err)
+	}
+	e := &Executor{ProjectID: p.ID, Store: st}
+	var notified string
+	e.OnProjectRename = func(name string) { notified = name }
+
+	res, err := e.Execute(context.Background(), "set_project_name", `{"name":"  FitTrack  "}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if notified != "FitTrack" {
+		t.Fatalf("notified = %q", notified)
+	}
+	got, err := st.GetProject(p.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Name != "FitTrack" {
+		t.Fatalf("project name = %q", got.Name)
+	}
+	if !strings.Contains(res, "FitTrack") {
+		t.Fatalf("result = %q", res)
+	}
+
+	if _, err := e.Execute(context.Background(), "set_project_name", `{"name":"  "}`); err == nil {
+		t.Fatal("empty name should fail")
+	}
+}
+
+// TestRunCommandRTKOptOut: with RTK enabled and a fake rtk binary on PATH,
+// commands are wrapped by default but run raw with "rtk": false.
+func TestRunCommandRTKOptOut(t *testing.T) {
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "rtk"), []byte("#!/bin/sh\necho RTK-WRAPPED \"$@\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	if _, err := exec.LookPath("rtk"); err != nil {
+		t.Fatalf("fake rtk not on PATH: %v", err)
+	}
+	e := newTestExecutor(t)
+	e.RTKEnabled = true
+
+	res, err := e.Execute(context.Background(), "run_command", `{"command":"echo hi"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(res, "RTK-WRAPPED") {
+		t.Fatalf("expected RTK wrapper when enabled: %q", res)
+	}
+
+	res, err = e.Execute(context.Background(), "run_command", `{"command":"echo hi","rtk":false}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(res, "RTK-WRAPPED") {
+		t.Fatalf("expected raw command with rtk:false: %q", res)
+	}
+	if !strings.Contains(res, "hi") {
+		t.Fatalf("expected command output: %q", res)
 	}
 }
 

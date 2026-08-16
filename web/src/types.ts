@@ -14,6 +14,13 @@ export interface UserInfo {
   createdAt: number;
 }
 
+/** One chat thread of a project. */
+export interface ChatSession {
+  id: string;
+  name: string;
+  createdAt: number;
+}
+
 export interface SavedProvider {
   id: string;
   name: string;
@@ -50,6 +57,10 @@ export interface Settings {
   rewindApproval: boolean;
   defaultThinking: string;
   toonEnabled: boolean;
+  /** run_command output piped through RTK when the binary is installed. */
+  rtkEnabled: boolean;
+  /** Compaction threshold in percent of the context window (e.g. 80). */
+  contextThreshold: number;
   systemPrompt: string;
   version: string;
   commit: string;
@@ -95,6 +106,8 @@ export interface ProviderModel {
   imageInput?: boolean;
   /** Thinking support per models.dev (reasoning models; levels and default when published). */
   reasoning?: { effort?: boolean; levels?: string[]; default?: string };
+  /** Context window in tokens, when models.dev publishes one. */
+  context?: number;
 }
 
 export interface Provider {
@@ -174,6 +187,13 @@ export interface ChatUsage {
   model?: string;
 }
 
+export interface ContextUsage {
+  used: number;
+  budget: number;
+  /** Token count at which compaction is recommended. */
+  threshold: number;
+}
+
 export interface Todo {
   title: string;
   done: boolean;
@@ -215,7 +235,14 @@ export type ChatEvent =
   | { type: 'permission_request'; requestId: string; tool: string; detail: string }
   | { type: 'done'; usage?: ChatUsage }
   | { type: 'error'; error: string }
-  | { type: 'question_request'; requestId: string; text?: string; options?: string[] }
+  | {
+      type: 'question_request';
+      requestId: string;
+      text?: string;
+      options?: string[];
+      questions?: { question: string; options?: string[] }[];
+    }
+  | { type: 'project_renamed'; text?: string }
   | {
       type: 'injected_message';
       messageId?: number;

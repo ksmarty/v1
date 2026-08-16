@@ -53,8 +53,12 @@ function DebugHud() {
 export default function Project() {
   const { id = '' } = useParams();
   const location = useLocation();
-  // Description from the New project dialog, auto-sent as the first message.
+  // Description from the New project dialog, auto-sent as the first message,
+  // plus the optional model selection that goes with it.
   const initialPrompt = (location.state as { prompt?: string } | null)?.prompt;
+  const initialState = location.state as
+    | { providerId?: string; model?: string; thinking?: string }
+    | null;
   const isDesktop = useMediaQuery('(min-width: 768px)');
   const [project, setProject] = useState<ProjectType | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -114,7 +118,11 @@ export default function Project() {
       onCollapse={() => setChatCollapsed(true)}
       onPreviewRestart={() => setPreviewRefreshKey((k) => k + 1)}
       onProjectChange={setProject}
+      onProjectRename={(name) => setProject((prev) => (prev ? { ...prev, name } : prev))}
       initialPrompt={initialPrompt}
+      initialProviderId={initialState?.providerId}
+      initialModel={initialState?.model}
+      initialThinking={initialState?.thinking}
     />
   );
 

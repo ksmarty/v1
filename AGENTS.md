@@ -50,18 +50,56 @@ or `make dev`), then report: (1) the new stamped build version (`v1 <version>
   OpenAI-compatible APIs), streamed to the UI as `injected_message`.
   Node-mode previews are screenshotted via `preview.Manager.DirectURL`
   (the proxy requires a session when auth is on).
-- Chat runs are single-flight per project (`turnManager` in
+- Chat is organized into per-project sessions (`chat_sessions` table; messages
+  carry a `session_id`, backfilled to the project's auto-created "Session 1").
+  The chat/retry/queue/ask/compact/context endpoints all take a `sessionId`
+  (falling back to the default session); runs are single-flight per
+  (project, session) — `turnManager` in `internal/server/turns.go` keys on
+  both, so sessions run independently.
+- Chat runs are single-flight per session (`turnManager` in
   `internal/server/turns.go`): a second `POST /chat` while a run is active is
-  queued onto the run's `turnQueue` atomically (`beginOrQueue`, 202 reply).
-  The agent drains the queue between rounds (steer — persisted and emitted as
-  `injected_message`); leftovers become follow-up turns on the same SSE
-  stream (queue). Edits and retries reject with `run_active` (409) while a
-  run is active.
-- Agent tools beyond file/command work: `remember`/`forget` manage
+  queued onto the run's `turnQueue` atomically (`beginOrQueue`, 202 reply
+  with the entry's id). Runs have no timeout (long generations run to
+  completion; the stop endpoint cancels). `GET /chat/status` reports whether
+  a run is active — the client polls it to attach to the run's live event
+  hub (`GET /chat/watch`): a client returning to a running chat replays the
+  events from now on through the normal stream handler, so the UI behaves
+  exactly as if it had never left (streaming composer, live thinking and
+  tool rows), and refreshes the transcript when the run finishes. A mid-response failure (token limit, network drop)
+  persists the partial reply; retrying then continues from it and, on
+  success, folds the partial + continuation into one message and drops the
+  error (`ContinueFromID` in ChatParams, `MergeContinuedTurn` in the store). Queued messages can be reordered
+  (`/chat/queue/reorder`), edited in place (`/chat/queue/edit`), or steered
+  into the running turn (`/chat/queue/steer`). A message being edited is
+  marked held (`/chat/queue/hold`): the follow-up drain skips it and the run
+  waits for the edit to finish before sending it. The queue lives server-side (survives clients
+  leaving) and processes in order as follow-up turns on the same SSE stream
+  once the current turn finishes. A message can be steered explicitly via
+  `POST /chat/queue/steer` — it is then injected into the running turn at the
+  next round boundary (persisted and emitted as `injected_message`); unconsumed
+  steers fall through to the follow-up queue. `GET /chat/queue` lists
+  the queue. The chat UI shows the queue as a pinned block above the
+  composer. Sessions can be renamed (`POST /sessions/{id}/rename`). Edits and
+  retries reject with `run_active` (409) while a run is active.
+- Agent tools beyond file/command work: `set_project_name` renames the
+  project (emits a `project_renamed` event so the UI header updates);
+  `run_command_background` starts a command detached from the turn (shared
+  `agent.BackgroundManager` on the server): the tool returns a job id, and the
+  result is persisted as a user message ("[Background #id: …] finished…") when
+  the command completes; the running turn's loop injects it at the next round
+  (via `injected_message`), so the model can keep working and react when it
+  arrives; `remember`/`forget` manage
   project-scoped memories (sqlite `memories` table, injected into the system
   prompt each turn, browsable in the Memories tab); `ask_user` blocks the
   turn on a user question via the `askRegistry` (mirrors the permission
-  pattern) and renders as an in-chat answer card; `screenshot_app` is
+  pattern) and renders as an in-chat answer card — the question is also
+  persisted per project in the sqlite `pending_asks` table and surfaced via
+  `GET /api/projects/{id}/ask/pending`, so the card survives reloads and
+  reconnects (a new turn, an answer, or a timeout clears it). `ask_user` also
+  accepts a `questions` array for multi-question asks — the UI renders one
+  block the user steps through (back/next, editable answers, "Confirm all"),
+  and the tool resolves with the full answers array once confirmed;
+  `screenshot_app` is
   vision-gated (above); `fetch_url` fetches web pages for the model
   (HTML → text via `golang.org/x/net/html`).
 - Tool results are stored as JSON (the UI parses them) but re-encoded as
@@ -71,10 +109,7 @@ or `make dev`), then report: (1) the new stamped build version (`v1 <version>
 - SQLite is accessed only through `internal/store`. Settings are key/value
   strings; env vars are fallbacks, sqlite overrides env. Prefix settings keys
   with a domain (`keyLLM...`, `keyGitHub...`).
-- LLM providers come from the models.dev catalog (`internal/llm/providers.go`).
-  Provider IDs/baseURLs are pinned in `providers.json` (the source of truth for
-  base URLs); name/keyHint/doc/models are refreshed from models.dev. New
-  providers added at runtime are persisted separately (not in the cache).
+- LLM providers come from the models.dev catalog (`internal/llm/providers.go`). `providers.json` pins a curated core (id/baseURL); the refresh (`RefreshCatalog`) then appends every other OpenAI-compatible provider from models.dev dynamically, so new providers appear without a code change. `knownBaseURLs` maps ids without a models.dev `api` field; runtime-added providers are persisted separately (not in the cache).
 - Frontend: React function components + hooks, Tailwind, no CSS-in-JS. Shared
   UI primitives live in `web/src/components/ui.tsx`; types in `web/src/types.ts`;
   API client in `web/src/api.ts`.
@@ -112,7 +147,14 @@ or `make dev`), then report: (1) the new stamped build version (`v1 <version>
   are v2), and persisted per orientation in `localStorage`
   (`v1-app-height-v2:<portrait|landscape>`); the inline script in
   `web/index.html` restores it before first paint so cold launches start at
-  the last known-good height. Keep the inline script and the hook in sync.
+  the last known-good height. Full-screen standalone (window width matches
+  the screen) additionally floors the height at the screen size, so a fresh
+  install with no stored value can't float the bottom nav above a gap while
+  iOS reports the viewport too short at cold launch. INVARIANT: in standalone
+  the shell must never be shorter than the visible viewport — preserve the
+  screen-size floor and the touch/foreground re-measure (iOS only recalibrates
+  stale metrics on interaction) in both files. Keep the inline script and the
+  hook in sync.
   The viewport meta locks zoom (`maximum-scale=1, user-scalable=no`) so pinch
   zoom can't distort the metrics again, and the inline script resets
   `scrollRestoration`/`scrollTo(0,0)` — iOS restores PWA scroll offsets

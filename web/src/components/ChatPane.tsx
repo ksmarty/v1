@@ -8,10 +8,20 @@ import {
   type ReactNode,
 } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api, messageAttachmentUrl, retryChat, streamChat, type ChatAttachmentInput } from '../api';
+import {
+  api,
+  messageAttachmentUrl,
+  retryChat,
+  streamChat,
+  watchChat,
+  THINKING_META_KEY,
+  type ChatAttachmentInput,
+} from '../api';
+import type { ContextUsage } from '../types';
 import type {
   ChatAttachmentMeta,
   ChatEvent,
+  ChatSession,
   ChatUsage,
   Memory,
   PermissionMode,
@@ -20,13 +30,14 @@ import type {
   SavedProvider,
   Todo,
 } from '../types';
-import { errMsg, getJsonPretty } from '../utils';
+import { errMsg, getJsonPretty, getThinkingCollapsed, getToolCallsCollapsed } from '../utils';
 import { notifyTurnDone } from '../notify';
 import { permissionMeta } from '../permissions';
 import { Button, Dialog, ErrorBox, IconButton, Input, Spinner } from './ui';
 import ToolSettings, { type ToolsTab } from './ToolSettings';
 import Markdown from './Markdown';
 import ModelPicker from './ModelPicker';
+import SessionsModal from './SessionsModal';
 import TrackBorder, { TRACK_DEFAULTS } from './TrackBorder';
 import {
   IconArrowUp,
@@ -34,11 +45,12 @@ import {
   IconBookmarkOff,
   IconBrain,
   IconCamera,
-  IconChat,
   IconCheck,
   IconCheckSquare,
   IconChevronDown,
+  IconLayers,
   IconChevronRight,
+  IconChevronUp,
   IconCode,
   IconCompress,
   IconExpand,
@@ -54,6 +66,7 @@ import {
   IconPlus,
   IconRefresh,
   IconSearch,
+  IconSend,
   IconSquare,
   IconTerminal,
   IconTrash,
@@ -76,6 +89,7 @@ type ToolCall = { name: string; detail: string };
 type Suggestion = { insert: string; label: string; hint?: string };
 
 const CHAT_COMMANDS = [
+  { name: '/plan', hint: 'Investigate and plan (read-only, no changes)' },
   { name: '/compact', hint: 'Summarize history to free up context' },
   { name: '/clear', hint: 'Clear the chat history' },
   { name: '/model', hint: 'Choose a model' },
@@ -125,6 +139,7 @@ const TOOL_LABELS: Record<string, string> = {
   move_file: 'Move file',
   fetch_url: 'Fetch URL',
   run_command: 'Run command',
+  run_command_background: 'Run in background',
   restart_preview: 'Restart preview',
   screenshot_app: 'Screenshot app',
   set_todos: 'Update todos',
@@ -149,6 +164,7 @@ const TOOL_ICONS: Record<string, typeof IconWrench> = {
   move_file: IconMoveRight,
   fetch_url: IconGlobe,
   run_command: IconTerminal,
+  run_command_background: IconTerminal,
   restart_preview: IconRefresh,
   screenshot_app: IconCamera,
   set_todos: IconCheckSquare,
@@ -156,6 +172,127 @@ const TOOL_ICONS: Record<string, typeof IconWrench> = {
   forget: IconBookmarkOff,
   ask_user: IconUser,
 };
+
+// True when the last user turn already has a finished assistant reply — the
+// run completed (typically while the app was away), so there is nothing to
+// resume. Tool rows don't count: an aborted run leaves only those.
+async function turnCompleted(projectId: string, sessionId: string): Promise<boolean> {
+  try {
+    const msgs = await api.getMessages(projectId, sessionId);
+    let lastUser = -1;
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      if (msgs[i].role === 'user') {
+        lastUser = i;
+        break;
+      }
+    }
+    if (lastUser === -1) return true; // nothing to resume
+    for (let i = lastUser + 1; i < msgs.length; i++) {
+      // An assistant reply OR a persisted error means the turn ended.
+      if (msgs[i].role === 'assistant' || msgs[i].role === 'error') return true;
+    }
+    return false;
+  } catch {
+    return false; // can't tell — assume it needs resuming
+  }
+}
+
+// Formats a duration as "42s" or "1m 23s".
+function formatElapsed(ms: number): string {
+  const s = Math.max(1, Math.round(ms / 1000));
+  if (s < 60) return `${s}s`;
+  return `${Math.floor(s / 60)}m ${s % 60}s`;
+}
+
+// Formats a timestamp as a short local time, e.g. "10:42 AM".
+function formatTime(ms: number): string {
+  return new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
+// Persisted thinking-metadata cache (localStorage): provider|model → levels
+// and off support, so reopening a project skips the /models round trip for
+// models already seen. Stale entries are pruned on write.
+const THINKING_META_TTL = 24 * 60 * 60 * 1000;
+
+function readThinkingMeta(key: string): { levels: string[]; off: boolean } | null {
+  try {
+    const raw = localStorage.getItem(THINKING_META_KEY);
+    if (!raw) return null;
+    const map = JSON.parse(raw) as Record<string, { levels: string[]; off: boolean; at: number }>;
+    const e = map[key];
+    if (!e || Date.now() - e.at > THINKING_META_TTL) return null;
+    return { levels: e.levels, off: e.off };
+  } catch {
+    return null;
+  }
+}
+
+function writeThinkingMeta(key: string, meta: { levels: string[]; off: boolean }): void {
+  try {
+    const raw = localStorage.getItem(THINKING_META_KEY);
+    const map = raw
+      ? (JSON.parse(raw) as Record<string, { levels: string[]; off: boolean; at: number }>)
+      : {};
+    const now = Date.now();
+    map[key] = { ...meta, at: now };
+    for (const k of Object.keys(map)) {
+      if (now - map[k].at > THINKING_META_TTL) delete map[k];
+    }
+    localStorage.setItem(THINKING_META_KEY, JSON.stringify(map));
+  } catch {
+    // ignore (private mode etc.)
+  }
+}
+
+// A ring that fills with the context usage, shifting continuously from green
+// to red as the context fills (no track — just the fill arc, like the other
+// header icons). On mount the arc sweeps in from empty; value changes
+// (e.g. model switches) transition smoothly instead of jumping.
+function ContextRing({ ctx }: { ctx: ContextUsage | null }) {
+  const used = ctx?.used ?? 0;
+  const budget = ctx?.budget ?? 1;
+  const pct = Math.min(100, (used / budget) * 100);
+  const hue = 120 - (120 * pct) / 100; // 120 (green) → 0 (red)
+  const R = 7.5;
+  const C = 2 * Math.PI * R;
+  // Start empty, then let the CSS transition sweep to the real value.
+  const [shown, setShown] = useState(false);
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => setShown(true));
+    return () => cancelAnimationFrame(raf);
+  }, []);
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" className="-rotate-90">
+      {/* Faint track so a very low fill still reads as a ring. */}
+      <circle cx="9" cy="9" r={R} fill="none" strokeWidth="2.5" className="stroke-border" />
+      <circle
+        cx="9"
+        cy="9"
+        r={R}
+        fill="none"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+        style={{
+          stroke: `hsl(${hue} 70% 50%)`,
+          strokeDasharray: C,
+          strokeDashoffset: shown ? C * (1 - pct / 100) : C,
+          transition: 'stroke-dashoffset 700ms ease-out, stroke 700ms ease',
+        }}
+      />
+    </svg>
+  );
+}
+
+// A network-level stream failure (dead connection — backgrounded tab, app
+// suspended on iOS) surfaces as a bare "Failed to fetch", which tells the
+// user nothing. Say what actually happened instead. Auto-reconnect handles
+// the usual case; this text is the fallback when it gives up.
+function streamErrorMsg(e: unknown): string {
+  if (e instanceof TypeError) {
+    return 'Connection lost — couldn\'t resume the generation. Reload the page to see where it got to.';
+  }
+  return errMsg(e);
+}
 
 function toolIcon(name: string): typeof IconWrench {
   return TOOL_ICONS[name] ?? IconWrench;
@@ -215,6 +352,10 @@ type MsgItem = {
   toolResults?: ToolCall[];
   /** Token usage for the turn this message closed (turn-final messages only). */
   usage?: ChatUsage;
+  /** Duration of the turn this message closed, in milliseconds. */
+  elapsedMs?: number;
+  /** When the message was sent (ms epoch; live items use the send time). */
+  sentAt?: number;
   streaming?: boolean;
   stale?: boolean;
   editing?: boolean;
@@ -229,7 +370,16 @@ type ToolItem = {
   ok?: boolean;
 };
 
-type Item = MsgItem | ToolItem;
+/** The agent's ask_user question(s), shown inline like other harnesses. */
+type AskItem = {
+  kind: 'ask';
+  key: string;
+  questions: AskQuestionView[];
+  result?: AskAnswerView[];
+  failed?: boolean;
+};
+
+type Item = MsgItem | ToolItem | AskItem;
 
 /** The API serves tool_json as raw JSON (an object), but older callers pass a
  * string — accept both. */
@@ -315,20 +465,20 @@ function ToolRow({ item }: { item: ToolItem }) {
   const [open, setOpen] = useState(false);
   const Icon = toolIcon(item.name);
   return (
-    <div className="rounded-lg border border-border/80 bg-surface/50 text-xs">
+    <div className="rounded-md border border-border/80 bg-surface/50 text-[10px]">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="flex min-h-[32px] w-full items-center gap-2 px-2.5 py-1.5 text-left text-dim transition-colors hover:text-text"
+        className="flex min-h-[26px] w-full items-center gap-1.5 px-2 py-1 text-left text-dim transition-colors hover:text-text"
       >
         {open ? (
           <IconChevronDown className="h-3.5 w-3.5 shrink-0" />
         ) : (
           <IconChevronRight className="h-3.5 w-3.5 shrink-0" />
         )}
-        <Icon className="h-3.5 w-3.5 shrink-0" />
+        <Icon className="h-3 w-3 shrink-0 text-faint" />
         <span className="shrink-0 font-mono text-text">{toolLabel(item.name)}</span>
-        <span className="min-w-0 flex-1 truncate text-faint">{item.detail}</span>
+        {item.detail && <span className="min-w-0 flex-1 truncate text-faint">{item.detail}</span>}
         {item.running ? (
           <Spinner className="h-3.5 w-3.5 shrink-0" />
         ) : item.ok ? (
@@ -342,29 +492,67 @@ function ToolRow({ item }: { item: ToolItem }) {
   );
 }
 
-function ReasoningBlock({ text, autoOpen }: { text: string; autoOpen: boolean }) {
-  const [open, setOpen] = useState(autoOpen);
+// Pins a scroll container to its bottom while its content grows — but only
+// while the user is already at (or near) the bottom. Scrolling up releases
+// the pin; returning to the bottom re-pins it.
+function StickToBottom({
+  children,
+  className,
+  initialStuck = false,
+}: {
+  children: ReactNode;
+  className?: string;
+  /** Start pinned (streaming content); otherwise the view starts at the top. */
+  initialStuck?: boolean;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [stuck, setStuck] = useState(initialStuck);
   useEffect(() => {
-    setOpen(autoOpen);
-  }, [autoOpen]);
+    const el = ref.current;
+    if (el && stuck) el.scrollTop = el.scrollHeight;
+  });
+  const onScroll = () => {
+    const el = ref.current;
+    if (!el) return;
+    setStuck(el.scrollHeight - el.scrollTop - el.clientHeight < 8);
+  };
   return (
-    <div className="rounded-lg border border-border/80 bg-surface/50 text-xs">
+    <div ref={ref} onScroll={onScroll} className={className}>
+      {children}
+    </div>
+  );
+}
+
+function ReasoningBlock({ text, autoOpen }: { text: string; autoOpen: boolean }) {
+  // When the "collapse thinking by default" setting is on, blocks start
+  // closed — even while streaming — until the user opens one.
+  const collapseDefault = getThinkingCollapsed();
+  const [open, setOpen] = useState(autoOpen && !collapseDefault);
+  useEffect(() => {
+    setOpen(autoOpen && !collapseDefault);
+  }, [autoOpen, collapseDefault]);
+  return (
+    <div className="rounded-md border border-accent/25 bg-surface/50 text-[10px]">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="flex min-h-[30px] w-full items-center gap-2 px-2.5 py-1.5 text-left text-dim transition-colors hover:text-text"
+        className="flex min-h-[26px] w-full items-center gap-1.5 px-2 py-1 text-left text-dim transition-colors hover:text-text"
       >
         {open ? (
-          <IconChevronDown className="h-3.5 w-3.5 shrink-0" />
+          <IconChevronDown className="h-3 w-3 shrink-0" />
         ) : (
-          <IconChevronRight className="h-3.5 w-3.5 shrink-0" />
+          <IconChevronRight className="h-3 w-3 shrink-0" />
         )}
-        <span className="font-mono">Thinking</span>
+        <IconBrain className="h-3 w-3 shrink-0 text-accent" />
+        <span className="font-mono text-text">Thinking</span>
       </button>
       {open && (
-        <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words border-t border-border/80 px-3 py-2 font-mono text-[11px] leading-relaxed text-subtle">
+        <StickToBottom
+          initialStuck={autoOpen}
+          className="max-h-64 overflow-auto whitespace-pre-wrap break-words border-t border-accent/20 px-3 py-2 font-mono text-[11px] leading-relaxed text-subtle"
+        >
           {text}
-        </pre>
+        </StickToBottom>
       )}
     </div>
   );
@@ -419,6 +607,24 @@ function DiffContext({ lines, side }: { lines: string[]; side: 'before' | 'after
   );
 }
 
+// True when a tool detail carries information: raw "{}" or argument objects
+// with only empty values are noise (e.g. list_files called with no path).
+function meaningfulDetail(detail: string): boolean {
+  const t = detail.trim();
+  if (!t || t === '{}') return false;
+  try {
+    const a = JSON.parse(t) as unknown;
+    if (a && typeof a === 'object' && !Array.isArray(a)) {
+      return Object.values(a as Record<string, unknown>).some(
+        (x) => x !== '' && x !== undefined && x !== null,
+      );
+    }
+    return true;
+  } catch {
+    return true;
+  }
+}
+
 // The label shown on a plain tool chip: the meaningful arg (command, path)
 // rather than the raw JSON arguments.
 function chipLabel(detail: string): string {
@@ -429,9 +635,9 @@ function chipLabel(detail: string): string {
     if (Array.isArray(a.todos)) {
       return `${a.todos.length} todo${a.todos.length === 1 ? '' : 's'}`;
     }
-    return detail;
+    return meaningfulDetail(detail) ? detail : '';
   } catch {
-    return detail;
+    return meaningfulDetail(detail) ? detail : '';
   }
 }
 
@@ -456,15 +662,19 @@ function ToolChip({ name, detail }: ToolCall) {
         <span className="shrink-0 text-text">{toolLabel(name)}</span>
         {label && <span className="min-w-0 flex-1 truncate text-faint">{label}</span>}
         {diff && (
-          <>
-            <span className="shrink-0 text-red-400">-{diff.removed.length}</span>
-            <span className="shrink-0 text-emerald-400">+{diff.added.length}</span>
-          </>
+          <span className="ml-auto flex shrink-0 items-center gap-1 font-mono">
+            <span className="rounded bg-red-500/10 px-1 py-0.5 text-red-400">
+              -{diff.removed.length}
+            </span>
+            <span className="rounded bg-emerald-500/10 px-1 py-0.5 text-emerald-400">
+              +{diff.added.length}
+            </span>
+          </span>
         )}
       </button>
       {open &&
         (diff ? (
-          <div className="max-h-60 overflow-auto border-t border-border/80 px-2 py-1.5 leading-relaxed">
+          <StickToBottom className="max-h-60 overflow-auto border-t border-border/80 px-2 py-1.5 leading-relaxed">
             <DiffContext lines={diff.before} side="before" />
             {diff.removed.map((l, i) => (
               <div key={i} className="whitespace-pre-wrap break-words bg-red-500/10 text-red-400">
@@ -477,9 +687,9 @@ function ToolChip({ name, detail }: ToolCall) {
               </div>
             ))}
             <DiffContext lines={diff.after} side="after" />
-          </div>
+          </StickToBottom>
         ) : (
-          <ToolBody detail={detail} />
+          meaningfulDetail(detail) && <ToolBody detail={detail} />
         ))}
     </div>
   );
@@ -523,14 +733,13 @@ function ToolBody({ detail }: { detail: string }) {
         </button>
       )}
       {html !== null ? (
-        <pre
-          className="max-h-60 overflow-auto whitespace-pre-wrap break-words px-3 py-2 font-mono text-[11px] leading-relaxed text-subtle"
-          dangerouslySetInnerHTML={{ __html: html }}
-        />
+        <StickToBottom className="max-h-60 overflow-auto whitespace-pre-wrap break-words px-3 py-2 font-mono text-[11px] leading-relaxed text-subtle">
+          <div dangerouslySetInnerHTML={{ __html: html }} />
+        </StickToBottom>
       ) : (
-        <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-words px-3 py-2 font-mono text-[11px] leading-relaxed text-subtle">
+        <StickToBottom className="max-h-60 overflow-auto whitespace-pre-wrap break-words px-3 py-2 font-mono text-[11px] leading-relaxed text-subtle">
           {detail}
-        </pre>
+        </StickToBottom>
       )}
     </div>
   );
@@ -567,6 +776,136 @@ function RunCommandBlock({ command, result }: { command: string; result: ToolCal
 // Renders an assistant message's tool calls and results as one column, pairing
 // each run_command call with its result (both lists are in chronological
 // order) so they show as a single block.
+// One-line summary of an assistant message's tool activity, e.g.
+// "Read 2 files · Made 1 edit · Ran 1 command". Reads and listings are
+// skipped — they are context, not actions.
+function summarizeTools(calls: ToolCall[], results: ToolCall[]): string {
+  // Each tool appears as a call and again as its result — count each tool
+  // once, using the larger of the two lists when a call is still in flight
+  // or a result arrived without its call.
+  const counts = new Map<string, number>();
+  const tally = (list: ToolCall[]) => {
+    const per = new Map<string, number>();
+    for (const c of list) per.set(c.name, (per.get(c.name) ?? 0) + 1);
+    for (const [k, v] of per) counts.set(k, Math.max(counts.get(k) ?? 0, v));
+  };
+  tally(calls);
+  tally(results);
+  const n = (k: string) => counts.get(k) ?? 0;
+  const plural = (x: number, s: string) => `${x} ${s}${x === 1 ? '' : 's'}`;
+  const parts: string[] = [];
+  if (n('read_file') > 0) parts.push(`Read ${plural(n('read_file'), 'file')}`);
+  const files = n('write_file') + n('edit_file') + n('delete_file') + n('move_file');
+  if (files > 0) parts.push(`Made ${plural(files, 'edit')}`);
+  if (n('run_command') + n('run_command_background') > 0) {
+    // Name the commands so the summary shows what actually ran.
+    const cmds: string[] = [];
+    for (const c of calls) {
+      if (c.name !== 'run_command' && c.name !== 'run_command_background') continue;
+      try {
+        const a = JSON.parse(c.detail) as { command?: unknown };
+        if (typeof a.command === 'string' && a.command.trim()) cmds.push(a.command.trim());
+      } catch {
+        // not JSON — skip
+      }
+    }
+    let summary = `Ran ${plural(n('run_command') + n('run_command_background'), 'command')}`;
+    if (cmds.length > 0) {
+      const joined = cmds.join(', ');
+      summary += `: ${joined.length > 80 ? joined.slice(0, 80) + '…' : joined}`;
+    }
+    parts.push(summary);
+  }
+  if (n('fetch_url') > 0) parts.push(`Fetched ${plural(n('fetch_url'), 'page')}`);
+  if (n('screenshot_app') > 0) parts.push(`Took ${plural(n('screenshot_app'), 'screenshot')}`);
+  if (n('set_todos') > 0) parts.push('Updated todos');
+  if (n('restart_preview') > 0) parts.push('Restarted preview');
+  const mem = n('remember') + n('forget');
+  if (mem > 0) parts.push(`Updated ${plural(mem, 'memory')}`);
+  const skipped = new Set([
+    'write_file', 'edit_file', 'delete_file', 'move_file', 'run_command', 'read_file',
+    'fetch_url', 'screenshot_app', 'set_todos', 'restart_preview', 'remember', 'forget',
+    'ask_user', 'list_files', 'search_files',
+  ]);
+  const other = [...counts.entries()].filter(([k]) => !skipped.has(k)).reduce((a, [, v]) => a + v, 0);
+  if (other > 0) parts.push(`Ran ${plural(other, 'tool')}`);
+  const total = [...counts.values()].reduce((a, b) => a + b, 0);
+  if (parts.length === 0) return `${total} tool call${total === 1 ? '' : 's'}`;
+  return parts.join(' · ');
+}
+
+// Collapses an assistant message's reasoning and tool calls into a single
+// summary line (e.g. "Made 1 edit · Ran 1 command: npm test"); expanding
+// shows the individual blocks. It starts expanded while the message is still
+// streaming and only collapses once everything inside has completed. Toggle
+// in Settings → Appearance → Tool calls.
+function CollapsedTools({
+  reasoning,
+  calls,
+  results,
+  streaming,
+  ask,
+  askCount,
+  onAskAnswered,
+}: {
+  reasoning?: string;
+  calls: ToolCall[];
+  results: ToolCall[];
+  streaming: boolean;
+  ask?: { questions: AskQuestionView[]; result?: AskAnswerView[]; failed?: boolean } | null;
+  askCount: number;
+  onAskAnswered: (answers: AskAnswerView[]) => void;
+}) {
+  // A pending question must stay visible so it can be answered — only
+  // collapse once it has answers (or failed); manual toggles are respected.
+  const pendingAsk = ask != null && ask.result === undefined && !ask.failed;
+  const [open, setOpen] = useState(streaming || pendingAsk);
+  useEffect(() => {
+    if (!streaming && !pendingAsk) setOpen(false);
+  }, [streaming, pendingAsk]);
+  const summary = calls.length + results.length > 0 ? summarizeTools(calls, results) : '';
+  const askPart = askCount > 0 ? `Asked user ${askCount === 1 ? '1 question' : `${askCount} questions`}` : '';
+  const fullSummary = [summary, askPart].filter(Boolean).join(' · ');
+  const hasTools = calls.length + results.length > 0 || askCount > 0;
+  return (
+    <div className="text-[10px]">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex min-h-[26px] w-full items-center gap-1.5 px-1 py-1 text-left text-dim transition-colors hover:text-text"
+      >
+        {open ? (
+          <IconChevronDown className="h-3 w-3 shrink-0" />
+        ) : (
+          <IconChevronRight className="h-3 w-3 shrink-0" />
+        )}
+        {ask ? (
+          <IconUser className="h-3 w-3 shrink-0 text-accent" />
+        ) : hasTools ? (
+          <IconWrench className="h-3 w-3 shrink-0 text-faint" />
+        ) : (
+          reasoning && <IconBrain className="h-3 w-3 shrink-0 text-accent" />
+        )}
+        <span className="min-w-0 flex-1 truncate text-faint">{fullSummary}</span>
+      </button>
+      {open && (
+        <div className="flex flex-col gap-1.5 px-1 pb-1">
+          {reasoning && <ReasoningBlock text={reasoning} autoOpen={false} />}
+          <ToolBlocks calls={calls} results={results} />
+          {ask && (
+            <AskBlock
+              questions={ask.questions}
+              result={ask.result}
+              failed={ask.failed}
+              onAnswer={onAskAnswered}
+            />
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ToolBlocks({ calls, results }: { calls: ToolCall[]; results: ToolCall[] }) {
   const out: ReactNode[] = [];
   let next = 0;
@@ -592,22 +931,219 @@ function ToolBlocks({ calls, results }: { calls: ToolCall[]; results: ToolCall[]
   return <div className="flex flex-col gap-1.5">{out}</div>;
 }
 
+type AskQuestionView = { question: string; options: string[] };
+type AskAnswerView = { question: string; answer: string };
+
+// Parses an ask_user tool call's arguments JSON into the question list
+// ("questions" array, or a single "question" with options). Falls back to the
+// raw detail (a plain question string) when it isn't JSON.
+function askQuestions(detail: string): AskQuestionView[] {
+  try {
+    const a = JSON.parse(detail) as { question?: unknown; options?: unknown; questions?: unknown };
+    const clean = (q: { question?: unknown; options?: unknown }): AskQuestionView | null => {
+      if (typeof q.question !== 'string' || !q.question.trim()) return null;
+      return {
+        question: q.question,
+        options: Array.isArray(q.options) ? q.options.filter((o): o is string => typeof o === 'string') : [],
+      };
+    };
+    if (Array.isArray(a.questions)) {
+      const list = a.questions.map(clean).filter((q): q is AskQuestionView => q !== null);
+      if (list.length > 0) return list;
+    }
+    const single = clean(a);
+    if (single) return [single];
+    return [{ question: detail, options: [] }];
+  } catch {
+    return [{ question: detail, options: [] }];
+  }
+}
+
+// Extracts the answers from an ask_user tool result: multi-question results
+// are {"answers":[{question,answer},…]}, single ones {"answer": "..."}.
+function askAnswers(detail: string): AskAnswerView[] {
+  try {
+    const r = JSON.parse(detail) as { answer?: unknown; answers?: unknown };
+    if (Array.isArray(r.answers)) {
+      const list = r.answers
+        .filter((a): a is { question?: unknown; answer?: unknown } => typeof a === 'object' && a !== null)
+        .map((a) => ({
+          question: typeof a.question === 'string' ? a.question : '',
+          answer: typeof a.answer === 'string' ? a.answer : '',
+        }))
+        .filter((a) => a.answer !== '');
+      if (list.length > 0) return list;
+    }
+    if (typeof r.answer === 'string' && r.answer !== '') {
+      return [{ question: '', answer: r.answer }];
+    }
+    return [];
+  } catch {
+    return [];
+  }
+}
+
+// The agent's ask_user question: the question with tappable options while
+// pending, the chosen answer once answered. Rendered inline in the transcript
+// (never inside the tool collapse) and for live streams.
+// The agent's ask_user block. A single question shows the options + answer
+// input directly; multiple questions render as a stepper the user walks
+// through (back/next, answers editable) with a final "confirm all" action.
+function AskBlock({
+  questions,
+  result,
+  failed,
+  onAnswer,
+}: {
+  questions: AskQuestionView[];
+  result?: AskAnswerView[];
+  /** The ask ended without answers (timed out, canceled). */
+  failed?: boolean;
+  onAnswer?: (answers: AskAnswerView[]) => void;
+}) {
+  const [step, setStep] = useState(0);
+  const [drafts, setDrafts] = useState<string[]>(() => questions.map(() => ''));
+  const answered = result !== undefined;
+  const multi = questions.length > 1;
+  const q = questions[Math.min(step, questions.length - 1)];
+  const cur = drafts[step] ?? '';
+  const allAnswered = drafts.every((d) => d.trim() !== '');
+
+  const setCur = (v: string) =>
+    setDrafts((prev) => prev.map((d, i) => (i === step ? v : d)));
+
+  return (
+    <div className="rounded-lg border border-accent/50 bg-surface p-3 text-sm">
+      {answered ? (
+        <>
+          <div className="flex items-start gap-2">
+            <IconUser className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
+            <div className="min-w-0 flex-1 space-y-2">
+              {result!.map((r, i) => (
+                <div key={i}>
+                  <p className="whitespace-pre-wrap break-words text-text">
+                    {multi && <span className="mr-1 font-mono text-[10px] text-faint">{i + 1}.</span>}
+                    {r.question || questions[i]?.question || ''}
+                  </p>
+                  <p className="mt-1 flex items-center gap-1.5 text-xs text-dim">
+                    <IconCheck className="h-3.5 w-3.5 shrink-0 text-emerald-400" />
+                    {r.answer}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      ) : failed ? (
+        <div className="flex items-start gap-2">
+          <IconUser className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
+          <p className="min-w-0 flex-1 whitespace-pre-wrap break-words text-text">
+            {multi ? questions.map((qq) => qq.question).join(' · ') : q.question}
+          </p>
+        </div>
+      ) : (
+        <>
+          {multi && (
+            <div className="mb-1.5 px-1 text-[10px] font-medium uppercase tracking-wider text-faint">
+              Question {step + 1} of {questions.length}
+            </div>
+          )}
+          <div className="flex items-start gap-2">
+            <IconUser className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
+            <p className="min-w-0 flex-1 whitespace-pre-wrap break-words text-text">{q.question}</p>
+          </div>
+          {q.options.length > 0 && (
+            <div className="mt-2.5 flex flex-wrap gap-1.5">
+              {q.options.map((o) => (
+                <Button
+                  key={o}
+                  variant="outline"
+                  className={`h-8 px-3 text-xs ${cur === o ? 'border-accent text-text' : ''}`}
+                  onClick={() => setCur(o)}
+                >
+                  {o}
+                </Button>
+              ))}
+            </div>
+          )}
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (multi && !allAnswered) {
+                setStep((s) => Math.min(s + 1, questions.length - 1));
+              } else if (onAnswer) {
+                onAnswer(questions.map((qq, i) => ({ question: qq.question, answer: drafts[i] ?? '' })));
+              }
+            }}
+            className="mt-2.5 flex items-end gap-2"
+          >
+            <div className="flex-1">
+              <Input
+                value={cur}
+                onChange={(e) => setCur(e.target.value)}
+                placeholder={q.options.length > 0 ? '…or type an answer' : 'Type an answer…'}
+                autoComplete="off"
+              />
+            </div>
+            {multi ? (
+              <div className="flex shrink-0 gap-1.5">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-[42px] px-3 text-xs sm:h-[38px]"
+                  disabled={step === 0}
+                  onClick={() => setStep((s) => Math.max(0, s - 1))}
+                >
+                  Back
+                </Button>
+                {step < questions.length - 1 ? (
+                  <Button
+                    type="submit"
+                    variant="outline"
+                    className="h-[42px] px-3 text-xs sm:h-[38px]"
+                    disabled={!cur.trim()}
+                  >
+                    Next
+                  </Button>
+                ) : (
+                  <Button
+                    type="submit"
+                    variant="outline"
+                    className="h-[42px] px-3 text-xs sm:h-[38px]"
+                    disabled={!allAnswered}
+                  >
+                    Confirm all
+                  </Button>
+                )}
+              </div>
+            ) : (
+              <Button type="submit" variant="outline" className="h-[42px] sm:h-[38px]" disabled={!cur.trim()}>
+                Answer
+              </Button>
+            )}
+          </form>
+        </>
+      )}
+    </div>
+  );
+}
+
 function ToolResultBlock({ name, detail }: ToolCall) {
   const [open, setOpen] = useState(false);
   const Icon = toolIcon(name);
   return (
-    <div className="rounded-lg border border-border/80 bg-surface/50 text-xs">
+    <div className="rounded-md border border-border/80 bg-surface/50 text-[10px]">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="flex min-h-[30px] w-full items-center gap-2 px-2.5 py-1.5 text-left text-dim transition-colors hover:text-text"
+        className="flex min-h-[26px] w-full items-center gap-1.5 px-2 py-1 text-left text-dim transition-colors hover:text-text"
       >
         {open ? (
           <IconChevronDown className="h-3.5 w-3.5 shrink-0" />
         ) : (
           <IconChevronRight className="h-3.5 w-3.5 shrink-0" />
         )}
-        <Icon className="h-3.5 w-3.5 shrink-0" />
+        <Icon className="h-3 w-3 shrink-0 text-faint" />
         <span className="shrink-0 font-mono text-text">{toolLabel(name)}</span>
         <span className="text-faint">result</span>
       </button>
@@ -718,6 +1254,7 @@ const MessageRow = memo(function MessageRow({
   onRegenerate,
   onEditStart,
   onImageClick,
+  onAskAnswered,
 }: {
   item: Item;
   isLast: boolean;
@@ -729,8 +1266,19 @@ const MessageRow = memo(function MessageRow({
   onRegenerate: () => void;
   onEditStart: (key: string, editing: boolean) => void;
   onImageClick: (url: string, name: string) => void;
+  onAskAnswered: (answers: AskAnswerView[]) => void;
 }) {
   if (item.kind === 'tool') return <ToolRow item={item} />;
+  if (item.kind === 'ask') {
+    return (
+      <AskBlock
+        questions={item.questions}
+        result={item.result}
+        failed={item.failed}
+        onAnswer={onAskAnswered}
+      />
+    );
+  }
   if (item.role === 'user') {
     if (item.editing) {
       return (
@@ -771,8 +1319,11 @@ const MessageRow = memo(function MessageRow({
             </div>
           )}
         </div>
-        {persisted(item.key) && !streaming && (
-          <div className="flex gap-2 pr-1">
+        {persisted(item.key) && !streaming ? (
+          <div className="flex items-center gap-2 pr-1">
+            {item.sentAt && (
+              <span className="text-[10px] text-faint">{formatTime(item.sentAt)}</span>
+            )}
             <button
               type="button"
               onClick={() => onEditStart(item.key, true)}
@@ -791,34 +1342,93 @@ const MessageRow = memo(function MessageRow({
               </button>
             )}
           </div>
+        ) : (
+          item.sentAt && <div className="pr-1 text-[10px] text-faint">{formatTime(item.sentAt)}</div>
         )}
       </div>
     );
   }
   if (item.role === 'error') {
     return (
-      <div className="whitespace-pre-wrap break-words text-sm text-red-400">
-        {item.content}
+      <div className="flex flex-col gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2.5">
+        <div className="flex items-start gap-2">
+          <IconX className="mt-0.5 h-4 w-4 shrink-0 text-red-400" />
+          <div className="min-w-0 flex-1 whitespace-pre-wrap break-words text-sm leading-relaxed text-red-300">
+            {item.content}
+          </div>
+        </div>
+        {!streaming && (
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={onRegenerate}
+              className="text-xs font-medium text-red-300 underline-offset-2 transition-colors hover:text-red-200 hover:underline"
+            >
+              Try again
+            </button>
+          </div>
+        )}
       </div>
     );
   }
+  // The ask joins the tool collapse like everything else, but stays open
+  // while the question is unanswered so it can always be answered.
+  const askCall = item.toolCalls?.find((c) => c.name === 'ask_user');
+  const askResult = item.toolResults?.find((r) => r.name === 'ask_user');
+  const ask = askCall
+    ? {
+        questions: askQuestions(askCall.detail),
+        result: askResult ? askAnswers(askResult.detail) : undefined,
+      }
+    : null;
+  const askCount = ask ? ask.questions.length : 0;
+  const calls = (item.toolCalls ?? []).filter((c) => c.name !== 'ask_user');
+  const results = (item.toolResults ?? []).filter((r) => r.name !== 'ask_user');
+  const hasTools = calls.length + results.length > 0 || askCount > 0;
+  const collapseTools = getToolCallsCollapsed();
   return (
     <div
       className={`flex min-w-0 flex-col gap-1.5 ${item.stale ? 'opacity-45' : ''}`}
     >
-      {item.reasoning && (
-        <ReasoningBlock text={item.reasoning} autoOpen={item.streaming ?? false} />
+      {collapseTools && hasTools ? (
+        <CollapsedTools
+          reasoning={item.reasoning}
+          calls={calls}
+          results={results}
+          streaming={item.streaming ?? false}
+          ask={ask ? { questions: ask.questions, result: ask.result, failed: ask.result !== undefined && ask.result.length === 0 } : null}
+          askCount={askCount}
+          onAskAnswered={onAskAnswered}
+        />
+      ) : (
+        <>
+          {item.reasoning && (
+            <ReasoningBlock text={item.reasoning} autoOpen={item.streaming ?? false} />
+          )}
+          {hasTools && (
+            <ToolBlocks calls={calls} results={results} />
+          )}
+          {ask && (
+            <AskBlock
+              questions={ask.questions}
+              result={ask.result}
+              failed={ask.result !== undefined && ask.result.length === 0}
+              onAnswer={onAskAnswered}
+            />
+          )}
+        </>
       )}
-      <div className="min-w-0">
-        <Markdown text={item.content} streaming={item.streaming} validTag={validTag} />
-      </div>
-      {(item.toolCalls?.length ?? 0) + (item.toolResults?.length ?? 0) > 0 && (
-        <ToolBlocks calls={item.toolCalls ?? []} results={item.toolResults ?? []} />
+      {item.content && (
+        <div className="min-w-0">
+          <Markdown text={item.content} streaming={item.streaming} validTag={validTag} />
+        </div>
       )}
       {turnEnd && item.usage && !item.streaming && (
         <div className="text-[10px] text-faint">
           {item.usage.input.toLocaleString()} in · {item.usage.output.toLocaleString()} out
           {item.usage.model ? ` · ${item.usage.model}` : ''}
+          {item.elapsedMs != null ? ` · ${formatElapsed(item.elapsedMs)}` : ''}
+          {item.sentAt ? ` · ${formatTime(item.sentAt)}` : ''}
         </div>
       )}
       {persisted(item.key) && !streaming && isLast && (
@@ -843,17 +1453,28 @@ export default function ChatPane({
   projectName,
   onPreviewRestart,
   onMemories,
+  onProjectRename,
   llmReady,
   initialPrompt,
+  initialProviderId,
+  initialModel,
+  initialThinking,
 }: {
   projectId: string;
   projectName: string;
   onPreviewRestart: () => void;
   onMemories?: (mems: Memory[]) => void;
+  /** The agent renamed the project (set_project_name). */
+  onProjectRename?: (name: string) => void;
   /** null while the LLM configuration is still loading. */
   llmReady: boolean | null;
   /** Description from the New project dialog — auto-sent once, when ready. */
   initialPrompt?: string;
+  /** Optional model selection from the New project dialog, used when the
+   * project has no persisted selection yet. */
+  initialProviderId?: string;
+  initialModel?: string;
+  initialThinking?: string;
 }) {
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
@@ -863,6 +1484,22 @@ export default function ChatPane({
   const [suggestionIndex, setSuggestionIndex] = useState(0);
   const [plusOpen, setPlusOpen] = useState(false);
   const [streaming, setStreaming] = useState(false);
+  // True while an interrupted turn is being re-run in the background after a
+  // lost connection (the persisted history is shown instantly meanwhile).
+  const [resuming, setResuming] = useState(false);
+  // True while watching a generation that is still running server-side (the
+  // viewer left mid-run and came back — the run survives the disconnect).
+  // True while a generation is running server-side (seen from this client).
+  const [runActive, setRunActive] = useState(false);
+  // Context fill (tokens used vs budget) for the ring button + popup. The
+  // ring only renders once a definitive value is in — a spinner shows while
+  // the model-specific budget is still loading, so it never jumps between
+  // provisional sizes.
+  const [ctx, setCtx] = useState<ContextUsage | null>(null);
+  const [ctxLoading, setCtxLoading] = useState(true);
+  const ctxReqRef = useRef(0);
+  const [ctxOpen, setCtxOpen] = useState(false);
+  const [ctxCompacting, setCtxCompacting] = useState(false);
   const [attachments, setAttachments] = useState<ChatAttachmentInput[]>([]);
   const [attachError, setAttachError] = useState<string | null>(null);
   const [model, setModel] = useState('');
@@ -895,10 +1532,28 @@ export default function ChatPane({
   } | null>(null);
   const [askPrompt, setAskPrompt] = useState<{
     requestId: string;
-    question: string;
-    options: string[];
+    questions: AskQuestionView[];
   } | null>(null);
-  const [askText, setAskText] = useState('');
+  // Messages sent while a run is active, in processing order. They become
+  // follow-up turns when the run finishes; the steer button injects one into
+  // the current run immediately.
+  const [queued, setQueued] = useState<{ id: string; text: string }[]>([]);
+  const [queueEditId, setQueueEditId] = useState<string | null>(null);
+  const [queueEditText, setQueueEditText] = useState('');
+  const queueEditIdRef = useRef<string | null>(null);
+  const watchRef = useRef<AbortController | null>(null);
+  // Mirrors of streaming/handleEvent for effects that must react to state
+  // changes without re-running on them.
+  const streamingRef = useRef(false);
+  const handleEventRef = useRef<(ev: ChatEvent) => void>(() => {});
+  useEffect(() => {
+    streamingRef.current = streaming;
+  }, [streaming]);
+  // The active chat session ('' until the session list loads).
+  const [sessionId, setSessionId] = useState('');
+  const [sessions, setSessions] = useState<ChatSession[]>([]);
+  const [sessionsOpen, setSessionsOpen] = useState(false);
+  const [creatingSession, setCreatingSession] = useState(false);
   const navigate = useNavigate();
 
   const itemsRef = useRef<Item[]>([]);
@@ -906,6 +1561,8 @@ export default function ChatPane({
   const assistantKeyRef = useRef<string | null>(null);
   const toolStackRef = useRef<Record<string, string[]>>({});
   const abortRef = useRef<AbortController | null>(null);
+  // When the current turn started — for the elapsed time shown with usage.
+  const turnStartRef = useRef(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
   const echoRef = useRef<HTMLDivElement>(null);
@@ -948,7 +1605,15 @@ export default function ChatPane({
         setProviders(saved);
         setPermissionMode(s.permissionMode ?? 'ask');
         setRewindApproval(s.rewindApproval ?? false);
-        const sel = persisted ?? { providerId: s.llm.activeProviderId ?? '', model: s.llm.model };
+        const sel =
+          persisted ??
+          (initialProviderId || initialModel || initialThinking
+            ? {
+                providerId: initialProviderId ?? s.llm.activeProviderId ?? '',
+                model: initialModel ?? s.llm.model,
+                thinking: initialThinking ?? '',
+              }
+            : { providerId: s.llm.activeProviderId ?? '', model: s.llm.model });
         // A persisted provider that was deleted falls back to the active one.
         if (sel.providerId === '' || saved.some((p) => p.id === sel.providerId)) {
           setProviderId(sel.providerId);
@@ -1028,7 +1693,7 @@ export default function ChatPane({
         // storage unavailable — ignore
       }
     },
-    [projectId],
+    [projectId, sessionId],
   );
 
   const changeProvider = (pid: string) => {
@@ -1066,8 +1731,7 @@ export default function ChatPane({
     null,
   );
   const [thinkingLoading, setThinkingLoading] = useState(false);
-  const thinkingMetaCache = useRef(new Map<string, { levels: string[]; off: boolean }>());
-  // The level a fresh selection gets: the global default when the model
+  const thinkingMetaCache = useRef(new Map<string, { levels: string[]; off: boolean }>());  // The level a fresh selection gets: the global default when the model
   // supports it, otherwise the next highest available level (or the lowest
   // when the default sits below everything the model offers).
   const freshThinkingLevel = (meta: { levels: string[]; off: boolean }): string => {
@@ -1092,8 +1756,12 @@ export default function ChatPane({
       return;
     }
     const key = `${providerId}|${model}`;
-    const cached = thinkingMetaCache.current.get(key);
+    // The in-memory map is per mount; fall back to the persisted cache so
+    // reopening a project doesn't refetch the provider's /models for a model
+    // we already asked about.
+    const cached = thinkingMetaCache.current.get(key) ?? readThinkingMeta(key);
     if (cached) {
+      thinkingMetaCache.current.set(key, cached);
       setThinkingMeta(cached);
       setThinkingLoading(false);
       return;
@@ -1106,6 +1774,7 @@ export default function ChatPane({
         if (!active) return;
         const meta = { levels: r.levels ?? [], off: r.off ?? false };
         thinkingMetaCache.current.set(key, meta);
+        writeThinkingMeta(key, meta);
         setThinkingMeta(meta);
         // A fresh selection uses the global default thinking level when the
         // model supports it, otherwise its lowest level.
@@ -1158,12 +1827,47 @@ export default function ChatPane({
   const providerOverride = providerId || undefined;
   const hasModel = modelOverride !== undefined;
 
+  // Fetches the project's persisted pending ask_user question, if any, and
+  // remembers its request id so the transcript block can answer it. The
+  // server clears the record when the question is answered, times out, or a
+  // new turn starts.
+  const refreshPendingAsk = useCallback(async () => {
+    try {
+      const p = await api.askPending(projectId, sessionId);
+      if (p.pending && p.requestId && p.question) {
+        const questions: AskQuestionView[] =
+          p.questions && p.questions.length > 0
+            ? p.questions.map((q) => ({ question: q.question, options: q.options ?? [] }))
+            : [{ question: p.question, options: p.options ?? [] }];
+        setAskPrompt({ requestId: p.requestId, questions });
+      } else {
+        setAskPrompt(null);
+      }
+    } catch {
+      // network hiccup — a live stream still surfaces the ask via SSE
+    }
+  }, [projectId, sessionId]);
+
+  // Fetches the run's queued messages (they live server-side, so they survive
+  // reloads and reconnects).
+  const refreshQueue = useCallback(async () => {
+    if (!sessionId) return;
+    try {
+      const q = await api.chatQueue(projectId, sessionId);
+      setQueued(q.messages ?? []);
+    } catch {
+      // transient — the block catches up on the next refresh
+    }
+  }, [projectId, sessionId]);
+
   const load = useCallback(async () => {
+    if (!sessionId) return;
     setLoading(true);
     setLoadError(null);
     try {
-      const msgs = await api.getMessages(projectId);
+      const msgs = await api.getMessages(projectId, sessionId);
       const mapped: Item[] = [];
+      let lastUserAt = 0;
       for (const m of msgs) {
         if (m.role === 'tool') {
           const name = m.tool ? parseToolName(m.tool) : 'tool';
@@ -1202,27 +1906,38 @@ export default function ChatPane({
             role: 'assistant',
             content: m.content,
             reasoning: m.reasoning,
+            sentAt: Number(m.createdAt) * 1000,
             usage: m.usage ? { ...m.usage, model: m.model || m.usage.model } : undefined,
           };
+          // Turn-final messages carry the duration of the turn they closed:
+          // the final reply's timestamp minus the triggering user message's.
+          if (item.usage && lastUserAt > 0) {
+            item.elapsedMs = (Number(m.createdAt) - lastUserAt) * 1000;
+          }
           const calls = m.tool ? parseToolCalls(m.tool) : null;
           if (calls) {
             // set_todos repeats are pure progress noise — only the first call
-            // of a message is worth a chip.
+            // of a message is worth a chip. list_files with no path is noise
+            // too (it just lists the workspace root).
             let seenTodos = false;
             item.toolCalls = calls.filter((c) => {
-              if (c.name !== 'set_todos') return true;
-              if (seenTodos) return false;
-              seenTodos = true;
+              if (c.name === 'set_todos') {
+                if (seenTodos) return false;
+                seenTodos = true;
+              }
+              if (c.name === 'list_files' && !meaningfulDetail(c.detail)) return false;
               return true;
             });
           }
           mapped.push(item);
         } else if (m.role === 'user') {
+          lastUserAt = Number(m.createdAt);
           mapped.push({
             kind: 'msg',
             key: m.id,
             role: 'user',
             content: m.content,
+            sentAt: Number(m.createdAt) * 1000,
             attachments: m.attachments?.map((a, i) => ({
               ...a,
               url: a.kind === 'image' ? messageAttachmentUrl(projectId, m.id, i) : undefined,
@@ -1238,12 +1953,113 @@ export default function ChatPane({
       setLoadError(errMsg(e));
     } finally {
       setLoading(false);
+      // Re-surface a question the agent asked while the app was away — the
+      // card must survive reloads and reconnects, not just live streams.
+      void refreshPendingAsk();
     }
-  }, [projectId]);
+  }, [projectId, sessionId, refreshPendingAsk]);
 
   useEffect(() => {
     void load();
-  }, [load]);
+    void refreshQueue();
+  }, [load, refreshQueue]);
+
+  // Load the chat sessions and activate the first one (the project's default
+  // thread) until the user switches.
+  useEffect(() => {
+    api
+      .listSessions(projectId)
+      .then((res) => {
+        const list = res.sessions ?? [];
+        setSessions(list);
+        setSessionId((prev) => prev || list[0]?.id || '');
+      })
+      .catch(() => {});
+  }, [projectId]);
+
+  // Starts a fresh chat thread and switches to it.
+  const createNewSession = useCallback(async () => {
+    setCreatingSession(true);
+    try {
+      const res = await api.createSession(projectId);
+      setSessions((prev) => [...prev, res.session]);
+      setSessionId(res.session.id);
+      setSessionsOpen(false);
+    } catch {
+      // leave the modal open; the list is unchanged
+    } finally {
+      setCreatingSession(false);
+    }
+  }, [projectId]);
+
+  // Keep the queue block in sync while a run is active — messages drain to
+  // follow-up turns as they finish.
+  useEffect(() => {
+    if (!streaming) return;
+    const t = window.setInterval(() => void refreshQueue(), 3000);
+    return () => window.clearInterval(t);
+  }, [streaming, refreshQueue]);
+
+  // Context fill for the ring: on mount, after each finished turn, when the
+  // popup opens — and whenever the selected model changes (the ring's budget
+  // follows the model's context window). Stale responses are dropped so an
+  // older fetch can't overwrite a newer one.
+  const loadContext = useCallback(
+    (force = false) => {
+      const req = ++ctxReqRef.current;
+      setCtxLoading(true);
+      api
+        .contextUsage(projectId, sessionId, model.trim() || undefined, providerId || undefined, force)
+        .then((c) => {
+          if (ctxReqRef.current === req) setCtx(c);
+        })
+        .catch(() => {})
+        .finally(() => {
+          if (ctxReqRef.current === req) setCtxLoading(false);
+        });
+    },
+    [projectId, sessionId, model, providerId],
+  );
+  useEffect(() => {
+    loadContext();
+  }, [loadContext]);
+
+  // While a generation runs server-side (it survives client disconnects),
+  // poll the run status: if a run is active and we are not already streaming
+  // it, attach to its live stream — the chat then behaves exactly as if we
+  // had never left (thinking, tool rows, composer spinner, all live). When
+  // no run is active, refresh the transcript the moment it finishes.
+  useEffect(() => {
+    if (!sessionId) return;
+    let cancelled = false;
+    let timer: number | undefined;
+    let wasRunning = false;
+    const tick = async () => {
+      if (cancelled) return;
+      try {
+        const st = await api.chatStatus(projectId, sessionId);
+        if (cancelled) return;
+        setRunActive(st.running);
+        if (wasRunning && !st.running && !streaming && !watchRef.current) {
+          void load(); // the run finished while we were away — fetch the rest
+        }
+        wasRunning = st.running;
+      } catch {
+        // transient — try again on the next tick
+      }
+      timer = window.setTimeout(tick, 3000);
+    };
+    void tick();
+    const onVisible = () => {
+      if (!document.hidden) void tick();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      cancelled = true;
+      if (timer) window.clearTimeout(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [projectId, sessionId, load, streaming]);
 
   // Load the agent-maintained todo list for this project.
   useEffect(() => {
@@ -1335,7 +2151,10 @@ export default function ChatPane({
     bucketRef.current = grouped;
     setBuckets(grouped);
     const stripH = stripRef.current?.clientHeight ?? 0;
-    setDotSize(Math.min(10, Math.max(4, ((stripH - 24) / grouped.length) * 0.8)));
+    // Keep the dots at their full size (10px) until they no longer fit with
+    // the 8px gap (gap-2 on the strip column), then shrink to fit — floor 3px.
+    const n = grouped.length;
+    setDotSize(Math.min(10, Math.max(3, (stripH - 24 - (n - 1) * 8) / n)));
     // The dot for the message nearest the viewport top is lit; at the very
     // bottom the last message can sit below the tracking line — light its
     // dot anyway.
@@ -1468,6 +2287,7 @@ export default function ChatPane({
                 role: 'assistant',
                 content: '',
                 reasoning: ev.text,
+                sentAt: Date.now(),
                 streaming: true,
               },
             ]);
@@ -1491,7 +2311,7 @@ export default function ChatPane({
             const nk = k;
             update((prev) => [
               ...prev,
-              { kind: 'msg', key: nk, role: 'assistant', content: '', streaming: true },
+              { kind: 'msg', key: nk, role: 'assistant', content: '', sentAt: Date.now(), streaming: true },
             ]);
           }
           const ck: string = k;
@@ -1513,6 +2333,18 @@ export default function ChatPane({
           break;
         }
         case 'tool_end': {
+          if (ev.name === 'ask_user') {
+            // The question block already shows the answers optimistically on
+            // confirm; fold the persisted confirmation in here. A failed ask
+            // (timeout, cancel) stops showing the answer controls.
+            const ans = ev.detail ? askAnswers(ev.detail) : [];
+            if (ans.length > 0) {
+              update((prev) => prev.map((it) => (it.kind === 'ask' ? { ...it, result: ans } : it)));
+            } else if (!ev.ok) {
+              update((prev) => prev.map((it) => (it.kind === 'ask' ? { ...it, failed: true } : it)));
+            }
+            break;
+          }
           if (ev.name === 'restart_preview' && ev.ok) restartRef.current();
           const stack = toolStackRef.current[ev.name];
           const key = stack?.pop();
@@ -1551,9 +2383,30 @@ export default function ChatPane({
           setPermPrompt({ requestId: ev.requestId, tool: ev.tool, detail: ev.detail });
           break;
         }
+        case 'project_renamed': {
+          onProjectRename?.(ev.text ?? '');
+          break;
+        }
         case 'question_request': {
-          setAskPrompt({ requestId: ev.requestId, question: ev.text ?? '', options: ev.options ?? [] });
-          setAskText('');
+          const questions: AskQuestionView[] =
+            ev.questions && ev.questions.length > 0
+              ? ev.questions.map((q) => ({ question: q.question, options: q.options ?? [] }))
+              : [{ question: ev.text ?? '', options: ev.options ?? [] }];
+          setAskPrompt({ requestId: ev.requestId, questions });
+          // Replace the bare ask_user tool row with the inline question block.
+          const stack = toolStackRef.current['ask_user'] ?? [];
+          const key = stack[stack.length - 1];
+          if (key) {
+            toolStackRef.current['ask_user'] = stack.filter((k) => k !== key);
+            const askKey = key;
+            update((prev) => {
+              const idx = prev.findIndex((it) => it.kind === 'tool' && it.key === askKey);
+              if (idx === -1) return prev;
+              const next = [...prev];
+              next[idx] = { kind: 'ask', key: askKey, questions };
+              return next;
+            });
+          }
           break;
         }
         case 'done': {
@@ -1562,7 +2415,15 @@ export default function ChatPane({
             const k = assistantKeyRef.current;
             if (k) {
               update((prev) =>
-                prev.map((it) => (it.kind === 'msg' && it.key === k ? { ...it, usage: u } : it)),
+                prev.map((it) =>
+                  it.kind === 'msg' && it.key === k
+                    ? {
+                        ...it,
+                        usage: u,
+                        elapsedMs: turnStartRef.current > 0 ? Date.now() - turnStartRef.current : undefined,
+                      }
+                    : it,
+                ),
               );
             }
           }
@@ -1575,6 +2436,9 @@ export default function ChatPane({
             }
           }
           void notifyTurnDone(projectId, projectName, snippet);
+          void loadContext(true); // bypass the cache: usage changed this turn
+          setAskPrompt(null); // the turn ended — no question can be pending
+          void refreshQueue(); // queued messages drained into follow-up turns
           finish();
           break;
         }
@@ -1583,6 +2447,8 @@ export default function ChatPane({
             ...prev,
             { kind: 'msg', key: `e${++counterRef.current}`, role: 'error', content: ev.error },
           ]);
+          setAskPrompt(null);
+          void refreshQueue();
           finish();
           break;
         }
@@ -1597,6 +2463,7 @@ export default function ChatPane({
               key: id > 0 ? String(id) : `i${++counterRef.current}`,
               role: 'user',
               content: ev.text ?? '',
+              sentAt: Date.now(),
               attachments: ev.attachments?.map((a, i) => ({
                 ...a,
                 url: a.kind === 'image' && id > 0 ? messageAttachmentUrl(projectId, String(id), i) : undefined,
@@ -1607,13 +2474,103 @@ export default function ChatPane({
         }
       }
     },
-    [update, finish, projectId, projectName],
+    [update, finish, projectId, projectName, loadContext, refreshQueue, onProjectRename],
+  );
+
+  useEffect(() => {
+    handleEventRef.current = handleEvent;
+  }, [handleEvent]);
+
+  // Returning to a running chat: subscribe to the run's live stream. The
+  // snapshot loads instantly; this picks up the events from now on and ends
+  // when the run does. The effect deliberately does not depend on `streaming`
+  // or `handleEvent` — the watch sets streaming itself and must not abort its
+  // own stream when that state flips (refs keep both current). The run is
+  // re-checked at attach time so a turn we just streamed ourselves (whose
+  // runActive state is still settling) never triggers a spurious watch.
+  useEffect(() => {
+    if (!sessionId || !runActive || streamingRef.current || resuming) return;
+    if (watchRef.current) return; // already attached
+    let cancelled = false;
+    void api.chatStatus(projectId, sessionId).then((st) => {
+      if (cancelled || !st.running) return;
+      const ctrl = new AbortController();
+      watchRef.current = ctrl;
+      setStreaming(true);
+      let done = false;
+      void watchChat(projectId, sessionId, handleEventRef.current, ctrl.signal)
+        .catch(() => {
+          // connection drop — the transcript refreshes below
+        })
+        .finally(() => {
+          if (watchRef.current === ctrl) watchRef.current = null;
+          setStreaming(false);
+          if (!done) void load();
+        });
+      return () => {
+        done = true;
+        ctrl.abort();
+        if (watchRef.current === ctrl) watchRef.current = null;
+      };
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId, runActive, resuming, projectId, load]);
+
+
+  // Leaving the page cancels any in-flight generation: the server aborts the
+  // run, so no zombie stream keeps running in the background and its
+  // dead-connection error can't surface as "Failed to fetch" on return.
+  useEffect(() => {
+    return () => abortRef.current?.abort();
+  }, []);
+
+  // resumeTurn finishes the last user turn after a lost connection — silently:
+  // its events go nowhere, and the persisted result is reloaded once it
+  // finishes, so the user never sees the generation replay. The original run
+  // survives client disconnects (server-side), so the retry usually answers
+  // "run active" (409) — that means the run is alive and will finish on its
+  // own, so we wait and re-check. Only a truly dead run (server restart,
+  // crash) gets re-run.
+  const resumeTurn = useCallback(
+    async (signal: AbortSignal): Promise<boolean> => {
+      let waiting = 0;
+      let netDown = 0;
+      for (;;) {
+        if (signal.aborted) return false;
+        if (await turnCompleted(projectId, sessionId)) return true;
+        try {
+          await retryChat(projectId, sessionId, () => {}, signal);
+          return true;
+        } catch (e) {
+          if (e instanceof DOMException && e.name === 'AbortError') return false;
+          const status = (e as { status?: number }).status;
+          if (status === 409) {
+            // The old run is still going — give it time to finish.
+            waiting++;
+            if (waiting > 40) return false; // ~3.5 min
+            await new Promise((r) => setTimeout(r, 5000));
+            continue;
+          }
+          if (e instanceof TypeError) {
+            netDown++;
+            if (netDown > 6) return false;
+            await new Promise((r) => setTimeout(r, 3000));
+            continue;
+          }
+          return false;
+        }
+      }
+    },
+    [projectId, sessionId],
   );
 
   const run = useCallback(
     async (start: (signal: AbortSignal) => Promise<void>) => {
       if (streaming) return;
       setStreaming(true);
+      turnStartRef.current = Date.now();
       assistantKeyRef.current = null;
       const ctrl = new AbortController();
       abortRef.current = ctrl;
@@ -1622,19 +2579,44 @@ export default function ChatPane({
         finish();
       } catch (e) {
         const aborted = e instanceof DOMException && e.name === 'AbortError';
+        if (!aborted && e instanceof TypeError && !ctrl.signal.aborted) {
+          // The connection died (backgrounded tab, suspended app). Resync the
+          // chat from the server instantly; if the turn already completed
+          // while we were away, that's all there is to do. Otherwise finish
+          // it in the background — streaming the retry live would replay the
+          // whole generation in front of the user.
+          await load();
+          // The resync can fail while the network is still down — that is
+          // expected, not an error worth showing.
+          setLoadError(null);
+          if (await turnCompleted(projectId, sessionId)) {
+            finish();
+            return;
+          }
+          setResuming(true);
+          assistantKeyRef.current = null;
+          toolStackRef.current = {};
+          const ok = await resumeTurn(ctrl.signal);
+          setResuming(false);
+          if (ok) {
+            await load();
+            finish();
+            return;
+          }
+        }
         update((prev) => [
           ...prev,
           {
             kind: 'msg',
             key: `e${++counterRef.current}`,
             role: 'error',
-            content: aborted ? 'Generation stopped.' : errMsg(e),
+            content: aborted ? 'Generation stopped.' : streamErrorMsg(e),
           },
         ]);
         finish();
       }
     },
-    [streaming, finish, update],
+    [streaming, finish, update, resumeTurn, load, sessionId],
   );
 
   const sendText = useCallback(
@@ -1642,6 +2624,7 @@ export default function ChatPane({
       const trimmed = text.trim();
       if (!trimmed || streaming || !llmReady || !modelOverride) return;
       setInput('');
+      setAskPrompt(null); // a new turn supersedes any pending question
       const atts = attachments.length > 0 ? [...attachments] : undefined;
       setAttachments([]);
       setAttachError(null);
@@ -1652,6 +2635,7 @@ export default function ChatPane({
           key: `u${++counterRef.current}`,
           role: 'user',
           content: trimmed,
+          sentAt: Date.now(),
           attachments: atts?.map((a) => ({
             name: a.name,
             mime: a.mime,
@@ -1664,6 +2648,7 @@ export default function ChatPane({
       void run((signal) =>
         streamChat(
           projectId,
+          sessionId,
           trimmed,
           {
             model: modelOverride,
@@ -1676,7 +2661,7 @@ export default function ChatPane({
         ),
       );
     },
-    [streaming, llmReady, projectId, modelOverride, providerOverride, handleEvent, run, update, attachments, thinkingEffort],
+    [streaming, llmReady, projectId, sessionId, modelOverride, providerOverride, handleEvent, run, update, attachments, thinkingEffort],
   );
 
   // Auto-send the New project dialog's "what do you want to create?"
@@ -1684,10 +2669,10 @@ export default function ChatPane({
   const initialSentRef = useRef(false);
   useEffect(() => {
     if (!initialPrompt || initialSentRef.current) return;
-    if (loading || !llmReady || !modelOverride) return;
+    if (loading || !llmReady || !modelOverride || !sessionId) return;
     initialSentRef.current = true;
     sendText(initialPrompt);
-  }, [initialPrompt, loading, llmReady, modelOverride, sendText]);
+  }, [initialPrompt, loading, llmReady, modelOverride, sessionId, sendText]);
 
   const addFiles = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
@@ -1755,30 +2740,34 @@ export default function ChatPane({
           break;
         }
         try {
-          await api.truncateMessages(projectId, 0);
+          await api.truncateMessages(projectId, sessionId, 0);
           await load();
           setLocalStatus('Chat cleared.');
         } catch (e) {
           setLocalStatus(errMsg(e));
         }
         break;
-      default:
-        // /compact
+      case '/compact':
         if (streaming) {
           setLocalStatus('Stop the current run before compacting.');
           break;
         }
         setLocalStatus('Compacting conversation…');
         try {
-          await api.compact(projectId);
+          await api.compact(projectId, sessionId);
+          loadContext();
           setLocalStatus('Conversation compacted.');
         } catch (e) {
           setLocalStatus(errMsg(e));
         }
+        break;
+      case '/plan':
+        // Not a local command — the message goes to the agent as-is.
+        return false;
     }
     setInput('');
     return true;
-  }, [projectId, streaming, load]);
+  }, [projectId, sessionId, streaming, load, loadContext]);
 
   const send = useCallback(async () => {
     if (await runLocalCommand(input)) return;
@@ -1795,7 +2784,14 @@ export default function ChatPane({
       setInput('');
       setSuggestions([]);
       try {
-        await api.queueChat(projectId, text, modelOverride, providerOverride);
+        const res = await api.queueChat(projectId, sessionId, text, modelOverride, providerOverride);
+        // Show it in the queue block right away; it drains in order when the
+        // run finishes (or can be steered into the current run).
+        if (res.queued) {
+          setQueued((prev) => [...prev, { id: res.id ?? '', text }]);
+        } else {
+          void refreshQueue();
+        }
         setExpanded(false);
       } catch (e) {
         setInput(text);
@@ -1805,7 +2801,85 @@ export default function ChatPane({
     }
     sendText(input);
     setExpanded(false);
-  }, [input, streaming, attachments.length, runLocalCommand, sendText, projectId, modelOverride, providerOverride]);
+  }, [input, streaming, attachments.length, runLocalCommand, sendText, projectId, sessionId, modelOverride, providerOverride, refreshQueue]);
+
+  // Moves a queued message up/down (optimistically; the server is the source
+  // of truth on the next refresh).
+  const moveQueued = useCallback(
+    async (idx: number, dir: -1 | 1) => {
+      setQueued((prev) => {
+        const j = idx + dir;
+        if (j < 0 || j >= prev.length) return prev;
+        const next = [...prev];
+        [next[idx], next[j]] = [next[j], next[idx]];
+        void api
+          .chatQueueReorder(projectId, sessionId, next.map((m) => m.id))
+          .catch(() => void refreshQueue());
+        return next;
+      });
+    },
+    [projectId, sessionId, refreshQueue],
+  );
+
+  // Replaces one queued message's text in place. Saving also releases the
+  // hold taken when the edit started, so the message can be sent again.
+  const editQueued = useCallback(
+    async (id: string, text: string) => {
+      const trimmed = text.trim();
+      if (!trimmed) return;
+      setQueued((prev) => prev.map((m) => (m.id === id ? { ...m, text: trimmed } : m)));
+      try {
+        await api.chatQueueEdit(projectId, sessionId, id, trimmed);
+      } catch {
+        void refreshQueue();
+      }
+      void api.chatQueueHold(projectId, sessionId, id, false).catch(() => {});
+    },
+    [projectId, sessionId, refreshQueue],
+  );
+
+  // Mark a queued message held (being edited) so the server's follow-up
+  // drain skips it, and release the hold when the edit ends.
+  const setQueueEditing = useCallback(
+    (id: string | null, text: string) => {
+      setQueueEditId((prev) => {
+        if (prev && prev !== id) {
+          void api.chatQueueHold(projectId, sessionId, prev, false).catch(() => {});
+        }
+        return id;
+      });
+      queueEditIdRef.current = id;
+      setQueueEditText(text);
+      if (id) {
+        void api.chatQueueHold(projectId, sessionId, id, true).catch(() => {});
+      }
+    },
+    [projectId, sessionId],
+  );
+
+  // Leaving the page abandons any in-progress edit — release the hold so the
+  // message isn't stuck.
+  useEffect(() => {
+    return () => {
+      if (queueEditIdRef.current) {
+        void api.chatQueueHold(projectId, sessionId, queueEditIdRef.current, false).catch(() => {});
+      }
+    };
+  }, [projectId, sessionId]);
+
+  // Steers one queued message into the current run: the agent picks it up at
+  // the next round boundary instead of waiting for the queue.
+  const steerQueued = useCallback(
+    async (id: string) => {
+      try {
+        await api.chatQueueSteer(projectId, sessionId, id);
+        setQueued((prev) => prev.filter((m) => m.id !== id));
+      } catch {
+        void refreshQueue();
+      }
+    },
+    [projectId, refreshQueue],
+  );
 
   const updateSuggestions = useCallback((value: string) => {
     const cursor = taRef.current?.selectionStart ?? value.length;
@@ -1818,7 +2892,9 @@ export default function ChatPane({
     if (token[0] === '/') {
       setSuggestions(
         CHAT_COMMANDS.filter((c) => c.name.slice(1).startsWith(query)).map((c) => ({
-          insert: c.name,
+          // /plan takes a prompt after it — insert the trailing space so the
+          // user can type straight away.
+          insert: c.name === '/plan' ? '/plan ' : c.name,
           label: c.name,
           hint: c.hint,
         })),
@@ -1889,8 +2965,14 @@ export default function ChatPane({
       if (idx === -1) return prev;
       return prev.map((it, i) => (i === idx ? { ...it, stale: true } : it));
     });
-    void run((signal) => retryChat(projectId, handleEvent, signal));
-  }, [streaming, llmReady, projectId, handleEvent, run, update]);
+    setAskPrompt(null); // re-running the turn supersedes any pending question
+    void run(async (signal) => {
+      await retryChat(projectId, sessionId, handleEvent, signal);
+      // A continued retry folds the partial + continuation into one message
+      // and drops the error — reload to show that merged state.
+      await load();
+    });
+  }, [streaming, llmReady, projectId, sessionId, handleEvent, run, update, load]);
 
   const setItemEditing = useCallback(
     (key: string, editing: boolean) => {
@@ -1929,6 +3011,7 @@ export default function ChatPane({
       void run((signal) =>
         streamChat(
           projectId,
+          sessionId,
           trimmed,
           {
             model: modelOverride,
@@ -1951,7 +3034,7 @@ export default function ChatPane({
       const id = Number(key);
       if (!persisted(key)) return;
       try {
-        await api.truncateMessages(projectId, id);
+        await api.truncateMessages(projectId, sessionId, id);
         await load();
       } catch (e) {
         setLoadError(errMsg(e));
@@ -1974,7 +3057,25 @@ export default function ChatPane({
     [rewindApproval, rewindTo],
   );
 
-  const stop = () => abortRef.current?.abort();
+  const stop = () => {
+    // Runs survive the stream abort (they are detached server-side) — tell
+    // the server to cancel explicitly, then drop the connection.
+    void api.stopChat(projectId, sessionId).catch(() => {});
+    abortRef.current?.abort();
+  };
+
+  const compactNow = async () => {
+    setCtxCompacting(true);
+    try {
+      await api.compact(projectId, sessionId);
+      loadContext();
+      setCtxOpen(false);
+    } catch (e) {
+      setLocalStatus(errMsg(e));
+    } finally {
+      setCtxCompacting(false);
+    }
+  };
 
   const respondPerm = useCallback(
     async (allow: boolean) => {
@@ -1991,18 +3092,48 @@ export default function ChatPane({
   );
 
   const answerAsk = useCallback(
-    async (answer: string) => {
+    async (answers: AskAnswerView[]) => {
       const a = askPrompt;
-      const text = answer.trim();
-      if (!a || !text) return;
+      const clean = answers.filter((x) => x.answer.trim() !== '');
+      if (!a || clean.length === 0) return;
+      // Show the answers in the transcript block right away — the persisted
+      // tool result catches up on the next load.
+      update((prev) => {
+        // Update the most recent open ask — live item or the last message
+        // carrying an ask_user call.
+        for (let i = prev.length - 1; i >= 0; i--) {
+          const it = prev[i];
+          if (it.kind === 'ask') {
+            const next = [...prev];
+            next[i] = { ...it, result: clean };
+            return next;
+          }
+          if (
+            it.kind === 'msg' &&
+            it.role === 'assistant' &&
+            it.toolCalls?.some((c) => c.name === 'ask_user')
+          ) {
+            const next = [...prev];
+            next[i] = {
+              ...it,
+              toolResults: [
+                ...(it.toolResults ?? []),
+                { name: 'ask_user', detail: JSON.stringify({ answers: clean }) },
+              ],
+            };
+            return next;
+          }
+        }
+        return prev;
+      });
       setAskPrompt(null);
       try {
-        await api.askRespond(projectId, a.requestId, text);
+        await api.askRespond(projectId, sessionId, a.requestId, clean);
       } catch {
         // 404 — already answered or timed out
       }
     },
-    [askPrompt, projectId],
+    [askPrompt, projectId, sessionId, update],
   );
 
   const lastMsgIdx = useMemo(() => {
@@ -2036,6 +3167,20 @@ export default function ChatPane({
     }
     return keys;
   }, [items]);
+
+  // True when a message renders as a collapsed tool summary row (the tool
+  // collapse setting is on and the message carries tools, ask included).
+  const isCollapsedToolsRow = useCallback(
+    (it: Item): boolean => {
+      if (it.kind !== 'msg' || it.role !== 'assistant' || it.streaming) return false;
+      if (!getToolCallsCollapsed()) return false;
+      const askCount = it.toolCalls?.filter((c) => c.name === 'ask_user').length ?? 0;
+      const calls = (it.toolCalls ?? []).filter((c) => c.name !== 'ask_user');
+      const results = (it.toolResults ?? []).filter((r) => r.name !== 'ask_user');
+      return calls.length + results.length > 0 || askCount > 0;
+    },
+    [],
+  );
 
   // Composer pieces, shared between the normal row layout and the expanded
   // layout (top button row in the corners, text field below at full width).
@@ -2225,6 +3370,12 @@ export default function ChatPane({
     </div>
   );
 
+  // Ring/border hue for the context button — matches the ring's current
+  // fill color so the button border and the ring always agree.
+  const ctxPct = ctx && !ctxLoading ? Math.min(100, (ctx.used / ctx.budget) * 100) : 0;
+  const ctxHue = 120 - (120 * ctxPct) / 100;
+  const ctxBorder = `hsl(${ctxHue} 70% 50% / 0.45)`;
+
   return (
     <div className="relative flex h-full min-h-0 flex-col">
       {llmReady && (
@@ -2237,11 +3388,11 @@ export default function ChatPane({
               title={`Model: ${modelLabel}`}
               className="flex min-h-[36px] min-w-0 flex-1 items-center gap-2 rounded-md border border-border bg-surface px-2.5 py-1 text-left transition-colors focus:border-subtle"
             >
-              <IconModel className="h-3.5 w-3.5 shrink-0 text-dim" />
+              <IconModel className="hidden h-3.5 w-3.5 shrink-0 text-dim sm:block" />
               <span className="min-w-0 flex-1 truncate font-mono text-xs text-text">
                 {modelLabel}
               </span>
-              <IconChevronDown className="h-3.5 w-3.5 shrink-0 text-faint" />
+              <IconChevronDown className="hidden h-3.5 w-3.5 shrink-0 text-faint sm:block" />
             </button>
             {showThinking && (
               <button
@@ -2250,18 +3401,37 @@ export default function ChatPane({
                 onClick={() => {
                   setPlusOpen(false);
                   setTodosOpen(false);
+                  setCtxOpen(false);
                   setThinkingOpen(true);
                 }}
                 aria-label="Thinking level"
                 title={`Thinking: ${thinkingLoading ? '…' : thinkingLabel || 'off'} — click to change`}
-                className={`flex min-h-[36px] shrink-0 items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors hover:text-text disabled:cursor-not-allowed disabled:opacity-60 ${thinkingColor.border} ${thinkingColor.text}`}
+                className={`flex min-h-[36px] shrink-0 items-center rounded-md border px-2.5 py-1 transition-colors hover:text-text disabled:cursor-not-allowed disabled:opacity-60 ${thinkingColor.border} ${thinkingColor.text}`}
               >
                 <IconBrain
                   className={`h-3.5 w-3.5 shrink-0 ${thinkingLoading ? 'animate-spin' : ''}`}
                 />
-                {!thinkingLoading && <span>{thinkingLabel || 'Off'}</span>}
               </button>
             )}
+            <button
+              type="button"
+              onClick={() => {
+                setPlusOpen(false);
+                setTodosOpen(false);
+                setThinkingOpen(false);
+                setCtxOpen((o) => !o);
+              }}
+              aria-label="Context usage"
+              title="Context usage — click for details and compaction"
+              className={`flex min-h-[36px] shrink-0 items-center rounded-md border px-2.5 py-1 transition-colors hover:text-text ${
+                ctxOpen ? 'bg-border' : ''
+              }`}
+              style={{ borderColor: ctxBorder }}
+            >
+              {/* While loading the ring shows 0%; the sweep animation plays
+                  when the real value lands. */}
+              <ContextRing ctx={ctxLoading || !ctx ? null : ctx} />
+            </button>
             <button
               type="button"
               onClick={() => openTools('perms')}
@@ -2273,17 +3443,16 @@ export default function ChatPane({
             </button>
             {isDesktop && toolsButton}
             {isDesktop && tasksButton}
-            {userKeys.length > 1 && (
-              <IconButton
-                data-map-toggle
-                onClick={() => setMapOpen((o) => !o)}
-                aria-label="Toggle message map"
-                title="Message map"
-                className={`h-9! w-9! shrink-0 ${mapOpen ? 'text-accent' : ''}`}
-              >
-                <IconMap className="h-4 w-4" />
-              </IconButton>
-            )}
+            <IconButton
+              data-map-toggle
+              onClick={() => setMapOpen((o) => !o)}
+              aria-label="Toggle message map"
+              title="Message map"
+              disabled={userKeys.length <= 1}
+              className={`h-9! w-9! shrink-0 rounded-md! border border-border ${mapOpen ? 'text-accent' : ''} disabled:opacity-40`}
+            >
+              <IconMap className="h-4 w-4" />
+            </IconButton>
           </div>
         </div>
       )}
@@ -2307,49 +3476,6 @@ export default function ChatPane({
                 Retry
               </Button>
             </div>
-          </div>
-        )}
-        {askPrompt && streaming && (
-          <div className="mx-auto mb-3 w-full max-w-2xl rounded-lg border border-accent/50 bg-surface p-3 text-sm">
-            <div className="flex items-start gap-2">
-              <IconChat className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
-              <p className="min-w-0 flex-1 whitespace-pre-wrap break-words text-text">
-                {askPrompt.question}
-              </p>
-            </div>
-            {askPrompt.options.length > 0 && (
-              <div className="mt-2.5 flex flex-wrap gap-1.5">
-                {askPrompt.options.map((o) => (
-                  <Button
-                    key={o}
-                    variant="outline"
-                    className="h-8 px-3 text-xs"
-                    onClick={() => void answerAsk(o)}
-                  >
-                    {o}
-                  </Button>
-                ))}
-              </div>
-            )}
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                void answerAsk(askText);
-              }}
-              className="mt-2.5 flex items-end gap-2"
-            >
-              <div className="flex-1">
-                <Input
-                  value={askText}
-                  onChange={(e) => setAskText(e.target.value)}
-                  placeholder={askPrompt.options.length > 0 ? '…or type an answer' : 'Type an answer…'}
-                  autoComplete="off"
-                />
-              </div>
-              <Button type="submit" variant="outline" className="h-[42px] sm:h-[38px]" disabled={!askText.trim()}>
-                Answer
-              </Button>
-            </form>
           </div>
         )}
         {permPrompt && streaming && (
@@ -2395,22 +3521,49 @@ export default function ChatPane({
         )}
         {!loading && !loadError && items.length > 0 && (
           <div className="mx-auto flex max-w-2xl flex-col gap-3">
-            {items.map((it, i) => (
-              <div key={it.key} data-msg-key={it.key}>
-                <MessageRow
-                  item={it}
-                  isLast={i === lastMsgIdx}
-                  streaming={streaming}
-                  turnEnd={turnEndKeys.has(it.key)}
-                  validTag={validTag}
-                  onEdit={editUserMessage}
-                  onRewind={requestRewind}
-                  onRegenerate={regenerate}
-                  onEditStart={setItemEditing}
-                  onImageClick={openLightbox}
-                />
+            {items.map((it, i) => {
+              // Consecutive collapsed tool summaries read better packed
+              // closer together than as full message blocks.
+              const prev = items[i - 1];
+              // Only pack onto a row that renders nothing below its summary
+              // (no content, no usage line) — otherwise the negative margin
+              // would overlap that content. Usage is persisted on every
+              // assistant message; the line only renders for turn finals.
+              const prevBare =
+                prev !== undefined &&
+                prev.kind === 'msg' &&
+                !prev.content &&
+                !(prev.usage && turnEndKeys.has(prev.key));
+              const condense =
+                prev !== undefined && isCollapsedToolsRow(it) && isCollapsedToolsRow(prev) && prevBare;
+              return (
+                <div
+                  key={it.key}
+                  data-msg-key={it.key}
+                  className={condense ? '-mt-2.5' : undefined}
+                >
+                  <MessageRow
+                    item={it}
+                    isLast={i === lastMsgIdx}
+                    streaming={streaming}
+                    turnEnd={turnEndKeys.has(it.key)}
+                    validTag={validTag}
+                    onEdit={editUserMessage}
+                    onRewind={requestRewind}
+                    onRegenerate={regenerate}
+                    onEditStart={setItemEditing}
+                    onImageClick={openLightbox}
+                    onAskAnswered={(answer) => void answerAsk(answer)}
+                  />
+                </div>
+              );
+            })}
+            {!streaming && (resuming || runActive) && (
+              <div className="flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-xs text-dim">
+                <Spinner className="h-3.5 w-3.5 shrink-0" />
+                {resuming ? 'Resuming the interrupted generation…' : 'Generation still running…'}
               </div>
-            ))}
+            )}
           </div>
         )}
       </div>
@@ -2428,7 +3581,7 @@ export default function ChatPane({
             mapOpen ? 'opacity-100' : 'pointer-events-none opacity-0'
           }`}
         >
-          <div className="flex h-full flex-col items-center justify-between">
+          <div className="flex h-full flex-col items-center justify-center gap-2">
             {buckets.map((b, i) => (
               <button
                 key={b.key}
@@ -2462,6 +3615,101 @@ export default function ChatPane({
       )}
 
       {localStatus && <div className="px-3 py-1 text-center text-xs text-subtle">{localStatus}</div>}
+      {queued.length > 0 && (
+        <div className="shrink-0 border-t border-accent/30 bg-bg px-2 pt-2 pb-1 md:px-3">
+          <div className="mx-auto w-full max-w-2xl rounded-lg border border-accent/40 bg-surface p-2 text-xs shadow-lg shadow-black/20">
+            <div className="mb-1.5 flex items-center gap-1.5 px-1 text-[10px] font-medium uppercase tracking-wider text-faint">
+              <IconSend className="h-3 w-3 text-accent" />
+              Queued ({queued.length})
+            </div>
+            {queued.map((m, i) => (
+              <div
+                key={m.id}
+                className="mb-1 flex items-center gap-1 rounded-md border border-border/80 bg-surface/70 px-2 py-1.5 last:mb-0"
+              >
+                {queued.length > 1 && (
+                  <span className="w-4 shrink-0 text-right font-mono text-[10px] text-faint">
+                    {i + 1}.
+                  </span>
+                )}
+                {queueEditId === m.id ? (
+                  <Input
+                    autoFocus
+                    value={queueEditText}
+                    onChange={(e) => setQueueEditText(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        void editQueued(m.id, queueEditText);
+                        setQueueEditing(null, '');
+                      } else if (e.key === 'Escape') {
+                        setQueueEditing(null, '');
+                      }
+                    }}
+                    onBlur={() => {
+                      if (queueEditId === m.id) {
+                        void editQueued(m.id, queueEditText);
+                        setQueueEditing(null, '');
+                      }
+                    }}
+                    className="h-7 min-w-0 flex-1 px-1.5 text-xs"
+                  />
+                ) : (
+                  <span className="min-w-0 flex-1 truncate text-dim">{m.text}</span>
+                )}
+                {queued.length > 1 && (
+                  <span className="flex shrink-0 flex-col">
+                    <button
+                      type="button"
+                      onClick={() => void moveQueued(i, -1)}
+                      disabled={i === 0}
+                      aria-label="Move up"
+                      title="Move up"
+                      className="flex h-4 w-5 items-center justify-center rounded text-faint transition-colors hover:text-text disabled:opacity-30"
+                    >
+                      <IconChevronUp className="h-3 w-3" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void moveQueued(i, 1)}
+                      disabled={i === queued.length - 1}
+                      aria-label="Move down"
+                      title="Move down"
+                      className="flex h-4 w-5 items-center justify-center rounded text-faint transition-colors hover:text-text disabled:opacity-30"
+                    >
+                      <IconChevronDown className="h-3 w-3" />
+                    </button>
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (queueEditId === m.id) {
+                      setQueueEditing(null, '');
+                    } else {
+                      setQueueEditing(m.id, m.text);
+                    }
+                  }}
+                  aria-label="Edit queued message"
+                  title="Edit"
+                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-faint transition-colors hover:bg-border hover:text-text"
+                >
+                  <IconPencil className="h-3 w-3" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void steerQueued(m.id)}
+                  disabled={queueEditId === m.id}
+                  aria-label="Steer now"
+                  title="Steer into the current run — picked up as soon as the current tool call finishes"
+                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-accent/40 text-accent transition-colors hover:bg-accent/10 disabled:opacity-40"
+                >
+                  <IconSend className="h-3 w-3" />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       {llmReady === true ? (
         <div
           className={
@@ -2555,6 +3803,17 @@ export default function ChatPane({
                   >
                     <IconBrain className="h-4 w-4 shrink-0 text-dim" />
                     Model thinking
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPlusOpen(false);
+                      setSessionsOpen(true);
+                    }}
+                    className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm text-text transition-colors hover:bg-border"
+                  >
+                    <IconLayers className="h-4 w-4 shrink-0 text-dim" />
+                    Sessions
                   </button>
                   {!isDesktop && (
                     <button
@@ -2681,6 +3940,60 @@ export default function ChatPane({
                           </button>
                         ),
                       )
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
+
+            {ctxOpen && (
+              <>
+                <button
+                  type="button"
+                  aria-label="Close context"
+                  className="fixed inset-0 z-20 cursor-default"
+                  onClick={() => setCtxOpen(false)}
+                />
+                <div
+                  className={`absolute z-30 w-64 overflow-hidden rounded-lg border bg-surface ${
+                    expanded
+                      ? 'bottom-2 left-2 border-border-strong shadow-[0_0_24px_rgba(0,0,0,0.7)]'
+                      : 'bottom-full left-2 mb-1 border-border shadow-lg'
+                  }`}
+                >
+                  <div className="border-b border-border px-3 py-2 text-xs font-medium text-subtle">
+                    Context
+                  </div>
+                  <div className="flex flex-col gap-2.5 px-3 py-2.5">
+                    {ctx && !ctxLoading ? (
+                      <>
+                        <div className="flex items-center gap-2.5">
+                          <ContextRing ctx={ctx} />
+                          <div className="min-w-0 flex-1">
+                            <div className="text-sm font-medium text-text">
+                              {Math.round((ctx.used / ctx.budget) * 100)}% full
+                            </div>
+                            <div className="text-[11px] text-faint">
+                              {ctx.used.toLocaleString()} of {ctx.budget.toLocaleString()} tokens
+                            </div>
+                          </div>
+                        </div>
+                        <p className="text-[11px] leading-relaxed text-faint">
+                          Compaction is recommended once the conversation passes{' '}
+                          {ctx.threshold.toLocaleString()} tokens — it summarizes the history to
+                          free up context.
+                        </p>
+                        <Button
+                          variant="outline"
+                          className="h-8 w-full text-xs"
+                          disabled={ctxCompacting}
+                          onClick={() => void compactNow()}
+                        >
+                          {ctxCompacting ? <Spinner className="h-3.5 w-3.5" /> : 'Compact now'}
+                        </Button>
+                      </>
+                    ) : (
+                      <p className="text-xs text-faint">Loading context usage…</p>
                     )}
                   </div>
                 </div>
@@ -2818,6 +4131,20 @@ export default function ChatPane({
         models={catalogModels}
         onProviderChange={changeProvider}
         onModelChange={changeModel}
+      />
+
+      <SessionsModal
+        open={sessionsOpen}
+        onClose={() => setSessionsOpen(false)}
+        sessions={sessions}
+        activeId={sessionId}
+        onSwitch={setSessionId}
+        onNew={() => void createNewSession()}
+        onRename={(id, name) => {
+          setSessions((prev) => prev.map((s) => (s.id === id ? { ...s, name } : s)));
+          void api.renameSession(projectId, id, name).catch(() => {});
+        }}
+        creating={creatingSession}
       />
 
       <Dialog

@@ -13,7 +13,7 @@ import (
 // existed are refreshed lazily so the model lists carry vision flags.
 func (s *Server) handleListProviders(w http.ResponseWriter, r *http.Request) {
 	cat := s.providerCatalog()
-	if cat == nil || !llm.CatalogHasVision(cat) || !llm.CatalogHasReasoning(cat) || !llm.CatalogHasReasoningLevels(cat) {
+	if cat == nil || !llm.CatalogHasVision(cat) || !llm.CatalogHasReasoning(cat) || !llm.CatalogHasReasoningLevels(cat) || !llm.CatalogHasContext(cat) {
 		if fresh, err := llm.RefreshCatalog(r.Context()); err == nil {
 			cat = fresh
 			if data, err := json.Marshal(fresh); err == nil {

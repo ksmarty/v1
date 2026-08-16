@@ -22,6 +22,7 @@ import (
 
 	"golang.org/x/net/html"
 
+	"v1/internal/llm"
 	"v1/internal/mcp"
 	"v1/internal/store"
 )
@@ -35,17 +36,27 @@ type PreviewStarter interface {
 type Executor struct {
 	Root           string
 	ProjectID      string
+	SessionID      string // chat session the turn belongs to (background jobs)
 	PreviewCommand string
 	Previews       PreviewStarter
 	Store          *store.Store
+	Background     *BackgroundManager // detached commands (run_command_background)
+	// BackgroundNotify persists a finished background command's result into
+	// the chat transcript (wired by the server).
+	BackgroundNotify func(*BackgroundJob)
 	OnTodos        func([]store.Todo)
 	OnMemories     func([]store.Memory)
 	OnFileChange   func()
+	// OnProjectRename notifies the UI when set_project_name renames the
+	// project (nil when the turn cannot rename).
+	OnProjectRename func(string)
 	MCP            *mcp.Manager // optional: namespaced mcp_<server>_<tool> tools
 	Perm           Resolver     // optional: gates tool calls via allow/deny/ask
-	// OnAsk asks the user a question and waits for their answer (the ask_user
-	// tool); nil when the turn cannot prompt.
-	OnAsk func(ctx context.Context, question string, options []string) (string, error)
+	PlanMode       bool         // read-only planning turn: state-changing tools refused
+	RTKEnabled     bool         // run_command output is piped through RTK (when installed)
+	// OnAsk asks the user one or more questions and waits for the answers
+	// (the ask_user tool); nil when the turn cannot prompt.
+	OnAsk func(ctx context.Context, questions []AskQuestion) ([]AskAnswer, error)
 	// Screenshot captures the app preview as a PNG (nil when the model cannot
 	// read images). PendingImage carries the PNG from a screenshot_app call to
 	// the agent loop, which attaches it to the conversation.
@@ -62,8 +73,39 @@ type Executor struct {
 	FetchGuard func(rawURL string) error
 }
 
+// planBlockedTools: state-changing tools that are refused in plan mode.
+var planBlockedTools = map[string]bool{
+	"write_file":      true,
+	"edit_file":       true,
+	"delete_file":     true,
+	"move_file":       true,
+	"run_command":     true,
+	"restart_preview": true,
+	"screenshot_app":  true,
+	"set_todos":          true,
+	"set_project_name":   true,
+	"run_command_background": true,
+	"remember":           true,
+	"forget":             true,
+}
+
+// planSafeTools filters a tool list down to the read-only ones for plan mode.
+func planSafeTools(in []llm.Tool) []llm.Tool {
+	out := make([]llm.Tool, 0, len(in))
+	for _, t := range in {
+		if planBlockedTools[t.Function.Name] {
+			continue
+		}
+		out = append(out, t)
+	}
+	return out
+}
+
 // Execute runs one tool call and returns the result string fed back to the LLM.
 func (e *Executor) Execute(ctx context.Context, name, argsJSON string) (string, error) {
+	if e.PlanMode && (planBlockedTools[name] || strings.HasPrefix(name, "mcp_")) {
+		return "", fmt.Errorf("%s is not available in plan mode — planning only reads files and pages", name)
+	}
 	switch name {
 	case "list_files":
 		return e.listFiles(argsJSON)
@@ -87,6 +129,10 @@ func (e *Executor) Execute(ctx context.Context, name, argsJSON string) (string, 
 		return e.restartPreview()
 	case "screenshot_app":
 		return e.screenshotApp(ctx, argsJSON)
+	case "set_project_name":
+		return e.setProjectName(argsJSON)
+	case "run_command_background":
+		return e.runCommandBackground(ctx, argsJSON)
 	case "set_todos":
 		return e.setTodos(argsJSON)
 	case "remember":
@@ -235,29 +281,132 @@ func (e *Executor) emitMemories() {
 	}
 }
 
-// askUser blocks the turn until the user answers through the ask endpoint.
+// AskQuestion is one question for the ask_user tool; AskAnswer pairs it with
+// the user's response.
+type AskQuestion struct {
+	Question string   `json:"question"`
+	Options  []string `json:"options"`
+}
+
+type AskAnswer struct {
+	Question string `json:"question"`
+	Answer   string `json:"answer"`
+}
+
+// askUser blocks the turn until the user answers through the ask endpoint. A
+// single question can be passed as "question" (with optional "options"); pass
+// "questions" as an array to ask several in sequence — the user steps through
+// them and confirms all answers at once.
 func (e *Executor) askUser(ctx context.Context, argsJSON string) (string, error) {
 	var args struct {
-		Question string   `json:"question"`
-		Options  []string `json:"options"`
+		Question  string        `json:"question"`
+		Options   []string      `json:"options"`
+		Questions []AskQuestion `json:"questions"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 		return "", fmt.Errorf("invalid arguments: %w", err)
 	}
-	if strings.TrimSpace(args.Question) == "" {
+	var qs []AskQuestion
+	if len(args.Questions) > 0 {
+		qs = args.Questions
+	} else if strings.TrimSpace(args.Question) != "" {
+		qs = []AskQuestion{{Question: args.Question, Options: args.Options}}
+	} else {
 		return "", fmt.Errorf("question is required")
 	}
-	if len(args.Options) > 4 {
-		args.Options = args.Options[:4]
+	if len(qs) > 8 {
+		qs = qs[:8]
+	}
+	for i := range qs {
+		qs[i].Question = strings.TrimSpace(qs[i].Question)
+		if qs[i].Question == "" {
+			return "", fmt.Errorf("every question needs a question")
+		}
+		if len(qs[i].Options) > 4 {
+			qs[i].Options = qs[i].Options[:4]
+		}
 	}
 	if e.OnAsk == nil {
 		return "", fmt.Errorf("asking the user is unavailable in this context")
 	}
-	answer, err := e.OnAsk(ctx, args.Question, args.Options)
+	answers, err := e.OnAsk(ctx, qs)
 	if err != nil {
 		return "", err
 	}
-	return toolResult(map[string]any{"answer": answer}), nil
+	if len(answers) == 1 {
+		return toolResult(map[string]any{"answer": answers[0].Answer}), nil
+	}
+	return toolResult(map[string]any{"answers": answers}), nil
+}
+
+// runCommandBackground starts a command detached from the turn: the tool
+// returns immediately with the job id, and the result is injected into the
+// conversation as a "[Background #id: …]" user message when the command
+// finishes. The agent can keep working instead of blocking on long commands.
+func (e *Executor) runCommandBackground(ctx context.Context, argsJSON string) (string, error) {
+	var args struct {
+		Command        string   `json:"command"`
+		TimeoutSeconds *float64 `json:"timeout_seconds"`
+	}
+	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
+		return "", fmt.Errorf("invalid arguments: %w", err)
+	}
+	if args.Command == "" {
+		return "", fmt.Errorf("command is required")
+	}
+	if e.Perm != nil {
+		ok, err := e.Perm.Request(ctx, "run_command_background", args.Command)
+		if err != nil {
+			return "", err
+		}
+		if !ok {
+			return "", fmt.Errorf("command was not allowed")
+		}
+	}
+	if e.Background == nil {
+		return "", fmt.Errorf("background commands are unavailable in this context")
+	}
+	timeout := 600 * time.Second
+	if args.TimeoutSeconds != nil && *args.TimeoutSeconds > 0 {
+		timeout = time.Duration(*args.TimeoutSeconds * float64(time.Second))
+		if timeout > 3600*time.Second {
+			timeout = 3600 * time.Second
+		}
+	}
+	id, err := e.Background.Start(e.Root, args.Command, timeout, e.SessionID, e.BackgroundNotify)
+	if err != nil {
+		return "", err
+	}
+	return toolResult(map[string]any{"id": id[:8], "status": "running", "note": "the result arrives in the chat when the command finishes; continue with other work meanwhile"}), nil
+}
+
+// setProjectName renames the project — the agent uses it at the start of a
+// new project so the display name comes from the work, not the first prompt.
+func (e *Executor) setProjectName(argsJSON string) (string, error) {
+	var args struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
+		return "", fmt.Errorf("invalid arguments: %w", err)
+	}
+	name := strings.TrimSpace(args.Name)
+	r := []rune(name)
+	if r == nil || len(r) == 0 {
+		return "", fmt.Errorf("name is required")
+	}
+	if len(r) > 80 {
+		name = string(r[:80])
+	}
+	if e.Store == nil {
+		return "", fmt.Errorf("project store unavailable")
+	}
+	if err := e.Store.RenameProject(e.ProjectID, name); err != nil {
+		return "", err
+	}
+	if e.OnProjectRename != nil {
+		e.OnProjectRename(name)
+	}
+	return toolResult(map[string]any{"ok": true, "name": name}), nil
 }
 
 // setTodos replaces the project's task list. The agent is expected to pass the
@@ -1016,6 +1165,7 @@ func (e *Executor) runCommand(ctx context.Context, argsJSON string) (string, err
 	var args struct {
 		Command        string   `json:"command"`
 		TimeoutSeconds *float64 `json:"timeout_seconds"`
+		RTK            *bool    `json:"rtk"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 		return "", fmt.Errorf("invalid arguments: %w", err)
@@ -1040,7 +1190,19 @@ func (e *Executor) runCommand(ctx context.Context, argsJSON string) (string, err
 		}
 	}
 
-	cmd := exec.Command("sh", "-c", args.Command)
+	// RTK (Rust Token Killer) wraps the command and compresses its output
+	// before it reaches the model: failures are preserved, successes are
+	// condensed. Unknown commands pass through unchanged; without the binary
+	// the command runs as-is. The model can opt a single call out with
+	// "rtk": false when RTK mangles or hides output it needs.
+	cmdLine := args.Command
+	useRTK := e.RTKEnabled && (args.RTK == nil || *args.RTK)
+	if useRTK {
+		if _, err := exec.LookPath("rtk"); err == nil {
+			cmdLine = "rtk " + cmdLine
+		}
+	}
+	cmd := exec.Command("sh", "-c", cmdLine)
 	cmd.Dir = e.Root
 	cmd.Env = os.Environ()
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}

@@ -40,6 +40,9 @@ type ProviderModel struct {
 	Name       string         `json:"name"`
 	ImageInput bool           `json:"imageInput,omitempty"`
 	Reasoning  *ReasoningInfo `json:"reasoning,omitempty"`
+	// Context is the model's context window in tokens, when published
+	// (models.dev limit.context).
+	Context int `json:"context,omitempty"`
 }
 
 // Provider is one LLM provider in the catalog.
@@ -153,6 +156,7 @@ func canonicalBaseURL(u string) string {
 // models.dev providers" UI with a usable base URL.
 var knownBaseURLs = map[string]string{
 	"openai":     "https://api.openai.com/v1",
+	"anthropic":  "https://api.anthropic.com/v1",
 	"opencode":   "https://opencode.ai/zen/v1",
 	"google":     "https://generativelanguage.googleapis.com/v1beta/openai/",
 	"groq":       "https://api.groq.com/openai/v1",
@@ -185,6 +189,9 @@ type modelsDevDoc struct {
 		} `json:"modalities"`
 		Reasoning        json.RawMessage  `json:"reasoning"`
 		ReasoningOptions []reasoningOption `json:"reasoning_options"`
+		Limit            struct {
+			Context int `json:"context"`
+		} `json:"limit"`
 	} `json:"models"`
 }
 
@@ -265,6 +272,85 @@ func ProviderThinking(ctx context.Context, baseURL, apiKey, model string) *Think
 	thinkingCache.entries[key] = thinkingEntry{opts: opts, fetchedAt: time.Now()}
 	thinkingCache.mu.Unlock()
 	return opts
+}
+
+// modelContextCache caches per-model context windows from the provider's
+// /models endpoint, keyed by baseURL|model.
+var modelContextCache = struct {
+	sync.Mutex
+	entries map[string]modelContextEntry
+}{entries: map[string]modelContextEntry{}}
+
+type modelContextEntry struct {
+	context   int
+	fetchedAt time.Time
+}
+
+// ModelContextLength returns the model's context window in tokens from the
+// provider's /models endpoint, or 0 when the provider publishes none.
+func ModelContextLength(ctx context.Context, baseURL, apiKey, model string) int {
+	key := baseURL + "|" + model
+	modelContextCache.Lock()
+	if e, ok := modelContextCache.entries[key]; ok && time.Since(e.fetchedAt) < thinkingCacheTTL {
+		n := e.context
+		modelContextCache.Unlock()
+		return n
+	}
+	modelContextCache.Unlock()
+
+	n := fetchModelContext(ctx, baseURL, apiKey, model)
+
+	modelContextCache.Lock()
+	if modelContextCache.entries == nil {
+		modelContextCache.entries = map[string]modelContextEntry{}
+	}
+	modelContextCache.entries[key] = modelContextEntry{context: n, fetchedAt: time.Now()}
+	modelContextCache.Unlock()
+	return n
+}
+
+// fetchModelContext reads the model's context window from the provider's
+// /models response. OpenAI-compatible providers vary in the field name —
+// context_length, max_context_length and context_window are all common.
+func fetchModelContext(ctx context.Context, baseURL, apiKey, model string) int {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimSuffix(baseURL, "/")+"/models", nil)
+	if err != nil {
+		return 0
+	}
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil || resp.StatusCode != http.StatusOK {
+		return 0
+	}
+	defer resp.Body.Close()
+	var out struct {
+		Data []struct {
+			ID               string `json:"id"`
+			ContextLength    int    `json:"context_length"`
+			MaxContextLength int    `json:"max_context_length"`
+			ContextWindow    int    `json:"context_window"`
+			Context          int    `json:"context"`
+		} `json:"data"`
+	}
+	if json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&out) != nil {
+		return 0
+	}
+	for _, m := range out.Data {
+		if m.ID != model {
+			continue
+		}
+		switch {
+		case m.ContextLength > 0:
+			return m.ContextLength
+		case m.MaxContextLength > 0:
+			return m.MaxContextLength
+		case m.ContextWindow > 0:
+			return m.ContextWindow
+		case m.Context > 0:
+			return m.Context
+		}
+	}
+	return 0
 }
 
 // thinkingModelEntry mirrors one entry of a /models response.
@@ -538,6 +624,7 @@ func modelSubset(fp modelsDevDoc) []ProviderModel {
 			Name:       name,
 			ImageInput: image,
 			Reasoning:  parseReasoning(m.Reasoning, m.ReasoningOptions),
+			Context:    m.Limit.Context,
 		})
 	}
 	return models
@@ -550,6 +637,19 @@ func CatalogHasReasoning(c *Catalog) bool {
 	for _, p := range c.Providers {
 		for _, m := range p.Models {
 			if m.Reasoning != nil {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// CatalogHasContext reports whether any model carries a context window —
+// stale caches built before the field existed fail this.
+func CatalogHasContext(c *Catalog) bool {
+	for _, p := range c.Providers {
+		for _, m := range p.Models {
+			if m.Context > 0 {
 				return true
 			}
 		}
@@ -604,10 +704,11 @@ func applyFresh(p *Provider, fp modelsDevDoc) {
 	p.Models = modelSubset(fp)
 }
 
-// RefreshCatalog fetches the current models.dev data and rebuilds the curated
-// catalog: provider ids and baseURLs stay exactly as in the embedded snapshot
-// (the source of truth for base URLs); name/keyHint/doc/models are updated
-// from the fresh data.
+// RefreshCatalog fetches the current models.dev data and rebuilds the
+// catalog: the embedded snapshot pins a curated core (ids and baseURLs stay
+// as pinned there), and every other OpenAI-compatible provider on models.dev
+// joins dynamically — so new providers appear after a refresh without a code
+// change. Entries without a usable endpoint are skipped.
 func RefreshCatalog(ctx context.Context) (*Catalog, error) {
 	snapshot, err := EmbeddedCatalog()
 	if err != nil {
@@ -618,14 +719,34 @@ func RefreshCatalog(ctx context.Context) (*Catalog, error) {
 		return nil, err
 	}
 
-	out := &Catalog{Source: snapshot.Source, Providers: make([]Provider, 0, len(snapshot.Providers))}
+	out := &Catalog{Source: snapshot.Source, Providers: make([]Provider, 0, len(fresh))}
+	seen := make(map[string]bool, len(snapshot.Providers))
 	for _, sp := range snapshot.Providers {
 		p := sp // keep id and baseURL from the snapshot
 		if fp, ok := fresh[sp.ID]; ok {
 			applyFresh(&p, fp)
 		}
+		seen[sp.ID] = true
 		out.Providers = append(out.Providers, p)
 	}
+	for fid, fp := range fresh {
+		if seen[fid] {
+			continue
+		}
+		base := fp.Api
+		if base == "" {
+			base = knownBaseURLs[fid]
+		}
+		if base == "" {
+			continue // no known OpenAI-compatible endpoint
+		}
+		p := Provider{ID: fid, BaseURL: strings.TrimSuffix(base, "/")}
+		applyFresh(&p, fp)
+		out.Providers = append(out.Providers, p)
+	}
+	sort.Slice(out.Providers, func(i, j int) bool {
+		return out.Providers[i].Name < out.Providers[j].Name
+	})
 	return out, nil
 }
 
@@ -646,6 +767,16 @@ func FindProvider(ctx context.Context, id string) (*Provider, error) {
 		return &p, nil
 	}
 	return nil, nil
+}
+
+// providerRank gives well-known majors a popularity head start in search
+// results. models.dev publishes no popularity signal, so this small curated
+// ranking (order only — availability is unaffected) pushes the majors to the
+// top; the model-count proxy and then name follow.
+var providerRank = map[string]int{
+	"openai": 0, "anthropic": 1, "google": 2, "deepseek": 3, "openrouter": 4,
+	"mistral": 5, "meta": 6, "xai": 7, "groq": 8, "cohere": 9, "zhipuai": 10,
+	"perplexity": 11,
 }
 
 // SearchProviders looks up OpenAI-compatible providers on models.dev whose id
@@ -677,7 +808,21 @@ func SearchProviders(ctx context.Context, query string) ([]Provider, error) {
 		out = append(out, p)
 	}
 	sort.Slice(out, func(i, j int) bool {
-		return out[i].Name < out[j].Name
+		rankOf := func(id string) int {
+			if r, ok := providerRank[id]; ok {
+				return r
+			}
+			return 1000 // unranked providers sort after the majors
+		}
+		ri, mi, ni := rankOf(out[i].ID), len(out[i].Models), out[i].Name
+		rj, mj, nj := rankOf(out[j].ID), len(out[j].Models), out[j].Name
+		if ri != rj {
+			return ri < rj
+		}
+		if mi != mj {
+			return mi > mj
+		}
+		return ni < nj
 	})
 	return out, nil
 }

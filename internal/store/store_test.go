@@ -16,13 +16,13 @@ func TestCompactionSnapshotRoundTrip(t *testing.T) {
 	if err := s.CreateProject(p); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.SaveCompactionSnapshot(p.ID, "first summary", 7); err != nil {
+	if err := s.SaveCompactionSnapshot(p.ID, "sess1", "first summary", 7); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.SaveCompactionSnapshot(p.ID, "latest summary", 12); err != nil {
+	if err := s.SaveCompactionSnapshot(p.ID, "sess1", "latest summary", 12); err != nil {
 		t.Fatal(err)
 	}
-	got, err := s.GetCompactionSnapshot(p.ID)
+	got, err := s.GetCompactionSnapshot(p.ID, "sess1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -215,3 +215,54 @@ func TestMigrateLegacySessionDropped(t *testing.T) {
 	}
 }
 
+func TestMergeContinuedTurn(t *testing.T) {
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	p := &Project{ID: NewID(), Name: "t", Path: t.TempDir()}
+	if err := s.CreateProject(p); err != nil {
+		t.Fatal(err)
+	}
+	sid, err := s.EnsureDefaultSession(p.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	userID, _ := s.AddMessage(p.ID, sid.ID, "user", "hello", "", "", "", "", "")
+	partialID, _ := s.AddMessage(p.ID, sid.ID, "assistant", "Partial reply", "", "", "thinking", "", "")
+	_, _ = s.AddMessage(p.ID, sid.ID, "error", "boom", "", "", "", "", "")
+	contID, _ := s.AddMessage(p.ID, sid.ID, "assistant", " continuation text", "", "", "more thinking", `{"input":1}`, "")
+	errID, _ := s.AddMessage(p.ID, sid.ID, "error", "boom2", "", "", "", "", "")
+
+	merged, err := s.MergeContinuedTurn(p.ID, sid.ID, partialID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if merged != partialID {
+		t.Fatalf("merged = %d", merged)
+	}
+	msgs, err := s.ListMessages(p.ID, sid.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 3 { // user, merged partial, (no error/continuation)
+		t.Fatalf("messages after merge: %d", len(msgs))
+	}
+	partial, _ := s.GetMessage(p.ID, partialID)
+	if partial.Content != "Partial reply\n\ncontinuation text" {
+		t.Fatalf("merged content = %q", partial.Content)
+	}
+	if partial.Reasoning != "thinking\nmore thinking" {
+		t.Fatalf("merged reasoning = %q", partial.Reasoning)
+	}
+	if partial.Usage != `{"input":1}` {
+		t.Fatalf("merged usage = %q", partial.Usage)
+	}
+	for _, id := range []int64{contID, errID} {
+		if _, err := s.GetMessage(p.ID, id); err == nil {
+			t.Fatalf("message %d should be gone", id)
+		}
+	}
+	_ = userID
+}

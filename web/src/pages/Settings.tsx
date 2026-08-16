@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type FormEvent, type ReactNode } from 'react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { SiVercel } from 'react-icons/si';
-import { api, type SettingsUpdate } from '../api';
+import { api, clearClientCaches, type SettingsUpdate } from '../api';
 import { testNotification } from '../notify';
 import type { Settings as SettingsType, UserInfo } from '../types';
 import {
@@ -11,6 +11,8 @@ import {
   getDebugHud,
   getJsonPretty,
   getNotifyEnabled,
+  getThinkingCollapsed,
+  getToolCallsCollapsed,
   iosVersion,
   isIOS,
   isStandalone,
@@ -20,6 +22,8 @@ import {
   setDebugHud,
   setJsonPretty,
   setNotifyEnabled,
+  setThinkingCollapsed,
+  setToolCallsCollapsed,
   type ChatSide,
   type ChatTab,
 } from '../utils';
@@ -71,9 +75,9 @@ import ToolSettings, { type ToolsTab } from '../components/ToolSettings';
 
 const NAV = [
   { id: 'llm', label: 'LLM & providers', icon: <IconModel className="h-4 w-4" /> },
+  { id: 'tools', label: 'Tools & permissions', icon: <IconWrench className="h-4 w-4" /> },
   { id: 'github', label: 'GitHub', icon: <IconGitHub className="h-4 w-4" /> },
   { id: 'vercel', label: 'Vercel', icon: <SiVercel className="h-4 w-4" /> },
-  { id: 'tools', label: 'Tools & permissions', icon: <IconWrench className="h-4 w-4" /> },
   { id: 'appearance', label: 'Appearance', icon: <IconSettings className="h-4 w-4" /> },
   { id: 'auth', label: 'Auth', icon: <IconLock className="h-4 w-4" /> },
   { id: 'users', label: 'Users', icon: <IconUsers className="h-4 w-4" />, admin: true },
@@ -100,6 +104,8 @@ const SETTINGS_SEARCH: {
   { id: 'sec-system-prompt', page: 'llm', label: 'Global system prompt', hint: 'Extra instructions for every chat', keywords: 'prompt instructions behavior context rules system agent' },
   { id: 'sec-thinking-default', page: 'llm', label: 'Default thinking level', hint: 'Off / low / medium / high / xhigh / max', keywords: 'thinking reasoning effort level default tokens model' },
   { id: 'sec-toon', page: 'llm', label: 'TOON', hint: 'Token-efficient tool result encoding', keywords: 'toon tokens efficient encode tool results format compact json' },
+  { id: 'sec-rtk', page: 'llm', label: 'RTK', hint: 'Compress run_command output', keywords: 'rtk rust token killer command output compress filter tokens run_command' },
+  { id: 'sec-context-threshold', page: 'llm', label: 'Context compaction', hint: 'Percent of context before auto compaction', keywords: 'context compaction threshold percent auto compact tokens' },
   { id: 'sec-github', page: 'github', label: 'GitHub', hint: 'Personal access token', keywords: 'github token pat repo import push auth' },
   { id: 'sec-github', page: 'github', label: 'GitHub OAuth', hint: 'OAuth App client ID', keywords: 'github oauth client id connect login' },
   { id: 'sec-vercel', page: 'vercel', label: 'Vercel', hint: 'Deploy token', keywords: 'vercel deploy token push hosting deploy' },
@@ -110,6 +116,8 @@ const SETTINGS_SEARCH: {
   { id: 'sec-chat-side', page: 'appearance', label: 'Chat side', hint: 'Chat pane left or right', keywords: 'chat side left right desktop layout appearance' },
   { id: 'sec-chat-tabs', page: 'appearance', label: 'Chat tabs', hint: 'Reorder and hide project tabs', keywords: 'tabs chat files terminal git memories project order hide drag' },
   { id: 'sec-tool-calls', page: 'appearance', label: 'Tool calls', hint: 'Pretty-print JSON', keywords: 'tool calls json pretty print format result arguments' },
+  { id: 'sec-thinking-collapsed', page: 'appearance', label: 'Thinking', hint: 'Collapse reasoning blocks by default', keywords: 'thinking reasoning collapse blocks default stream hide' },
+  { id: 'sec-clear-cache', page: 'llm', label: 'Cached data', hint: 'Clear the provider catalog cache', keywords: 'cache clear providers catalog thinking metadata refetch reset' },
   { id: 'sec-auth', page: 'auth', label: 'Auth', hint: 'Change the password', keywords: 'password auth login security change password' },
   { id: 'sec-users', page: 'users', label: 'Users', hint: 'Admin: create and delete accounts', keywords: 'users accounts admin create delete signup password login' },
   { id: 'sec-notifications', page: 'appearance', label: 'Notifications', hint: 'Turn-finished alerts', keywords: 'notifications notify alerts push ios pwa banner turn' },
@@ -251,6 +259,209 @@ function JsonPrettyControl() {
           {v ? 'On' : 'Off'}
         </button>
       ))}
+    </div>
+  );
+}
+
+function ToolCallsCollapseControl() {
+  const [on, setOn] = useState(() => getToolCallsCollapsed());
+
+  const choose = (v: boolean) => {
+    setOn(v);
+    setToolCallsCollapsed(v);
+  };
+
+  return (
+    <div className="grid w-full max-w-xs grid-cols-2 gap-1 rounded-lg border border-border bg-surface p-1">
+      {([false, true] as const).map((v) => (
+        <button
+          key={String(v)}
+          type="button"
+          onClick={() => choose(v)}
+          className={`min-h-[36px] rounded-md text-sm transition-colors ${
+            on === v ? 'bg-border text-text' : 'text-dim hover:text-text'
+          }`}
+        >
+          {v ? 'On' : 'Off'}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function ThinkingCollapsedControl() {
+  const [on, setOn] = useState(() => getThinkingCollapsed());
+
+  const choose = (v: boolean) => {
+    setOn(v);
+    setThinkingCollapsed(v);
+  };
+
+  return (
+    <div className="grid w-full max-w-xs grid-cols-2 gap-1 rounded-lg border border-border bg-surface p-1">
+      {([false, true] as const).map((v) => (
+        <button
+          key={String(v)}
+          type="button"
+          onClick={() => choose(v)}
+          className={`min-h-[36px] rounded-md text-sm transition-colors ${
+            on === v ? 'bg-border text-text' : 'text-dim hover:text-text'
+          }`}
+        >
+          {v ? 'On' : 'Off'}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function RtkControl() {
+  const [on, setOn] = useState(true);
+  const [loaded, setLoaded] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    api
+      .getSettings()
+      .then((s) => {
+        setOn(s.rtkEnabled ?? true);
+        setLoaded(true);
+      })
+      .catch(() => setLoaded(true));
+  }, []);
+
+  const choose = async (v: boolean) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.updateSettings({ rtkEnabled: v });
+      setOn(v);
+    } catch (err) {
+      setError(errMsg(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="grid w-full max-w-xs grid-cols-2 gap-1 rounded-lg border border-border bg-surface p-1">
+        {([false, true] as const).map((v) => (
+          <button
+            key={String(v)}
+            type="button"
+            disabled={!loaded || busy}
+            onClick={() => void choose(v)}
+            className={`min-h-[36px] rounded-md text-sm transition-colors disabled:opacity-50 ${
+              on === v ? 'bg-border text-text' : 'text-dim hover:text-text'
+            }`}
+          >
+            {v ? 'On' : 'Off'}
+          </button>
+        ))}
+      </div>
+      {error && <p className="text-xs text-red-400">{error}</p>}
+    </div>
+  );
+}
+
+function ClearCacheControl() {
+  const [cleared, setCleared] = useState(false);
+  return (
+    <div className="flex items-center gap-2">
+      <Button
+        variant="outline"
+        onClick={() => {
+          clearClientCaches();
+          setCleared(true);
+          window.setTimeout(() => setCleared(false), 2500);
+        }}
+      >
+        Clear caches
+      </Button>
+      {cleared && (
+        <span className="flex items-center gap-1 text-xs text-emerald-500">
+          <IconCheck className="h-3.5 w-3.5" /> Cleared — the catalog will refetch on next use
+        </span>
+      )}
+    </div>
+  );
+}
+
+function ContextThresholdControl() {
+  const [value, setValue] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    api
+      .getSettings()
+      .then((s) => setValue(String(s.contextThreshold ?? 80)))
+      .catch(() => {});
+  }, []);
+
+  const restore = () => {
+    api
+      .getSettings()
+      .then((s) => setValue(String(s.contextThreshold ?? 80)))
+      .catch(() => {});
+  };
+
+  const save = async () => {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n <= 0 || n > 100) {
+      setError('Enter a percentage between 1 and 100.');
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      await api.updateSettings({ contextThreshold: n });
+      setSaved(true);
+      window.setTimeout(() => setSaved(false), 2000);
+    } catch (e) {
+      setError(errMsg(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center gap-2">
+        <div className="relative w-24">
+          <Input
+            type="number"
+            min={1}
+            max={100}
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            onBlur={() => void save()}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.currentTarget.blur();
+              } else if (e.key === 'Escape') {
+                restore();
+                e.currentTarget.blur();
+              }
+            }}
+            className="h-8 pr-7 text-sm"
+          />
+          <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-faint">
+            %
+          </span>
+        </div>
+        <span className="text-xs text-dim">of the context window</span>
+        {saving && <Spinner className="h-3.5 w-3.5" />}
+        {saved && !saving && (
+          <span className="flex items-center gap-1 text-xs text-emerald-500">
+            <IconCheck className="h-3.5 w-3.5" /> Saved
+          </span>
+        )}
+      </div>
+      {error && <p className="text-xs text-red-400">{error}</p>}
     </div>
   );
 }
@@ -1481,6 +1692,7 @@ export default function Settings() {
               onBaseURLChange={setBaseURL}
               onModelChange={setModel}
               hideModel
+              onPickProvider={(p) => setProvName(p.name)}
             >
               <Field label="Provider name (optional)">
                 <Input
@@ -1662,6 +1874,30 @@ export default function Settings() {
           description="Encode tool results as TOON — a compact, token-efficient format — when feeding them to the model. The chat keeps showing the original JSON either way."
         >
           <ToonControl />
+        </Section>
+        <Section
+          id="sec-rtk"
+          title="RTK"
+          description="Pipe run_command output through RTK (Rust Token Killer) when installed — it compresses or summarizes common commands (test runners, git, builds) so the model reads fewer tokens. Commands run as-is when the binary is missing."
+        >
+          <RtkControl />
+        </Section>
+        <Section
+          id="sec-context-threshold"
+          title="Context compaction"
+          description="Compaction runs automatically once the conversation crosses this share of the model's context window. Also sets the threshold shown in the chat's context popup."
+        >
+          <ContextThresholdControl />
+        </Section>
+        <Section
+          id="sec-clear-cache"
+          title="Cached data"
+          description="The provider catalog and per-model thinking levels are cached in your browser. Clear them to force a fresh fetch."
+        >
+          <div>
+            <span className="mb-1 block text-xs text-subtle">Provider catalog &amp; thinking metadata</span>
+            <ClearCacheControl />
+          </div>
         </Section>
             </div>
 
@@ -1914,6 +2150,20 @@ export default function Settings() {
           <div>
             <span className="mb-1 block text-xs text-subtle">Pretty-print JSON</span>
             <JsonPrettyControl />
+          </div>
+          <div>
+            <span className="mb-1 block text-xs text-subtle">Collapse tool calls</span>
+            <ToolCallsCollapseControl />
+          </div>
+        </Section>
+        <Section
+          id="sec-thinking-collapsed"
+          title="Thinking"
+          description="Start reasoning blocks collapsed instead of following the stream. Off shows thinking as it arrives."
+        >
+          <div>
+            <span className="mb-1 block text-xs text-subtle">Collapse thinking by default</span>
+            <ThinkingCollapsedControl />
           </div>
         </Section>
             </div>

@@ -2,6 +2,8 @@ import type {
   AuthStatus,
   ChatEvent,
   ChatMessage,
+  ChatSession,
+  ContextUsage,
   DeviceFlowPoll,
   DeviceFlowStart,
   FileEntry,
@@ -14,6 +16,7 @@ import type {
   PermissionMode,
   PreviewStatus,
   Project,
+  Provider,
   ProviderAddResult,
   ProvidersRefreshResult,
   ProvidersResponse,
@@ -35,6 +38,59 @@ export class ApiError extends Error {
     super(message);
     this.name = 'ApiError';
     this.status = status;
+  }
+}
+
+// ---- client-side caches ----
+
+const PROVIDERS_CACHE_KEY = 'v1.providersCache';
+const PROVIDERS_CACHE_AT_KEY = 'v1.providersCacheAt';
+const PROVIDERS_CACHE_TTL = 6 * 60 * 60 * 1000; // 6 hours
+
+let providersCache: { data: Provider[]; at: number } | null = null;
+
+function readProvidersCache(): { data: Provider[]; at: number } | null {
+  if (providersCache) return providersCache;
+  try {
+    const at = Number(localStorage.getItem(PROVIDERS_CACHE_AT_KEY) ?? '0');
+    const raw = localStorage.getItem(PROVIDERS_CACHE_KEY);
+    if (!raw || !at) return null;
+    return { data: JSON.parse(raw) as Provider[], at };
+  } catch {
+    return null;
+  }
+}
+
+function writeProvidersCache(data: Provider[]): void {
+  providersCache = { data, at: Date.now() };
+  try {
+    localStorage.setItem(PROVIDERS_CACHE_KEY, JSON.stringify(data));
+    localStorage.setItem(PROVIDERS_CACHE_AT_KEY, String(Date.now()));
+  } catch {
+    // storage unavailable — in-memory only
+  }
+}
+
+const CTX_USAGE_TTL = 10 * 1000;
+
+let ctxUsageCache: { key: string; at: number; data: ContextUsage } | null = null;
+
+// Storage key for the persisted thinking-metadata cache (ChatPane). Kept
+// here so clearClientCaches can drop it.
+export const THINKING_META_KEY = 'v1.thinkingMeta';
+
+// Clears the client-side caches — provider catalog, thinking metadata,
+// context usage — so the next use refetches. Settings and preferences are
+// not touched.
+export function clearClientCaches(): void {
+  providersCache = null;
+  ctxUsageCache = null;
+  try {
+    localStorage.removeItem(PROVIDERS_CACHE_KEY);
+    localStorage.removeItem(PROVIDERS_CACHE_AT_KEY);
+    localStorage.removeItem(THINKING_META_KEY);
+  } catch {
+    // ignore (private mode etc.)
   }
 }
 
@@ -123,6 +179,8 @@ export interface SettingsUpdate {
   rewindApproval?: boolean;
   defaultThinking?: string;
   toonEnabled?: boolean;
+  rtkEnabled?: boolean;
+  contextThreshold?: number;
   systemPrompt?: string;
 }
 
@@ -154,9 +212,18 @@ export const api = {
     post<{ ok: boolean; error?: string }>('/api/settings/test-llm', opts),
 
   // LLM providers
-  getProviders: () => request<ProvidersResponse>('/api/providers'),
-  refreshProviders: () => post<ProvidersRefreshResult>('/api/providers/refresh'),
-  providerThinking: (providerId: string, model: string) =>
+  // The models.dev catalog is large and changes rarely — cache it (memory +
+  // localStorage, 6h) so opening projects doesn't refetch it every time.
+  getProviders: async () => {
+    const cached = readProvidersCache();
+    if (cached && Date.now() - cached.at < PROVIDERS_CACHE_TTL) {
+      return { source: 'cache', providers: cached.data };
+    }
+    const r = await request<ProvidersResponse>('/api/providers');
+    writeProvidersCache(r.providers);
+    return r;
+  },
+  refreshProviders: () => post<ProvidersRefreshResult>('/api/providers/refresh'),  providerThinking: (providerId: string, model: string) =>
     request<{ levels: string[]; off: boolean }>(
       `/api/providers/thinking?providerId=${encodeURIComponent(providerId)}&model=${encodeURIComponent(model)}`,
     ),
@@ -189,14 +256,59 @@ export const api = {
     request<void>(`/api/projects/${id}/file?path=${encodeURIComponent(path)}`, { method: 'DELETE' }),
 
   // Chat history (streaming lives in streamChat below)
-  getMessages: (id: string) => request<ChatMessage[]>(`/api/projects/${id}/messages`),
-  truncateMessages: (id: string, messageId: number) =>
-    post<void>(`/api/projects/${id}/messages/truncate`, { id: messageId }),
-  compact: (id: string) => post<{ coveredMessageId: number }>(`/api/projects/${id}/compact`),
+  getMessages: (id: string, sessionId: string) =>
+    request<ChatMessage[]>(`/api/projects/${id}/messages?sessionId=${encodeURIComponent(sessionId)}`),
+  // Chat sessions: independent threads per project.
+  listSessions: (id: string) =>
+    request<{ sessions: ChatSession[] }>(`/api/projects/${id}/sessions`),
+  createSession: (id: string, name?: string) =>
+    post<{ session: ChatSession }>(`/api/projects/${id}/sessions`, { name }),
+  renameSession: (id: string, sessionId: string, name: string) =>
+    post<void>(`/api/projects/${id}/sessions/${sessionId}/rename`, { name }),
+  // Context usage refreshes after every turn, but the value is stable for a
+  // few seconds — cache it briefly so popup opens and re-renders don't
+  // refetch it. force skips the cache (used right after a turn completes).
+  contextUsage: async (id: string, sessionId: string, model?: string, providerId?: string, force = false) => {
+    const q = new URLSearchParams();
+    q.set('sessionId', sessionId);
+    if (model) q.set('model', model);
+    if (providerId) q.set('providerId', providerId);
+    const qs = q.toString();
+    const key = `${id}|${qs}`;
+    if (!force && ctxUsageCache && ctxUsageCache.key === key && Date.now() - ctxUsageCache.at < CTX_USAGE_TTL) {
+      return ctxUsageCache.data;
+    }
+    const data = await request<ContextUsage>(`/api/projects/${id}/context?${qs}`);
+    ctxUsageCache = { key, at: Date.now(), data };
+    return data;
+  },
+  stopChat: (id: string, sessionId: string) =>
+    post<void>(`/api/projects/${id}/chat/stop?sessionId=${encodeURIComponent(sessionId)}`),
+  truncateMessages: (id: string, sessionId: string, messageId: number) =>
+    post<void>(`/api/projects/${id}/messages/truncate`, { id: messageId, sessionId }),
+  compact: (id: string, sessionId: string) =>
+    post<{ coveredMessageId: number }>(`/api/projects/${id}/compact?sessionId=${encodeURIComponent(sessionId)}`),
   // Mid-run send: the same endpoint queues the message onto the active run
-  // (steer/follow-up) instead of opening an SSE stream.
-  queueChat: (id: string, message: string, model?: string, providerId?: string) =>
-    post<{ queued?: boolean }>(`/api/projects/${id}/chat`, { message, model, providerId }),
+  // (steer/follow-up) instead of opening an SSE stream. When queued, the
+  // response carries the queue entry's id.
+  queueChat: (id: string, sessionId: string, message: string, model?: string, providerId?: string) =>
+    post<{ queued?: boolean; id?: string }>(`/api/projects/${id}/chat`, { message, sessionId, model, providerId }),
+  chatStatus: (id: string, sessionId: string) =>
+    request<{ running: boolean }>(
+      `/api/projects/${id}/chat/status?sessionId=${encodeURIComponent(sessionId)}`,
+    ),
+  chatQueue: (id: string, sessionId: string) =>
+    request<{ messages: { id: string; text: string }[] }>(
+      `/api/projects/${id}/chat/queue?sessionId=${encodeURIComponent(sessionId)}`,
+    ),
+  chatQueueReorder: (id: string, sessionId: string, ids: string[]) =>
+    post<void>(`/api/projects/${id}/chat/queue/reorder`, { ids, sessionId }),
+  chatQueueSteer: (id: string, sessionId: string, entryId: string) =>
+    post<void>(`/api/projects/${id}/chat/queue/steer`, { id: entryId, sessionId }),
+  chatQueueEdit: (id: string, sessionId: string, entryId: string, text: string) =>
+    post<void>(`/api/projects/${id}/chat/queue/edit`, { id: entryId, text, sessionId }),
+  chatQueueHold: (id: string, sessionId: string, entryId: string, held: boolean) =>
+    post<void>(`/api/projects/${id}/chat/queue/hold`, { id: entryId, held, sessionId }),
   getTodos: (id: string) => request<{ todos: Todo[] }>(`/api/projects/${id}/todos`),
   getMemories: (id: string) => request<{ memories: Memory[] }>(`/api/projects/${id}/memories`),
   createMemory: (id: string, content: string) =>
@@ -207,8 +319,21 @@ export const api = {
     post<{ memories: Memory[] }>(`/api/projects/${id}/memories/${memId}/toggle`, { enabled }),
   deleteMemory: (id: string, memId: number) =>
     request<void>(`/api/projects/${id}/memories/${memId}`, { method: 'DELETE' }),
-  askRespond: (id: string, requestId: string, answer: string) =>
-    post<void>(`/api/projects/${id}/ask/respond`, { requestId, answer }),
+  askRespond: (
+    id: string,
+    sessionId: string,
+    requestId: string,
+    answers: { question: string; answer: string }[],
+  ) =>
+    post<void>(`/api/projects/${id}/ask/respond`, { requestId, answers, sessionId }),
+  askPending: (id: string, sessionId: string) =>
+    request<{
+      pending: boolean;
+      requestId?: string;
+      question?: string;
+      options?: string[];
+      questions?: { question: string; options?: string[] }[];
+    }>(`/api/projects/${id}/ask/pending?sessionId=${encodeURIComponent(sessionId)}`),
 
   // Preview
   getPreviewStatus: (id: string) => request<PreviewStatus>(`/api/projects/${id}/preview/status`),
@@ -267,19 +392,20 @@ export const api = {
 };
 
 /**
- * Shared SSE streaming helper: POSTs to `path` (with an optional JSON body),
- * parses `data:` events and dispatches them to `onEvent`. Resolves when the
- * stream ends (with or without a `done` event); rejects on HTTP/parse-level
- * failures and aborts.
+ * Shared SSE streaming helper: fetches `path` (POST with an optional JSON
+ * body, or GET), parses `data:` events and dispatches them to `onEvent`.
+ * Resolves when the stream ends (with or without a `done` event); rejects on
+ * HTTP/parse-level failures and aborts.
  */
 async function streamChatEvents(
   path: string,
   body: unknown,
   onEvent: (ev: ChatEvent) => void,
   signal: AbortSignal,
+  get = false,
 ): Promise<void> {
   const res = await fetch(path, {
-    method: 'POST',
+    method: get ? 'GET' : 'POST',
     credentials: 'same-origin',
     headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
     body: body !== undefined ? JSON.stringify(body) : undefined,
@@ -357,6 +483,7 @@ export function messageAttachmentUrl(projectId: string, messageId: string, idx: 
  */
 export function streamChat(
   projectId: string,
+  sessionId: string,
   message: string,
   opts: {
     model?: string;
@@ -371,12 +498,13 @@ export function streamChat(
 ): Promise<void> {
   const body: {
     message: string;
+    sessionId: string;
     model?: string;
     editMessageId?: number;
     providerId?: string;
     attachments?: ChatAttachmentInput[];
     thinking?: string;
-  } = { message };
+  } = { message, sessionId };
   if (opts?.model && opts.model.trim() !== '') body.model = opts.model;
   if (opts?.editMessageId) body.editMessageId = opts.editMessageId;
   if (opts?.providerId) body.providerId = opts.providerId;
@@ -391,8 +519,34 @@ export function streamChat(
  */
 export function retryChat(
   projectId: string,
+  sessionId: string,
   onEvent: (ev: ChatEvent) => void,
   signal: AbortSignal,
 ): Promise<void> {
-  return streamChatEvents(`/api/projects/${projectId}/chat/retry`, undefined, onEvent, signal);
+  return streamChatEvents(
+    `/api/projects/${projectId}/chat/retry?sessionId=${encodeURIComponent(sessionId)}`,
+    undefined,
+    onEvent,
+    signal,
+  );
+}
+
+/**
+ * Attaches to a running turn's live stream (GET /chat/watch): the run's
+ * events from now on are relayed here until it finishes. Used when returning
+ * to a chat mid-generation — the UI behaves exactly as if we had never left.
+ */
+export function watchChat(
+  projectId: string,
+  sessionId: string,
+  onEvent: (ev: ChatEvent) => void,
+  signal: AbortSignal,
+): Promise<void> {
+  return streamChatEvents(
+    `/api/projects/${projectId}/chat/watch?sessionId=${encodeURIComponent(sessionId)}`,
+    undefined,
+    onEvent,
+    signal,
+    true,
+  );
 }

@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 
 	"v1/internal/llm"
@@ -57,6 +58,7 @@ type ChatEvent struct {
 	MessageID   int64            `json:"messageId,omitempty"`
 	Attachments []AttachmentMeta `json:"attachments,omitempty"`
 	Options     []string         `json:"options,omitempty"`
+	Questions   []AskQuestion    `json:"questions,omitempty"`
 }
 
 // ChatParams carries everything needed to run one chat turn.
@@ -66,9 +68,11 @@ type ChatParams struct {
 	Client           *llm.Client
 	Exec             *Executor
 	Message          string
+	SessionID        string       // chat session the turn belongs to
 	Attachments      []Attachment // files attached to this user turn
 	Model            string       // per-turn override; empty uses p.Client.Model
 	LastUserID       int64        // retry mode: >0 re-runs the existing user message
+	ContinueFromID   int64        // continue mode: >0 resumes from this partial assistant message
 	ExtraTools       []llm.Tool   // dynamically added tools (e.g. MCP), namespaced
 	SkillsPrompt     string       // enabled skills' SKILL.md content for the system prompt
 	MemoriesPrompt   string       // project memories section for the system prompt
@@ -77,11 +81,45 @@ type ChatParams struct {
 	ReasoningEffort  string       // thinking level; sent as reasoning_effort when set
 	ToonEnabled      bool         // tool results are TOON-encoded for the model
 	Steer            func() []string // drains mid-run user messages, injected next round
+	Background       *BackgroundManager
+	// PollBackground returns the session's finished background commands so the
+	// loop can inject their results into the conversation.
+	PollBackground func() []BackgroundResult
+	// BackgroundNotify persists a finished background command's result into
+	// the transcript (wired by the server alongside Background).
+	BackgroundNotify func(*BackgroundJob)
 	SkipSnapshot     bool         // edits/retries rewind the thread — no git checkpoint
+	PlanMode         bool         // read-only planning turn (/plan)
+	RTKEnabled       bool         // run_command output is piped through RTK (when installed)
 	ContextBudget    int
 	ContextThreshold float64
 	Summarizer       Summarizer
 	Emit             func(ChatEvent)
+}
+
+// planModeNote is injected into the system prompt while the user plans: the
+// agent investigates with read-only tools and produces a plan, changing
+// nothing.
+const planModeNote = `Plan mode is active — the user asked you to plan, not to build. You must NOT modify files, run commands, restart previews, or change any state. Investigate the workspace with the read-only tools (list files, search, read file, fetch url), then present a concrete implementation plan: the approach, the files to create or change, and the steps in order.`
+
+// freshProjectNote is injected into the system prompt while the workspace is
+// still a blank slate (at most the scaffold README): the agent should treat
+// the project as a brand-new start, not an existing codebase to fit into.
+const freshProjectNote = `This is a brand-new project: this is the very first conversation and nothing has been built yet — the workspace holds nothing but a scaffold README at most. The rule about preferring the existing project structure does not apply here. Start from scratch: pick a sensible stack, scaffold the project, and build toward what the user asked for. If they already described what they want, begin building right away instead of asking clarifying questions first.`
+
+// freshProject reports whether the workspace is still a blank slate: empty,
+// or holding nothing but the scaffold README.md.
+func freshProject(dir string) bool {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false
+	}
+	for _, e := range entries {
+		if e.Name() != "README.md" {
+			return false
+		}
+	}
+	return true
 }
 
 // RunChat persists the user message, replays history to the LLM, executes
@@ -98,22 +136,22 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 	if p.LastUserID > 0 {
 		// Retry mode: the user message already exists with this ID; drop the
 		// aborted turn that followed it so history is truncated at the user.
-		if err := p.Store.DeleteMessagesAfter(p.Project.ID, p.LastUserID); err != nil {
+		if err := p.Store.DeleteMessagesAfter(p.Project.ID, p.SessionID, p.LastUserID); err != nil {
 			return nil, err
 		}
-	} else {
-		if _, err := p.Store.AddMessage(p.Project.ID, "user", p.Message, "", p.Client.Model, "", "", MarshalAttachments(p.Attachments)); err != nil {
+	} else if p.ContinueFromID <= 0 {
+		if _, err := p.Store.AddMessage(p.Project.ID, p.SessionID, "user", p.Message, "", p.Client.Model, "", "", MarshalAttachments(p.Attachments)); err != nil {
 			return nil, err
 		}
 	}
 	_ = p.Store.TouchProject(p.Project.ID)
 
-	stored, err := p.Store.ListMessages(p.Project.ID)
+	stored, err := p.Store.ListMessages(p.Project.ID, p.SessionID)
 	if err != nil {
 		return nil, err
 	}
 	system := systemPrompt
-	if snapshot, snapshotErr := p.Store.GetCompactionSnapshot(p.Project.ID); snapshotErr == nil {
+	if snapshot, snapshotErr := p.Store.GetCompactionSnapshot(p.Project.ID, p.SessionID); snapshotErr == nil {
 		system += "\n\nConversation summary (historical, not user-visible; covers messages through ID " + fmt.Sprint(snapshot.CoveredMessageID) + "):\n" + snapshot.Summary
 	}
 	if p.SkillsPrompt != "" {
@@ -121,6 +159,12 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 	}
 	if p.MemoriesPrompt != "" {
 		system += "\n\n" + p.MemoriesPrompt
+	}
+	if freshProject(p.Project.Path) {
+		system += "\n\n" + freshProjectNote
+	}
+	if p.PlanMode {
+		system += "\n\n" + planModeNote
 	}
 	if p.Project.Instructions != "" {
 		system += "\n\nProject instructions from the user:\n" + p.Project.Instructions
@@ -131,16 +175,27 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 	if p.ToonEnabled {
 		system += "\n- Tool results are encoded in TOON, a compact indentation format: headers like key[N]{fields}: declare array length and column names, and rows are comma-separated. Read them as structured data, not prose."
 	}
+	if p.RTKEnabled {
+		system += "\n- run_command output is passed through RTK, which compresses or summarizes common commands (test runners, git, builds): failures and errors are preserved, successful output is condensed. When a failure log was truncated, RTK prints a [full output: …] path you can read with read_file. If RTK ever mangles or hides output you need, rerun the command with \"rtk\": false to get the raw output."
+	}
+	if p.Background != nil {
+		system += "\n- run_command_background starts a command detached from the turn: it returns a job id immediately, and the result is injected into the chat as a user message (\"[Background #id: command] finished (exit N): output\") once the command completes — mid-turn if you are still working, or at the start of your next turn. Start long-running work with it instead of blocking, and react to the result when it arrives."
+	}
 	if p.Vision {
 		system += "\n\nYou can see the app: call screenshot_app to capture an image of the running preview and inspect what is on screen. Use it after visual changes to verify them."
 	}
 	history := []llm.Message{{Role: "system", Content: system}}
+	p.Exec.PlanMode = p.PlanMode
+	p.Exec.RTKEnabled = p.RTKEnabled
+	p.Exec.Background = p.Background
+	p.Exec.BackgroundNotify = p.BackgroundNotify
+	p.Exec.SessionID = p.SessionID
 	var coveredID int64
-	if snapshot, snapshotErr := p.Store.GetCompactionSnapshot(p.Project.ID); snapshotErr == nil {
+	if snapshot, snapshotErr := p.Store.GetCompactionSnapshot(p.Project.ID, p.SessionID); snapshotErr == nil {
 		coveredID = snapshot.CoveredMessageID
 	}
 	for _, m := range stored {
-		if m.ID <= coveredID || (p.LastUserID > 0 && m.ID > p.LastUserID) {
+		if m.ID <= coveredID || (p.LastUserID > 0 && m.ID > p.LastUserID) || (p.ContinueFromID > 0 && m.ID > p.ContinueFromID) {
 			continue
 		}
 		switch m.Role {
@@ -180,17 +235,34 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 
 	var usage *Usage
 	vision := hasImageParts(history)
+	// Continue mode: the history ends with the partial assistant reply — ask
+	// the model to pick up where it stopped instead of repeating itself.
+	if p.ContinueFromID > 0 {
+		history = append(history, llm.Message{
+			Role:    "user",
+			Content: "Continue from where you left off. Do not repeat what is already written above.",
+		})
+	}
 	for round := 0; round < maxRounds; round++ {
 		// Steered messages join the turn between rounds: persisted like a
 		// normal user turn and rendered in the UI via injected_message.
 		if p.Steer != nil {
 			for _, msg := range p.Steer() {
-				msgID, err := p.Store.AddMessage(p.Project.ID, "user", msg, "", p.Client.Model, "", "", "")
+				msgID, err := p.Store.AddMessage(p.Project.ID, p.SessionID, "user", msg, "", p.Client.Model, "", "", "")
 				if err != nil {
 					return nil, err
 				}
 				history = append(history, llm.Message{Role: "user", Content: msg})
 				p.Emit(ChatEvent{Type: "injected_message", MessageID: msgID, Text: msg})
+			}
+		}
+		// Finished background commands join the same way: their result was
+		// already persisted by the completion callback, so this just appends
+		// it to the model's view and surfaces it in the UI.
+		if p.PollBackground != nil {
+			for _, r := range p.PollBackground() {
+				history = append(history, llm.Message{Role: "user", Content: r.Text})
+				p.Emit(ChatEvent{Type: "injected_message", MessageID: r.MessageID, Text: r.Text})
 			}
 		}
 		allTools := tools
@@ -199,6 +271,9 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 		}
 		if len(p.ExtraTools) > 0 {
 			allTools = append(append([]llm.Tool{}, allTools...), p.ExtraTools...)
+		}
+		if p.PlanMode {
+			allTools = planSafeTools(allTools)
 		}
 		requestHistory := compactForModel(ctx, history, p)
 		res, err := p.Client.ChatStream(ctx, requestHistory, allTools,
@@ -214,6 +289,13 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 				func(d string) { p.Emit(ChatEvent{Type: "reasoning", Text: d}) })
 		}
 		if err != nil {
+			// A mid-response failure (token limit, network drop) still leaves
+			// the streamed partial reply — persist it so the transcript shows
+			// what made it out and a retry can continue from here instead of
+			// regenerating everything.
+			if res != nil && (res.Text != "" || res.Reasoning != "") {
+				_, _ = p.Store.AddMessage(p.Project.ID, p.SessionID, "assistant", res.Text, "", p.Client.Model, res.Reasoning, "", "")
+			}
 			return nil, err
 		}
 		// Some providers stream tool calls without ids; they only need to be
@@ -245,7 +327,7 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 				usageJSON = string(b)
 			}
 		}
-		if _, err := p.Store.AddMessage(p.Project.ID, "assistant", res.Text, toolJSON, p.Client.Model, res.Reasoning, usageJSON, ""); err != nil {
+		if _, err := p.Store.AddMessage(p.Project.ID, p.SessionID, "assistant", res.Text, toolJSON, p.Client.Model, res.Reasoning, usageJSON, ""); err != nil {
 			return nil, err
 		}
 		history = append(history, llm.Message{Role: "assistant", Content: res.Text, ReasoningContent: res.Reasoning, ToolCalls: res.ToolCalls})
@@ -266,7 +348,7 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 			}
 			p.Emit(ChatEvent{Type: "tool_end", Name: tc.Function.Name, OK: ok, Detail: summary})
 			tj, _ := json.Marshal(map[string]any{"tool_call_id": tc.ID, "name": tc.Function.Name})
-			if _, err := p.Store.AddMessage(p.Project.ID, "tool", result, string(tj), "", "", "", ""); err != nil {
+			if _, err := p.Store.AddMessage(p.Project.ID, p.SessionID, "tool", result, string(tj), "", "", "", ""); err != nil {
 				return nil, err
 			}
 			content := result
@@ -292,7 +374,7 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 					Content: base64.StdEncoding.EncodeToString(img),
 				}}
 				caption := "Screenshot of the current app preview (captured by the screenshot_app tool)."
-				msgID, err := p.Store.AddMessage(p.Project.ID, "user", caption, "", "", "", "", MarshalAttachments(att))
+				msgID, err := p.Store.AddMessage(p.Project.ID, p.SessionID, "user", caption, "", "", "", "", MarshalAttachments(att))
 				if err != nil {
 					return nil, err
 				}
@@ -312,8 +394,9 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 // toolDetail extracts a short human-readable detail for a tool call.
 func toolDetail(tc llm.ToolCall) string {
 	var args struct {
-		Path    string `json:"path"`
-		Command string `json:"command"`
+		Path     string `json:"path"`
+		Command  string `json:"command"`
+		Question string `json:"question"`
 	}
 	_ = json.Unmarshal([]byte(tc.Function.Arguments), &args)
 	if args.Path != "" {
@@ -324,6 +407,12 @@ func toolDetail(tc llm.ToolCall) string {
 			return args.Command[:120] + "..."
 		}
 		return args.Command
+	}
+	if args.Question != "" {
+		if len(args.Question) > 120 {
+			return args.Question[:120] + "..."
+		}
+		return args.Question
 	}
 	return ""
 }
@@ -517,6 +606,10 @@ var tools = []llm.Tool{
 						"type":        "number",
 						"description": "Timeout in seconds (default 120, max 600).",
 					},
+					"rtk": map[string]any{
+						"type":        "boolean",
+						"description": "Run without RTK output compression for this command. Set false when RTK mangles or hides output you need; defaults to true when RTK is enabled.",
+					},
 				},
 				"required": []string{"command"},
 			},
@@ -530,6 +623,44 @@ var tools = []llm.Tool{
 			Parameters: map[string]any{
 				"type":       "object",
 				"properties": map[string]any{},
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: llm.ToolFunction{
+			Name:        "run_command_background",
+			Description: "Run a shell command in the workspace detached from the turn. Returns immediately with a job id; the result arrives later in the chat as a \"[Background #id: …] finished…\" message, which you can react to. Use for long-running commands (installs, servers, long tests) when you have other work to do first.",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"command": map[string]any{
+						"type":        "string",
+						"description": "Shell command to execute.",
+					},
+					"timeout_seconds": map[string]any{
+						"type":        "number",
+						"description": "Timeout in seconds (default 600, max 3600).",
+					},
+				},
+				"required": []string{"command"},
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: llm.ToolFunction{
+			Name:        "set_project_name",
+			Description: "Set the project's display name. Call it at the start of a new project to give it a short, descriptive name based on what you are building.",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"name": map[string]any{
+						"type":        "string",
+						"description": "The new project name (3-80 characters).",
+					},
+				},
+				"required": []string{"name"},
 			},
 		},
 	},
@@ -595,21 +726,35 @@ var tools = []llm.Tool{
 		Type: "function",
 		Function: llm.ToolFunction{
 			Name:        "ask_user",
-			Description: "Ask the user a question and wait for their answer. Use when you need a decision, clarification or preference instead of guessing.",
+			Description: "Ask the user one or more questions and wait for their answers. Use when you need decisions, clarifications or preferences instead of guessing. Pass a single question in \"question\" (with optional \"options\"); to ask several in sequence, pass them in \"questions\" — the user steps through them and confirms all answers at once.",
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
 					"question": map[string]any{
 						"type":        "string",
-						"description": "The question to ask the user.",
+						"description": "The question to ask the user (when asking a single question).",
 					},
 					"options": map[string]any{
 						"type":        "array",
-						"description": "Optional 2-4 suggested answers the user can pick with one tap.",
+						"description": "Optional 2-4 suggested answers for a single question.",
 						"items":       map[string]any{"type": "string"},
 					},
+					"questions": map[string]any{
+						"type": "array",
+						"description": "Multiple questions to ask in sequence (2-8). Each has a question and optional 2-4 options.",
+						"items": map[string]any{
+							"type": "object",
+							"properties": map[string]any{
+								"question": map[string]any{"type": "string"},
+								"options": map[string]any{
+									"type":  "array",
+									"items": map[string]any{"type": "string"},
+								},
+							},
+							"required": []string{"question"},
+						},
+					},
 				},
-				"required": []string{"question"},
 			},
 		},
 	},

@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"v1/internal/llm"
@@ -199,6 +200,8 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 		"rewindApproval":  s.rewindApproval(userID),
 		"defaultThinking": s.defaultThinking(userID),
 		"toonEnabled":     s.toonEnabled(userID),
+		"rtkEnabled":      s.rtkEnabled(userID),
+		"contextThreshold": int(s.contextThreshold(userID) * 100),
 		"systemPrompt":    s.globalSystemPrompt(userID),
 		"version":         s.cfg.Version,
 		"commit":          s.cfg.Commit,
@@ -226,6 +229,8 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		RewindApproval      *bool               `json:"rewindApproval"`
 		DefaultThinking     *string             `json:"defaultThinking"`
 		ToonEnabled         *bool               `json:"toonEnabled"`
+		RTKEnabled          *bool               `json:"rtkEnabled"`
+		ContextThreshold    *float64            `json:"contextThreshold"`
 		SystemPrompt        *string             `json:"systemPrompt"`
 	}
 	if !decodeJSON(w, r, &body) {
@@ -429,6 +434,31 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		if err := s.st.SetUserSetting(userID, keyToonEnabled, val); err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
+		}
+	}
+	if body.RTKEnabled != nil {
+		val := "0"
+		if *body.RTKEnabled {
+			val = "1"
+		}
+		if err := s.st.SetUserSetting(userID, keyRTKEnabled, val); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+	if body.ContextThreshold != nil {
+		// Stored as a percent; 0 or out-of-range clears back to the default.
+		if *body.ContextThreshold <= 0 || *body.ContextThreshold > 100 {
+			if err := s.st.DeleteUserSetting(userID, keyContextThreshold); err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+		} else {
+			val := strconv.FormatFloat(*body.ContextThreshold, 'f', -1, 64)
+			if err := s.st.SetUserSetting(userID, keyContextThreshold, val); err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
 		}
 	}
 	if body.Password != nil && *body.Password != "" {

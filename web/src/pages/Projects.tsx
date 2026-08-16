@@ -1,13 +1,16 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api';
-import type { GitHubRepo, Project } from '../types';
+import type { GitHubRepo, Project, Provider, ProviderModel, SavedProvider } from '../types';
 import { errMsg, timeAgo } from '../utils';
 import { Button, Dialog, ErrorBox, IconButton, Input, Spinner } from '../components/ui';
+import ModelPicker from '../components/ModelPicker';
 import {
+  IconChevronDown,
   IconDots,
   IconGitHub,
   IconLogout,
+  IconModel,
   IconPlus,
   IconSettings,
   IconTrash,
@@ -68,14 +71,98 @@ function NewProjectDialog({
   const [description, setDescription] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Optional model selection for the first message: provider, model, thinking.
+  const [providers, setProviders] = useState<SavedProvider[]>([]);
+  const [providerId, setProviderId] = useState('');
+  const [model, setModel] = useState('');
+  const [thinking, setThinking] = useState('');
+  const [defaultThinking, setDefaultThinking] = useState('');
+  const [modelPickerOpen, setModelPickerOpen] = useState(false);
+  // Thinking levels for the selected model, fetched from the provider.
+  const [thinkingLevels, setThinkingLevels] = useState<string[]>([]);
+  const [thinkingOff, setThinkingOff] = useState(false);
+  // models.dev catalog + the active base URL, for the model picker.
+  const [catalog, setCatalog] = useState<Provider[]>([]);
+  const [baseURL, setBaseURL] = useState('');
 
   useEffect(() => {
     if (open) {
       setDescription('');
       setError(null);
       setBusy(false);
+      setProviderId('');
+      setModel('');
+      setThinking('');
+      setDefaultThinking('');
+      setThinkingLevels([]);
+      setThinkingOff(false);
+      setCatalog([]);
+      api
+        .getSettings()
+        .then((s) => {
+          setProviders(s.llm.providers ?? []);
+          setProviderId(s.llm.activeProviderId ?? '');
+          setModel(s.llm.model);
+          setBaseURL(s.llm.baseURL);
+          setDefaultThinking(s.defaultThinking ?? '');
+          setThinking(s.defaultThinking ?? '');
+        })
+        .catch(() => {});
+      api
+        .getProviders()
+        .then((r) => setCatalog(r.providers))
+        .catch(() => {});
     }
   }, [open]);
+
+  // Models for the selected provider (or the active base URL for "custom"),
+  // unioned across catalog entries that share the base URL.
+  const modelList = useMemo(() => {
+    const target = providers.find((p) => p.id === providerId)?.baseURL || baseURL;
+    if (!target) return [] as ProviderModel[];
+    const out: ProviderModel[] = [];
+    for (const p of catalog) {
+      if (p.baseURL !== target) continue;
+      for (const m of p.models) out.push(m);
+    }
+    return out;
+  }, [catalog, providers, providerId, baseURL]);
+
+  // Thinking levels follow the model: fetched from the provider, like the
+  // chat's thinking popup. An inapplicable selection resets to the account
+  // default (or the model's lowest level).
+  useEffect(() => {
+    if (!model.trim()) {
+      setThinkingLevels([]);
+      setThinkingOff(false);
+      return;
+    }
+    let active = true;
+    api
+      .providerThinking(providerId, model)
+      .then((r) => {
+        if (!active) return;
+        const levels = (r.levels ?? []).filter((l) => l !== 'none');
+        const off = r.off ?? false;
+        setThinkingLevels(levels.length > 0 ? levels : ['on']);
+        setThinkingOff(off);
+        setThinking((prev) => {
+          const opts = off ? ['off', ...levels] : levels;
+          if (prev === '' || opts.includes(prev)) return prev;
+          if (defaultThinking !== '' && opts.includes(defaultThinking)) return defaultThinking;
+          return opts[0] ?? '';
+        });
+      })
+      .catch(() => {
+        if (active) {
+          setThinkingLevels([]);
+          setThinkingOff(false);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [providerId, model, defaultThinking]);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -88,7 +175,14 @@ function NewProjectDialog({
     setError(null);
     try {
       const p = await api.createProject({ description: text });
-      navigate(`/project/${p.id}`, { state: { prompt: text } });
+      navigate(`/project/${p.id}`, {
+        state: {
+          prompt: text,
+          providerId: providerId || undefined,
+          model: model.trim() || undefined,
+          thinking: thinking || undefined,
+        },
+      });
     } catch (err) {
       setError(errMsg(err));
       setBusy(false);
@@ -97,7 +191,7 @@ function NewProjectDialog({
 
   return (
     <Dialog open={open} onClose={onClose} title="New project">
-      <form onSubmit={submit}>
+      <form onSubmit={submit} className="flex flex-col gap-3">
         <textarea
           autoFocus
           rows={4}
@@ -106,6 +200,33 @@ function NewProjectDialog({
           onChange={(e) => setDescription(e.target.value)}
           className="w-full resize-y rounded-lg border border-border-strong bg-surface px-3 py-2 text-sm text-text outline-none transition-colors focus:border-subtle"
         />
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setModelPickerOpen(true)}
+            className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md border border-border bg-surface px-2 text-sm text-text transition-colors hover:border-border-strong"
+          >
+            <IconModel className="hidden h-3.5 w-3.5 shrink-0 text-dim sm:block" />
+            <span className="min-w-0 flex-1 truncate text-left font-mono text-xs">
+              {model || 'Select a model'}
+            </span>
+            <IconChevronDown className="hidden h-3.5 w-3.5 shrink-0 text-faint sm:block" />
+          </button>
+          <select
+            value={thinking}
+            onChange={(e) => setThinking(e.target.value)}
+            disabled={thinkingLevels.length === 0}
+            className="h-8 w-28 shrink-0 rounded-md border border-border bg-surface px-1.5 text-sm text-text outline-none transition-colors focus:border-subtle disabled:opacity-60"
+          >
+            <option value="">Lowest</option>
+            {thinkingOff && <option value="off">Off</option>}
+            {thinkingLevels.map((lvl) => (
+              <option key={lvl} value={lvl}>
+                {lvl === 'on' ? 'On' : lvl === 'off' ? 'Off' : lvl.charAt(0).toUpperCase() + lvl.slice(1)}
+              </option>
+            ))}
+          </select>
+        </div>
         {error && <ErrorBox message={error} className="mt-3" />}
         <div className="mt-4 flex justify-end gap-2">
           <Button variant="ghost" onClick={onClose}>
@@ -116,6 +237,20 @@ function NewProjectDialog({
           </Button>
         </div>
       </form>
+      <ModelPicker
+        open={modelPickerOpen}
+        onClose={() => setModelPickerOpen(false)}
+        providers={providers}
+        providerId={providerId}
+        model={model}
+        models={modelList}
+        onProviderChange={(id) => {
+          setProviderId(id);
+          const p = providers.find((x) => x.id === id);
+          if (p && p.model) setModel(p.model);
+        }}
+        onModelChange={setModel}
+      />
     </Dialog>
   );
 }

@@ -91,17 +91,27 @@ CREATE TABLE IF NOT EXISTS projects (
 CREATE TABLE IF NOT EXISTS messages (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   project_id TEXT NOT NULL,
+  session_id TEXT,
   role TEXT NOT NULL,
   content TEXT NOT NULL,
   tool_json TEXT,
   created_at INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_messages_project_id ON messages(project_id, id);
+CREATE TABLE IF NOT EXISTS chat_sessions (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_chat_sessions_project ON chat_sessions(project_id);
 CREATE TABLE IF NOT EXISTS compaction_snapshots (
-  project_id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  session_id TEXT NOT NULL DEFAULT '',
   summary TEXT NOT NULL,
   covered_message_id INTEGER NOT NULL,
-  created_at INTEGER NOT NULL
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (project_id, session_id)
 );
 CREATE TABLE IF NOT EXISTS memories (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -111,6 +121,16 @@ CREATE TABLE IF NOT EXISTS memories (
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_memories_project ON memories(project_id, id);
+CREATE TABLE IF NOT EXISTS pending_asks (
+  id TEXT NOT NULL,
+  project_id TEXT NOT NULL,
+  session_id TEXT NOT NULL DEFAULT '',
+  question TEXT NOT NULL,
+  options TEXT NOT NULL DEFAULT '[]',
+  questions TEXT,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (project_id, session_id)
+);
 `)
 	if err != nil {
 		return err
@@ -121,7 +141,37 @@ CREATE INDEX IF NOT EXISTS idx_memories_project ON memories(project_id, id);
 		"reasoning":   "ALTER TABLE messages ADD COLUMN reasoning TEXT",
 		"usage":       "ALTER TABLE messages ADD COLUMN usage TEXT",
 		"attachments": "ALTER TABLE messages ADD COLUMN attachments TEXT",
+		"session_id":  "ALTER TABLE messages ADD COLUMN session_id TEXT",
 	}); err != nil {
+		return err
+	}
+	// Chat sessions split each project's history into independent threads.
+	// Pre-session rows belong to the project's default session, created on
+	// first access; compaction snapshots and pending asks become per-session.
+	if err := rebuildTableForSessions(db, "compaction_snapshots", `
+CREATE TABLE compaction_snapshots_v2 (
+  project_id TEXT NOT NULL,
+  session_id TEXT NOT NULL DEFAULT '',
+  summary TEXT NOT NULL,
+  covered_message_id INTEGER NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (project_id, session_id)
+)`,
+		`SELECT project_id, '', summary, covered_message_id, created_at FROM compaction_snapshots`); err != nil {
+		return err
+	}
+	if err := rebuildTableForSessions(db, "pending_asks", `
+CREATE TABLE pending_asks_v2 (
+  id TEXT NOT NULL,
+  project_id TEXT NOT NULL,
+  session_id TEXT NOT NULL DEFAULT '',
+  question TEXT NOT NULL,
+  options TEXT NOT NULL DEFAULT '[]',
+  questions TEXT,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (project_id, session_id)
+)`,
+		`SELECT id, project_id, '', question, options, NULL, created_at FROM pending_asks`); err != nil {
 		return err
 	}
 	if err := migrateAddColumns(db, "projects", map[string]string{
@@ -139,12 +189,37 @@ CREATE INDEX IF NOT EXISTS idx_memories_project ON memories(project_id, id);
 	}); err != nil {
 		return err
 	}
+	if err := migrateAddColumns(db, "pending_asks", map[string]string{
+		"questions": "ALTER TABLE pending_asks ADD COLUMN questions TEXT",
+	}); err != nil {
+		return err
+	}
 	if err := migrateLegacyUsers(db); err != nil {
 		return err
 	}
 	return migrateAddColumns(db, "memories", map[string]string{
 		"enabled": "ALTER TABLE memories ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1",
 	})
+}
+
+// rebuildTableForSessions moves a pre-session table to the per-session shape
+// when it still lacks a session_id column: create the new table, copy the old
+// rows with an empty session, drop the old table, rename. Idempotent.
+func rebuildTableForSessions(db *sql.DB, table, createSQL, copySQL string) error {
+	var n int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('` + table + `') WHERE name = 'session_id'`).Scan(&n); err != nil {
+		return err
+	}
+	if n > 0 {
+		return nil
+	}
+	if _, err := db.Exec(createSQL + `;
+INSERT INTO ` + table + `_v2 ` + copySQL + `;
+DROP TABLE ` + table + `;
+ALTER TABLE ` + table + `_v2 RENAME TO ` + table + `;`); err != nil {
+		return err
+	}
+	return nil
 }
 
 // migrateLegacyUsers converts a pre-multi-user database: the single stored
@@ -478,6 +553,61 @@ func (s *Store) SetTodos(projectID string, todos []Todo) error {
 	return s.SetSetting(todoSettingKey(projectID), string(data))
 }
 
+// ---- pending asks ----
+
+// PendingAsk is a question from the agent's ask_user tool awaiting an answer.
+// Persisted so the question survives app reloads and server restarts — the
+// live channel (askRegistry) is in-memory, this is the durable record.
+type PendingAsk struct {
+	ID       string
+	Question string
+	Options  []string
+	// QuestionsJSON holds the full questions array for multi-question asks
+	// (empty for a single question, which lives in Question/Options).
+	QuestionsJSON string
+}
+
+// SetPendingAsk records the project's pending ask_user question, replacing
+// any previous one (only one can be pending per project).
+func (s *Store) SetPendingAsk(projectID, sessionID, id, question string, options []string, questionsJSON string) error {
+	if options == nil {
+		options = []string{}
+	}
+	data, err := json.Marshal(options)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec(`INSERT INTO pending_asks (id, project_id, session_id, question, options, questions, created_at) VALUES (?, ?, ?, ?, ?, NULLIF(?, ''), ?)
+		ON CONFLICT(project_id, session_id) DO UPDATE SET id = excluded.id, question = excluded.question, options = excluded.options, questions = excluded.questions, created_at = excluded.created_at`,
+		id, projectID, sessionID, question, string(data), questionsJSON, time.Now().Unix())
+	return err
+}
+
+// GetPendingAsk returns the project's pending ask, or ErrNotFound when none.
+func (s *Store) GetPendingAsk(projectID, sessionID string) (*PendingAsk, error) {
+	var a PendingAsk
+	var opts string
+	err := s.db.QueryRow(`SELECT id, question, options, COALESCE(questions, '') FROM pending_asks WHERE project_id = ? AND session_id = ?`, projectID, sessionID).
+		Scan(&a.ID, &a.Question, &opts, &a.QuestionsJSON)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal([]byte(opts), &a.Options); err != nil {
+		a.Options = nil
+	}
+	return &a, nil
+}
+
+// ClearPendingAsk removes the project's pending ask (answered, timed out, or
+// superseded by a new turn).
+func (s *Store) ClearPendingAsk(projectID, sessionID string) error {
+	_, err := s.db.Exec(`DELETE FROM pending_asks WHERE project_id = ? AND session_id = ?`, projectID, sessionID)
+	return err
+}
+
 // ---- sessions ----
 
 // CreateSession stores a session token for a user with the given TTL.
@@ -566,6 +696,13 @@ func (s *Store) UpdateProjectSettings(id, name, previewCommand, instructions str
 	return err
 }
 
+// RenameProject updates just the project's display name (the agent's
+// set_project_name tool).
+func (s *Store) RenameProject(id, name string) error {
+	_, err := s.db.Exec(`UPDATE projects SET name = ?, updated_at = ? WHERE id = ?`, name, now(), id)
+	return err
+}
+
 // GetProject returns the project with the given ID or ErrNotFound.
 func (s *Store) GetProject(id string) (*Project, error) {
 	p, err := scanProject(s.db.QueryRow(`SELECT `+projectCols+` FROM projects WHERE id = ?`, id))
@@ -616,10 +753,16 @@ func (s *Store) DeleteProject(id string) error {
 	if _, err := s.db.Exec(`DELETE FROM messages WHERE project_id = ?`, id); err != nil {
 		return err
 	}
+	if _, err := s.db.Exec(`DELETE FROM chat_sessions WHERE project_id = ?`, id); err != nil {
+		return err
+	}
 	if _, err := s.db.Exec(`DELETE FROM memories WHERE project_id = ?`, id); err != nil {
 		return err
 	}
 	if _, err := s.db.Exec(`DELETE FROM compaction_snapshots WHERE project_id = ?`, id); err != nil {
+		return err
+	}
+	if _, err := s.db.Exec(`DELETE FROM pending_asks WHERE project_id = ?`, id); err != nil {
 		return err
 	}
 	_, err := s.db.Exec(`DELETE FROM projects WHERE id = ?`, id)
@@ -656,11 +799,11 @@ type Message struct {
 	CreatedAt   int64
 }
 
-// AddMessage appends a message to a project's history.
-func (s *Store) AddMessage(projectID, role, content, toolJSON, model, reasoning, usage, attachments string) (int64, error) {
-	res, err := s.db.Exec(`INSERT INTO messages (project_id, role, content, tool_json, model, reasoning, usage, attachments, created_at)
-		VALUES (?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?)`,
-		projectID, role, content, toolJSON, model, reasoning, usage, attachments, now())
+// AddMessage appends a message to a chat session's history.
+func (s *Store) AddMessage(projectID, sessionID, role, content, toolJSON, model, reasoning, usage, attachments string) (int64, error) {
+	res, err := s.db.Exec(`INSERT INTO messages (project_id, session_id, role, content, tool_json, model, reasoning, usage, attachments, created_at)
+		VALUES (?, NULLIF(?, ''), ?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?)`,
+		projectID, sessionID, role, content, toolJSON, model, reasoning, usage, attachments, now())
 	if err != nil {
 		return 0, err
 	}
@@ -670,35 +813,169 @@ func (s *Store) AddMessage(projectID, role, content, toolJSON, model, reasoning,
 // CompactionSnapshot is a non-visible summary covering messages through an ID.
 type CompactionSnapshot struct {
 	ProjectID        string
+	SessionID        string
 	Summary          string
 	CoveredMessageID int64
 	CreatedAt        int64
 }
 
-// GetCompactionSnapshot returns the latest snapshot for a project.
-func (s *Store) GetCompactionSnapshot(projectID string) (*CompactionSnapshot, error) {
+// GetCompactionSnapshot returns the latest snapshot for a chat session.
+func (s *Store) GetCompactionSnapshot(projectID, sessionID string) (*CompactionSnapshot, error) {
 	var c CompactionSnapshot
-	err := s.db.QueryRow(`SELECT project_id, summary, covered_message_id, created_at FROM compaction_snapshots WHERE project_id = ?`, projectID).
-		Scan(&c.ProjectID, &c.Summary, &c.CoveredMessageID, &c.CreatedAt)
+	err := s.db.QueryRow(`SELECT project_id, session_id, summary, covered_message_id, created_at FROM compaction_snapshots WHERE project_id = ? AND session_id = ?`, projectID, sessionID).
+		Scan(&c.ProjectID, &c.SessionID, &c.Summary, &c.CoveredMessageID, &c.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
 	return &c, err
 }
 
-// SaveCompactionSnapshot replaces the project's non-visible transcript summary.
-func (s *Store) SaveCompactionSnapshot(projectID, summary string, coveredMessageID int64) error {
-	_, err := s.db.Exec(`INSERT INTO compaction_snapshots (project_id, summary, covered_message_id, created_at) VALUES (?, ?, ?, ?)
-		ON CONFLICT(project_id) DO UPDATE SET summary = excluded.summary, covered_message_id = excluded.covered_message_id, created_at = excluded.created_at`,
-		projectID, summary, coveredMessageID, now())
+// SaveCompactionSnapshot replaces the chat session's non-visible transcript
+// summary.
+func (s *Store) SaveCompactionSnapshot(projectID, sessionID, summary string, coveredMessageID int64) error {
+	_, err := s.db.Exec(`INSERT INTO compaction_snapshots (project_id, session_id, summary, covered_message_id, created_at) VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT(project_id, session_id) DO UPDATE SET summary = excluded.summary, covered_message_id = excluded.covered_message_id, created_at = excluded.created_at`,
+		projectID, sessionID, summary, coveredMessageID, now())
 	return err
 }
 
-// DeleteMessagesAfter removes every message with id greater than id. Chat
-// retry uses it to drop the aborted turn following the last user message.
-func (s *Store) DeleteMessagesAfter(projectID string, id int64) error {
-	_, err := s.db.Exec(`DELETE FROM messages WHERE project_id = ? AND id > ?`, projectID, id)
+// MergeContinuedTurn folds a continued assistant reply back into the partial
+// it continued from: content and reasoning are concatenated, the continuation
+// message's usage moves to the partial, and both the continuation and the
+// error row that followed the partial are deleted. Returns the partial's id.
+func (s *Store) MergeContinuedTurn(projectID, sessionID string, partialID int64) (int64, error) {
+	partial, err := s.GetMessage(projectID, partialID)
+	if err != nil {
+		return 0, err
+	}
+	rows, err := s.db.Query(`SELECT id, role, content, reasoning, usage FROM messages
+		WHERE project_id = ? AND session_id = ? AND id > ? ORDER BY id`, projectID, sessionID, partialID)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+	var contID, errID int64
+	var contContent, contReasoning, contUsage string
+	for rows.Next() {
+		var id int64
+		var role, content string
+		var reasoning, usage sql.NullString
+		if err := rows.Scan(&id, &role, &content, &reasoning, &usage); err != nil {
+			return 0, err
+		}
+		// The turn may have done tool rounds after the partial — the final
+		// assistant message carries the continuation text; the last error
+		// row is the one to drop.
+		if role == "assistant" {
+			contID = id
+			contContent, contReasoning, contUsage = content, reasoning.String, usage.String
+		} else if role == "error" {
+			errID = id
+		}
+	}
+	if contID == 0 {
+		return 0, ErrNotFound
+	}
+	content := partial.Content
+	if contContent != "" {
+		content = strings.TrimRight(content, "\n") + "\n\n" + strings.TrimSpace(contContent)
+	}
+	reasoning := strings.TrimRight(partial.Reasoning, "\n")
+	if contReasoning != "" {
+		reasoning += "\n" + strings.TrimSpace(contReasoning)
+	}
+	usage := partial.Usage
+	if usage == "" {
+		usage = contUsage
+	}
+	if _, err := s.db.Exec(`UPDATE messages SET content = ?, reasoning = ?, usage = ? WHERE id = ?`,
+		content, reasoning, usage, partialID); err != nil {
+		return 0, err
+	}
+	if _, err := s.db.Exec(`DELETE FROM messages WHERE id IN (?, ?)`, contID, errID); err != nil {
+		return 0, err
+	}
+	return partialID, nil
+}
+
+// DeleteMessagesAfter removes every message with id greater than id within a
+// chat session. Chat retry uses it to drop the aborted turn following the
+// last user message.
+func (s *Store) DeleteMessagesAfter(projectID, sessionID string, id int64) error {
+	_, err := s.db.Exec(`DELETE FROM messages WHERE project_id = ? AND session_id = ? AND id > ?`, projectID, sessionID, id)
 	return err
+}
+
+// ---- chat sessions ----
+
+// ChatSession is one chat thread of a project.
+type ChatSession struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	CreatedAt int64  `json:"createdAt"`
+}
+
+// ListSessions returns a project's chat sessions, oldest first.
+func (s *Store) ListSessions(projectID string) ([]ChatSession, error) {
+	rows, err := s.db.Query(`SELECT id, name, created_at FROM chat_sessions WHERE project_id = ? ORDER BY created_at, id`, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []ChatSession{}
+	for rows.Next() {
+		var cs ChatSession
+		if err := rows.Scan(&cs.ID, &cs.Name, &cs.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, cs)
+	}
+	return out, rows.Err()
+}
+
+// CreateChatSession adds a chat session. Empty names are auto-numbered
+// ("Session 1", "Session 2", …).
+func (s *Store) CreateChatSession(projectID, name string) (ChatSession, error) {
+	if strings.TrimSpace(name) == "" {
+		var n int
+		if err := s.db.QueryRow(`SELECT COUNT(*) FROM chat_sessions WHERE project_id = ?`, projectID).Scan(&n); err != nil {
+			return ChatSession{}, err
+		}
+		name = fmt.Sprintf("Session %d", n+1)
+	}
+	cs := ChatSession{ID: NewID(), Name: name, CreatedAt: now()}
+	if _, err := s.db.Exec(`INSERT INTO chat_sessions (id, project_id, name, created_at) VALUES (?, ?, ?, ?)`,
+		cs.ID, projectID, cs.Name, cs.CreatedAt); err != nil {
+		return ChatSession{}, err
+	}
+	return cs, nil
+}
+
+// RenameChatSession renames one of the project's chat sessions.
+func (s *Store) RenameChatSession(projectID, sessionID, name string) error {
+	_, err := s.db.Exec(`UPDATE chat_sessions SET name = ? WHERE id = ? AND project_id = ?`, name, sessionID, projectID)
+	return err
+}
+
+// EnsureDefaultSession returns the project's first chat session, creating
+// "Session 1" (and claiming any pre-session messages for it) when the project
+// has none yet.
+func (s *Store) EnsureDefaultSession(projectID string) (ChatSession, error) {
+	sessions, err := s.ListSessions(projectID)
+	if err != nil {
+		return ChatSession{}, err
+	}
+	if len(sessions) > 0 {
+		return sessions[0], nil
+	}
+	cs, err := s.CreateChatSession(projectID, "")
+	if err != nil {
+		return ChatSession{}, err
+	}
+	if _, err := s.db.Exec(`UPDATE messages SET session_id = ? WHERE project_id = ? AND session_id IS NULL`, cs.ID, projectID); err != nil {
+		return ChatSession{}, err
+	}
+	return cs, nil
 }
 
 // Memory is one fact the agent saved for a project.
@@ -811,9 +1088,9 @@ func (s *Store) UpdateMessageContent(projectID string, id int64, content string)
 
 // LastUserMessage returns the most recent user message of a project, or
 // ErrNotFound when the project has none.
-func (s *Store) LastUserMessage(projectID string) (*Message, error) {
+func (s *Store) LastUserMessage(projectID, sessionID string) (*Message, error) {
 	m, err := scanMessage(s.db.QueryRow(`SELECT id, project_id, role, content, tool_json, model, reasoning, usage, attachments, created_at
-		FROM messages WHERE project_id = ? AND role = 'user' ORDER BY id DESC LIMIT 1`, projectID))
+		FROM messages WHERE project_id = ? AND session_id = ? AND role = 'user' ORDER BY id DESC LIMIT 1`, projectID, sessionID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -835,9 +1112,9 @@ func scanMessage(row scanner) (*Message, error) {
 }
 
 // ListMessages returns a project's messages in insertion order.
-func (s *Store) ListMessages(projectID string) ([]*Message, error) {
+func (s *Store) ListMessages(projectID, sessionID string) ([]*Message, error) {
 	rows, err := s.db.Query(`SELECT id, project_id, role, content, tool_json, model, reasoning, usage, attachments, created_at
-		FROM messages WHERE project_id = ? ORDER BY id ASC`, projectID)
+		FROM messages WHERE project_id = ? AND session_id = ? ORDER BY id ASC`, projectID, sessionID)
 	if err != nil {
 		return nil, err
 	}
