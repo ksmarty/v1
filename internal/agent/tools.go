@@ -44,16 +44,16 @@ type Executor struct {
 	// BackgroundNotify persists a finished background command's result into
 	// the chat transcript (wired by the server).
 	BackgroundNotify func(*BackgroundJob)
-	OnTodos        func([]store.Todo)
-	OnMemories     func([]store.Memory)
-	OnFileChange   func()
+	OnTodos          func([]store.Todo)
+	OnMemories       func([]store.Memory)
+	OnFileChange     func()
 	// OnProjectRename notifies the UI when set_project_name renames the
 	// project (nil when the turn cannot rename).
 	OnProjectRename func(string)
-	MCP            *mcp.Manager // optional: namespaced mcp_<server>_<tool> tools
-	Perm           Resolver     // optional: gates tool calls via allow/deny/ask
-	PlanMode       bool         // read-only planning turn: state-changing tools refused
-	RTKEnabled     bool         // run_command output is piped through RTK (when installed)
+	MCP             *mcp.Manager // optional: namespaced mcp_<server>_<tool> tools
+	Perm            Resolver     // optional: gates tool calls via allow/deny/ask
+	PlanMode        bool         // read-only planning turn: state-changing tools refused
+	RTKEnabled      bool         // run_command output is piped through RTK (when installed)
 	// OnAsk asks the user one or more questions and waits for the answers
 	// (the ask_user tool); nil when the turn cannot prompt.
 	OnAsk func(ctx context.Context, questions []AskQuestion) ([]AskAnswer, error)
@@ -75,18 +75,20 @@ type Executor struct {
 
 // planBlockedTools: state-changing tools that are refused in plan mode.
 var planBlockedTools = map[string]bool{
-	"write_file":      true,
-	"edit_file":       true,
-	"delete_file":     true,
-	"move_file":       true,
-	"run_command":     true,
-	"restart_preview": true,
-	"screenshot_app":  true,
-	"set_todos":          true,
-	"set_project_name":   true,
+	"write_file":             true,
+	"edit_file":              true,
+	"delete_file":            true,
+	"move_file":              true,
+	"run_command":            true,
+	"git":                    true,
+	"run_container":          true,
+	"restart_preview":        true,
+	"screenshot_app":         true,
+	"set_todos":              true,
+	"set_project_name":       true,
 	"run_command_background": true,
-	"remember":           true,
-	"forget":             true,
+	"remember":               true,
+	"forget":                 true,
 }
 
 // planSafeTools filters a tool list down to the read-only ones for plan mode.
@@ -125,6 +127,10 @@ func (e *Executor) Execute(ctx context.Context, name, argsJSON string) (string, 
 		return e.fetchURL(ctx, argsJSON)
 	case "run_command":
 		return e.runCommand(ctx, argsJSON)
+	case "git":
+		return e.gitOp(ctx, argsJSON)
+	case "run_container":
+		return e.runContainer(ctx, argsJSON)
 	case "restart_preview":
 		return e.restartPreview()
 	case "screenshot_app":
@@ -1262,4 +1268,95 @@ func (e *Executor) restartPreview() (string, error) {
 		return "", err
 	}
 	return toolResult(map[string]any{"ok": true, "url": url}), nil
+}
+
+// gitOp runs any git command against the project workspace. The whole git
+// CLI is exposed (status, add, commit, push, pull, log, diff, branch,
+// checkout, revert, merge, remote, ...) so the model can drive every phase of
+// a repo's lifecycle. Commands run with the workspace as the working
+// directory (equivalent to `git -C <root>`).
+func (e *Executor) gitOp(ctx context.Context, argsJSON string) (string, error) {
+	var args struct {
+		Command string `json:"command"`
+	}
+	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
+		return "", err
+	}
+	cmdline := strings.TrimSpace(args.Command)
+	if cmdline == "" {
+		return "", fmt.Errorf("git: command is required, e.g. \"status\", \"add .\", \"commit -m …\"")
+	}
+	fields := strings.Fields(cmdline)
+	if fields[0] == "git" {
+		fields = fields[1:]
+	}
+	full := append([]string{"-C", e.Root}, fields...)
+	execCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(execCtx, "git", full...)
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &out
+	if err := cmd.Run(); err != nil {
+		if execCtx.Err() != nil {
+			return "", fmt.Errorf("git: timed out")
+		}
+		return toolResult(map[string]any{
+			"exitCode": 1,
+			"output":   trimHeadTail(out.String(), 5*1024),
+			"error":    "git command failed: " + err.Error(),
+		}), nil
+	}
+	return toolResult(map[string]any{"exitCode": 0, "output": out.String()}), nil
+}
+
+// runContainer lets the model test container/docker functionality. It runs
+// podman when available (a lighter-weight, daemonless Docker-compatible
+// runtime) and falls back to docker. Container image repo tests can go through
+// whatever is installed — e.g. `run_container` with "images", "ps", or build
+// & run commands.
+func (e *Executor) runContainer(ctx context.Context, argsJSON string) (string, error) {
+	var args struct {
+		Command string `json:"command"`
+	}
+	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
+		return "", err
+	}
+	cli := ""
+	for _, c := range []string{"podman", "docker"} {
+		if _, err := exec.LookPath(c); err == nil {
+			cli = c
+			break
+		}
+	}
+	if cli == "" {
+		return "", fmt.Errorf("no container runtime found: install podman or docker on the host to run container commands")
+	}
+	cmdline := strings.TrimSpace(args.Command)
+	if cmdline == "" {
+		return "", fmt.Errorf("run_container: command is required, e.g. \"images\", \"ps -a\", \"build -t myapp .\"")
+	}
+	fields := strings.Fields(cmdline)
+	if fields[0] == cli {
+		fields = fields[1:]
+	}
+	execCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(execCtx, cli, fields...)
+	cmd.Dir = e.Root
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &out
+	if err := cmd.Run(); err != nil {
+		if execCtx.Err() != nil {
+			return "", fmt.Errorf("run_container: timed out")
+		}
+		return toolResult(map[string]any{
+			"runtime":  cli,
+			"exitCode": 1,
+			"output":   trimHeadTail(out.String(), 5*1024),
+			"error":    cli + " command failed: " + err.Error(),
+		}), nil
+	}
+	return toolResult(map[string]any{"runtime": cli, "exitCode": 0, "output": out.String()}), nil
 }

@@ -18,11 +18,11 @@ import (
 	"sync"
 	"time"
 
+	"v1/internal/agent"
 	"v1/internal/auth"
 	"v1/internal/config"
 	"v1/internal/llm"
 	"v1/internal/mcp"
-	"v1/internal/agent"
 	"v1/internal/preview"
 	"v1/internal/store"
 	"v1/internal/terminal"
@@ -74,9 +74,9 @@ func New(cfg config.Config, st *store.Store) *Server {
 		oidcFlows:     map[string]*oidcFlow{},
 		vercelFlows:   map[string]*vercelFlow{},
 		vercelDeploys: map[string]*deployState{},
-		oidc: auth.NewOIDC(auth.OIDCConfig{}),
-		perm: permRegistry{reqs: map[string]*permRequest{}},
-		ask:  askRegistry{reqs: map[string]*askRequest{}},
+		oidc:          auth.NewOIDC(auth.OIDCConfig{}),
+		perm:          permRegistry{reqs: map[string]*permRequest{}},
+		ask:           askRegistry{reqs: map[string]*askRequest{}},
 	}
 	s.mcp = mcp.NewManager(s.mcpServers)
 	s.auth.BootstrapAdmin()
@@ -178,6 +178,8 @@ func (s *Server) routes(m *http.ServeMux) {
 
 	m.HandleFunc("GET /api/github/repos", s.handleGitHubRepos)
 	m.HandleFunc("GET /api/github/user", s.handleGitHubUser)
+	m.HandleFunc("GET /api/github/workflows", s.handleGitHubWorkflows)
+	m.HandleFunc("GET /api/github/images", s.handleGitHubImages)
 	m.HandleFunc("POST /api/github/oauth/device/start", s.handleOAuthDeviceStart)
 	m.HandleFunc("POST /api/github/oauth/device/poll", s.handleOAuthDevicePoll)
 	m.HandleFunc("POST /api/projects/{id}/github/create", s.handleGitHubCreate)
@@ -455,7 +457,7 @@ func (s *Server) rewindApproval(userID string) bool {
 	return ok && v == "1"
 }
 
-// defaultThinking resolves the user's default thinking level ('' = the
+// defaultThinking resolves the user's default thinking level (” = the
 // model's lowest level).
 func (s *Server) defaultThinking(userID string) string {
 	v, ok := s.userSetting(userID, keyThinkingDefault)

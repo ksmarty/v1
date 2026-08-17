@@ -7,6 +7,7 @@ import FilesPane from './FilesPane';
 import TerminalPane from './TerminalPane';
 import GitPane from './GitPane';
 import MemoriesPane from './MemoriesPane';
+import GitHubPane from './GitHubPane';
 import ProjectPane from './ProjectPane';
 import GitHubMenu from './GitHubMenu';
 import VercelMenu from './VercelMenu';
@@ -18,6 +19,7 @@ import {
   IconChevronLeft,
   IconFolder,
   IconGitBranch,
+  IconGitHub,
   IconSettings,
   IconTerminal,
 } from './icons';
@@ -31,6 +33,7 @@ const TABS: { id: ChatTab; label: string; icon: ReactNode }[] = [
   { id: 'terminal', label: 'Terminal', icon: <IconTerminal className="h-4 w-4" /> },
   { id: 'git', label: 'Git', icon: <IconGitBranch className="h-4 w-4" /> },
   { id: 'memories', label: 'Memories', icon: <IconBrain className="h-4 w-4" /> },
+  { id: 'github', label: 'GitHub', icon: <IconGitHub className="h-4 w-4" /> },
   { id: 'project', label: 'Project', icon: <IconSettings className="h-4 w-4" /> },
 ];
 
@@ -176,6 +179,11 @@ export default function ChatPanel({
         {visited.has('memories') && (
           <div className={tab === 'memories' ? 'h-full min-h-0' : 'hidden'}>
             <MemoriesPane projectId={projectId} live={liveMemories} />
+          </div>
+        )}
+        {visited.has('github') && (
+          <div className={tab === 'github' ? 'h-full min-h-0' : 'hidden'}>
+            <GitHubPane repoUrl={project?.repoUrl ?? ''} />
           </div>
         )}
         {visited.has('project') && (

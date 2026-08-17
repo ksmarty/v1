@@ -335,3 +335,37 @@ export interface PushResult {
   pushed: boolean;
   summary: string;
 }
+
+export interface GitHubWorkflowRun {
+  id: number;
+  name: string;
+  display_title: string;
+  head_branch: string;
+  event: string;
+  status: string;
+  conclusion: string | null;
+  created_at: string;
+  html_url: string;
+}
+
+export interface GitHubWorkflows {
+  owner: string;
+  repo: string;
+  count: number;
+  workflows: GitHubWorkflowRun[];
+}
+
+export interface GitHubContainerImage {
+  name: string;
+  visibility: string;
+  url: string;
+  created_at: string;
+  updated_at: string;
+  full: string;
+}
+
+export interface GitHubImages {
+  owner: string;
+  count: number;
+  images: GitHubContainerImage[];
+}

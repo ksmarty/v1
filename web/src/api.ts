@@ -10,6 +10,8 @@ import type {
   GitHubRepo,
   GitStatus,
   GitInfo,
+  GitHubWorkflows,
+  GitHubImages,
   InstalledSkill,
   MCPServer,
   MCPServerStatus,
@@ -362,6 +364,10 @@ export const api = {
 
   // GitHub / git
   listGitHubRepos: () => request<GitHubRepo[]>('/api/github/repos'),
+  githubWorkflows: (repo: string) =>
+    request<GitHubWorkflows>(`/api/github/workflows?repo=${encodeURIComponent(repo)}`),
+  githubImages: (owner: string) =>
+    request<GitHubImages>(`/api/github/images?owner=${encodeURIComponent(owner)}`),
   githubCreate: (id: string, name: string, isPrivate: boolean) =>
     post<void>(`/api/projects/${id}/github/create`, { name, private: isPrivate }),
   githubLink: (id: string, repoUrl: string) =>

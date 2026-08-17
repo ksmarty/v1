@@ -1092,6 +1092,7 @@ const CHAT_TAB_META: Record<ChatTab, { label: string; icon: ReactNode }> = {
   terminal: { label: 'Terminal', icon: <IconTerminal className="h-4 w-4" /> },
   git: { label: 'Git', icon: <IconGitBranch className="h-4 w-4" /> },
   memories: { label: 'Memories', icon: <IconBrain className="h-4 w-4" /> },
+  github: { label: 'GitHub', icon: <IconGitHub className="h-4 w-4" /> },
   project: { label: 'Project', icon: <IconSettings className="h-4 w-4" /> },
 };
 

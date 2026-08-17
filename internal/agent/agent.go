@@ -293,12 +293,12 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 				p.Emit(ChatEvent{Type: "injected_message", MessageID: r.MessageID, Text: r.Text})
 			}
 		}
-		allTools := tools
+		allTools := append(append([]llm.Tool{}, tools...), gitTool, containerTool)
 		if p.Vision {
-			allTools = append(append([]llm.Tool{}, allTools...), screenshotAppTool)
+			allTools = append(allTools, screenshotAppTool)
 		}
 		if len(p.ExtraTools) > 0 {
-			allTools = append(append([]llm.Tool{}, allTools...), p.ExtraTools...)
+			allTools = append(allTools, p.ExtraTools...)
 		}
 		if p.PlanMode {
 			allTools = planSafeTools(allTools)
@@ -524,6 +524,42 @@ var screenshotAppTool = llm.Tool{
 					"description": "Route path inside the app to capture (e.g. /about). Defaults to the app's root page.",
 				},
 			},
+		},
+	},
+}
+
+var gitTool = llm.Tool{
+	Type: "function",
+	Function: llm.ToolFunction{
+		Name:        "git",
+		Description: "Run any git operation in the project workspace (status, add, commit, push, pull, log, diff, branch, checkout, revert, merge, remote, etc). Pass the git subcommand and args as a single 'command' string, e.g. \"status\", \"add .\", \"commit -m \\\"feat: x\\\"\", \"push\", \"log --oneline -5\". Executes with the project directory as the working tree.",
+		Parameters: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"command": map[string]any{
+					"type":        "string",
+					"description": "The git subcommand and arguments to run.",
+				},
+			},
+			"required": []string{"command"},
+		},
+	},
+}
+
+var containerTool = llm.Tool{
+	Type: "function",
+	Function: llm.ToolFunction{
+		Name:        "run_container",
+		Description: "Test container/docker functionality. Runs podman when installed (a daemonless Docker-compatible runtime), otherwise docker. Use it to inspect images/containers (\"images\", \"ps -a\"), build images, run containers, tag and push them. Pass the runtime subcommand and args as a single 'command' string. Note: the host must have podman or docker installed.",
+		Parameters: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"command": map[string]any{
+					"type":        "string",
+					"description": "The podman/docker subcommand and arguments to run.",
+				},
+			},
+			"required": []string{"command"},
 		},
 	},
 }

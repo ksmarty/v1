@@ -28,6 +28,7 @@ function PushDialog({
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<PushResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<GitStatus | null>(null);
 
   useEffect(() => {
     if (open) {
@@ -35,12 +36,21 @@ function PushDialog({
       setResult(null);
       setError(null);
       setBusy(false);
+      setStatus(null);
+      api
+        .gitStatus(projectId)
+        .then(setStatus)
+        .catch(() => setStatus(null));
     }
-  }, [open]);
+  }, [open, projectId]);
+
+  // Only offer a commit message when the working tree has unsaved changes.
+  // With nothing to commit we just need a push of the existing commits.
+  const dirty = (status?.modified ?? 0) + (status?.untracked ?? 0) > 0;
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!message.trim()) {
+    if (dirty && !message.trim()) {
       setError('Commit message is required.');
       return;
     }
@@ -92,20 +102,27 @@ function PushDialog({
         </div>
       ) : (
         <form onSubmit={(e) => void submit(e)}>
-          <Textarea
-            autoFocus
-            rows={3}
-            placeholder="Commit message"
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-          />
+          {dirty ? (
+            <Textarea
+              autoFocus
+              rows={3}
+              placeholder="Commit message"
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+            />
+          ) : (
+            <p className="rounded-lg border border-border bg-surface/50 p-3 text-sm text-subtle">
+              No unsaved changes. Push will send your existing commits to the
+              remote.
+            </p>
+          )}
           {error && <ErrorBox message={error} className="mt-3" />}
           <div className="mt-4 flex justify-end gap-2">
             <Button variant="ghost" onClick={onClose}>
               Cancel
             </Button>
             <Button type="submit" disabled={busy}>
-              {busy ? <Spinner className="h-4 w-4" /> : 'Commit & push'}
+              {busy ? <Spinner className="h-4 w-4" /> : dirty ? 'Commit & push' : 'Push'}
             </Button>
           </div>
         </form>

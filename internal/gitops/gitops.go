@@ -48,7 +48,9 @@ func (c *GHClient) do(ctx context.Context, method, url string, body any) (int, [
 	if err != nil {
 		return 0, nil, err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.Token)
+	if c.Token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.Token)
+	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("User-Agent", "v1")
 	if body != nil {
@@ -61,6 +63,13 @@ func (c *GHClient) do(ctx context.Context, method, url string, body any) (int, [
 	defer resp.Body.Close()
 	b, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
 	return resp.StatusCode, b, nil
+}
+
+// Request performs an arbitrary GitHub REST request and returns the HTTP
+// status, response body and any transport error. The token is applied when set
+// (the client works anonymously for public endpoints otherwise).
+func (c *GHClient) Request(ctx context.Context, method, url string, body any) (int, []byte, error) {
+	return c.do(ctx, method, url, body)
 }
 
 func truncate(s string, n int) string {

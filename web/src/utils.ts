@@ -181,7 +181,7 @@ export function isStandalone(): boolean {
 
 // Project-view tabs: which tabs appear in the chat/files/terminal bar and in
 // what order (Settings → Appearance → Chat tabs).
-export type ChatTab = 'chat' | 'files' | 'terminal' | 'git' | 'memories' | 'project';
+export type ChatTab = 'chat' | 'files' | 'terminal' | 'git' | 'memories' | 'github' | 'project';
 
 export type ChatTabLayout = {
   /** Tabs shown in the bar, in display order. */
@@ -192,7 +192,7 @@ export type ChatTabLayout = {
 
 const CHAT_TABS_KEY = 'v1.chatTabs';
 
-const CHAT_TAB_IDS: ChatTab[] = ['chat', 'files', 'terminal', 'git', 'memories', 'project'];
+const CHAT_TAB_IDS: ChatTab[] = ['chat', 'files', 'terminal', 'git', 'memories', 'github', 'project'];
 
 export function getChatTabLayout(): ChatTabLayout {
   try {
