@@ -26,8 +26,6 @@ Rules:
 - If something important is unclear or you need a decision, use ask_user instead of guessing.
 - Keep your responses concise.`
 
-const maxRounds = 15
-
 // Usage is the token accounting attached to a finished turn.
 type Usage struct {
 	Input  int64  `json:"input"`
@@ -63,34 +61,34 @@ type ChatEvent struct {
 
 // ChatParams carries everything needed to run one chat turn.
 type ChatParams struct {
-	Store            *store.Store
-	Project          *store.Project
-	Client           *llm.Client
-	Exec             *Executor
-	Message          string
-	SessionID        string       // chat session the turn belongs to
-	Attachments      []Attachment // files attached to this user turn
-	Model            string       // per-turn override; empty uses p.Client.Model
-	LastUserID       int64        // retry mode: >0 re-runs the existing user message
-	ContinueFromID   int64        // continue mode: >0 resumes from this partial assistant message
-	ExtraTools       []llm.Tool   // dynamically added tools (e.g. MCP), namespaced
-	SkillsPrompt     string       // enabled skills' SKILL.md content for the system prompt
-	MemoriesPrompt   string       // project memories section for the system prompt
-	GlobalPrompt     string       // user's global system prompt (all projects)
-	Vision           bool         // the model reads images — enables screenshot_app
-	ReasoningEffort  string       // thinking level; sent as reasoning_effort when set
-	ToonEnabled      bool         // tool results are TOON-encoded for the model
-	Steer            func() []string // drains mid-run user messages, injected next round
-	Background       *BackgroundManager
+	Store           *store.Store
+	Project         *store.Project
+	Client          *llm.Client
+	Exec            *Executor
+	Message         string
+	SessionID       string          // chat session the turn belongs to
+	Attachments     []Attachment    // files attached to this user turn
+	Model           string          // per-turn override; empty uses p.Client.Model
+	LastUserID      int64           // retry mode: >0 re-runs the existing user message
+	ContinueFromID  int64           // continue mode: >0 resumes from this partial assistant message
+	ExtraTools      []llm.Tool      // dynamically added tools (e.g. MCP), namespaced
+	SkillsPrompt    string          // enabled skills' SKILL.md content for the system prompt
+	MemoriesPrompt  string          // project memories section for the system prompt
+	GlobalPrompt    string          // user's global system prompt (all projects)
+	Vision          bool            // the model reads images — enables screenshot_app
+	ReasoningEffort string          // thinking level; sent as reasoning_effort when set
+	ToonEnabled     bool            // tool results are TOON-encoded for the model
+	Steer           func() []string // drains mid-run user messages, injected next round
+	Background      *BackgroundManager
 	// PollBackground returns the session's finished background commands so the
 	// loop can inject their results into the conversation.
 	PollBackground func() []BackgroundResult
 	// BackgroundNotify persists a finished background command's result into
 	// the transcript (wired by the server alongside Background).
 	BackgroundNotify func(*BackgroundJob)
-	SkipSnapshot     bool         // edits/retries rewind the thread — no git checkpoint
-	PlanMode         bool         // read-only planning turn (/plan)
-	RTKEnabled       bool         // run_command output is piped through RTK (when installed)
+	SkipSnapshot     bool // edits/retries rewind the thread — no git checkpoint
+	PlanMode         bool // read-only planning turn (/plan)
+	RTKEnabled       bool // run_command output is piped through RTK (when installed)
 	ContextBudget    int
 	ContextThreshold float64
 	Summarizer       Summarizer
@@ -131,9 +129,11 @@ func freshProject(dir string) bool {
 }
 
 // RunChat persists the user message, replays history to the LLM, executes
-// tool calls (up to maxRounds rounds), persists the transcript (including the
-// model, reasoning and usage) and returns the turn's final usage. The done
-// event is emitted by the caller after RunChat returns.
+// tool calls for as long as the model keeps requesting them (no round cap —
+// the turn ends when the model replies without tool calls), persists the
+// transcript (including the model, reasoning and usage) and returns the
+// turn's final usage. The done event is emitted by the caller after RunChat
+// returns.
 func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 	if p.Model != "" {
 		p.Client.Model = p.Model
@@ -254,6 +254,7 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 	// into the persisted reply so a cap-hit never reads as a finished turn or
 	// an empty one.
 	var partialText, partialReasoning string
+	toolCallsIssued := 0 // local ids for providers that omit tool_call_id
 	assistantSaved := false
 	vision := hasImageParts(history)
 	// Continue mode: the history ends with the partial assistant reply — ask
@@ -264,7 +265,13 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 			Content: "Continue from where you left off. Do not repeat what is already written above.",
 		})
 	}
-	for round := 0; round < maxRounds; round++ {
+	// The round loop runs until the model finishes: a turn keeps executing tool
+	// rounds for as long as the model keeps requesting tools, with no round cap —
+	// the turn only ends when the model returns a text reply (or is stopped).
+	// Output-window truncations continue the same round without any limit either;
+	// the only guard is progress — a truncation that adds nothing new stops the
+	// turn so a broken provider can't spin forever.
+	for {
 		// Steered messages join the turn between rounds: persisted like a
 		// normal user turn and rendered in the UI via injected_message.
 		if p.Steer != nil {
@@ -301,8 +308,8 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 			func(d string) { p.Emit(ChatEvent{Type: "delta", Text: d}) },
 			func(d string) { p.Emit(ChatEvent{Type: "reasoning", Text: d}) })
 		// Models that don't support vision reject image parts; retry once with
-		// the images replaced by a text note.
-		if err != nil && round == 0 && vision {
+		// the images replaced by a text note (only on the first call).
+		if err != nil && !assistantSaved && vision {
 			history = stripImageParts(history)
 			vision = false
 			res, err = p.Client.ChatStream(ctx, compactForModel(ctx, history, p), allTools,
@@ -324,9 +331,10 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 		// tool result goes out without tool_call_id and strict providers 400.
 		for i := range res.ToolCalls {
 			if res.ToolCalls[i].ID == "" {
-				res.ToolCalls[i].ID = fmt.Sprintf("v1_call_%d_%d", round, i)
+				res.ToolCalls[i].ID = fmt.Sprintf("v1_call_%d", toolCallsIssued+i)
 			}
 		}
+		toolCallsIssued += len(res.ToolCalls)
 
 		toolJSON := ""
 		if len(res.ToolCalls) > 0 {
@@ -350,10 +358,9 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 		}
 		// If the provider's output window ran out mid-reply with no tool call
 		// to continue from (finish_reason "length" — the classic cause of
-		// "chats stop prematurely"), don't persist the truncated partial and
-		// don't treat it as a completed turn. Retry the round; the next call
-		// has no partial to play back and can complete normally. The round
-		// budget bounds retries, so this can't loop forever.
+		// "chats stop prematurely"), keep the partial in the model's view and
+		// retry the same round. A truncation that adds nothing new (an empty
+		// repeat) would spin forever — give up then and persist what we have.
 		truncated := len(res.ToolCalls) == 0 && res.StopReason == "length"
 		if truncated {
 			if res.Text != "" || res.Reasoning != "" {
@@ -364,9 +371,10 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 				partialReasoning += res.Reasoning
 				history = append(history, llm.Message{Role: "assistant", Content: res.Text, ReasoningContent: res.Reasoning})
 				history = append(history, llm.Message{Role: "user", Content: "Continue from where you left off. Do not repeat what is already written above."})
+				p.Emit(ChatEvent{Type: "info", Text: "Output window hit mid-reply; continuing turn."})
+				continue
 			}
-			p.Emit(ChatEvent{Type: "info", Text: "Output window hit mid-reply; continuing turn."})
-			continue
+			break // no progress — a provider stuck on "length" with no output
 		}
 
 		// A provider can end a stream successfully without producing anything
@@ -455,8 +463,8 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 			}
 		}
 	}
-	// The round budget ran out while the response was still being truncated —
-	// persist what made it out so the turn never silently vanishes.
+	// The loop can only be reached by a no-progress truncation break — persist
+	// what made it out so the turn never silently vanishes.
 	if !assistantSaved && (partialText != "" || partialReasoning != "") {
 		_, _ = p.Store.AddMessage(p.Project.ID, p.SessionID, "assistant", partialText, "", p.Client.Model, partialReasoning, "", "")
 	}
@@ -826,7 +834,7 @@ var tools = []llm.Tool{
 						"items":       map[string]any{"type": "string"},
 					},
 					"questions": map[string]any{
-						"type": "array",
+						"type":        "array",
 						"description": "Multiple questions to ask in sequence (2-8). Each has a question and optional 2-4 options.",
 						"items": map[string]any{
 							"type": "object",
