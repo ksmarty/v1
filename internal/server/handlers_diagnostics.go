@@ -21,10 +21,10 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 	sessionID := s.chatSessionID(p, r.URL.Query().Get("sessionId"))
 
 	out := map[string]any{
-		"project": map[string]any{"id": p.ID, "name": p.Name},
-		"session": sessionID,
-		"version": s.cfg.Version,
-		"commit":  s.cfg.Commit,
+		"project":  map[string]any{"id": p.ID, "name": p.Name},
+		"session":  sessionID,
+		"version":  s.cfg.Version,
+		"commit":   s.cfg.Commit,
 		"provider": s.diagnosticsProvider(userID),
 	}
 	if q := s.turns.get(p.ID, sessionID); q != nil {

@@ -58,13 +58,13 @@ type rpcMessage struct {
 
 // Client is a connected MCP server subprocess.
 type Client struct {
-	cfg    ServerConfig
-	cmd    *exec.Cmd
-	stdin  io.WriteCloser
-	mu     sync.Mutex
-	nextID int
+	cfg     ServerConfig
+	cmd     *exec.Cmd
+	stdin   io.WriteCloser
+	mu      sync.Mutex
+	nextID  int
 	pending map[int]chan json.RawMessage
-	done   chan struct{}
+	done    chan struct{}
 }
 
 // Connect starts the server subprocess and performs the MCP handshake.

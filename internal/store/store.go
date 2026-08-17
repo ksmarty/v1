@@ -714,7 +714,7 @@ func (s *Store) GetProject(id string) (*Project, error) {
 
 // ListProjects returns all projects sorted by updated_at descending.
 func (s *Store) ListProjects() ([]*Project, error) {
-	return s.listProjects(`SELECT ` + projectCols + ` FROM projects ORDER BY updated_at DESC`, nil)
+	return s.listProjects(`SELECT `+projectCols+` FROM projects ORDER BY updated_at DESC`, nil)
 }
 
 // ListProjectsByOwner returns a user's projects sorted by updated_at
