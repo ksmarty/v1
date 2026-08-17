@@ -528,6 +528,7 @@ func (s *Server) streamChatTurn(w http.ResponseWriter, r *http.Request, p *store
 		Previews:       s.previews,
 		Store:          s.st,
 		MCP:            s.mcp,
+		GithubToken:    s.githubToken(userID),
 		Perm:           &turnPerm{s: s, emit: emit, userID: userID},
 		OnTodos: func(t []store.Todo) {
 			emit(agent.ChatEvent{Type: "todos", Todos: t})

@@ -53,6 +53,7 @@ type Executor struct {
 	MCP             *mcp.Manager // optional: namespaced mcp_<server>_<tool> tools
 	Perm            Resolver     // optional: gates tool calls via allow/deny/ask
 	PlanMode        bool         // read-only planning turn: state-changing tools refused
+	GithubToken     string       // user's GitHub token for the git tool's remote ops
 	// OnAsk asks the user one or more questions and waits for the answers
 	// (the ask_user tool); nil when the turn cannot prompt.
 	OnAsk func(ctx context.Context, questions []AskQuestion) ([]AskAnswer, error)
@@ -1261,7 +1262,9 @@ func (e *Executor) restartPreview() (string, error) {
 // CLI is exposed (status, add, commit, push, pull, log, diff, branch,
 // checkout, revert, merge, remote, ...) so the model can drive every phase of
 // a repo's lifecycle. Commands run with the workspace as the working
-// directory (equivalent to `git -C <root>`).
+// directory (equivalent to `git -C <root>`). Remote operations (push, pull,
+// fetch, clone) authenticate automatically with the user's linked GitHub
+// token, so no host git credentials are required.
 func (e *Executor) gitOp(ctx context.Context, argsJSON string) (string, error) {
 	var args struct {
 		Command string `json:"command"`
@@ -1277,10 +1280,27 @@ func (e *Executor) gitOp(ctx context.Context, argsJSON string) (string, error) {
 	if fields[0] == "git" {
 		fields = fields[1:]
 	}
-	full := append([]string{"-C", e.Root}, fields...)
+	if len(fields) == 0 {
+		return "exitCode: 0, output: (no command)", nil
+	}
+	if _, err := exec.LookPath("git"); err != nil {
+		return "", fmt.Errorf("git: the git binary is not installed on this host — install git to use this tool")
+	}
+	full := []string{"-C", e.Root}
+	// Credential injection for remote operations: a one-shot credential
+	// helper that answers with the user's GitHub token. It is only attached
+	// to the subcommands that hit the network, and only when a token exists.
+	if e.GithubToken != "" && isGitRemoteOp(fields[0]) {
+		helper := `!f() { printf "username=x-access-token\npassword=$V1_GIT_TOKEN\n"; }; f`
+		full = append(full, "-c", "credential.helper="+helper)
+	}
+	full = append(full, fields...)
 	execCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 	cmd := exec.CommandContext(execCtx, "git", full...)
+	if e.GithubToken != "" && isGitRemoteOp(fields[0]) {
+		cmd.Env = append(os.Environ(), "V1_GIT_TOKEN="+e.GithubToken)
+	}
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &out
@@ -1295,6 +1315,16 @@ func (e *Executor) gitOp(ctx context.Context, argsJSON string) (string, error) {
 		}), nil
 	}
 	return toolResult(map[string]any{"exitCode": 0, "output": out.String()}), nil
+}
+
+// isGitRemoteOp reports whether the subcommand talks to a remote, where the
+// injected credential helper applies.
+func isGitRemoteOp(sub string) bool {
+	switch sub {
+	case "push", "pull", "fetch", "clone", "ls-remote", "submodule":
+		return true
+	}
+	return false
 }
 
 // runContainer lets the model test container/docker functionality. It runs

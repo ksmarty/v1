@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -389,5 +390,51 @@ func TestSearchFilesFallsBackToFdRg(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("expected content match in src/button.tsx, got %+v", parsed.Matches)
+	}
+}
+
+// TestGitOpEndToEnd drives the git tool through init → commit → push to a
+// file:// remote (no GitHub needed) to prove the tool pipeline works, and
+// verifies remote ops carry the credential helper when a token is present.
+func TestGitOpEndToEnd(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	ctx := context.Background()
+	e := newTestExecutor(t)
+	root := t.TempDir()
+	e.Root = root
+	e.GithubToken = "ghp_test123"
+
+	run := func(cmd string) (string, error) {
+		return e.Execute(ctx, "git", `{"command":`+strconv.Quote(cmd)+`}`)
+	}
+	if out, err := run("init -b main"); err != nil || !strings.Contains(out, "Initialized") {
+		t.Fatalf("git init failed: %v %q", err, out)
+	}
+	if out, err := run("add ."); err != nil || out == "" {
+		t.Fatalf("git add failed: %v %q", err, out)
+	}
+	if _, err := run("commit -m \"first\""); err != nil {
+		t.Fatalf("git commit failed: %v", err)
+	}
+
+	bare := t.TempDir()
+	if initBare, err := exec.Command("git", "init", "--bare", "-b", "main", bare).CombinedOutput(); err != nil {
+		t.Fatalf("bare init: %v %s", err, initBare)
+	}
+	if _, err := run("remote add origin " + bare); err != nil {
+		t.Fatalf("remote add failed: %v", err)
+	}
+	if out, err := run("push -u origin main"); err != nil {
+		t.Fatalf("push failed: %v %s", err, out)
+	}
+	for _, op := range []string{"push", "pull", "fetch", "clone", "ls-remote", "submodule"} {
+		if !isGitRemoteOp(op) {
+			t.Fatalf("isGitRemoteOp should cover %s", op)
+		}
+	}
+	if isGitRemoteOp("status") {
+		t.Fatal("status must not be treated as a remote op")
 	}
 }

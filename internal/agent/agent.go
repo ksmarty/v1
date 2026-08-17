@@ -528,7 +528,7 @@ var gitTool = llm.Tool{
 	Type: "function",
 	Function: llm.ToolFunction{
 		Name:        "git",
-		Description: "Run any git operation in the project workspace (status, add, commit, push, pull, log, diff, branch, checkout, revert, merge, remote, etc). Pass the git subcommand and args as a single 'command' string, e.g. \"status\", \"add .\", \"commit -m \\\"feat: x\\\"\", \"push\", \"log --oneline -5\". Executes with the project directory as the working tree.",
+		Description: "Run any git operation in the project workspace (status, add, commit, push, pull, log, diff, branch, checkout, revert, merge, remote, etc). Pass the git subcommand and args as a single 'command' string, e.g. \"status\", \"add .\", \"commit -m \\\"feat: x\\\"\", \"push\", \"log --oneline -5\". Executes with the project directory as the working tree. Remote operations (push, pull, fetch, clone) authenticate automatically with the user's linked GitHub account/token, so you can push to their repos — private ones included — without host git credentials.",
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
