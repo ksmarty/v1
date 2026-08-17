@@ -53,6 +53,7 @@ import {
   IconChevronUp,
   IconCode,
   IconCompress,
+  IconDownload,
   IconExpand,
   IconFile,
   IconGlobe,
@@ -2903,6 +2904,25 @@ export default function ChatPane({
     };
   }, [projectId, sessionId]);
 
+  // Exports a diagnostics dump of this chat (version, provider, run state,
+  // session messages) as a JSON file — for reporting chats that end oddly.
+  const exportDiagnostics = useCallback(async () => {
+    if (!sessionId) return;
+    try {
+      const dump = await api.chatDiagnostics(projectId, sessionId);
+      const blob = new Blob([JSON.stringify(dump, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `v1-diagnostics-${projectId}-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setLocalStatus('Diagnostics downloaded.');
+    } catch (e) {
+      setLocalStatus(errMsg(e));
+    }
+  }, [projectId, sessionId]);
+
   // Steers one queued message into the current run: the agent picks it up at
   // the next round boundary instead of waiting for the queue. The message
   // shows as "steering" until it lands as an injected message.
@@ -3875,6 +3895,17 @@ export default function ChatPane({
                   >
                     <IconLayers className="h-4 w-4 shrink-0 text-dim" />
                     Sessions
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPlusOpen(false);
+                      void exportDiagnostics();
+                    }}
+                    className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm text-text transition-colors hover:bg-border"
+                  >
+                    <IconDownload className="h-4 w-4 shrink-0 text-dim" />
+                    Export diagnostics
                   </button>
                   {!isDesktop && (
                     <button

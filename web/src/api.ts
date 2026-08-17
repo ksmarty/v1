@@ -304,6 +304,10 @@ export const api = {
     post<void>(`/api/projects/${id}/messages/truncate`, { id: messageId, sessionId }),
   compact: (id: string, sessionId: string) =>
     post<{ coveredMessageId: number }>(`/api/projects/${id}/compact?sessionId=${encodeURIComponent(sessionId)}`),
+  chatDiagnostics: (id: string, sessionId: string) =>
+    request<DiagnosticsDump>(
+      `/api/projects/${id}/diagnostics?sessionId=${encodeURIComponent(sessionId)}`,
+    ),
   // Mid-run send: the same endpoint queues the message onto the active run
   // (steer/follow-up) instead of opening an SSE stream. When queued, the
   // response carries the queue entry's id.
@@ -565,4 +569,36 @@ export function watchChat(
     signal,
     true,
   );
+}
+
+// DiagnosticsDump is the project chat debug export (GET /diagnostics) — build
+// version, effective provider (key masked), run state, and the session's
+// messages. Used to diagnose chats that ended unexpectedly from the UI.
+export interface DiagnosticsDump {
+  project: { id: string; name: string };
+  session: string;
+  version: string;
+  commit: string;
+  provider: {
+    id?: string;
+    name: string;
+    baseURL: string;
+    model: string;
+    apiKey: string;
+  };
+  run: {
+    running: boolean;
+    queued?: { id: string; text: string }[];
+    steering?: { id: string; text: string }[];
+  };
+  messages: {
+    id: number;
+    role: string;
+    content: string;
+    toolJson: string;
+    model: string;
+    usage: string;
+    reasoning: string;
+    attachments: { name: string; mime: string; kind: string; size: number }[];
+  }[];
 }

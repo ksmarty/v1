@@ -154,6 +154,7 @@ func (s *Server) routes(m *http.ServeMux) {
 	m.HandleFunc("POST /api/projects/{id}/ask/respond", s.handleAskRespond)
 	m.HandleFunc("GET /api/projects/{id}/ask/pending", s.handleAskPending)
 	m.HandleFunc("GET /api/projects/{id}/chat/queue", s.handleChatQueue)
+	m.HandleFunc("GET /api/projects/{id}/diagnostics", s.handleDiagnostics)
 	m.HandleFunc("POST /api/projects/{id}/chat/queue/reorder", s.handleChatQueueReorder)
 	m.HandleFunc("POST /api/projects/{id}/chat/queue/steer", s.handleChatQueueSteer)
 	m.HandleFunc("POST /api/projects/{id}/chat/queue/edit", s.handleChatQueueEdit)
