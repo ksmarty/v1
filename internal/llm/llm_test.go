@@ -183,3 +183,32 @@ func TestChatStreamFallsBackWithoutMaxTokens(t *testing.T) {
 		t.Errorf("server calls = %d, want 3", calls)
 	}
 }
+
+func TestChatStreamOpenRouterReasoningField(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(
+			sseChunk(`{"choices":[{"delta":{"content":"","reasoning":"Think"}}]}`) +
+				sseChunk(`{"choices":[{"delta":{"content":"","reasoning":"ing…"}}]}`) +
+				sseChunk(`{"choices":[{"delta":{"content":"Answer."},"finish_reason":"stop"}]}`) +
+				"data: [DONE]\n\n",
+		))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "", "test-model")
+	var reasoning string
+	res, err := client.ChatStream(context.Background(), []Message{{Role: "user", Content: "hi"}}, nil, nil, func(d string) { reasoning += d })
+	if err != nil {
+		t.Fatalf("ChatStream() error = %v", err)
+	}
+	if reasoning != "Thinking…" {
+		t.Errorf("reasoning deltas = %q, want %q", reasoning, "Thinking…")
+	}
+	if res.Reasoning != "Thinking…" {
+		t.Errorf("res.Reasoning = %q, want %q", res.Reasoning, "Thinking…")
+	}
+	if res.Text != "Answer." {
+		t.Errorf("res.Text = %q, want %q", res.Text, "Answer.")
+	}
+}

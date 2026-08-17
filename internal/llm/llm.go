@@ -270,7 +270,10 @@ func scanStream(r io.Reader, res *StreamResult, onDelta func(string), onReasonin
 				Delta        struct {
 					Content          string `json:"content"`
 					ReasoningContent string `json:"reasoning_content"`
-					ToolCalls        []struct {
+					// OpenRouter (and some other gateways) stream thinking in a
+					// plain `reasoning` field instead of reasoning_content.
+					Reasoning string `json:"reasoning"`
+					ToolCalls []struct {
 						Index    int    `json:"index"`
 						ID       string `json:"id"`
 						Type     string `json:"type"`
@@ -312,6 +315,11 @@ func scanStream(r io.Reader, res *StreamResult, onDelta func(string), onReasonin
 			res.Reasoning += d.ReasoningContent
 			if onReasoning != nil {
 				onReasoning(d.ReasoningContent)
+			}
+		} else if d.Reasoning != "" {
+			res.Reasoning += d.Reasoning
+			if onReasoning != nil {
+				onReasoning(d.Reasoning)
 			}
 		}
 		for _, tc := range d.ToolCalls {
