@@ -131,6 +131,7 @@ func (s *Server) routes(m *http.ServeMux) {
 	m.HandleFunc("POST /api/providers/remove", s.handleRemoveProvider)
 
 	m.HandleFunc("GET /api/projects", s.handleListProjects)
+	m.HandleFunc("GET /api/projects/active", s.handleActiveRuns)
 	m.HandleFunc("POST /api/projects", s.handleCreateProject)
 	m.HandleFunc("POST /api/projects/import", s.handleImportProject)
 	m.HandleFunc("GET /api/projects/{id}", s.handleGetProject)
@@ -159,6 +160,7 @@ func (s *Server) routes(m *http.ServeMux) {
 	m.HandleFunc("POST /api/projects/{id}/chat/queue/steer", s.handleChatQueueSteer)
 	m.HandleFunc("POST /api/projects/{id}/chat/queue/edit", s.handleChatQueueEdit)
 	m.HandleFunc("POST /api/projects/{id}/chat/queue/hold", s.handleChatQueueHold)
+	m.HandleFunc("POST /api/projects/{id}/chat/queue/delete", s.handleChatQueueDelete)
 	m.HandleFunc("GET /api/projects/{id}/sessions", s.handleListSessions)
 	m.HandleFunc("POST /api/projects/{id}/sessions", s.handleCreateSession)
 	m.HandleFunc("POST /api/projects/{id}/sessions/{sessionId}/rename", s.handleRenameSession)
@@ -191,6 +193,8 @@ func (s *Server) routes(m *http.ServeMux) {
 	m.HandleFunc("POST /api/projects/{id}/git/branch", s.handleGitBranch)
 	m.HandleFunc("POST /api/projects/{id}/git/checkout", s.handleGitCheckout)
 	m.HandleFunc("POST /api/projects/{id}/git/revert", s.handleGitRevert)
+	m.HandleFunc("POST /api/projects/{id}/git/commit", s.handleGitCommit)
+	m.HandleFunc("POST /api/projects/{id}/git/pull", s.handleGitPull)
 	m.HandleFunc("POST /api/projects/{id}/chat/permission", s.handlePermission)
 
 	m.HandleFunc("GET /api/mcp/status", s.handleMCPStatus)

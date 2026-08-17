@@ -33,6 +33,13 @@ import type {
 import { errMsg, getJsonPretty, getThinkingCollapsed, getToolCallsCollapsed } from '../utils';
 import { notifyTurnDone } from '../notify';
 import { permissionMeta } from '../permissions';
+
+// sessionStorageKey is the localStorage key remembering the last-used chat
+// session per project, so leaving a project and coming back reopens the same
+// thread instead of resetting to the default session.
+function sessionStorageKey(projectId: string): string {
+  return `v1.session.${projectId}`;
+}
 import { Button, Dialog, ErrorBox, IconButton, Input, Spinner } from './ui';
 import ToolSettings, { type ToolsTab } from './ToolSettings';
 import Markdown from './Markdown';
@@ -1974,15 +1981,25 @@ export default function ChatPane({
     void refreshQueue();
   }, [load, refreshQueue]);
 
-  // Load the chat sessions and activate the first one (the project's default
-  // thread) until the user switches.
+  // Load the chat sessions, restoring the last-used thread for this project
+  // when available, otherwise the project's default.
   useEffect(() => {
     api
       .listSessions(projectId)
       .then((res) => {
         const list = res.sessions ?? [];
         setSessions(list);
-        setSessionId((prev) => prev || list[0]?.id || '');
+        setSessionId((prev) => {
+          if (prev) return prev;
+          // Deep link from a notification → open that exact chat.
+          const deep = new URLSearchParams(window.location.search).get('session');
+          if (deep && list.some((s) => s.id === deep)) return deep;
+          const stored = localStorage.getItem(sessionStorageKey(projectId));
+          if (stored && list.some((s) => s.id === stored)) return stored;
+          const def = list[0]?.id || '';
+          if (def) localStorage.setItem(sessionStorageKey(projectId), def);
+          return def;
+        });
       })
       .catch(() => {});
   }, [projectId]);
@@ -1994,6 +2011,7 @@ export default function ChatPane({
       const res = await api.createSession(projectId);
       setSessions((prev) => [...prev, res.session]);
       setSessionId(res.session.id);
+      localStorage.setItem(sessionStorageKey(projectId), res.session.id);
       setSessionsOpen(false);
     } catch {
       // leave the modal open; the list is unchanged
@@ -2466,7 +2484,7 @@ export default function ChatPane({
               break;
             }
           }
-          void notifyTurnDone(projectId, projectName, snippet);
+          void notifyTurnDone(projectId, sessionId, projectName, snippet);
           void loadContext(true); // bypass the cache: usage changed this turn
           setAskPrompt(null); // the turn ended — no question can be pending
           setSteering([]); // the turn ended — nothing is pending injection
@@ -2938,6 +2956,19 @@ export default function ChatPane({
       }
     },
     [projectId, queued, refreshQueue],
+  );
+
+  // Deletes a queued follow-up so it is never sent.
+  const deleteQueued = useCallback(
+    async (id: string) => {
+      setQueued((prev) => prev.filter((m) => m.id !== id));
+      try {
+        await api.chatQueueDelete(projectId, sessionId, id);
+      } catch {
+        void refreshQueue();
+      }
+    },
+    [projectId, sessionId, refreshQueue],
   );
 
   const updateSuggestions = useCallback((value: string) => {
@@ -3761,6 +3792,16 @@ export default function ChatPane({
                 </button>
                 <button
                   type="button"
+                  onClick={() => void deleteQueued(m.id)}
+                  disabled={queueEditId === m.id}
+                  aria-label="Delete queued message"
+                  title="Delete queued message"
+                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-faint transition-colors hover:bg-border hover:text-red-400 disabled:opacity-40"
+                >
+                  <IconTrash className="h-3 w-3" />
+                </button>
+                <button
+                  type="button"
                   onClick={() => void steerQueued(m.id)}
                   disabled={queueEditId === m.id}
                   aria-label="Steer now"
@@ -4165,7 +4206,7 @@ export default function ChatPane({
                   </>
                 )}
               </div>
-              {streaming && <TrackBorder ts={track} id="v1-track-grad" />}
+              {(streaming || runActive) && <TrackBorder ts={track} id="v1-track-grad" />}
             </div>
           </div>
         </div>
@@ -4230,7 +4271,10 @@ export default function ChatPane({
         onClose={() => setSessionsOpen(false)}
         sessions={sessions}
         activeId={sessionId}
-        onSwitch={setSessionId}
+        onSwitch={(id) => {
+          setSessionId(id);
+          localStorage.setItem(sessionStorageKey(projectId), id);
+        }}
         onNew={() => void createNewSession()}
         onRename={(id, name) => {
           setSessions((prev) => prev.map((s) => (s.id === id ? { ...s, name } : s)));

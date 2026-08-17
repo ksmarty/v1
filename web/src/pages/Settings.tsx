@@ -68,6 +68,7 @@ import {
   IconUsers,
   IconWrench,
   IconX,
+  IconPlus,
 } from '../components/icons';
 import ProviderSelector from '../components/ProviderSelector';
 import GitHubConnect from '../components/GitHubConnect';
@@ -1478,6 +1479,17 @@ export default function Settings() {
     }
   };
 
+  // Begin adding a brand-new provider: clears the form and deselects the
+  // active provider so the next Save appends a fresh entry instead of
+  // overwriting the current one.
+  const startNewProvider = () => {
+    setActiveProviderId('');
+    setProvName('');
+    setBaseURL('');
+    setModel('');
+    setApiKey('');
+  };
+
   const useProvider = async (id: string) => {
     setProvBusyId(id);
     setProvError(null);
@@ -1871,9 +1883,20 @@ export default function Settings() {
                   : false
               }
               extra={
-                <Button variant="outline" onClick={() => void testLLM()} disabled={testing}>
-                  {testing ? <Spinner className="h-4 w-4" /> : 'Test connection'}
-                </Button>
+                <>
+                  <Button
+                    variant="outline"
+                    onClick={startNewProvider}
+                    disabled={llmSaving}
+                    title="Start a new provider (keeps existing ones)"
+                    className="shrink-0"
+                  >
+                    <IconPlus className="h-4 w-4" /> New provider
+                  </Button>
+                  <Button variant="outline" onClick={() => void testLLM()} disabled={testing}>
+                    {testing ? <Spinner className="h-4 w-4" /> : 'Test connection'}
+                  </Button>
+                </>
               }
             />
             {testResult &&

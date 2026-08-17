@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"v1/internal/gitops"
 	"v1/internal/skills"
@@ -59,7 +60,19 @@ func (s *Server) handleSkillsSearch(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"skills": results})
+	// Built-in skills ship with v1; surface them first when they match.
+	builtin := make([]skills.Skill, 0, len(skills.Builtins()))
+	q := strings.ToLower(strings.TrimSpace(body.Query))
+	for _, b := range skills.Builtins() {
+		if q != "" &&
+			!strings.Contains(strings.ToLower(b.Skill.Name), q) &&
+			!strings.Contains(strings.ToLower(b.Skill.Description), q) {
+			continue
+		}
+		b.Skill.Builtin = true
+		builtin = append(builtin, b.Skill)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"skills": append(builtin, results...)})
 }
 
 // handleSkillsInstall downloads a marketplace skill into the skills dir and
@@ -69,6 +82,20 @@ func (s *Server) handleSkillsInstall(w http.ResponseWriter, r *http.Request) {
 		Skill skills.Skill `json:"skill"`
 	}
 	if !decodeJSON(w, r, &body) {
+		return
+	}
+	// Built-in skills are materialized from the binary instead of downloaded.
+	if b := skills.FindBuiltin(body.Skill.ID); b != nil {
+		if err := s.installBuiltinSkill(*b); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		installed := append(s.installedSkills(), b.Skill)
+		if err := s.saveSkills(installed); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"installed": installed, "builtin": true})
 		return
 	}
 	if body.Skill.Name == "" || body.Skill.Owner == "" {
@@ -181,4 +208,31 @@ func (s *Server) handleSkillsToggle(w http.ResponseWriter, r *http.Request) {
 // downloads during skill install.
 func (s *Server) ghForSkills(userID string) *gitops.GHClient {
 	return gitops.NewGHClient(s.githubToken(userID))
+}
+
+// installBuiltinSkill writes a bundled skill's files (SKILL.md + templates)
+// into the skills directory. The directory name comes from the skill's Dir
+// and must be a plain single component.
+func (s *Server) installBuiltinSkill(b skills.Builtin) error {
+	dir := b.Skill.Dir
+	if dir == "" || dir != filepath.Base(dir) || strings.ContainsAny(dir, `/\`) {
+		return os.ErrInvalid
+	}
+	dest := filepath.Join(s.skillsRoot(), dir)
+	if err := os.RemoveAll(dest); err != nil {
+		return err
+	}
+	for rel, content := range b.Files {
+		full := filepath.Join(dest, filepath.FromSlash(rel))
+		if !strings.HasPrefix(full, dest+string(filepath.Separator)) {
+			return os.ErrInvalid
+		}
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(full, []byte(content), 0o644); err != nil {
+			return err
+		}
+	}
+	return nil
 }

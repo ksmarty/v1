@@ -1,11 +1,38 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
+	"sync"
+	"time"
 
 	"v1/internal/llm"
 )
+
+// routerModelsCache holds a short-lived copy of OpenRouter's live model list.
+var routerModelsCache struct {
+	sync.Mutex
+	at   time.Time
+	list []llm.ProviderModel
+}
+
+// routerModels returns the cached OpenRouter model directory, refetching it
+// at most every 15 minutes. It reports ok=false when unavailable.
+func (s *Server) routerModels() ([]llm.ProviderModel, bool) {
+	routerModelsCache.Lock()
+	defer routerModelsCache.Unlock()
+	if routerModelsCache.list != nil && time.Since(routerModelsCache.at) < 15*time.Minute {
+		return routerModelsCache.list, true
+	}
+	data := llm.RouterLiveModels(context.Background())
+	if data != nil && len(data) > 0 {
+		routerModelsCache.list = data
+		routerModelsCache.at = time.Now()
+		return data, true
+	}
+	return nil, false
+}
 
 // handleListProviders serves the provider catalog: the settings-cached copy
 // when present, otherwise the embedded snapshot; runtime-added providers and
@@ -25,7 +52,17 @@ func (s *Server) handleListProviders(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "provider catalog unavailable")
 		return
 	}
-	writeJSON(w, http.StatusOK, cat.WithAdded(s.customProviders()))
+	writeJSON(w, http.StatusOK, s.CatalogWithRouter(cat).WithAdded(s.customProviders()))
+}
+
+// CatalogWithRouter returns a catalog with OpenRouter's live model directory
+// merged in (cached briefly; silent when unreachable).
+func (s *Server) CatalogWithRouter(cat *llm.Catalog) *llm.Catalog {
+	data, ok := s.routerModels()
+	if !ok || len(data) == 0 {
+		return cat
+	}
+	return llm.MergeRouterModels(cat, data)
 }
 
 func (s *Server) providerCatalog() *llm.Catalog {

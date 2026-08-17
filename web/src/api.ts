@@ -252,6 +252,7 @@ export const api = {
 
   // Projects
   listProjects: () => request<Project[]>('/api/projects'),
+  activeProjects: () => request<{ active: string[] }>('/api/projects/active'),
   createProject: (body: { name?: string; description?: string }) =>
     post<Project>('/api/projects', body),
   getProject: (id: string) => request<Project>(`/api/projects/${id}`),
@@ -331,6 +332,8 @@ export const api = {
     post<void>(`/api/projects/${id}/chat/queue/edit`, { id: entryId, text, sessionId }),
   chatQueueHold: (id: string, sessionId: string, entryId: string, held: boolean) =>
     post<void>(`/api/projects/${id}/chat/queue/hold`, { id: entryId, held, sessionId }),
+  chatQueueDelete: (id: string, sessionId: string, entryId: string) =>
+    post<void>(`/api/projects/${id}/chat/queue/delete`, { id: entryId, sessionId }),
   getTodos: (id: string) => request<{ todos: Todo[] }>(`/api/projects/${id}/todos`),
   getMemories: (id: string) => request<{ memories: Memory[] }>(`/api/projects/${id}/memories`),
   createMemory: (id: string, content: string) =>
@@ -383,6 +386,9 @@ export const api = {
     post<void>(`/api/projects/${id}/git/checkout`, { branch }),
   gitRevert: (id: string, commit: string) =>
     post<void>(`/api/projects/${id}/git/revert`, { commit }),
+  gitCommit: (id: string, message: string) =>
+    post<{ ok: boolean; hash?: string }>(`/api/projects/${id}/git/commit`, { message }),
+  gitPull: (id: string) => post<void>(`/api/projects/${id}/git/pull`),
   oauthDeviceStart: () => post<DeviceFlowStart>('/api/github/oauth/device/start'),
   oauthDevicePoll: (flowId: string) =>
     post<DeviceFlowPoll>('/api/github/oauth/device/poll', { flowId }),

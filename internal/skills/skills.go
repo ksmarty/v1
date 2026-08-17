@@ -35,6 +35,7 @@ type Skill struct {
 	Repo        string `json:"repo"`
 	Dir         string `json:"dir"`
 	Enabled     bool   `json:"enabled"`
+	Builtin     bool   `json:"builtin,omitempty"`
 }
 
 // Search queries the SkillsMP index.
@@ -66,10 +67,10 @@ func Search(ctx context.Context, q string, limit int) ([]Skill, error) {
 			Stars       int64  `json:"stars"`
 			Branch      string `json:"branch"`
 			Route       struct {
-				OwnerSlug        string `json:"ownerSlug"`
-				RepoSlug         string `json:"repoSlug"`
-				RouteSlug        string `json:"routeSlug"`
-				SourceSkillPath  string `json:"sourceSkillPath"`
+				OwnerSlug       string `json:"ownerSlug"`
+				RepoSlug        string `json:"repoSlug"`
+				RouteSlug       string `json:"routeSlug"`
+				SourceSkillPath string `json:"sourceSkillPath"`
 			} `json:"route"`
 		} `json:"skills"`
 	}

@@ -1,9 +1,23 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api';
-import type { GitCommit, GitInfo } from '../types';
+import type { GitCommit, GitInfo, GitStatus } from '../types';
 import { errMsg } from '../utils';
-import { Button, Dialog, ErrorBox, Input, Spinner } from './ui';
-import { IconGitBranch, IconRewind, IconPlus, IconCheck } from './icons';
+import {
+  Button,
+  Dialog,
+  ErrorBox,
+  Input,
+  Spinner,
+  Textarea,
+} from './ui';
+import {
+  IconArrowDown,
+  IconArrowUp,
+  IconGitBranch,
+  IconRewind,
+  IconPlus,
+  IconCheck,
+} from './icons';
 
 function timeAgo(unix: number): string {
   const secs = Math.floor(Date.now() / 1000 - unix);
@@ -21,17 +35,21 @@ export default function GitPane({
   onPreviewRestart: () => void;
 }) {
   const [info, setInfo] = useState<GitInfo | null>(null);
+  const [st, setSt] = useState<GitStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [newBranch, setNewBranch] = useState('');
   const [confirmRevert, setConfirmRevert] = useState<GitCommit | null>(null);
   const [reverting, setReverting] = useState(false);
+  const [action, setAction] = useState<'commit' | 'push' | null>(null);
+  const [commitMsg, setCommitMsg] = useState('');
 
   const load = useCallback(async () => {
     try {
-      const g = await api.gitInfo(projectId);
+      const [g, s] = await Promise.all([api.gitInfo(projectId), api.gitStatus(projectId)]);
       setInfo(g);
+      setSt(s);
       setError(null);
     } catch (e) {
       setError(errMsg(e));
@@ -86,6 +104,29 @@ export default function GitPane({
       .catch((e) => setError(errMsg(e)))
       .finally(() => setReverting(false));
   };
+
+  const runAction = async (kind: 'commit' | 'push') => {
+    setBusy(true);
+    setError(null);
+    try {
+      if (kind === 'commit') {
+        await api.gitCommit(projectId, commitMsg.trim());
+      } else {
+        await api.githubPush(projectId, commitMsg.trim());
+      }
+      setAction(null);
+      setCommitMsg('');
+      await load();
+    } catch (e) {
+      setError(errMsg(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const dirty = (st?.modified ?? 0) + (st?.untracked ?? 0) > 0;
+  const ahead = st?.ahead ?? 0;
+  const behind = st?.behind ?? 0;
 
   if (loading) {
     return (
@@ -167,6 +208,62 @@ export default function GitPane({
           Every finished chat turn is committed automatically, so each step of a
           conversation is a checkpoint you can return to.
         </p>
+
+        {st?.isRepo && (
+          <div className="mt-2 flex items-center gap-1.5">
+            <span className="font-mono text-[11px] text-dim">{info.branch}</span>
+            <span className="font-mono text-[11px] text-emerald-300">
+              <IconArrowUp className="inline h-3 w-3" /> {ahead}
+            </span>
+            <span className="font-mono text-[11px] text-sky-300">
+              <IconArrowDown className="inline h-3 w-3" /> {behind}
+            </span>
+            <span className="text-[11px] text-dim">{st.modified} mod</span>
+            <span className="text-[11px] text-dim">{st.untracked} untracked</span>
+            <div className="flex-1" />
+            <Button
+              variant="outline"
+              className="shrink-0 px-2.5 text-xs"
+              onClick={() => void runAction('commit')}
+              disabled={busy || !dirty}
+              title={dirty ? 'Commit local changes' : 'Nothing to commit'}
+            >
+              <IconCheck className="h-3.5 w-3.5" /> Commit
+            </Button>
+            <Button
+              variant="outline"
+              className="shrink-0 px-2.5 text-xs"
+              onClick={() => {
+                setAction('push');
+                setCommitMsg('');
+              }}
+              disabled={busy || (!dirty && ahead === 0)}
+              title={dirty ? 'Commit & push' : ahead > 0 ? 'Push commits' : 'Everything up to date'}
+            >
+              <IconArrowUp className="h-3.5 w-3.5" /> Push
+            </Button>
+            <Button
+              variant="outline"
+              className="shrink-0 px-2.5 text-xs"
+              onClick={() => {
+                setBusy(true);
+                setError(null);
+                api
+                  .gitPull(projectId)
+                  .then(async () => {
+                    await load();
+                    onPreviewRestart();
+                  })
+                  .catch((e) => setError(errMsg(e)))
+                  .finally(() => setBusy(false));
+              }}
+              disabled={busy || !st?.repoUrl}
+              title="Pull from origin"
+            >
+              <IconArrowDown className="h-3.5 w-3.5" /> Pull
+            </Button>
+          </div>
+        )}
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
@@ -201,6 +298,48 @@ export default function GitPane({
           )}
         </div>
       </div>
+
+      <Dialog
+        open={action !== null}
+        onClose={() => setAction(null)}
+        title={action === 'commit' ? 'Commit changes' : 'Commit & push'}
+      >
+        {dirty ? (
+          <>
+            <Textarea
+              autoFocus
+              rows={3}
+              placeholder="Commit message"
+              value={commitMsg}
+              onChange={(e) => setCommitMsg(e.target.value)}
+            />
+            <p className="mt-2 text-xs text-subtle">{st?.modified} modified, {st?.untracked} untracked</p>
+          </>
+        ) : action === 'push' ? (
+          <p className="rounded-lg border border-border bg-surface/50 p-3 text-sm text-subtle">
+            {ahead} unpushed commit{ahead === 1 ? '' : 's'}. Push will send them to
+            the remote.
+          </p>
+        ) : (
+          <p className="text-sm text-subtle">Nothing to commit.</p>
+        )}
+        {error && <ErrorBox message={error} className="mt-3" />}
+        <div className="mt-4 flex justify-end gap-2">
+          <Button variant="ghost" onClick={() => setAction(null)} disabled={busy}>
+            Cancel
+          </Button>
+          {action === 'commit' && dirty && (
+            <Button onClick={() => void runAction('commit')} disabled={busy || !commitMsg.trim()}>
+              {busy ? <Spinner className="h-4 w-4" /> : 'Commit'}
+            </Button>
+          )}
+          {action === 'push' && (
+            <Button onClick={() => void runAction('push')} disabled={busy || (dirty && !commitMsg.trim())}>
+              {busy ? <Spinner className="h-4 w-4" /> : dirty ? 'Commit & push' : 'Push'}
+            </Button>
+          )}
+        </div>
+      </Dialog>
 
       <Dialog
         open={confirmRevert !== null}

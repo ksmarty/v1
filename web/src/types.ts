@@ -312,6 +312,8 @@ export interface GitStatus {
   branch?: string;
   modified: number;
   untracked: number;
+  ahead?: number;
+  behind?: number;
   repoUrl?: string;
 }
 

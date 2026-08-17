@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 
 	"v1/internal/agent"
@@ -56,6 +57,20 @@ func (q *turnQueue) listSteers() []queuedMsg {
 	out := make([]queuedMsg, len(q.steers))
 	copy(out, q.steers)
 	return out
+}
+
+// remove deletes a pending (follow-up) message from the queue. Returns
+// errNotQueued when the id is not a queued follow-up.
+func (q *turnQueue) remove(id string) error {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	for i := range q.pending {
+		if q.pending[i].ID == id {
+			q.pending = append(q.pending[:i], q.pending[i+1:]...)
+			return nil
+		}
+	}
+	return errNotQueued
 }
 
 // reorder replaces the pending order with the given id list, which must be a
@@ -316,6 +331,20 @@ func (m *turnManager) running(projectID, sessionID string) bool {
 	defer m.mu.Unlock()
 	_, ok := m.runs[runKey(projectID, sessionID)]
 	return ok
+}
+
+// activeProjects returns the set of project IDs that currently have at least
+// one running chat turn (for the dashboard "currently generating" indicator).
+func (m *turnManager) activeProjects() map[string]bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := map[string]bool{}
+	for key := range m.runs {
+		if i := strings.IndexByte(key, '/'); i > 0 {
+			out[key[:i]] = true
+		}
+	}
+	return out
 }
 
 // register attaches the run's cancel function (called from the stop

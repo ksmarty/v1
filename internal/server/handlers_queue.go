@@ -152,3 +152,33 @@ func (s *Server) handleChatQueueSteer(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
+
+// handleChatQueueDelete removes a queued follow-up message so it never gets
+// sent. Already-injected steering messages are unaffected.
+func (s *Server) handleChatQueueDelete(w http.ResponseWriter, r *http.Request) {
+	p := s.projectOr404(w, r)
+	if p == nil {
+		return
+	}
+	var body struct {
+		ID        string `json:"id"`
+		SessionID string `json:"sessionId"`
+	}
+	if !decodeJSON(w, r, &body) {
+		return
+	}
+	q := s.turns.get(p.ID, s.chatSessionID(p, body.SessionID))
+	if q == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+		return
+	}
+	if err := q.remove(body.ID); err != nil {
+		if errors.Is(err, errNotQueued) {
+			writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}

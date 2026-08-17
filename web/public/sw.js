@@ -3,13 +3,25 @@
 const VERSION = 'v1-cache-v1';
 const APP_SHELL = ['/', '/index.html', '/manifest.json', '/icon-192.png', '/icon-512.png'];
 
-// Turn-finished notifications: focus the app (or reopen it) on tap.
+// Turn-finished notifications: open/focus the app and navigate to the exact
+// chat the notification is about (from the notification's data.url).
 self.addEventListener('notificationclick', (e) => {
   e.notification.close();
+  const url = e.notification.data?.url;
   e.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((cs) => {
-      if (cs.length > 0) return cs[0].focus();
-      return clients.openWindow('/');
+      for (const c of cs) {
+        if (c.focus) c.focus();
+        if (url && 'navigate' in c) {
+          c.navigate(url);
+          return;
+        }
+        if (url) {
+          c.postMessage({ type: 'navigate', url });
+        }
+        return;
+      }
+      return clients.openWindow(url || '/');
     }),
   );
 });

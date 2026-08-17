@@ -383,6 +383,22 @@ export default function Projects() {
   const [deleting, setDeleting] = useState<Project | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  // Project IDs that currently have a chat turn running (the backend dashes
+  // them under "generating" — polled so the dashboard stays live).
+  const [activeIds, setActiveIds] = useState<Set<string>>(new Set());
+
+  const loadActive = useCallback(() => {
+    api
+      .activeProjects()
+      .then((r) => setActiveIds(new Set(r.active ?? [])))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    loadActive();
+    const t = window.setInterval(loadActive, 4000);
+    return () => window.clearInterval(t);
+  }, [loadActive]);
 
   const load = useCallback(() => {
     api
@@ -489,14 +505,23 @@ export default function Projects() {
               >
                 <Link to={`/project/${p.id}`} className="block p-4 pr-12">
                   <div className="flex items-center gap-2">
-                    <span
-                      className={`h-2 w-2 shrink-0 rounded-full ${
-                        p.preview.running ? 'bg-emerald-500' : 'bg-border-strong'
-                      }`}
-                      title={p.preview.running ? 'Preview running' : 'Preview stopped'}
-                    />
-                    <span className="truncate font-medium text-text">{p.name}</span>
-                  </div>
+                      {activeIds.has(p.id) && (
+                        <span
+                          className="inline-flex items-center gap-1.5 rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-medium text-accent"
+                          title="A chat turn is running in this project"
+                        >
+                          <Spinner className="h-3 w-3" />
+                          LLM running
+                        </span>
+                      )}
+                      <span
+                        className={`h-2 w-2 shrink-0 rounded-full ${
+                          p.preview.running ? 'bg-emerald-500' : 'bg-border-strong'
+                        }`}
+                        title={p.preview.running ? 'Preview running' : 'Preview stopped'}
+                      />
+                      <span className="truncate font-medium text-text">{p.name}</span>
+                    </div>
                   <div className="mt-1.5 text-xs text-subtle">
                     {p.preview.running ? 'Preview running' : 'Preview stopped'}
                     {p.updatedAt ? ` · ${timeAgo(p.updatedAt)}` : ''}

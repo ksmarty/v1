@@ -182,12 +182,12 @@ type modelsDevDoc struct {
 	Env    []string `json:"env"`
 	Doc    string   `json:"doc"`
 	Models map[string]struct {
-		Name             string           `json:"name"`
-		ToolCall         bool             `json:"tool_call"`
-		Modalities       struct {
+		Name       string `json:"name"`
+		ToolCall   bool   `json:"tool_call"`
+		Modalities struct {
 			Input []string `json:"input"`
 		} `json:"modalities"`
-		Reasoning        json.RawMessage  `json:"reasoning"`
+		Reasoning        json.RawMessage   `json:"reasoning"`
 		ReasoningOptions []reasoningOption `json:"reasoning_options"`
 		Limit            struct {
 			Context int `json:"context"`
@@ -355,7 +355,7 @@ func fetchModelContext(ctx context.Context, baseURL, apiKey, model string) int {
 
 // thinkingModelEntry mirrors one entry of a /models response.
 type thinkingModelEntry struct {
-	ID               string `json:"id"`
+	ID               string          `json:"id"`
 	Reasoning        json.RawMessage `json:"reasoning"`
 	ReasoningOptions []struct {
 		Type   string   `json:"type"`
@@ -825,4 +825,87 @@ func SearchProviders(ctx context.Context, query string) ([]Provider, error) {
 		return ni < nj
 	})
 	return out, nil
+}
+
+// routerModel is one entry of OpenRouter's public model directory.
+type routerModel struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// RouterLiveModels fetches OpenRouter's model directory. It surfaces models
+// the models.dev catalog hasn't indexed yet (e.g. freshly released DeepSeek V4
+// variants) so they still appear in the picker for the OpenRouter provider.
+// Returns nil on any failure (the catalog is used unchanged).
+func RouterLiveModels(ctx context.Context) []ProviderModel {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://openrouter.ai/api/v1/models", nil)
+	if err != nil {
+		return nil
+	}
+	req.Header.Set("Accept", "application/json")
+	cli := &http.Client{Timeout: 10 * time.Second}
+	resp, err := cli.Do(req)
+	if err != nil {
+		return nil
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil
+	}
+	var body struct {
+		Data []routerModel `json:"data"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&body); err != nil {
+		return nil
+	}
+	out := make([]ProviderModel, 0, len(body.Data))
+	for _, m := range body.Data {
+		if m.ID == "" {
+			continue
+		}
+		name := m.Name
+		if name == "" {
+			name = m.ID
+		}
+		out = append(out, ProviderModel{ID: m.ID, Name: name})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
+}
+
+// MergeRouterModels overlays live OpenRouter models onto the given catalog's
+// OpenRouter provider entry, adding any model IDs not already listed so the
+// picker covers models the static snapshot is missing. The catalog is returned
+// unchanged when it has no OpenRouter provider or the live fetch fails.
+func MergeRouterModels(cat *Catalog, live []ProviderModel) *Catalog {
+	if cat == nil || len(live) == 0 {
+		return cat
+	}
+	out := *cat
+	out.Providers = make([]Provider, len(cat.Providers))
+	copy(out.Providers, cat.Providers)
+	for i := range out.Providers {
+		if !strings.Contains(strings.ToLower(out.Providers[i].ID), "openrouter") {
+			continue
+		}
+		seen := map[string]bool{}
+		for _, m := range out.Providers[i].Models {
+			seen[m.ID] = true
+		}
+		added := 0
+		for _, m := range live {
+			if seen[m.ID] {
+				continue
+			}
+			out.Providers[i].Models = append(out.Providers[i].Models, m)
+			added++
+		}
+		if added > 0 {
+			sort.Slice(out.Providers[i].Models, func(a, b int) bool {
+				return out.Providers[i].Models[a].ID < out.Providers[i].Models[b].ID
+			})
+		}
+		break
+	}
+	return &out
 }

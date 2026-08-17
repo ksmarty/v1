@@ -158,6 +158,8 @@ func (s *Server) handleGitStatus(w http.ResponseWriter, r *http.Request) {
 		"isRepo":    st.IsRepo,
 		"modified":  st.Modified,
 		"untracked": st.Untracked,
+		"ahead":     st.Ahead,
+		"behind":    st.Behind,
 	}
 	if st.Branch != "" {
 		resp["branch"] = st.Branch

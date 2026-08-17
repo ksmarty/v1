@@ -138,3 +138,38 @@ func (s *Server) handleGitRevert(w http.ResponseWriter, r *http.Request) {
 	_ = s.st.TouchProject(p.ID)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
+
+// handleGitCommit stages all changes and creates a local commit (no push).
+func (s *Server) handleGitCommit(w http.ResponseWriter, r *http.Request) {
+	p := s.projectOr404(w, r)
+	if p == nil {
+		return
+	}
+	var body struct {
+		Message string `json:"message"`
+	}
+	_ = decodeJSON(w, r, &body)
+	hash, err := gitops.Commit(r.Context(), p.Path, body.Message, s.githubLogin(s.currentUser(r).ID))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	s.previews.TouchRevision(p.ID)
+	_ = s.st.TouchProject(p.ID)
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "hash": hash})
+}
+
+// handleGitPull fast-forwards the current branch from the origin remote.
+func (s *Server) handleGitPull(w http.ResponseWriter, r *http.Request) {
+	p := s.projectOr404(w, r)
+	if p == nil {
+		return
+	}
+	if err := gitops.Pull(r.Context(), p.Path, s.githubToken(s.currentUser(r).ID)); err != nil {
+		writeError(w, http.StatusBadGateway, "pull failed: "+err.Error())
+		return
+	}
+	s.previews.TouchRevision(p.ID)
+	_ = s.st.TouchProject(p.ID)
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}

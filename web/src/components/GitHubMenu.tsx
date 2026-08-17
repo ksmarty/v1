@@ -3,7 +3,13 @@ import { api } from '../api';
 import type { GitStatus, GitHubRepo, PushResult } from '../types';
 import { errMsg } from '../utils';
 import { Button, Dialog, ErrorBox, IconButton, Input, Spinner, Textarea } from './ui';
-import { IconExternalLink, IconGitBranch, IconGitHub } from './icons';
+import {
+  IconArrowDown,
+  IconArrowUp,
+  IconExternalLink,
+  IconGitBranch,
+  IconGitHub,
+} from './icons';
 
 function sanitizeRepoName(name: string): string {
   const cleaned = name
@@ -45,11 +51,14 @@ function PushDialog({
   }, [open, projectId]);
 
   // Only offer a commit message when the working tree has unsaved changes.
-  // With nothing to commit we just need a push of the existing commits.
+  // With nothing to commit we just push the existing commits.
   const dirty = (status?.modified ?? 0) + (status?.untracked ?? 0) > 0;
+  const ahead = status?.ahead ?? 0;
+  const upToDate = !dirty && ahead === 0;
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
+    if (busy) return;
     if (dirty && !message.trim()) {
       setError('Commit message is required.');
       return;
@@ -110,10 +119,14 @@ function PushDialog({
               value={message}
               onChange={(e) => setMessage(e.target.value)}
             />
+          ) : ahead > 0 ? (
+            <p className="rounded-lg border border-border bg-surface/50 p-3 text-sm text-subtle">
+              {ahead} unpushed commit{ahead === 1 ? '' : 's'} locally. Push will
+              send them to the remote.
+            </p>
           ) : (
             <p className="rounded-lg border border-border bg-surface/50 p-3 text-sm text-subtle">
-              No unsaved changes. Push will send your existing commits to the
-              remote.
+              Everything is up to date — nothing to push.
             </p>
           )}
           {error && <ErrorBox message={error} className="mt-3" />}
@@ -121,8 +134,8 @@ function PushDialog({
             <Button variant="ghost" onClick={onClose}>
               Cancel
             </Button>
-            <Button type="submit" disabled={busy}>
-              {busy ? <Spinner className="h-4 w-4" /> : dirty ? 'Commit & push' : 'Push'}
+            <Button type="submit" disabled={busy || upToDate}>
+              {busy ? <Spinner className="h-4 w-4" /> : upToDate ? 'Up to date' : dirty ? 'Commit & push' : 'Push'}
             </Button>
           </div>
         </form>
@@ -404,14 +417,24 @@ export default function GitHubMenu({
           {status !== null && (
             <div className="mb-3 flex flex-col gap-1.5 text-xs text-dim">
               {status.isRepo ? (
-                <div className="flex items-center gap-1.5">
-                  <IconGitBranch className="h-3.5 w-3.5 shrink-0 text-subtle" />
-                  <span className="font-mono text-text">{status.branch ?? 'HEAD'}</span>
-                  <span className="text-faint">·</span>
-                  <span>{status.modified} modified</span>
-                  <span className="text-faint">·</span>
-                  <span>{status.untracked} untracked</span>
-                </div>
+                <>
+                  <div className="flex items-center gap-1.5">
+                    <IconGitBranch className="h-3.5 w-3.5 shrink-0 text-subtle" />
+                    <span className="font-mono text-text">{status.branch ?? 'HEAD'}</span>
+                    <span className="text-faint">·</span>
+                    <span>{status.modified} modified</span>
+                    <span className="text-faint">·</span>
+                    <span>{status.untracked} untracked</span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="inline-flex items-center gap-1 rounded-md bg-emerald-500/10 px-1.5 py-0.5 font-mono text-[11px] text-emerald-300">
+                      <IconArrowUp className="h-3 w-3" /> {(status.ahead ?? 0)} outgoing
+                    </span>
+                    <span className="inline-flex items-center gap-1 rounded-md bg-sky-500/10 px-1.5 py-0.5 font-mono text-[11px] text-sky-300">
+                      <IconArrowDown className="h-3 w-3" /> {(status.behind ?? 0)} incoming
+                    </span>
+                  </div>
+                </>
               ) : (
                 <p className="text-subtle">Not a git repository yet.</p>
               )}

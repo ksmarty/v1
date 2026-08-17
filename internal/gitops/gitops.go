@@ -220,6 +220,54 @@ type Status struct {
 	Branch    string
 	Modified  int
 	Untracked int
+	Ahead     int // local commits not yet pushed (outgoing)
+	Behind    int // remote commits not yet pulled (incoming)
+}
+
+// fetchableSet returns the set of hashes reachable from a commit (deduped).
+func reachableSet(repo *git.Repository, start plumbing.Hash) map[plumbing.Hash]bool {
+	out := map[plumbing.Hash]bool{}
+	it, err := repo.Log(&git.LogOptions{From: start})
+	if err != nil {
+		return out
+	}
+	_ = it.ForEach(func(c *object.Commit) error {
+		out[c.Hash] = true
+		return nil
+	})
+	return out
+}
+
+// statusSync compares HEAD against the remote-tracking branch (as fresh as the
+// last fetch/push) and returns the count of outgoing local commits (ahead) and
+// incoming remote commits (behind).
+func statusSync(repo *git.Repository, branch string) (ahead, behind int) {
+	head, err := repo.Head()
+	if err != nil {
+		return
+	}
+	refName := plumbing.NewBranchReferenceName(branch)
+	if branch == "" {
+		refName = head.Name()
+	}
+	remRefName := plumbing.NewRemoteReferenceName("origin", refName.Short())
+	remRef, err := repo.Reference(remRefName, true)
+	if err != nil {
+		return // no remote-tracking ref (never fetched/pushed) — unknown
+	}
+	headSet := reachableSet(repo, head.Hash())
+	remSet := reachableSet(repo, remRef.Hash())
+	for h := range headSet {
+		if !remSet[h] {
+			ahead++
+		}
+	}
+	for h := range remSet {
+		if !headSet[h] {
+			behind++
+		}
+	}
+	return
 }
 
 // GetStatus inspects the git repository at path.
@@ -231,6 +279,7 @@ func GetStatus(path string) Status {
 	st := Status{IsRepo: true}
 	if head, err := repo.Head(); err == nil {
 		st.Branch = head.Name().Short()
+		st.Ahead, st.Behind = statusSync(repo, st.Branch)
 	}
 	w, err := repo.Worktree()
 	if err != nil {
@@ -340,6 +389,63 @@ func CommitAndPush(ctx context.Context, path, token, message, authorLogin string
 		summary = fmt.Sprintf("push failed: %v", err)
 	}
 	return committed, pushed, summary, nil
+}
+
+// Commit stages everything and creates a commit without pushing. Returns the
+// new commit hash (empty if there was nothing to commit).
+func Commit(ctx context.Context, path, message, authorLogin string) (string, error) {
+	repo, err := git.PlainOpen(path)
+	if err != nil {
+		return "", fmt.Errorf("not a git repository")
+	}
+	w, err := repo.Worktree()
+	if err != nil {
+		return "", err
+	}
+	if err := stageAll(w); err != nil {
+		return "", fmt.Errorf("staging: %w", err)
+	}
+	dirty, err := hasStagedChanges(w)
+	if err != nil {
+		return "", err
+	}
+	if !dirty {
+		return "", nil
+	}
+	if strings.TrimSpace(message) == "" {
+		message = "Update from v1"
+	}
+	h, err := w.Commit(message, &git.CommitOptions{Author: authorSignature(authorLogin)})
+	if err != nil {
+		return "", fmt.Errorf("commit: %w", err)
+	}
+	return h.String(), nil
+}
+
+// Pull fetches and fast-forwards the current branch from origin.
+func Pull(ctx context.Context, path, token string) error {
+	repo, err := git.PlainOpen(path)
+	if err != nil {
+		return fmt.Errorf("not a git repository")
+	}
+	w, err := repo.Worktree()
+	if err != nil {
+		return err
+	}
+	opts := &git.PullOptions{
+		RemoteName: "origin",
+		Force:      false,
+	}
+	if token != "" {
+		opts.Auth = basicAuth(token)
+	}
+	if err := w.PullContext(ctx, opts); err != nil {
+		if err == git.NoErrAlreadyUpToDate {
+			return nil
+		}
+		return err
+	}
+	return nil
 }
 
 // InitAndPush initializes a repo if needed, sets the origin remote, commits
