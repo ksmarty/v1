@@ -495,7 +495,6 @@ func (s *Server) streamChatTurn(w http.ResponseWriter, r *http.Request, p *store
 	params.SkillsPrompt = s.skillsSystemPrompt()
 	params.GlobalPrompt = s.globalSystemPrompt(userID)
 	params.ToonEnabled = s.toonEnabled(userID)
-	params.RTKEnabled = s.rtkEnabled(userID)
 	if mems, err := s.st.ListMemories(p.ID); err == nil {
 		params.MemoriesPrompt = memoryPrompt(mems)
 	}
@@ -644,6 +643,17 @@ func (s *Server) handleChatWatch(w http.ResponseWriter, r *http.Request) {
 
 	ch, release := hub.subscribe()
 	defer release()
+	// First send the partial reply accumulated so far so the attaching client
+	// can seed it and continue streaming — otherwise they'd see an empty
+	// message that starts halfway through the answer. (A tool boundary resets
+	// the buffer, so nothing is sent mid-tool; the live events follow instead.)
+	if text, reasoning := hub.snapshot(); text != "" || reasoning != "" {
+		snap := agent.ChatEvent{Type: "snapshot", Text: text, Reasoning: reasoning}
+		if b, err := json.Marshal(snap); err == nil {
+			_, _ = fmt.Fprintf(w, "data: %s\n\n", b)
+			flusher.Flush()
+		}
+	}
 	for ev := range ch {
 		b, err := json.Marshal(ev)
 		if err != nil {

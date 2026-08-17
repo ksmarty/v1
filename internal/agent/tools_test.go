@@ -180,40 +180,6 @@ func TestSetProjectName(t *testing.T) {
 	}
 }
 
-// TestRunCommandRTKOptOut: with RTK enabled and a fake rtk binary on PATH,
-// commands are wrapped by default but run raw with "rtk": false.
-func TestRunCommandRTKOptOut(t *testing.T) {
-	bin := t.TempDir()
-	if err := os.WriteFile(filepath.Join(bin, "rtk"), []byte("#!/bin/sh\necho RTK-WRAPPED \"$@\"\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-	if _, err := exec.LookPath("rtk"); err != nil {
-		t.Fatalf("fake rtk not on PATH: %v", err)
-	}
-	e := newTestExecutor(t)
-	e.RTKEnabled = true
-
-	res, err := e.Execute(context.Background(), "run_command", `{"command":"echo hi"}`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(res, "RTK-WRAPPED") {
-		t.Fatalf("expected RTK wrapper when enabled: %q", res)
-	}
-
-	res, err = e.Execute(context.Background(), "run_command", `{"command":"echo hi","rtk":false}`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(res, "RTK-WRAPPED") {
-		t.Fatalf("expected raw command with rtk:false: %q", res)
-	}
-	if !strings.Contains(res, "hi") {
-		t.Fatalf("expected command output: %q", res)
-	}
-}
-
 func TestListFilesSkipsAndCaps(t *testing.T) {
 	e := newTestExecutor(t)
 	os.MkdirAll(filepath.Join(e.Root, "node_modules/dep"), 0o755)

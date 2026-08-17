@@ -57,8 +57,6 @@ export interface Settings {
   rewindApproval: boolean;
   defaultThinking: string;
   toonEnabled: boolean;
-  /** run_command output piped through RTK when the binary is installed. */
-  rtkEnabled: boolean;
   /** Compaction threshold in percent of the context window (e.g. 80). */
   contextThreshold: number;
   systemPrompt: string;
@@ -228,6 +226,7 @@ export interface ChatMessage {
 export type ChatEvent =
   | { type: 'delta'; text: string }
   | { type: 'reasoning'; text: string }
+  | { type: 'snapshot'; text?: string; reasoning?: string }
   | { type: 'info'; text: string }
   | { type: 'tool_start'; name: string; detail: string }
   | { type: 'tool_end'; name: string; ok: boolean; detail: string }

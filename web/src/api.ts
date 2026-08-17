@@ -181,7 +181,6 @@ export interface SettingsUpdate {
   rewindApproval?: boolean;
   defaultThinking?: string;
   toonEnabled?: boolean;
-  rtkEnabled?: boolean;
   contextThreshold?: number;
   systemPrompt?: string;
 }

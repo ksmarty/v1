@@ -105,7 +105,6 @@ const SETTINGS_SEARCH: {
   { id: 'sec-system-prompt', page: 'llm', label: 'Global system prompt', hint: 'Extra instructions for every chat', keywords: 'prompt instructions behavior context rules system agent' },
   { id: 'sec-thinking-default', page: 'llm', label: 'Default thinking level', hint: 'Off / low / medium / high / xhigh / max', keywords: 'thinking reasoning effort level default tokens model' },
   { id: 'sec-toon', page: 'llm', label: 'TOON', hint: 'Token-efficient tool result encoding', keywords: 'toon tokens efficient encode tool results format compact json' },
-  { id: 'sec-rtk', page: 'llm', label: 'RTK', hint: 'Compress run_command output', keywords: 'rtk rust token killer command output compress filter tokens run_command' },
   { id: 'sec-context-threshold', page: 'llm', label: 'Context compaction', hint: 'Percent of context before auto compaction', keywords: 'context compaction threshold percent auto compact tokens' },
   { id: 'sec-github', page: 'github', label: 'GitHub', hint: 'Personal access token', keywords: 'github token pat repo import push auth' },
   { id: 'sec-github', page: 'github', label: 'GitHub OAuth', hint: 'OAuth App client ID', keywords: 'github oauth client id connect login' },
@@ -313,57 +312,6 @@ function ThinkingCollapsedControl() {
           {v ? 'On' : 'Off'}
         </button>
       ))}
-    </div>
-  );
-}
-
-function RtkControl() {
-  const [on, setOn] = useState(true);
-  const [loaded, setLoaded] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    api
-      .getSettings()
-      .then((s) => {
-        setOn(s.rtkEnabled ?? true);
-        setLoaded(true);
-      })
-      .catch(() => setLoaded(true));
-  }, []);
-
-  const choose = async (v: boolean) => {
-    setBusy(true);
-    setError(null);
-    try {
-      await api.updateSettings({ rtkEnabled: v });
-      setOn(v);
-    } catch (err) {
-      setError(errMsg(err));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div className="flex flex-col gap-2">
-      <div className="grid w-full max-w-xs grid-cols-2 gap-1 rounded-lg border border-border bg-surface p-1">
-        {([false, true] as const).map((v) => (
-          <button
-            key={String(v)}
-            type="button"
-            disabled={!loaded || busy}
-            onClick={() => void choose(v)}
-            className={`min-h-[36px] rounded-md text-sm transition-colors disabled:opacity-50 ${
-              on === v ? 'bg-border text-text' : 'text-dim hover:text-text'
-            }`}
-          >
-            {v ? 'On' : 'Off'}
-          </button>
-        ))}
-      </div>
-      {error && <p className="text-xs text-red-400">{error}</p>}
     </div>
   );
 }
@@ -2038,13 +1986,6 @@ export default function Settings() {
           description="Encode tool results as TOON — a compact, token-efficient format — when feeding them to the model. The chat keeps showing the original JSON either way."
         >
           <ToonControl />
-        </Section>
-        <Section
-          id="sec-rtk"
-          title="RTK"
-          description="Pipe run_command output through RTK (Rust Token Killer) when installed — it compresses or summarizes common commands (test runners, git, builds) so the model reads fewer tokens. Commands run as-is when the binary is missing."
-        >
-          <RtkControl />
         </Section>
         <Section
           id="sec-context-threshold"

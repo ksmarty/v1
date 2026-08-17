@@ -2323,7 +2323,9 @@ export default function ChatPane({
               }
               return [
                 ...prev.map((it) =>
-                  it.kind === 'msg' && it.key === prevKey ? { ...it, reasoningCollapsed: true } : it,
+                  it.kind === 'msg' && it.role === 'assistant'
+                    ? { ...it, reasoningCollapsed: it.key === prevKey ? true : it.reasoningCollapsed, streaming: false }
+                    : it,
                 ),
                 {
                   kind: 'msg',
@@ -2355,7 +2357,9 @@ export default function ChatPane({
             assistantKeyRef.current = k;
             const nk = k;
             update((prev) => [
-              ...prev,
+              ...prev.map((it) =>
+                it.kind === 'msg' && it.role === 'assistant' ? { ...it, streaming: false } : it,
+              ),
               { kind: 'msg', key: nk, role: 'assistant', content: '', sentAt: Date.now(), streaming: true },
             ]);
           }
@@ -2365,6 +2369,43 @@ export default function ChatPane({
               it.kind === 'msg' && it.key === ck ? { ...it, content: it.content + ev.text } : it,
             ),
           );
+          break;
+        }
+        // A watch connection first sends the partial reply accumulated so far,
+        // so leaving mid-stream and returning continues the same message.
+        case 'snapshot': {
+          const text = ev.text ?? '';
+          const reasoning = ev.reasoning ?? '';
+          if (text === '' && reasoning === '') break;
+          let k = assistantKeyRef.current;
+          if (!k) {
+            k = `s${++counterRef.current}`;
+            assistantKeyRef.current = k;
+            const nk = k;
+            update((prev) => [
+              ...prev.map((it) =>
+                it.kind === 'msg' && it.role === 'assistant' ? { ...it, streaming: false } : it,
+              ),
+              {
+                kind: 'msg',
+                key: nk,
+                role: 'assistant',
+                content: text,
+                reasoning,
+                sentAt: Date.now(),
+                streaming: true,
+              },
+            ]);
+          } else {
+            const ck = k;
+            update((prev) =>
+              prev.map((it) =>
+                it.kind === 'msg' && it.key === ck
+                  ? { ...it, content: it.content + text, reasoning: (it.reasoning ?? '') + reasoning }
+                  : it,
+              ),
+            );
+          }
           break;
         }
         case 'tool_start': {

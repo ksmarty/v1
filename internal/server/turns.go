@@ -208,13 +208,36 @@ func runKey(projectID, sessionID string) string {
 // return to a chat while a generation is running and attach to the live
 // stream (GET /chat/watch) instead of waiting for the snapshot to update.
 type runHub struct {
-	mu     sync.Mutex
-	subs   map[chan agent.ChatEvent]struct{}
-	closed bool
+	mu        sync.Mutex
+	subs      map[chan agent.ChatEvent]struct{}
+	closed    bool
+	text      string // latest reply text so far (current round), for reattach
+	reasoning string // latest thinking text so far (current round)
 }
 
 func newRunHub() *runHub {
 	return &runHub{subs: map[chan agent.ChatEvent]struct{}{}}
+}
+
+// record accumulates the in-flight reply so a watch client that attaches
+// mid-turn can catch up and continue streaming instead of starting blank.
+// A new round (tool_start) clears the buffer.
+func (h *runHub) record(ev agent.ChatEvent) {
+	switch ev.Type {
+	case "delta":
+		h.text += ev.Text
+	case "reasoning":
+		h.reasoning += ev.Text
+	case "tool_start":
+		h.text, h.reasoning = "", ""
+	}
+}
+
+// snapshot returns the accumulated partial reply (text + reasoning).
+func (h *runHub) snapshot() (text, reasoning string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.text, h.reasoning
 }
 
 // subscribe returns a buffered channel that receives the run's events from
@@ -242,6 +265,7 @@ func (h *runHub) subscribe() (chan agent.ChatEvent, func()) {
 func (h *runHub) publish(ev agent.ChatEvent) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	h.record(ev)
 	for ch := range h.subs {
 		select {
 		case ch <- ev:

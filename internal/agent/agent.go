@@ -44,6 +44,7 @@ type TurnResult struct {
 type ChatEvent struct {
 	Type        string           `json:"type"`
 	Text        string           `json:"text,omitempty"`
+	Reasoning   string           `json:"reasoning,omitempty"`
 	Name        string           `json:"name,omitempty"`
 	Detail      string           `json:"detail,omitempty"`
 	OK          bool             `json:"ok,omitempty"`
@@ -88,7 +89,6 @@ type ChatParams struct {
 	BackgroundNotify func(*BackgroundJob)
 	SkipSnapshot     bool // edits/retries rewind the thread — no git checkpoint
 	PlanMode         bool // read-only planning turn (/plan)
-	RTKEnabled       bool // run_command output is piped through RTK (when installed)
 	ContextBudget    int
 	ContextThreshold float64
 	Summarizer       Summarizer
@@ -183,9 +183,6 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 	if p.ToonEnabled {
 		system += "\n- Tool results are encoded in TOON, a compact indentation format: headers like key[N]{fields}: declare array length and column names, and rows are comma-separated. Read them as structured data, not prose."
 	}
-	if p.RTKEnabled {
-		system += "\n- run_command output is passed through RTK, which compresses or summarizes common commands (test runners, git, builds): failures and errors are preserved, successful output is condensed. When a failure log was truncated, RTK prints a [full output: …] path you can read with read_file. If RTK ever mangles or hides output you need, rerun the command with \"rtk\": false to get the raw output."
-	}
 	if p.Background != nil {
 		system += "\n- run_command_background starts a command detached from the turn: it returns a job id immediately, and the result is injected into the chat as a user message (\"[Background #id: command] finished (exit N): output\") once the command completes — mid-turn if you are still working, or at the start of your next turn. Start long-running work with it instead of blocking, and react to the result when it arrives."
 	}
@@ -194,7 +191,6 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 	}
 	history := []llm.Message{{Role: "system", Content: system}}
 	p.Exec.PlanMode = p.PlanMode
-	p.Exec.RTKEnabled = p.RTKEnabled
 	p.Exec.Background = p.Background
 	p.Exec.BackgroundNotify = p.BackgroundNotify
 	p.Exec.SessionID = p.SessionID
@@ -735,10 +731,6 @@ var tools = []llm.Tool{
 					"timeout_seconds": map[string]any{
 						"type":        "number",
 						"description": "Timeout in seconds (default 120, max 600).",
-					},
-					"rtk": map[string]any{
-						"type":        "boolean",
-						"description": "Run without RTK output compression for this command. Set false when RTK mangles or hides output you need; defaults to true when RTK is enabled.",
 					},
 				},
 				"required": []string{"command"},

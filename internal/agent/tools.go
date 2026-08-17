@@ -53,7 +53,6 @@ type Executor struct {
 	MCP             *mcp.Manager // optional: namespaced mcp_<server>_<tool> tools
 	Perm            Resolver     // optional: gates tool calls via allow/deny/ask
 	PlanMode        bool         // read-only planning turn: state-changing tools refused
-	RTKEnabled      bool         // run_command output is piped through RTK (when installed)
 	// OnAsk asks the user one or more questions and waits for the answers
 	// (the ask_user tool); nil when the turn cannot prompt.
 	OnAsk func(ctx context.Context, questions []AskQuestion) ([]AskAnswer, error)
@@ -1171,7 +1170,6 @@ func (e *Executor) runCommand(ctx context.Context, argsJSON string) (string, err
 	var args struct {
 		Command        string   `json:"command"`
 		TimeoutSeconds *float64 `json:"timeout_seconds"`
-		RTK            *bool    `json:"rtk"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 		return "", fmt.Errorf("invalid arguments: %w", err)
@@ -1196,18 +1194,7 @@ func (e *Executor) runCommand(ctx context.Context, argsJSON string) (string, err
 		}
 	}
 
-	// RTK (Rust Token Killer) wraps the command and compresses its output
-	// before it reaches the model: failures are preserved, successes are
-	// condensed. Unknown commands pass through unchanged; without the binary
-	// the command runs as-is. The model can opt a single call out with
-	// "rtk": false when RTK mangles or hides output it needs.
 	cmdLine := args.Command
-	useRTK := e.RTKEnabled && (args.RTK == nil || *args.RTK)
-	if useRTK {
-		if _, err := exec.LookPath("rtk"); err == nil {
-			cmdLine = "rtk " + cmdLine
-		}
-	}
 	cmd := exec.Command("sh", "-c", cmdLine)
 	cmd.Dir = e.Root
 	cmd.Env = os.Environ()

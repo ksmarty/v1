@@ -302,7 +302,6 @@ const (
 	keyRewindApproval      = "rewind_approval"
 	keyThinkingDefault     = "thinking_default"
 	keyToonEnabled         = "toon_enabled"
-	keyRTKEnabled          = "rtk_enabled"
 	keySystemPrompt        = "system_prompt"
 	keyContextThreshold    = "context_threshold"
 )
@@ -475,17 +474,6 @@ func (s *Server) defaultThinking(userID string) string {
 // Enabled by default; only an explicit "0" disables it.
 func (s *Server) toonEnabled(userID string) bool {
 	v, ok := s.userSetting(userID, keyToonEnabled)
-	if !ok || v == "" {
-		return true
-	}
-	return v == "1"
-}
-
-// rtkEnabled reports whether run_command output is piped through RTK (Rust
-// Token Killer) when the binary is installed. Enabled by default; only an
-// explicit "0" disables it.
-func (s *Server) rtkEnabled(userID string) bool {
-	v, ok := s.userSetting(userID, keyRTKEnabled)
 	if !ok || v == "" {
 		return true
 	}
