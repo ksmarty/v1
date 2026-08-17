@@ -44,6 +44,7 @@ export default function GitPane({
   const [reverting, setReverting] = useState(false);
   const [action, setAction] = useState<'commit' | 'push' | null>(null);
   const [commitMsg, setCommitMsg] = useState('');
+  const [commitInfo, setCommitInfo] = useState<GitCommit | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -127,6 +128,7 @@ export default function GitPane({
   const dirty = (st?.modified ?? 0) + (st?.untracked ?? 0) > 0;
   const ahead = st?.ahead ?? 0;
   const behind = st?.behind ?? 0;
+  const upToDate = !dirty && ahead === 0 && behind === 0;
 
   if (loading) {
     return (
@@ -209,62 +211,74 @@ export default function GitPane({
           conversation is a checkpoint you can return to.
         </p>
 
-        {st?.isRepo && (
-          <div className="mt-2 flex items-center gap-1.5">
-            <span className="font-mono text-[11px] text-dim">{info.branch}</span>
-            <span className="font-mono text-[11px] text-emerald-300">
-              <IconArrowUp className="inline h-3 w-3" /> {ahead}
-            </span>
-            <span className="font-mono text-[11px] text-sky-300">
-              <IconArrowDown className="inline h-3 w-3" /> {behind}
-            </span>
-            <span className="text-[11px] text-dim">{st.modified} mod</span>
-            <span className="text-[11px] text-dim">{st.untracked} untracked</span>
-            <div className="flex-1" />
-            <Button
-              variant="outline"
-              className="shrink-0 px-2.5 text-xs"
-              onClick={() => void runAction('commit')}
-              disabled={busy || !dirty}
-              title={dirty ? 'Commit local changes' : 'Nothing to commit'}
-            >
-              <IconCheck className="h-3.5 w-3.5" /> Commit
-            </Button>
-            <Button
-              variant="outline"
-              className="shrink-0 px-2.5 text-xs"
-              onClick={() => {
-                setAction('push');
-                setCommitMsg('');
-              }}
-              disabled={busy || (!dirty && ahead === 0)}
-              title={dirty ? 'Commit & push' : ahead > 0 ? 'Push commits' : 'Everything up to date'}
-            >
-              <IconArrowUp className="h-3.5 w-3.5" /> Push
-            </Button>
-            <Button
-              variant="outline"
-              className="shrink-0 px-2.5 text-xs"
-              onClick={() => {
-                setBusy(true);
-                setError(null);
-                api
-                  .gitPull(projectId)
-                  .then(async () => {
-                    await load();
-                    onPreviewRestart();
-                  })
-                  .catch((e) => setError(errMsg(e)))
-                  .finally(() => setBusy(false));
-              }}
-              disabled={busy || !st?.repoUrl}
-              title="Pull from origin"
-            >
-              <IconArrowDown className="h-3.5 w-3.5" /> Pull
-            </Button>
-          </div>
-        )}
       </div>
+
+      {st?.isRepo && (
+        <div className="flex flex-col gap-2.5 rounded-lg border border-border bg-surface p-3">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+            <span className="inline-flex items-center gap-1 rounded-md bg-surface px-1.5 py-0.5 font-mono text-[11px]">
+              <IconGitBranch className="h-3.5 w-3.5 text-subtle" />
+              {info.branch}
+            </span>
+            <span className="inline-flex items-center gap-1 rounded-md bg-emerald-500/10 px-1.5 py-0.5 font-mono text-[11px] text-emerald-300">
+              <IconArrowUp className="h-3 w-3" /> {ahead}
+            </span>
+            <span className="inline-flex items-center gap-1 rounded-md bg-sky-500/10 px-1.5 py-0.5 font-mono text-[11px] text-sky-300">
+              <IconArrowDown className="h-3 w-3" /> {behind}
+            </span>
+            <span className="font-mono text-[11px] text-dim">{st.modified} mod</span>
+            <span className="font-mono text-[11px] text-dim">{st.untracked} untracked</span>
+            <div className="flex-1" />
+            {dirty && (
+              <Button
+                variant="outline"
+                className="shrink-0 px-2.5 text-xs"
+                onClick={() => void runAction('commit')}
+                disabled={busy}
+                title="Commit local changes"
+              >
+                <IconCheck className="h-3.5 w-3.5" /> Commit
+              </Button>
+            )}
+            {(dirty || ahead > 0) && (
+              <Button
+                variant="outline"
+                className="shrink-0 px-2.5 text-xs"
+                onClick={() => {
+                  setAction('push');
+                  setCommitMsg('');
+                }}
+                disabled={busy}
+                title={dirty ? 'Commit & push' : 'Push commits'}
+              >
+                <IconArrowUp className="h-3.5 w-3.5" /> {dirty ? 'Commit & push' : 'Push'}
+              </Button>
+            )}
+            {!upToDate && (
+              <Button
+                variant="outline"
+                className="shrink-0 px-2.5 text-xs"
+                onClick={() => {
+                  setBusy(true);
+                  setError(null);
+                  api
+                    .gitPull(projectId)
+                    .then(async () => {
+                      await load();
+                      onPreviewRestart();
+                    })
+                    .catch((e) => setError(errMsg(e)))
+                    .finally(() => setBusy(false));
+                }}
+                disabled={busy || !st?.repoUrl}
+                title="Pull from origin"
+              >
+                <IconArrowDown className="h-3.5 w-3.5" /> Pull
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="flex flex-col gap-1.5">
@@ -275,7 +289,14 @@ export default function GitPane({
             >
               <IconCheck className="h-3.5 w-3.5 shrink-0 text-faint" />
               <div className="min-w-0 flex-1">
-                <div className="truncate text-sm text-text">{c.message || '(empty message)'}</div>
+                <button
+                  type="button"
+                  onClick={() => setCommitInfo(c)}
+                  className="w-full rounded-md text-left text-sm text-text transition-colors hover:text-accent"
+                  title="View commit details"
+                >
+                  <div className="truncate">{c.message || '(empty message)'}</div>
+                </button>
                 <div className="mt-0.5 flex items-center gap-2 font-mono text-[10px] text-faint">
                   <span>{c.short}</span>
                   <span className="text-dim">{c.author}</span>
@@ -298,6 +319,45 @@ export default function GitPane({
           )}
         </div>
       </div>
+
+      <Dialog
+        open={commitInfo !== null}
+        onClose={() => setCommitInfo(null)}
+        title="Commit details"
+      >
+        {commitInfo && (
+          <div className="flex flex-col gap-3 text-sm">
+            <div className="rounded-lg border border-border bg-surface/50 p-3">
+              <div className="whitespace-pre-wrap break-words font-medium text-text">
+                {commitInfo.message || '(empty message)'}
+              </div>
+            </div>
+            <dl className="grid gap-1.5 font-mono text-xs">
+              <div className="flex gap-2">
+                <dt className="w-16 shrink-0 text-faint">Commit</dt>
+                <dd className="break-all text-text">{commitInfo.hash}</dd>
+              </div>
+              <div className="flex gap-2">
+                <dt className="w-16 shrink-0 text-faint">Short</dt>
+                <dd className="text-text">{commitInfo.short}</dd>
+              </div>
+              <div className="flex gap-2">
+                <dt className="w-16 shrink-0 text-faint">Author</dt>
+                <dd className="text-text">{commitInfo.author}</dd>
+              </div>
+              <div className="flex gap-2">
+                <dt className="w-16 shrink-0 text-faint">Date</dt>
+                <dd className="text-text">{new Date(commitInfo.time * 1000).toLocaleString()}</dd>
+              </div>
+            </dl>
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" onClick={() => setCommitInfo(null)}>
+                Close
+              </Button>
+            </div>
+          </div>
+        )}
+      </Dialog>
 
       <Dialog
         open={action !== null}
