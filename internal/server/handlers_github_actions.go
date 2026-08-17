@@ -10,6 +10,18 @@ import (
 	"v1/internal/gitops"
 )
 
+// ghErrBody extracts GitHub's "message" from an error body so the UI can show
+// something readable (rate limit, not found, permissions) instead of raw JSON.
+func ghErrBody(body []byte) string {
+	var e struct {
+		Message string `json:"message"`
+	}
+	if json.Unmarshal(body, &e) == nil && e.Message != "" {
+		return e.Message
+	}
+	return truncateStr(string(body), 200)
+}
+
 // githubOwnerRepo splits "owner/name" into its two parts.
 func githubOwnerRepo(s string) (owner, repo string) {
 	s = strings.TrimSpace(s)
@@ -51,7 +63,7 @@ func (s *Server) handleGitHubWorkflows(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if status >= 400 {
-		writeError(w, http.StatusBadGateway, "GitHub API "+strconv.Itoa(status)+" for "+owner+"/"+repo+": "+string(body))
+		writeError(w, status, "GitHub API "+strconv.Itoa(status)+" for "+owner+"/"+repo+": "+ghErrBody(body))
 		return
 	}
 	var resp struct {
@@ -105,7 +117,7 @@ func (s *Server) handleGitHubImages(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if status >= 400 {
-		writeError(w, http.StatusBadGateway, "GitHub API "+strconv.Itoa(status)+" for owner "+owner+": "+string(body))
+		writeError(w, status, "GitHub API "+strconv.Itoa(status)+" for owner "+owner+": "+ghErrBody(body))
 		return
 	}
 	var pkgs []struct {

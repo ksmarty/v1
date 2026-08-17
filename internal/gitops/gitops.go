@@ -448,6 +448,26 @@ func Pull(ctx context.Context, path, token string) error {
 	return nil
 }
 
+// Push pushes the current branch to origin without committing anything. Used
+// for auto-push: the turn already committed locally, this just syncs it.
+func Push(path, token string) error {
+	repo, err := git.PlainOpen(path)
+	if err != nil {
+		return fmt.Errorf("not a git repository")
+	}
+	opts := &git.PushOptions{}
+	if token != "" {
+		opts.Auth = basicAuth(token)
+	}
+	if err := repo.PushContext(context.Background(), opts); err != nil {
+		if err == git.NoErrAlreadyUpToDate {
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
 // InitAndPush initializes a repo if needed, sets the origin remote, commits
 // everything and pushes. Used right after creating a GitHub repo.
 func InitAndPush(ctx context.Context, path, remoteURL, token, message, authorLogin string) (committed, pushed bool, summary string, err error) {

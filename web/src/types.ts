@@ -57,6 +57,7 @@ export interface Settings {
   rewindApproval: boolean;
   defaultThinking: string;
   toonEnabled: boolean;
+  autoPushDefault?: boolean;
   /** Compaction threshold in percent of the context window (e.g. 80). */
   contextThreshold: number;
   systemPrompt: string;
@@ -166,6 +167,7 @@ export interface Project {
   previewCommand?: string;
   defaultPreviewCommand?: string;
   instructions?: string;
+  autoPush: boolean;
   preview: PreviewInfo;
   updatedAt: string;
 }

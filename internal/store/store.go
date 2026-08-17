@@ -176,6 +176,7 @@ CREATE TABLE pending_asks_v2 (
 	}
 	if err := migrateAddColumns(db, "projects", map[string]string{
 		"instructions": "ALTER TABLE projects ADD COLUMN instructions TEXT",
+		"auto_push":    "ALTER TABLE projects ADD COLUMN auto_push INTEGER DEFAULT 0",
 	}); err != nil {
 		return err
 	}
@@ -655,6 +656,7 @@ type Project struct {
 	PreviewCommand string
 	Instructions   string
 	OwnerID        string
+	AutoPush       bool
 	CreatedAt      int64
 	UpdatedAt      int64
 }
@@ -664,9 +666,9 @@ func (s *Store) CreateProject(p *Project) error {
 	t := now()
 	p.CreatedAt = t
 	p.UpdatedAt = t
-	_, err := s.db.Exec(`INSERT INTO projects (id, name, path, repo_url, preview_command, instructions, owner_id, created_at, updated_at)
-		VALUES (?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?, ?)`,
-		p.ID, p.Name, p.Path, p.RepoURL, p.PreviewCommand, p.Instructions, p.OwnerID, p.CreatedAt, p.UpdatedAt)
+	_, err := s.db.Exec(`INSERT INTO projects (id, name, path, repo_url, preview_command, instructions, owner_id, auto_push, created_at, updated_at)
+		VALUES (?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?, ?, ?)`,
+		p.ID, p.Name, p.Path, p.RepoURL, p.PreviewCommand, p.Instructions, p.OwnerID, boolInt(p.AutoPush), p.CreatedAt, p.UpdatedAt)
 	return err
 }
 
@@ -677,17 +679,25 @@ type scanner interface {
 func scanProject(row scanner) (*Project, error) {
 	var p Project
 	var repoURL, previewCmd, instructions, ownerID sql.NullString
-	if err := row.Scan(&p.ID, &p.Name, &p.Path, &repoURL, &previewCmd, &instructions, &ownerID, &p.CreatedAt, &p.UpdatedAt); err != nil {
+	var autoPush int
+	if err := row.Scan(&p.ID, &p.Name, &p.Path, &repoURL, &previewCmd, &instructions, &ownerID, &autoPush, &p.CreatedAt, &p.UpdatedAt); err != nil {
 		return nil, err
 	}
 	p.RepoURL = repoURL.String
 	p.PreviewCommand = previewCmd.String
 	p.Instructions = instructions.String
 	p.OwnerID = ownerID.String
+	p.AutoPush = autoPush != 0
 	return &p, nil
 }
 
-const projectCols = `id, name, path, repo_url, preview_command, instructions, owner_id, created_at, updated_at`
+const projectCols = `id, name, path, repo_url, preview_command, instructions, owner_id, auto_push, created_at, updated_at`
+
+// UpdateProjectAutoPush toggles the per-project auto-push flag.
+func (s *Store) UpdateProjectAutoPush(id string, autoPush bool) error {
+	_, err := s.db.Exec(`UPDATE projects SET auto_push = ?, updated_at = ? WHERE id = ?`, boolInt(autoPush), now(), id)
+	return err
+}
 
 // UpdateProjectSettings rewrites the user-editable project fields.
 func (s *Store) UpdateProjectSettings(id, name, previewCommand, instructions string) error {

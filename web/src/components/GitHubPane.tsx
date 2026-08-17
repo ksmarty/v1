@@ -45,12 +45,17 @@ export default function GitHubPane({ repoUrl }: { repoUrl?: string }) {
     setWorkflows(null);
     setImages(null);
     try {
-      const [w, im] = await Promise.all([
+      const [w, im] = await Promise.allSettled([
         api.githubWorkflows(repo),
         api.githubImages(own),
       ]);
-      setWorkflows(w.workflows);
-      setImages(im.images);
+      if (w.status === 'fulfilled') setWorkflows(w.value.workflows);
+      else setWorkflows([]);
+      if (im.status === 'fulfilled') setImages(im.value.images);
+      else setImages([]);
+      const e1 = w.status === 'rejected' ? errMsg(w.reason) : null;
+      const e2 = im.status === 'rejected' ? errMsg(im.reason) : null;
+      if (e1 || e2) setError([e1, e2].filter(Boolean).join(' · '));
     } catch (err) {
       setError(errMsg(err));
     } finally {

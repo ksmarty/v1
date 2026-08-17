@@ -1714,9 +1714,9 @@ export default function ChatPane({
 
   const changeProvider = (pid: string) => {
     setProviderId(pid);
-    const nextModel = pid === '' ? '' : providers.find((p) => p.id === pid)?.model ?? '';
-    setModel(nextModel);
-    applyThinkingForModel(nextModel);
+    // Do NOT reset the model here: the picker keeps the custom draft alive
+    // and commits a model only when the user selects one (or saves the draft),
+    // so switching provider options never erases a typed custom model.
   };
 
   const changeModel = (m: string) => {

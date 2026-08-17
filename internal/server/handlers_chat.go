@@ -576,6 +576,17 @@ func (s *Server) streamChatTurn(w http.ResponseWriter, r *http.Request, p *store
 		// repo-backed, so time-travel always has a checkpoint to return to.
 		if !params.SkipSnapshot {
 			_, _ = gitops.CommitIfRepo(root, params.Message, "")
+			// Auto-push: per-project toggle, defaults to the user's global
+			// "auto_push_default" at creation. Pushing is async so it never
+			// delays the done event; the local commit already happened.
+			if p.AutoPush && p.RepoURL != "" {
+				token := s.githubToken(userID)
+				if token != "" {
+					go func(path, tok string) {
+						_ = gitops.Push(path, tok)
+					}(root, token)
+				}
+			}
 		}
 		emit(agent.ChatEvent{Type: "done", Usage: turn.Usage})
 

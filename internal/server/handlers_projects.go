@@ -26,6 +26,7 @@ type projectJSON struct {
 	// static projects) — shown as the override field's placeholder.
 	DefaultPreviewCommand string `json:"defaultPreviewCommand"`
 	Instructions          string `json:"instructions,omitempty"`
+	AutoPush              bool   `json:"autoPush"`
 	CreatedAt             int64  `json:"createdAt"`
 	UpdatedAt             int64  `json:"updatedAt"`
 }
@@ -38,6 +39,7 @@ func toProjectJSON(p *store.Project) projectJSON {
 		PreviewCommand:        p.PreviewCommand,
 		DefaultPreviewCommand: preview.DefaultPreviewCommand(p.Path),
 		Instructions:          p.Instructions,
+		AutoPush:              p.AutoPush,
 		CreatedAt:             p.CreatedAt,
 		UpdatedAt:             p.UpdatedAt,
 	}
@@ -53,6 +55,7 @@ func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
 		Name           string `json:"name"`
 		PreviewCommand string `json:"previewCommand"`
 		Instructions   string `json:"instructions"`
+		AutoPush       *bool  `json:"autoPush"`
 	}
 	if !decodeJSON(w, r, &body) {
 		return
@@ -64,6 +67,12 @@ func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
 	if err := s.st.UpdateProjectSettings(p.ID, name, strings.TrimSpace(body.PreviewCommand), strings.TrimSpace(body.Instructions)); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	if body.AutoPush != nil {
+		if err := s.st.UpdateProjectAutoPush(p.ID, *body.AutoPush); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
 	}
 	updated, err := s.st.GetProject(p.ID)
 	if err != nil {
@@ -154,7 +163,7 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 	// Instructions are only what the user adds in the project settings — the
 	// initial description lives as the first chat message, not the system
 	// prompt.
-	p := &store.Project{ID: id, Name: name, Path: dir, OwnerID: s.currentUser(r).ID}
+	p := &store.Project{ID: id, Name: name, Path: dir, OwnerID: s.currentUser(r).ID, AutoPush: s.autoPushDefault(s.currentUser(r).ID)}
 	if err := s.st.CreateProject(p); err != nil {
 		os.RemoveAll(dir)
 		writeError(w, http.StatusInternalServerError, err.Error())

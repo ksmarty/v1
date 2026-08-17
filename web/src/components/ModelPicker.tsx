@@ -48,10 +48,14 @@ export default function ModelPicker({
   onModelChange: (id: string) => void;
 }) {
   const [query, setQuery] = useState('');
+  const [draftModel, setDraftModel] = useState(model);
 
   useEffect(() => {
-    if (!open) setQuery('');
-  }, [open]);
+    if (open) {
+      setQuery('');
+      setDraftModel(model);
+    }
+  }, [open, model]);
 
   const filtered = useMemo(() => {
     const q = query.trim();
@@ -105,15 +109,35 @@ export default function ModelPicker({
 
         {providerId === '' ? (
           <section className="shrink-0">
-            <h3 className="mb-2 text-xs font-medium text-subtle">Model</h3>
-            <Input
-              value={model}
-              onChange={(e) => onModelChange(e.target.value)}
-              placeholder="model id"
-              spellCheck={false}
-              autoComplete="off"
-              className="font-mono text-xs"
-            />
+            <h3 className="mb-2 text-xs font-medium text-subtle">Custom model</h3>
+            <div className="flex items-center gap-2">
+              <Input
+                value={draftModel}
+                onChange={(e) => setDraftModel(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    onModelChange(draftModel.trim());
+                  }
+                }}
+                placeholder="model id"
+                spellCheck={false}
+                autoComplete="off"
+                className="min-w-0 flex-1 font-mono text-xs"
+              />
+              <button
+                type="button"
+                disabled={!draftModel.trim()}
+                onClick={() => onModelChange(draftModel.trim())}
+                className="shrink-0 rounded-lg border border-border bg-surface px-3 py-2 text-xs font-medium text-text transition-colors hover:border-border-strong disabled:opacity-40"
+              >
+                Save
+              </button>
+            </div>
+            <p className="mt-1.5 text-xs text-subtle">
+              Your draft survives switching providers — it is applied when you
+              press Save.
+            </p>
           </section>
         ) : (
           <>

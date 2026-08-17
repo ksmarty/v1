@@ -302,6 +302,7 @@ const (
 	keyRewindApproval      = "rewind_approval"
 	keyThinkingDefault     = "thinking_default"
 	keyToonEnabled         = "toon_enabled"
+	keyAutoPushDefault     = "auto_push_default"
 	keySystemPrompt        = "system_prompt"
 	keyContextThreshold    = "context_threshold"
 )
@@ -476,6 +477,16 @@ func (s *Server) toonEnabled(userID string) bool {
 	v, ok := s.userSetting(userID, keyToonEnabled)
 	if !ok || v == "" {
 		return true
+	}
+	return v == "1"
+}
+
+// autoPushDefault resolves the global default for new projects' auto-push
+// toggle (defaults to off; only projects created after a change pick it up).
+func (s *Server) autoPushDefault(userID string) bool {
+	v, ok := s.userSetting(userID, keyAutoPushDefault)
+	if !ok || v == "" {
+		return false
 	}
 	return v == "1"
 }
