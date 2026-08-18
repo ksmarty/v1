@@ -309,7 +309,12 @@ export function renderMarkdown(
     const html = marked.parse(stripFrontmatter(withCursor ? src + CURSOR_MARKER : src), {
       async: false,
     });
-    return html.replaceAll(CURSOR_MARKER, CURSOR_SPAN);
+    // Wrap tables in a scroll container so wide tables scroll inside the
+    // bubble instead of stretching the whole chat horizontally.
+    const wrapped = html
+      .replaceAll('<table>', '<div class="md-tbl"><table>')
+      .replaceAll('</table>', '</table></div>');
+    return wrapped.replaceAll(CURSOR_MARKER, CURSOR_SPAN);
   } finally {
     tagValidator = null;
   }

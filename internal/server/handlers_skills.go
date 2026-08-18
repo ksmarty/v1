@@ -55,14 +55,11 @@ func (s *Server) handleSkillsSearch(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &body) {
 		return
 	}
-	results, err := skills.Search(r.Context(), body.Query, 20)
-	if err != nil {
-		writeError(w, http.StatusBadGateway, err.Error())
-		return
-	}
-	// Built-in skills ship with v1; surface them first when they match.
-	builtin := make([]skills.Skill, 0, len(skills.Builtins()))
 	q := strings.ToLower(strings.TrimSpace(body.Query))
+	// Built-in skills ship with v1; surface them when they match (or always
+	// for an empty query — the "Suggested" group needs no marketplace call, so
+	// it still works offline).
+	builtin := make([]skills.Skill, 0, len(skills.Builtins()))
 	for _, b := range skills.Builtins() {
 		if q != "" &&
 			!strings.Contains(strings.ToLower(b.Skill.Name), q) &&
@@ -71,6 +68,15 @@ func (s *Server) handleSkillsSearch(w http.ResponseWriter, r *http.Request) {
 		}
 		b.Skill.Builtin = true
 		builtin = append(builtin, b.Skill)
+	}
+	if q == "" {
+		writeJSON(w, http.StatusOK, map[string]any{"skills": builtin})
+		return
+	}
+	results, err := skills.Search(r.Context(), body.Query, 20)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"skills": append(builtin, results...)})
 }

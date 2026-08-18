@@ -291,6 +291,8 @@ export interface SkillSearchResult {
   sourcePath: string;
   owner: string;
   repo: string;
+  builtin?: boolean;
+  dir?: string;
 }
 
 export interface PreviewStatus {

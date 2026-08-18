@@ -194,6 +194,7 @@ function ToolSettings({
   const [skills, setSkills] = useState<InstalledSkill[]>([]);
   const [skillQuery, setSkillQuery] = useState('');
   const [skillResults, setSkillResults] = useState<SkillSearchResult[]>([]);
+  const [suggestedSkills, setSuggestedSkills] = useState<SkillSearchResult[]>([]);
   const [skillBusy, setSkillBusy] = useState(false);
   const [skillBusyId, setSkillBusyId] = useState<string | null>(null);
   const [skillError, setSkillError] = useState<string | null>(null);
@@ -229,6 +230,15 @@ function ToolSettings({
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    // Built-in skills are always shown in the "Suggested / included" group
+    // below the search bar — the agent doesn't have to search for them.
+    api
+      .skillSearch('')
+      .then((r) => setSuggestedSkills((r.skills ?? []).filter((s) => s.builtin)))
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     setTab(initialTab);
@@ -710,6 +720,65 @@ function ToolSettings({
           {skillBusy ? <Spinner className="h-4 w-4" /> : 'Search'}
         </Button>
       </form>
+
+      {suggestedSkills.length > 0 && (
+        <div className="shrink-0">
+          <h4 className="mb-2 text-xs font-medium text-dim">Suggested / included</h4>
+          <ul className="flex flex-col gap-2">
+            {suggestedSkills.map((sk) => {
+              const installed = skills.find((s) => s.id === sk.id);
+              return (
+                <li
+                  key={sk.id}
+                  className="flex items-center gap-2 rounded-xl border border-border bg-surface/50 px-3 py-2"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <span className="truncate text-sm font-medium text-text">{sk.name}</span>
+                      {installed && (
+                        <span className="shrink-0 rounded-full bg-accent/15 px-1.5 py-0.5 text-[10px] font-medium text-accent">
+                          included
+                        </span>
+                      )}
+                    </div>
+                    <div className="truncate text-[11px] text-faint">
+                      {sk.author}
+                      {sk.description ? ` · ${sk.description}` : ''}
+                    </div>
+                  </div>
+                  {installed ? (
+                    <button
+                      type="button"
+                      className="shrink-0 text-xs font-medium text-accent hover:underline"
+                      onClick={() =>
+                        setSkillPreview({
+                          name: installed.name,
+                          author: installed.author,
+                          description: installed.description,
+                          githubUrl: installed.githubUrl,
+                          skillsmpUrl: installed.skillsmpUrl,
+                          installed,
+                        })
+                      }
+                    >
+                      View
+                    </button>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      className="h-7 shrink-0 px-2 text-xs"
+                      disabled={skillBusyId === sk.id}
+                      onClick={() => void installSkill(sk)}
+                    >
+                      {skillBusyId === sk.id ? <Spinner className="h-3.5 w-3.5" /> : 'Install'}
+                    </Button>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
 
       <div className="shrink-0 border-t border-border" />
 

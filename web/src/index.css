@@ -166,11 +166,18 @@ body {
   line-height: 1.55;
   color: var(--v1-text);
 }
-.md table {
+.md .md-tbl {
+  max-width: 100%;
+  overflow-x: auto;
   margin: 0.75em 0;
-  width: 100%;
+  border: 1px solid var(--v1-border);
+  border-radius: 8px;
+  -webkit-overflow-scrolling: touch;
+}
+.md table {
   border-collapse: collapse;
   font-size: 0.8125rem;
+  min-width: 100%;
 }
 .md th,
 .md td {
