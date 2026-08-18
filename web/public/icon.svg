@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="art-title art-description" width="1024" height="1024">
+      <title id="art-title">V1 app icon</title>
+      <desc id="art-description">A white V1 monogram over a blue and violet glow inside a black rounded square.</desc>
+      <defs>
+        <linearGradient id="page-bg" x1="90" y1="50" x2="930" y2="970" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stop-color="#0b0c0f"/>
+          <stop offset="0.52" stop-color="#121218"/>
+          <stop offset="1" stop-color="#0d0f12"/>
+        </linearGradient>
+        <radialGradient id="ambient-bg" cx="0" cy="0" r="1" gradientTransform="translate(716 346) rotate(124) scale(590 660)" gradientUnits="userSpaceOnUse">
+          <stop stop-color="#29242f" stop-opacity="0.38"/>
+          <stop offset="0.66" stop-color="#191820" stop-opacity="0.12"/>
+          <stop offset="1" stop-color="#0c0d10" stop-opacity="0"/>
+        </radialGradient>
+        <linearGradient id="tile-fill" x1="512" y1="132" x2="512" y2="892" gradientUnits="userSpaceOnUse">
+          <stop stop-color="#1c1d1d"/>
+          <stop offset="0.48" stop-color="#090b0c"/>
+          <stop offset="0.82" stop-color="#000102"/>
+          <stop offset="1" stop-color="#020303"/>
+        </linearGradient>
+        <radialGradient id="tile-sheen" cx="0" cy="0" r="1" gradientTransform="translate(498 157) rotate(90) scale(446 510)" gradientUnits="userSpaceOnUse">
+          <stop stop-color="#313233" stop-opacity="0.24"/>
+          <stop offset="0.55" stop-color="#151617" stop-opacity="0.06"/>
+          <stop offset="1" stop-color="#000" stop-opacity="0"/>
+        </radialGradient>
+        <linearGradient id="mark-fill" x1="520" y1="332" x2="520" y2="692" gradientUnits="userSpaceOnUse">
+          <stop stop-color="#ffffff"/>
+          <stop offset="1" stop-color="#f7f7fa"/>
+        </linearGradient>
+        <clipPath id="tile-clip">
+          <path d="M302 131H722C816 131 893 208 893 302V722C893 816 816 893 722 893H302C208 893 131 816 131 722V302C131 208 208 131 302 131Z"/>
+        </clipPath>
+        <filter id="tile-shadow" x="50" y="50" width="924" height="944" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+          <feDropShadow dx="0" dy="24" stdDeviation="24" flood-color="#000000" flood-opacity="0.54"/>
+        </filter>
+        <filter id="blue-blur" x="90" y="220" width="670" height="650" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+          <feGaussianBlur stdDeviation="56"/>
+        </filter>
+        <filter id="violet-blur" x="350" y="170" width="600" height="650" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+          <feGaussianBlur stdDeviation="54"/>
+        </filter>
+        <filter id="mark-glow" x="224" y="282" width="586" height="460" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+          <feGaussianBlur in="SourceAlpha" stdDeviation="8" result="blur"/>
+          <feFlood flood-color="#d6c4ff" flood-opacity="0.12" result="color"/>
+          <feComposite in="color" in2="blur" operator="in" result="glow"/>
+          <feMerge>
+            <feMergeNode in="glow"/>
+            <feMergeNode in="SourceGraphic"/>
+          </feMerge>
+        </filter>
+        <style>
+          .tile-group { transform-origin: 512px 512px; animation: tile-in 760ms cubic-bezier(.22,.9,.3,1) both; }
+          .tile-outline { stroke-dasharray: 2600; animation: line-in 1200ms 180ms cubic-bezier(.25,.8,.25,1) both; }
+          .blue-glow { animation: blue-breathe 6s ease-in-out infinite alternate; }
+          .violet-glow { animation: violet-breathe 7s 400ms ease-in-out infinite alternate; }
+          @keyframes tile-in { from { opacity: 0; transform: scale(.975); } to { opacity: 1; transform: scale(1); } }
+          @keyframes line-in { from { stroke-dashoffset: 2600; opacity: .2; } to { stroke-dashoffset: 0; opacity: 1; } }
+          @keyframes blue-breathe { from { opacity: .64; transform: translate(-5px, 4px) scale(.96); } to { opacity: .9; transform: translate(4px, -3px) scale(1.04); } }
+          @keyframes violet-breathe { from { opacity: .68; transform: translate(4px, 2px) scale(.98); } to { opacity: .9; transform: translate(-3px, -4px) scale(1.05); } }
+          @media (prefers-reduced-motion: reduce) {
+            .tile-group, .tile-outline, .blue-glow, .violet-glow { animation: none; }
+          }
+        </style>
+      </defs>
+
+      <rect width="1024" height="1024" fill="url(#page-bg)"/>
+      <rect width="1024" height="1024" fill="url(#ambient-bg)"/>
+
+      <g class="tile-group" filter="url(#tile-shadow)">
+        <path d="M302 131H722C816 131 893 208 893 302V722C893 816 816 893 722 893H302C208 893 131 816 131 722V302C131 208 208 131 302 131Z" fill="url(#tile-fill)"/>
+        <g clip-path="url(#tile-clip)">
+          <rect x="131" y="131" width="762" height="762" fill="url(#tile-sheen)"/>
+          <ellipse class="blue-glow" cx="425" cy="572" rx="158" ry="176" fill="#2347cf" fill-opacity="0.78" filter="url(#blue-blur)"/>
+          <ellipse class="violet-glow" cx="648" cy="465" rx="120" ry="164" fill="#8b36ae" fill-opacity="0.78" filter="url(#violet-blur)"/>
+          <ellipse cx="544" cy="728" rx="242" ry="91" fill="#061a43" fill-opacity="0.22" filter="url(#blue-blur)"/>
+          <path d="M275 408H351L426 602L501 408H576L458 692H393L275 408Z" fill="url(#mark-fill)" filter="url(#mark-glow)"/>
+          <path d="M636 332H714V627H760V692H595V627H643V408H596L636 332Z" fill="url(#mark-fill)" filter="url(#mark-glow)"/>
+        </g>
+        <path class="tile-outline" d="M302 131H722C816 131 893 208 893 302V722C893 816 816 893 722 893H302C208 893 131 816 131 722V302C131 208 208 131 302 131Z" fill="none" stroke="#404243" stroke-opacity="0.92" stroke-width="4"/>
+      </g>
+    </svg>
