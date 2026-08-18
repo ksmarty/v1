@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -52,7 +53,69 @@ func (s *Server) handleListProviders(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "provider catalog unavailable")
 		return
 	}
-	writeJSON(w, http.StatusOK, s.CatalogWithRouter(cat).WithAdded(s.customProviders()))
+	cat = s.CatalogWithRouter(cat).WithAdded(s.customProviders())
+	writeJSON(w, http.StatusOK, s.catalogWithCustomModels(cat, r))
+}
+
+// customModelsCache holds short-lived /v1/models listings keyed by base URL.
+var customModelsCache struct {
+	sync.Mutex
+	at     time.Time
+	byBase map[string][]llm.ProviderModel
+}
+
+// customProviderModels fetches (and briefly caches) the model list for a
+// custom base URL via its OpenAI-compatible /models endpoint. Reports nil when
+// unreachable or unparsable (callers keep whatever the catalog already had).
+func (s *Server) customProviderModels(ctx context.Context, baseURL, apiKey string) []llm.ProviderModel {
+	key := strings.ToLower(strings.TrimRight(baseURL, "/"))
+	customModelsCache.Lock()
+	cached, ok := customModelsCache.byBase[key]
+	age := customModelsCache.at
+	customModelsCache.Unlock()
+	if ok && time.Since(age) < 10*time.Minute {
+		return cached
+	}
+	ms, err := llm.ProviderModelsEndpoint(ctx, baseURL, apiKey)
+	if err != nil {
+		return nil
+	}
+	customModelsCache.Lock()
+	if customModelsCache.byBase == nil {
+		customModelsCache.byBase = map[string][]llm.ProviderModel{}
+	}
+	customModelsCache.byBase[key] = ms
+	customModelsCache.at = time.Now()
+	customModelsCache.Unlock()
+	return ms
+}
+
+// catalogWithCustomModels fills in live model listings for provider entries
+// that have a base URL but no catalog models (i.e. user-defined providers),
+// authenticated with the matching saved provider's API key when one exists.
+func (s *Server) catalogWithCustomModels(cat *llm.Catalog, r *http.Request) *llm.Catalog {
+	if cat == nil {
+		return cat
+	}
+	keys := map[string]string{}
+	for _, lp := range s.llmProviders(s.currentUser(r).ID) {
+		if lp.BaseURL != "" {
+			keys[strings.ToLower(strings.TrimRight(lp.BaseURL, "/"))] = lp.APIKey
+		}
+	}
+	out := *cat
+	out.Providers = append([]llm.Provider(nil), cat.Providers...)
+	for i := range out.Providers {
+		p := &out.Providers[i]
+		if p.BaseURL == "" || len(p.Models) > 0 {
+			continue
+		}
+		key := strings.ToLower(strings.TrimRight(p.BaseURL, "/"))
+		if ms := s.customProviderModels(r.Context(), p.BaseURL, keys[key]); len(ms) > 0 {
+			p.Models = ms
+		}
+	}
+	return &out
 }
 
 // CatalogWithRouter returns a catalog with OpenRouter's live model directory

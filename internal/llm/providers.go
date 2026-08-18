@@ -909,3 +909,71 @@ func MergeRouterModels(cat *Catalog, live []ProviderModel) *Catalog {
 	}
 	return &out
 }
+
+// ProviderModelsEndpoint fetches the OpenAI-compatible /models listing for an
+// arbitrary base URL (custom providers, local servers like vLLM/LM Studio,
+// gateways). It tries the OpenRouter-style and raw forms of the path, with an
+// optional Bearer token for providers that gate the endpoint. Returns the
+// models, or an error when none of the paths can be reached / parsed.
+func ProviderModelsEndpoint(ctx context.Context, baseURL, apiKey string) ([]ProviderModel, error) {
+	base := strings.TrimRight(baseURL, "/")
+	if base == "" {
+		return nil, fmt.Errorf("empty base URL")
+	}
+	var candidates []string
+	if strings.HasSuffix(base, "/v1") || strings.HasSuffix(base, "/v1/") {
+		candidates = []string{base + "/models"}
+	} else {
+		candidates = []string{base + "/v1/models", base + "/models"}
+	}
+	var lastErr error
+	for _, u := range candidates {
+		ms, err := fetchOpenAIModels(ctx, u, apiKey)
+		if err == nil {
+			return ms, nil
+		}
+		lastErr = err
+	}
+	return nil, lastErr
+}
+
+type openAIModelsResponse struct {
+	Object string `json:"object"`
+	Data   []struct {
+		ID  string `json:"id"`
+		Own string `json:"owned_by"`
+	} `json:"data"`
+}
+
+func fetchOpenAIModels(ctx context.Context, url, apiKey string) ([]ProviderModel, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/json")
+	if apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+	}
+	cli := &http.Client{Timeout: 12 * time.Second}
+	resp, err := cli.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("GET %s: %s", url, resp.Status)
+	}
+	var body openAIModelsResponse
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 8<<20)).Decode(&body); err != nil {
+		return nil, err
+	}
+	out := make([]ProviderModel, 0, len(body.Data))
+	for _, m := range body.Data {
+		if m.ID == "" {
+			continue
+		}
+		out = append(out, ProviderModel{ID: m.ID})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out, nil
+}
