@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"v1/internal/llm"
@@ -18,6 +19,56 @@ func TestEstimateTokensDeterministic(t *testing.T) {
 	m := []llm.Message{{Role: "user", Content: "hello"}, {Role: "assistant", ToolCalls: []llm.ToolCall{{ID: "1", Type: "function", Function: llm.FunctionCall{Name: "read_file", Arguments: "{}"}}}}}
 	if got := EstimateTokens(m); got != EstimateTokens(m) || got <= 0 {
 		t.Fatalf("estimate = %d", got)
+	}
+}
+
+func TestChunkMessagesFitsBudget(t *testing.T) {
+	big := make([]byte, 8000)
+	for i := range big {
+		big[i] = 'a'
+	}
+	messages := make([]llm.Message, 30)
+	for i := range messages {
+		messages[i] = llm.Message{Role: "user", Content: string(big)}
+	}
+	chunks := chunkMessages(messages, 5000)
+	if len(chunks) < 2 {
+		t.Fatalf("expected multiple chunks, got %d", len(chunks))
+	}
+	for _, c := range chunks {
+		if EstimateTokens(c) > 5000 {
+			t.Fatalf("chunk exceeds budget: %d", EstimateTokens(c))
+		}
+	}
+}
+
+func TestChunkMessagesTruncatesGiantMessage(t *testing.T) {
+	huge := string(make([]byte, 40000)) // 40k bytes ≈ 10k tokens, over budget
+	m := llm.Message{Role: "assistant", Content: huge, ToolCalls: []llm.ToolCall{{ID: "1", Type: "function", Function: llm.FunctionCall{Name: "run_command", Arguments: string(make([]byte, 20000))}}}}
+	chunks := chunkMessages([]llm.Message{m}, 2000)
+	if len(chunks) != 1 {
+		t.Fatalf("expected one chunk, got %d", len(chunks))
+	}
+	if EstimateTokens(chunks[0]) > 2000 {
+		t.Fatalf("giant message still exceeds budget: %d", EstimateTokens(chunks[0]))
+	}
+}
+
+func TestSummarizeRequestIsPlainText(t *testing.T) {
+	m := []llm.Message{
+		{Role: "user", Content: "fix the build"},
+		{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: "tc1", Type: "function", Function: llm.FunctionCall{Name: "run_command", Arguments: `{"command":"go build"}`}}}},
+		{Role: "tool", ToolCallID: "tc1", Content: "ok"},
+	}
+	out := summarizeRequest(m)
+	joined := ""
+	for _, msg := range out {
+		if s, ok := msg.Content.(string); ok {
+			joined += s
+		}
+	}
+	if !strings.Contains(joined, "fix the build") || !strings.Contains(joined, "run_command") || !strings.Contains(joined, "ok") {
+		t.Fatalf("transcript lost details: %q", joined)
 	}
 }
 

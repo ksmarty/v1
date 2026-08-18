@@ -19,12 +19,153 @@ type Summarizer interface {
 	Summarize(context.Context, []llm.Message) (string, error)
 }
 
+// summarizeSystem instructs the model how to compress a conversation chunk.
+const summarizeSystem = "Summarize the following conversation history for an AI coding agent. Preserve decisions, requirements, files changed, tool outcomes, errors, and unresolved work. Be concise and factual; do not address the user. Keep the summary tight (under 800 words)."
+
 type clientSummarizer struct{ client *llm.Client }
 
+// safeBudget returns the per-call input budget for summarization: as much of
+// the model's context window as we can use (minus room for the response),
+// clamped conservatively. Falls back to 24k tokens when the window is unknown.
+func (s clientSummarizer) safeBudget(ctx context.Context) int {
+	if n := llm.ModelContextLength(ctx, s.client.BaseURL, s.client.APIKey, s.client.Model); n > 0 {
+		b := n - 8192
+		if b < 8000 {
+			b = 8000
+		}
+		if b > 60000 {
+			b = 60000
+		}
+		return b
+	}
+	return 24000
+}
+
+// Summarize compresses the messages. Histories larger than the model's window
+// are summarized in bounded chunks and folded together, so compaction works
+// even when the transcript is far larger than a single request could carry.
 func (s clientSummarizer) Summarize(ctx context.Context, messages []llm.Message) (string, error) {
-	prompt := []llm.Message{{Role: "system", Content: "Summarize the following conversation history for an AI coding agent. Preserve decisions, requirements, files changed, tool outcomes, errors, and unresolved work. Be concise and factual; do not address the user."}}
-	prompt = append(prompt, messages...)
-	return s.client.Complete(ctx, prompt)
+	budget := s.safeBudget(ctx)
+	if EstimateTokens(messages) <= budget {
+		return s.client.Complete(ctx, summarizeRequest(messages))
+	}
+	summary := ""
+	for _, chunk := range chunkMessages(messages, budget) {
+		var (
+			out string
+			err error
+		)
+		if summary == "" {
+			out, err = s.client.Complete(ctx, summarizeRequest(chunk))
+		} else {
+			out, err = s.client.Complete(ctx, mergeSummaries(summary, chunk))
+		}
+		if err != nil {
+			return "", err
+		}
+		if strings.TrimSpace(out) == "" {
+			continue
+		}
+		summary = out
+	}
+	if strings.TrimSpace(summary) == "" {
+		return "", fmt.Errorf("summarizer returned an empty summary")
+	}
+	return summary, nil
+}
+
+func summarizeRequest(messages []llm.Message) []llm.Message {
+	return []llm.Message{
+		{Role: "system", Content: summarizeSystem},
+		{Role: "user", Content: "Conversation to summarize:\n\n" + transcriptText(messages)},
+	}
+}
+
+func mergeSummaries(prev string, chunk []llm.Message) []llm.Message {
+	return []llm.Message{
+		{Role: "system", Content: "You are merging conversation summaries. Keep every fact from the previous summary and the new chunk: decisions, requirements, files changed, tool outcomes, errors, unresolved work. Remove duplication. Stay under 800 words."},
+		{Role: "user", Content: "Previous summary:\n\n" + prev + "\n\n---\n\nAdditional conversation:\n\n" + transcriptText(chunk)},
+	}
+}
+
+// transcriptText renders messages as plain text for the summarizer.
+func transcriptText(messages []llm.Message) string {
+	var b strings.Builder
+	for _, m := range messages {
+		role := m.Role
+		if role == "" {
+			role = "message"
+		}
+		content := contentString(m.Content)
+		if content != "" {
+			b.WriteString("[" + role + "] " + content + "\n")
+		}
+		for _, tc := range m.ToolCalls {
+			b.WriteString("[tool] " + tc.Function.Name + " " + tc.Function.Arguments + "\n")
+		}
+	}
+	return b.String()
+}
+
+// chunkMessages splits the history into pieces that each fit the token budget,
+// truncating any single oversized message so no call exceeds the window.
+func chunkMessages(messages []llm.Message, budget int) [][]llm.Message {
+	var (
+		chunks    [][]llm.Message
+		cur       []llm.Message
+		curTokens int
+	)
+	for _, m := range messages {
+		mt := EstimateTokens([]llm.Message{m})
+		if len(cur) > 0 && curTokens+mt > budget {
+			chunks = append(chunks, cur)
+			cur, curTokens = nil, 0
+		}
+		if mt > budget {
+			m = truncateMessage(m, budget)
+			mt = EstimateTokens([]llm.Message{m})
+		}
+		cur = append(cur, m)
+		curTokens += mt
+	}
+	if len(cur) > 0 {
+		chunks = append(chunks, cur)
+	}
+	return chunks
+}
+
+// truncateMessage trims a message's content (and tool arguments) to fit the
+// budget so a single giant message cannot overflow the window. The room is
+// shared between the content and each tool call so the total stays bounded.
+func truncateMessage(m llm.Message, budget int) llm.Message {
+	overhead := 8 + len(m.Role) + len(m.Name) + len(m.ToolCallID)
+	for _, tc := range m.ToolCalls {
+		overhead += 12 + len(tc.ID) + len(tc.Type) + len(tc.Function.Name)
+	}
+	room := budget*4 - overhead - 512 // slack for estimate overage
+	if room < 64 {
+		room = 64
+	}
+	contentRoom := room / 2
+	if s, ok := m.Content.(string); ok {
+		if len(s) > contentRoom {
+			m.Content = s[:contentRoom] + "\n…(truncated)"
+		}
+	} else if contentString(m.Content) != "" {
+		s := contentString(m.Content)
+		if len(s) > contentRoom {
+			m.Content = s[:contentRoom] + "\n…(truncated)"
+		}
+	}
+	if n := len(m.ToolCalls); n > 0 {
+		argRoom := room / (2 * n)
+		for i := range m.ToolCalls {
+			if len(m.ToolCalls[i].Function.Arguments) > argRoom {
+				m.ToolCalls[i].Function.Arguments = m.ToolCalls[i].Function.Arguments[:argRoom]
+			}
+		}
+	}
+	return m
 }
 
 // EstimateTokens is a deterministic provider-neutral estimate. It deliberately
