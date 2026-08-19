@@ -54,7 +54,7 @@ func (s *Server) handleListProviders(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cat = s.CatalogWithRouter(cat).WithAdded(s.customProviders())
-	writeJSON(w, http.StatusOK, s.catalogWithCustomModels(cat, r))
+	writeJSON(w, http.StatusOK, s.finalizeProviders(cat, r))
 }
 
 // customModelsCache holds short-lived /v1/models listings keyed by base URL.
@@ -90,28 +90,50 @@ func (s *Server) customProviderModels(ctx context.Context, baseURL, apiKey strin
 	return ms
 }
 
-// catalogWithCustomModels fills in live model listings for provider entries
-// that have a base URL but no catalog models (i.e. user-defined providers),
-// authenticated with the matching saved provider's API key when one exists.
-func (s *Server) catalogWithCustomModels(cat *llm.Catalog, r *http.Request) *llm.Catalog {
+// normalizeBase lowercases and trims a base URL for stable matching & cache keys.
+func normalizeBase(baseURL string) string {
+	return strings.ToLower(strings.TrimRight(strings.TrimSpace(baseURL), "/"))
+}
+
+// finalizeProviders appends the user's saved providers to the catalog (so the
+// chat picker, which unions catalog entries by base URL, sees them) and fills
+// in live model lists for any provider entry that has a base URL but no
+// catalog models, authenticated with the matching saved provider's API key.
+func (s *Server) finalizeProviders(cat *llm.Catalog, r *http.Request) *llm.Catalog {
 	if cat == nil {
 		return cat
 	}
-	keys := map[string]string{}
-	for _, lp := range s.llmProviders(s.currentUser(r).ID) {
-		if lp.BaseURL != "" {
-			keys[strings.ToLower(strings.TrimRight(lp.BaseURL, "/"))] = lp.APIKey
-		}
-	}
+	userID := s.currentUser(r).ID
 	out := *cat
 	out.Providers = append([]llm.Provider(nil), cat.Providers...)
+
+	seen := map[string]bool{}
+	for _, p := range out.Providers {
+		if p.BaseURL != "" {
+			seen[normalizeBase(p.BaseURL)] = true
+		}
+	}
+	keys := map[string]string{}
+	for _, lp := range s.llmProviders(userID) {
+		if lp.BaseURL == "" {
+			continue
+		}
+		nb := normalizeBase(lp.BaseURL)
+		keys[nb] = lp.APIKey
+		if seen[nb] {
+			continue
+		}
+		out.Providers = append(out.Providers, llm.Provider{ID: lp.ID, Name: lp.Name, BaseURL: lp.BaseURL, Added: true})
+		seen[nb] = true
+	}
+
 	for i := range out.Providers {
 		p := &out.Providers[i]
 		if p.BaseURL == "" || len(p.Models) > 0 {
 			continue
 		}
-		key := strings.ToLower(strings.TrimRight(p.BaseURL, "/"))
-		if ms := s.customProviderModels(r.Context(), p.BaseURL, keys[key]); len(ms) > 0 {
+		nb := normalizeBase(p.BaseURL)
+		if ms := s.customProviderModels(r.Context(), p.BaseURL, keys[nb]); len(ms) > 0 {
 			p.Models = ms
 		}
 	}
