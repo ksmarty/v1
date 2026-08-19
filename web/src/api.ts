@@ -96,6 +96,20 @@ export function clearClientCaches(): void {
   }
 }
 
+// Drops only the provider catalog cache. Called automatically whenever
+// provider configuration changes (settings save / add / remove), so a newly
+// added custom provider's model list populates on the next fetch without
+// having to clear caches manually.
+export function expireProvidersCache(): void {
+  providersCache = null;
+  try {
+    localStorage.removeItem(PROVIDERS_CACHE_KEY);
+    localStorage.removeItem(PROVIDERS_CACHE_AT_KEY);
+  } catch {
+    // ignore (private mode etc.)
+  }
+}
+
 function redirectToLogin(): void {
   const p = window.location.pathname;
   if (p !== '/login' && p !== '/setup') {
@@ -209,7 +223,10 @@ export const api = {
 
   // Settings
   getSettings: () => request<Settings>('/api/settings'),
-  updateSettings: (body: SettingsUpdate) => put<void>('/api/settings', body),
+  updateSettings: (body: SettingsUpdate) => {
+    if (body && 'llm' in body) expireProvidersCache(); // provider config changed
+    return put<void>('/api/settings', body);
+  },
   oidcSettings: () =>
     request<{
       issuer: string;
@@ -232,6 +249,9 @@ export const api = {
   // LLM providers
   // The models.dev catalog is large and changes rarely — cache it (memory +
   // localStorage, 6h) so opening projects doesn't refetch it every time.
+  // Any provider configuration change (settings save / add / remove) calls
+  // expireProvidersCache, so a new custom provider's models are fetched live
+  // on the next call instead of staying stale until the TTL or a manual clear.
   getProviders: async () => {
     const cached = readProvidersCache();
     if (cached && Date.now() - cached.at < PROVIDERS_CACHE_TTL) {
@@ -247,8 +267,14 @@ export const api = {
     ),
   searchProviders: (query: string) =>
     request<ProvidersSearchResult>(`/api/providers/search?q=${encodeURIComponent(query)}`),
-  addProvider: (id: string) => post<ProviderAddResult>('/api/providers/add', { id }),
-  removeProvider: (id: string) => post<void>('/api/providers/remove', { id }),
+  addProvider: (id: string) => {
+    expireProvidersCache();
+    return post<ProviderAddResult>('/api/providers/add', { id });
+  },
+  removeProvider: (id: string) => {
+    expireProvidersCache();
+    return post<void>('/api/providers/remove', { id });
+  },
 
   // Projects
   listProjects: () => request<Project[]>('/api/projects'),

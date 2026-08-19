@@ -611,6 +611,7 @@ func (s *Server) customProviders() []llm.Provider {
 }
 
 func (s *Server) saveCustomProviders(providers []llm.Provider) error {
+	invalidateCustomModelsCache() // a new/removed provider must refetch models now, not in 10 min
 	data, err := json.Marshal(providers)
 	if err != nil {
 		return err

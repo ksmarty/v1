@@ -108,6 +108,11 @@ func (c *Catalog) WithAdded(added []Provider) *Catalog {
 const modelsDevURL = "https://models.dev/api.json"
 const maxModelsPerProvider = 40
 
+// NVIDIABaseURL is NVIDIA's OpenAI-compatible build endpoint. Its /v1/models
+// listing is public (no key required), so the picker always prefers live model
+// lists from it, falling back to the pinned catalog only when unreachable.
+const NVIDIABaseURL = "https://integrate.api.nvidia.com/v1"
+
 // ModelsForBaseURL returns the catalog models for the provider whose base URL
 // matches baseURL (case-insensitive, ignoring a trailing slash), looking up
 // knownBaseURLs first and falling back to the embedded catalog provider list.

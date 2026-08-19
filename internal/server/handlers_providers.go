@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -57,11 +58,29 @@ func (s *Server) handleListProviders(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.finalizeProviders(cat, r))
 }
 
-// customModelsCache holds short-lived /v1/models listings keyed by base URL.
+// customModelsCache holds short-lived /v1/models listings keyed by base URL,
+// each with its own fetch time so one provider's refresh never expiries
+// another's. Entries are dropped via invalidateCustomModelsCache whenever
+// provider configuration changes (see handlers_auth/server), so a newly added
+// provider's model list is fetched on the very next request.
 var customModelsCache struct {
 	sync.Mutex
-	at     time.Time
-	byBase map[string][]llm.ProviderModel
+	byBase map[string]customModelsEntry
+}
+
+type customModelsEntry struct {
+	at   time.Time
+	list []llm.ProviderModel
+}
+
+// invalidateCustomModelsCache drops all cached live model lists so the next
+// providers request re-hits every endpoint. Called whenever provider
+// configuration changes (save/add/remove), so newly configured providers
+// populate immediately without any manual cache clearing.
+func invalidateCustomModelsCache() {
+	customModelsCache.Lock()
+	customModelsCache.byBase = nil
+	customModelsCache.Unlock()
 }
 
 // customProviderModels fetches (and briefly caches) the model list for a
@@ -70,11 +89,10 @@ var customModelsCache struct {
 func (s *Server) customProviderModels(ctx context.Context, baseURL, apiKey string) []llm.ProviderModel {
 	key := strings.ToLower(strings.TrimRight(baseURL, "/"))
 	customModelsCache.Lock()
-	cached, ok := customModelsCache.byBase[key]
-	age := customModelsCache.at
+	ent, ok := customModelsCache.byBase[key]
 	customModelsCache.Unlock()
-	if ok && time.Since(age) < 10*time.Minute {
-		return cached
+	if ok && time.Since(ent.at) < 10*time.Minute {
+		return ent.list
 	}
 	ms, err := llm.ProviderModelsEndpoint(ctx, baseURL, apiKey)
 	if err != nil {
@@ -82,10 +100,9 @@ func (s *Server) customProviderModels(ctx context.Context, baseURL, apiKey strin
 	}
 	customModelsCache.Lock()
 	if customModelsCache.byBase == nil {
-		customModelsCache.byBase = map[string][]llm.ProviderModel{}
+		customModelsCache.byBase = map[string]customModelsEntry{}
 	}
-	customModelsCache.byBase[key] = ms
-	customModelsCache.at = time.Now()
+	customModelsCache.byBase[key] = customModelsEntry{at: time.Now(), list: ms}
 	customModelsCache.Unlock()
 	return ms
 }
@@ -127,14 +144,67 @@ func (s *Server) finalizeProviders(cat *llm.Catalog, r *http.Request) *llm.Catal
 		seen[nb] = true
 	}
 
+	// Live model lists are the default for any provider the user has actually
+	// configured (a saved provider), explicitly added as a custom provider, or
+	// whose /models endpoint is public (NVIDIA). For those, the endpoint is
+	// authoritative and the pinned catalog list is only a fallback: live
+	// entries replace the static ones, but static metadata (context size,
+	// vision, reasoning levels) is re-applied when the id matches so the
+	// picker keeps its rich flags. Everything else in the catalog keeps its
+	// curated static models.
+	live := map[string]bool{}
+	for _, lp := range s.llmProviders(userID) {
+		if lp.BaseURL != "" {
+			live[normalizeBase(lp.BaseURL)] = true
+		}
+	}
+	for _, cp := range s.customProviders() {
+		if cp.BaseURL != "" {
+			live[normalizeBase(cp.BaseURL)] = true
+		}
+	}
+	live[normalizeBase(llm.NVIDIABaseURL)] = true
+
+	merge := func(static, liveModels []llm.ProviderModel) []llm.ProviderModel {
+		byID := map[string]llm.ProviderModel{}
+		for _, m := range liveModels {
+			byID[m.ID] = m
+		}
+		for _, m := range static {
+			if cur, ok := byID[m.ID]; ok {
+				if cur.Name == "" {
+					cur.Name = m.Name
+				}
+				if !cur.ImageInput && m.ImageInput {
+					cur.ImageInput = true
+				}
+				if cur.Reasoning == nil && m.Reasoning != nil {
+					cur.Reasoning = m.Reasoning
+				}
+				byID[m.ID] = cur
+			}
+		}
+		out := make([]llm.ProviderModel, 0, len(byID))
+		for _, m := range byID {
+			out = append(out, m)
+		}
+		sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+		return out
+	}
+
 	for i := range out.Providers {
 		p := &out.Providers[i]
-		if p.BaseURL == "" || len(p.Models) > 0 {
+		if p.BaseURL == "" {
 			continue
 		}
 		nb := normalizeBase(p.BaseURL)
+		if !live[nb] {
+			continue
+		}
 		if ms := s.customProviderModels(r.Context(), p.BaseURL, keys[nb]); len(ms) > 0 {
-			p.Models = ms
+			// Endpoint reached: its list wins, enriched with any known static
+			// metadata for matching ids. Unreachable => keep catalog list.
+			p.Models = merge(p.Models, ms)
 		}
 	}
 	return &out

@@ -287,6 +287,10 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 				writeError(w, http.StatusInternalServerError, err.Error())
 				return
 			}
+			// The saved provider set changed (new base URL/key/removed entry):
+			// drop cached live model lists so the next providers request
+			// repopulates them instead of serving stale or missing models.
+			invalidateCustomModelsCache()
 		}
 		// 2. Activate a provider: mirrors it into the legacy single-provider
 		// keys so every existing code path (chat gating, retries, test) works.
