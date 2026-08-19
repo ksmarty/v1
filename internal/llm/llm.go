@@ -90,6 +90,12 @@ type StreamResult struct {
 	// output window was exhausted mid-reply). It lets the agent tell a genuine
 	// end-of-turn apart from a stream that was truncated.
 	StopReason string
+	// GatewayError is a provider error delivered inside an otherwise-200
+	// stream (some gateways reply "data: {\"error\":{...}}" — rate limits,
+	// "no active credentials for provider", quota walls — instead of an HTTP
+	// error status). When set, ChatStream reports it instead of letting the
+	// stream look like a successful empty reply.
+	GatewayError string
 }
 
 // chatRetries is how many times the initial HTTP request is attempted
@@ -203,6 +209,12 @@ func (c *Client) ChatStream(ctx context.Context, messages []Message, tools []Too
 			// can persist and resume from.
 			return res, err
 		}
+		// A 200 stream can carry the provider's real error as a data chunk
+		// (rate limit, missing provider credentials, quota). Surface it
+		// instead of letting the caller treat an empty stream as a reply.
+		if res.Text == "" && res.Reasoning == "" && len(res.ToolCalls) == 0 && res.GatewayError != "" {
+			return res, fmt.Errorf("LLM returned an empty response: %s", res.GatewayError)
+		}
 		return res, nil
 	}
 }
@@ -265,6 +277,13 @@ func scanStream(r io.Reader, res *StreamResult, onDelta func(string), onReasonin
 			break
 		}
 		var chunk struct {
+			// Some gateways stream their error as a data chunk with a non-empty
+			// "error" object even when the HTTP status is 200.
+			Error *struct {
+				Message string `json:"message"`
+				Code    string `json:"code"`
+				Type    string `json:"type"`
+			} `json:"error"`
 			Choices []struct {
 				FinishReason *string `json:"finish_reason"`
 				Delta        struct {
@@ -297,6 +316,9 @@ func scanStream(r io.Reader, res *StreamResult, onDelta func(string), onReasonin
 				PromptTokens:     chunk.Usage.PromptTokens,
 				CompletionTokens: chunk.Usage.CompletionTokens,
 			}
+		}
+		if chunk.Error != nil && chunk.Error.Message != "" && res.GatewayError == "" {
+			res.GatewayError = chunk.Error.Message
 		}
 		if len(chunk.Choices) == 0 {
 			continue
