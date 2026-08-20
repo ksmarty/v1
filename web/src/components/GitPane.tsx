@@ -469,10 +469,6 @@ export default function GitPane({
 
         {st?.isRepo && (
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-            <span className="inline-flex items-center gap-1 rounded-md bg-surface px-1.5 py-0.5 font-mono text-[11px]">
-              <IconGitBranch className="h-3.5 w-3.5 text-subtle" />
-              {info.branch}
-            </span>
             <span className="inline-flex items-center gap-1 rounded-md bg-emerald-500/10 px-1.5 py-0.5 font-mono text-[11px] text-emerald-300">
               <IconArrowUp className="h-3 w-3" /> {ahead}
             </span>

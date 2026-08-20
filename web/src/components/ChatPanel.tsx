@@ -15,7 +15,6 @@ import {
   IconArrowLeft,
   IconBrain,
   IconChat,
-  IconChevronDown,
   IconChevronLeft,
   IconFolder,
   IconGitBranch,
@@ -125,7 +124,6 @@ export default function ChatPanel({
             >
               <span className="flex items-center gap-1">
                 <span className="truncate text-sm font-medium text-text">{project.name}</span>
-                <IconChevronDown className="h-3.5 w-3.5 shrink-0 text-dim" />
               </span>
               {/* Session subtitle — bordered and full width; clicking it (or the
                   project title) opens the session switcher. */}

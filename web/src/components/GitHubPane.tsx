@@ -111,48 +111,6 @@ export default function GitHubPane({ repoUrl }: { repoUrl?: string }) {
 
       <div className="p-3">
         <h3 className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-dim">
-          <IconRefresh className="h-3.5 w-3.5" /> GitHub Actions
-        </h3>
-        {workflows === null ? (
-          <p className="text-sm text-subtle">No repo loaded yet.</p>
-        ) : workflows.length === 0 ? (
-          <p className="text-sm text-subtle">No workflow runs found.</p>
-        ) : (
-          <ul className="space-y-1.5">
-            {workflows.map((w) => (
-              <li
-                key={w.id}
-                className="rounded-md border border-border bg-surface/50 p-2 text-sm"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="truncate font-medium text-text">
-                    {w.display_title || w.name || `run #${w.id}`}
-                  </span>
-                  {badge(w.status, w.conclusion)}
-                </div>
-                <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-dim">
-                  <span className="font-mono">{w.head_branch || '—'}</span>
-                  <span className="font-mono">{w.event}</span>
-                  <span>{new Date(w.created_at).toLocaleString()}</span>
-                  {w.html_url && (
-                    <a
-                      href={w.html_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-accent hover:underline"
-                    >
-                      view run
-                    </a>
-                  )}
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-
-      <div className="p-3 pt-0">
-        <h3 className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-dim">
           <IconCheck className="h-3.5 w-3.5" /> Container images · <span className="font-mono">{owner || '—'}</span>
         </h3>
         {images === null ? (
@@ -185,6 +143,48 @@ export default function GitHubPane({ repoUrl }: { repoUrl?: string }) {
                   {img.url && (
                     <a href={img.url} target="_blank" rel="noreferrer" className="text-accent hover:underline">
                       open
+                    </a>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <div className="p-3 pt-0">
+        <h3 className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-dim">
+          <IconRefresh className="h-3.5 w-3.5" /> GitHub Actions
+        </h3>
+        {workflows === null ? (
+          <p className="text-sm text-subtle">No repo loaded yet.</p>
+        ) : workflows.length === 0 ? (
+          <p className="text-sm text-subtle">No workflow runs found.</p>
+        ) : (
+          <ul className="space-y-1.5">
+            {workflows.slice(0, 10).map((w) => (
+              <li
+                key={w.id}
+                className="rounded-md border border-border bg-surface/50 p-2 text-sm"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="truncate font-medium text-text">
+                    {w.display_title || w.name || `run #${w.id}`}
+                  </span>
+                  {badge(w.status, w.conclusion)}
+                </div>
+                <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-dim">
+                  <span className="font-mono">{w.head_branch || '—'}</span>
+                  <span className="font-mono">{w.event}</span>
+                  <span>{new Date(w.created_at).toLocaleString()}</span>
+                  {w.html_url && (
+                    <a
+                      href={w.html_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-accent hover:underline"
+                    >
+                      view run
                     </a>
                   )}
                 </div>
