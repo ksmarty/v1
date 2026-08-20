@@ -148,8 +148,12 @@ func (s *Server) handleOIDCStart(w http.ResponseWriter, r *http.Request) {
 	redirect := s.oidcRedirectURI(r)
 	authURL, err := s.oidc.AuthCodeURL(r.Context(), state, verifier, nonce, redirect)
 	if err != nil {
-		log.Printf("oidc: discovering issuer %s: %v", s.oidcConfig().Issuer, err)
-		writeError(w, http.StatusBadGateway, err.Error())
+		// The browser sees this as a 502 (Cloudflare passes it through).
+		// Log the full error with the issuer so the operator can diagnose
+		// (unreachable issuer, wrong discovery URL, TLS from the container…).
+		cfg := s.oidcConfig()
+		log.Printf("oidc: building auth URL (issuer %q, redirect %q): %v", cfg.Issuer, redirect, err)
+		writeError(w, http.StatusBadGateway, "OIDC discovery failed for issuer: "+cfg.Issuer+" — "+err.Error())
 		return
 	}
 	http.Redirect(w, r, authURL, http.StatusFound)
