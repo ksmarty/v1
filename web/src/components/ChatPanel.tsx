@@ -20,6 +20,7 @@ import {
   IconFolder,
   IconGitBranch,
   IconGitHub,
+  IconLayers,
   IconSettings,
   IconTerminal,
 } from './icons';
@@ -75,6 +76,9 @@ export default function ChatPanel({
   // Shared with ChatPane: the + menu's Sessions entry and the project title
   // both open the same session switcher.
   const [sessionsOpen, setSessionsOpen] = useState(false);
+  // Active session name, reported up from ChatPane — shown as a subtitle under
+  // the project name; clicking it opens the switcher.
+  const [sessionName, setSessionName] = useState('');
   // Tabs in the user's chosen order, minus the ones they excluded.
   const tabs = TABS.filter((t) => !tabLayout.hidden.includes(t.id)).sort(
     (a, b) => tabLayout.order.indexOf(a.id) - tabLayout.order.indexOf(b.id),
@@ -107,7 +111,7 @@ export default function ChatPanel({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header className="flex h-12 shrink-0 items-center gap-1 border-b border-border px-2">
+      <header className="flex h-14 shrink-0 items-center gap-1 border-b border-border px-2 md:h-12">
         <Link to="/" aria-label="Back to projects" className={iconLinkClass}>
           <IconArrowLeft className="h-5 w-5" />
         </Link>
@@ -117,10 +121,18 @@ export default function ChatPanel({
               type="button"
               onClick={() => setSessionsOpen(true)}
               title="Switch session"
-              className="flex max-w-full items-center gap-1 text-left"
+              className="flex w-full flex-col items-stretch text-left"
             >
-              <span className="truncate text-sm font-medium text-text">{project.name}</span>
-              <IconChevronDown className="h-3.5 w-3.5 shrink-0 text-dim" />
+              <span className="flex items-center gap-1">
+                <span className="truncate text-sm font-medium text-text">{project.name}</span>
+                <IconChevronDown className="h-3.5 w-3.5 shrink-0 text-dim" />
+              </span>
+              {/* Session subtitle — bordered and full width; clicking it (or the
+                  project title) opens the session switcher. */}
+              <span className="mt-0.5 inline-flex w-full items-center gap-1 rounded-md border border-border bg-surface/50 px-1.5 py-0.5 text-[11px] text-subtle">
+                <IconLayers className="h-3 w-3 shrink-0 text-faint" />
+                <span className="truncate">{sessionName || 'Session'}</span>
+              </span>
             </button>
           ) : (
             <span className="block h-4 w-32 animate-pulse rounded bg-border" />
@@ -184,6 +196,7 @@ export default function ChatPanel({
             onPreviewRestart={onPreviewRestart}
             onMemories={setLiveMemories}
             onProjectRename={onProjectRename}
+            onSessionName={setSessionName}
             llmReady={llmReady}
             sessionsOpen={sessionsOpen}
             onSessionsOpenChange={setSessionsOpen}

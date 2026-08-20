@@ -1611,6 +1611,7 @@ export default function ChatPane({
   onPreviewRestart,
   onMemories,
   onProjectRename,
+  onSessionName,
   llmReady,
   sessionsOpen,
   onSessionsOpenChange,
@@ -1625,6 +1626,8 @@ export default function ChatPane({
   onMemories?: (mems: Memory[]) => void;
   /** The agent renamed the project (set_project_name). */
   onProjectRename?: (name: string) => void;
+  /** Reports the active session's name so the header can show it. */
+  onSessionName?: (name: string) => void;
   /** null while the LLM configuration is still loading. */
   llmReady: boolean | null;
   /** Session switcher open state, lifted from ChatPane so the project title
@@ -1720,6 +1723,13 @@ export default function ChatPane({
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [creatingSession, setCreatingSession] = useState(false);
   const navigate = useNavigate();
+
+  // Report the active session name up to the header (project title + session
+  // subtitle click to switch).
+  useEffect(() => {
+    const s = sessions.find((x) => x.id === sessionId);
+    onSessionName?.(s?.name ?? '');
+  }, [sessions, sessionId, onSessionName]);
 
   // Composer drafts persist per project+session so typed text survives app
   // restarts and session switches.

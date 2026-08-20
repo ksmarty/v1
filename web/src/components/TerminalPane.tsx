@@ -79,6 +79,18 @@ export default function TerminalPane({
           // ignore malformed frames
         }
       };
+      ws.onerror = () => {
+        // The handshake (or the connection) failed at the transport level —
+        // behind a proxy this usually means the upgrade never reached the app
+        // (blocked WS, missing Upgrade forwarding, auth wall). Surface it
+        // instead of silently retrying.
+        setConnected(false);
+        if (retriesRef.current === 0) {
+          term.write(
+            '\r\n\x1b[31m[terminal: WebSocket connection failed — check that your reverse proxy forwards Upgrade/Connection headers (and that the path is not blocked).]\x1b[0m\r\n',
+          );
+        }
+      };
       ws.onclose = (ev) => {
         setConnected(false);
         const why = ev.reason || `code ${ev.code}`;
