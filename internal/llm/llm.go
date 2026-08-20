@@ -78,6 +78,10 @@ func NewClient(baseURL, apiKey, model string) *Client {
 type Usage struct {
 	PromptTokens     int64
 	CompletionTokens int64
+	// Cost is the price this turn cost, when the provider includes it in the
+	// usage payload (e.g. gateways that bill metered usage). Nil/absent means
+	// the provider surfaced no cost, so callers show tokens only.
+	Cost *float64
 }
 
 // StreamResult is the accumulated output of a streamed completion.
@@ -304,8 +308,9 @@ func scanStream(r io.Reader, res *StreamResult, onDelta func(string), onReasonin
 				} `json:"delta"`
 			} `json:"choices"`
 			Usage *struct {
-				PromptTokens     int64 `json:"prompt_tokens"`
-				CompletionTokens int64 `json:"completion_tokens"`
+				PromptTokens     int64    `json:"prompt_tokens"`
+				CompletionTokens int64    `json:"completion_tokens"`
+				Cost             *float64 `json:"cost"`
 			} `json:"usage"`
 		}
 		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
@@ -315,6 +320,7 @@ func scanStream(r io.Reader, res *StreamResult, onDelta func(string), onReasonin
 			res.Usage = &Usage{
 				PromptTokens:     chunk.Usage.PromptTokens,
 				CompletionTokens: chunk.Usage.CompletionTokens,
+				Cost:             chunk.Usage.Cost,
 			}
 		}
 		if chunk.Error != nil && chunk.Error.Message != "" && res.GatewayError == "" {

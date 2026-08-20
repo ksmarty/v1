@@ -28,9 +28,10 @@ Rules:
 
 // Usage is the token accounting attached to a finished turn.
 type Usage struct {
-	Input  int64  `json:"input"`
-	Output int64  `json:"output"`
-	Model  string `json:"model"`
+	Input  int64    `json:"input"`
+	Output int64    `json:"output"`
+	Model  string   `json:"model"`
+	Cost   *float64 `json:"cost,omitempty"`
 }
 
 // TurnResult carries the outcome of one chat turn so the caller can attach
@@ -348,6 +349,9 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 			usage.Input += res.Usage.PromptTokens
 			usage.Output += res.Usage.CompletionTokens
 			usage.Model = p.Client.Model
+			if res.Usage.Cost != nil {
+				usage.Cost = (usage.Cost ?? 0) + *res.Usage.Cost
+			}
 			if b, err := json.Marshal(usage); err == nil {
 				usageJSON = string(b)
 			}

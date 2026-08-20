@@ -183,6 +183,7 @@ export interface SettingsUpdate {
     model?: string;
     providers?: SavedProviderInput[];
     activeProviderId?: string;
+    currency?: string;
   };
   githubToken?: string;
   githubOAuthClientId?: string;

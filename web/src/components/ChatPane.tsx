@@ -217,6 +217,20 @@ function formatTime(ms: number): string {
   return new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
+// Formats a provider-supplied cost in the user's currency, e.g. "$0.0123"
+// or "€0,01". The ISO 4217 currency code is rendered as its symbol when we
+// recognize it, otherwise as a code suffix ("12.3 GBP").
+function formatCost(value: number, currency: string): string {
+  const sym: Record<string, string> = {
+    USD: '$', EUR: '€', GBP: '£', JPY: '¥', CAD: 'CA$', AUD: 'A$', INR: '₹',
+    CHF: 'CHF ', CNY: '¥', KRW: '₩', SEK: 'kr ', DKK: 'kr ',
+  };
+  const symOrCode = sym[currency] ?? `${currency} `;
+  const locale = currency === 'EUR' ? 'de-DE' : 'en-US';
+  const amount = value.toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 6 });
+  return `${symOrCode}${amount}`;
+}
+
 // Persisted thinking-metadata cache (localStorage): provider|model → levels
 // and off support, so reopening a project skips the /models round trip for
 // models already seen. Stale entries are pruned on write.
@@ -1265,6 +1279,7 @@ const MessageRow = memo(function MessageRow({
   onEditStart,
   onImageClick,
   onAskAnswered,
+  currency,
 }: {
   item: Item;
   isLast: boolean;
@@ -1277,6 +1292,7 @@ const MessageRow = memo(function MessageRow({
   onEditStart: (key: string, editing: boolean) => void;
   onImageClick: (url: string, name: string) => void;
   onAskAnswered: (answers: AskAnswerView[]) => void;
+  currency: string;
 }) {
   if (item.kind === 'tool') return <ToolRow item={item} />;
   if (item.kind === 'ask') {
@@ -1439,6 +1455,7 @@ const MessageRow = memo(function MessageRow({
       {turnEnd && item.usage && !item.streaming && (
         <div className="text-[10px] text-faint">
           {item.usage.input.toLocaleString()} in · {item.usage.output.toLocaleString()} out
+          {typeof item.usage.cost === 'number' ? ` · ${formatCost(item.usage.cost, currency)}` : ''}
           {item.usage.model ? ` · ${item.usage.model}` : ''}
           {item.elapsedMs != null ? ` · ${formatElapsed(item.elapsedMs)}` : ''}
           {item.sentAt ? ` · ${formatTime(item.sentAt)}` : ''}
@@ -1588,6 +1605,7 @@ export default function ChatPane({
   // files refresh after each agent run since runs create/edit files.
   const [fileList, setFileList] = useState<string[]>([]);
   const [skillList, setSkillList] = useState<{ name: string; hint: string }[]>([]);
+  const [currency, setCurrency] = useState('USD');
   const restartRef = useRef(onPreviewRestart);
   restartRef.current = onPreviewRestart;
   const onMemoriesRef = useRef(onMemories);
@@ -2120,6 +2138,7 @@ export default function ChatPane({
               .filter((x) => x.enabled)
               .map((x) => ({ name: x.name, hint: x.description || x.author })),
           );
+          setCurrency(s.llm?.currency ?? 'USD');
         }
       })
       .catch(() => {});
@@ -3690,6 +3709,7 @@ export default function ChatPane({
                     onEditStart={setItemEditing}
                     onImageClick={openLightbox}
                     onAskAnswered={(answer) => void answerAsk(answer)}
+                    currency={currency}
                   />
                 </div>
               );

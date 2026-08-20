@@ -36,6 +36,8 @@ export interface LLMSettings {
   models: ProviderModel[];
   providers: SavedProvider[];
   activeProviderId: string;
+  /** ISO 4217 currency code used to display provider-supplied cost. */
+  currency?: string;
 }
 
 export interface GitHubSettings {
@@ -185,6 +187,8 @@ export interface ChatUsage {
   input: number;
   output: number;
   model?: string;
+  /** Provider-supplied cost for this turn, in the user's configured currency. */
+  cost?: number;
 }
 
 export interface ContextUsage {

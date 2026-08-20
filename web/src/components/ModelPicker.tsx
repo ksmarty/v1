@@ -49,11 +49,15 @@ export default function ModelPicker({
 }) {
   const [query, setQuery] = useState('');
   const [draftModel, setDraftModel] = useState(model);
+  // When true, the selected provider shows a free-text field so you can enter
+  // an arbitrary model id without switching to the separate Custom provider.
+  const [customModel, setCustomModel] = useState(false);
 
   useEffect(() => {
     if (open) {
       setQuery('');
       setDraftModel(model);
+      setCustomModel(false);
     }
   }, [open, model]);
 
@@ -142,46 +146,88 @@ export default function ModelPicker({
         ) : (
           <>
             <section className="shrink-0">
-              <h3 className="mb-2 text-xs font-medium text-subtle">Model</h3>
-              <Input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search models"
-                spellCheck={false}
-                autoComplete="off"
-              />
-            </section>
-            <div className="fade-y min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain">
-              <div className="flex flex-col gap-1">
-                {filtered.length === 0 && (
-                  <p className="px-1 py-2 text-xs text-faint">No models match.</p>
-                )}
-                {filtered.map((m) => (
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="mb-2 text-xs font-medium text-subtle">Model</h3>
+                <button
+                  type="button"
+                  onClick={() => setCustomModel((v) => !v)}
+                  className="inline-flex items-center gap-1 rounded-full border border-border-strong px-2.5 py-1 text-xs text-text transition-colors hover:bg-surface"
+                >
+                  {customModel ? 'Browse models' : 'Custom model…'}
+                </button>
+              </div>
+              {customModel ? (
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={draftModel}
+                    onChange={(e) => setDraftModel(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && draftModel.trim()) {
+                        e.preventDefault();
+                        onModelChange(draftModel.trim());
+                        onClose();
+                      }
+                    }}
+                    placeholder="model id"
+                    spellCheck={false}
+                    autoComplete="off"
+                    className="min-w-0 flex-1 font-mono text-xs"
+                  />
                   <button
-                    key={m.id}
                     type="button"
+                    disabled={!draftModel.trim()}
                     onClick={() => {
-                      onModelChange(m.id);
+                      onModelChange(draftModel.trim());
                       onClose();
                     }}
-                    className={`flex min-h-[44px] items-center gap-2 rounded-lg border px-3 py-2 text-left transition-colors ${
-                      m.id === model
-                        ? 'border-accent bg-surface'
-                        : 'border-border hover:border-border-strong'
-                    }`}
+                    className="shrink-0 rounded-lg border border-border bg-surface px-3 py-2 text-xs font-medium text-text transition-colors hover:border-border-strong disabled:opacity-40"
                   >
-                    <span className="min-w-0 flex-1 truncate text-sm text-text">{m.name}</span>
-                    {m.imageInput && (
-                      <span title="Supports image uploads" className="shrink-0 text-accent">
-                        <IconPaperclip className="h-3.5 w-3.5" />
-                      </span>
-                    )}
-                    <span className="shrink-0 font-mono text-[11px] text-faint">{m.id}</span>
-                    {m.id === model && <IconCheck className="h-4 w-4 shrink-0 text-accent" />}
+                    Save
                   </button>
-                ))}
+                </div>
+              ) : (
+                <Input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search models"
+                  spellCheck={false}
+                  autoComplete="off"
+                />
+              )}
+            </section>
+            {!customModel && (
+              <div className="fade-y min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain">
+                <div className="flex flex-col gap-1">
+                  {filtered.length === 0 && (
+                    <p className="px-1 py-2 text-xs text-faint">No models match.</p>
+                  )}
+                  {filtered.map((m) => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => {
+                        onModelChange(m.id);
+                        onClose();
+                      }}
+                      className={`flex min-h-[44px] items-center gap-2 rounded-lg border px-3 py-2 text-left transition-colors ${
+                        m.id === model
+                          ? 'border-accent bg-surface'
+                          : 'border-border hover:border-border-strong'
+                      }`}
+                    >
+                      <span className="min-w-0 flex-1 truncate text-sm text-text">{m.name}</span>
+                      {m.imageInput && (
+                        <span title="Supports image uploads" className="shrink-0 text-accent">
+                          <IconPaperclip className="h-3.5 w-3.5" />
+                        </span>
+                      )}
+                      <span className="shrink-0 font-mono text-[11px] text-faint">{m.id}</span>
+                      {m.id === model && <IconCheck className="h-4 w-4 shrink-0 text-accent" />}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
           </>
         )}
       </div>

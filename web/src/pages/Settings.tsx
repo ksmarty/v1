@@ -1289,6 +1289,11 @@ export default function Settings() {
   const [provName, setProvName] = useState('');
   const [provBusyId, setProvBusyId] = useState<string | null>(null);
   const [provError, setProvError] = useState<string | null>(null);
+  // What the form edits: a saved provider id, 'new' for a fresh entry, or null
+  // when collapsed (only the Add button + saved list are shown). Keeping the
+  // form collapsed by default is what stops accidental overwrites.
+  const [editing, setEditing] = useState<string | 'new' | null>(null);
+  const [currency, setCurrency] = useState('USD');
 
   // GitHub PAT
   const [token, setToken] = useState('');
@@ -1417,6 +1422,7 @@ export default function Settings() {
         setVercelClientId(s.vercel.oauthClientId);
         setProviders(s.llm.providers ?? []);
         setActiveProviderId(s.llm.activeProviderId ?? '');
+        setCurrency(s.llm?.currency ?? 'USD');
         const active = (s.llm.providers ?? []).find((p) => p.id === s.llm.activeProviderId);
         setProvName(active?.name ?? '');
         setSysPrompt(s.systemPrompt ?? '');
@@ -1453,18 +1459,17 @@ export default function Settings() {
         host = '';
       }
       const name = provName.trim() || host || 'Provider';
-      const active = providers.find((p) => p.id === activeProviderId) ?? null;
-      if (active) {
-        // Save into the active provider and keep it active.
+      if (editing && editing !== 'new') {
+        // Editing one saved provider only — the active provider is untouched.
         const list = providers.map((p) =>
-          p.id === active.id
+          p.id === editing
             ? { id: p.id, name, baseURL, model, ...(apiKey ? { apiKey } : {}) }
             : { id: p.id, name: p.name, baseURL: p.baseURL, model: p.model },
         );
-        await api.updateSettings({ llm: { providers: list, activeProviderId: active.id } });
+        await api.updateSettings({ llm: { providers: list } });
       } else {
-        // No active provider: the save creates one from the form and
-        // activates it (also the first provider of a fresh setup).
+        // Adding a fresh provider: append, and only auto-activate it when
+        // there is no active provider yet (e.g. first setup).
         const newId = randomId();
         const list = providers.map((p) => ({
           id: p.id,
@@ -1473,10 +1478,15 @@ export default function Settings() {
           model: p.model,
         }));
         list.push({ id: newId, name, baseURL, model, ...(apiKey ? { apiKey } : {}) });
-        await api.updateSettings({ llm: { providers: list, activeProviderId: newId } });
+        const patch: { providers: typeof list; activeProviderId?: string } = {
+          providers: list,
+        };
+        if (!activeProviderId) patch.activeProviderId = newId;
+        await api.updateSettings({ llm: patch });
       }
       setLlmSaved(true);
       setApiKey('');
+      setEditing(null);
       reloadSettings();
     } catch (err) {
       setLlmError(errMsg(err));
@@ -1485,15 +1495,39 @@ export default function Settings() {
     }
   };
 
-  // Begin adding a brand-new provider: clears the form and deselects the
-  // active provider so the next Save appends a fresh entry instead of
-  // overwriting the current one.
-  const startNewProvider = () => {
-    setActiveProviderId('');
+  // Open a blank form for a brand-new provider. Never touches existing ones.
+  const startAdd = () => {
+    setEditing('new');
     setProvName('');
     setBaseURL('');
     setModel('');
     setApiKey('');
+    setLlmError(null);
+  };
+
+  // Load a saved provider into the form for editing. Does not switch the
+  // active provider — saving updates only this entry.
+  const startEdit = (p: { id: string; name: string; baseURL: string; model: string }) => {
+    setEditing(p.id);
+    setProvName(p.name);
+    setBaseURL(p.baseURL);
+    setModel(p.model);
+    setApiKey('');
+    setLlmError(null);
+  };
+
+  const cancelEdit = () => {
+    setEditing(null);
+    setLlmError(null);
+  };
+
+  const saveCurrency = async (v: string) => {
+    setCurrency(v);
+    try {
+      await api.updateSettings({ llm: { currency: v } });
+    } catch {
+      // ignore — the picker still reflects the chosen value locally
+    }
   };
 
   const useProvider = async (id: string) => {
@@ -1844,8 +1878,28 @@ export default function Settings() {
           >
             <div className={page === 'llm' ? 'flex flex-col gap-4' : 'hidden'}>
               <Section id="sec-llm" title="LLM" description="The OpenAI-compatible endpoint v1 uses to generate apps. The model is picked per project in the chat.">
-          <form onSubmit={(e) => void saveLLM(e)} className="flex flex-col gap-3">
-            <ProviderSelector
+          {editing === null ? (
+            <div className="flex flex-col gap-3">
+              <Button variant="primary" onClick={startAdd} className="w-fit">
+                <IconPlus className="h-4 w-4" /> Add Provider
+              </Button>
+              <p className="text-xs text-subtle">
+                Provider fields stay hidden until you add one, so saving never
+                overwrites an existing provider. Add a new entry here, or pick
+                Edit on a saved provider below to change it.
+              </p>
+            </div>
+          ) : (
+            <form onSubmit={(e) => void saveLLM(e)} className="flex flex-col gap-3">
+              <div className="flex items-center justify-between border-b border-border pb-1.5">
+                <h3 className="text-sm font-medium text-text">
+                  {editing === 'new' ? 'New provider' : `Edit: ${providers.find((p) => p.id === editing)?.name ?? 'provider'}`}
+                </h3>
+                <Button variant="ghost" onClick={cancelEdit} className="h-8 px-2.5 text-xs">
+                  Cancel
+                </Button>
+              </div>
+              <ProviderSelector
               baseURL={baseURL}
               model={model}
               onBaseURLChange={setBaseURL}
@@ -1890,15 +1944,6 @@ export default function Settings() {
               }
               extra={
                 <>
-                  <Button
-                    variant="outline"
-                    onClick={startNewProvider}
-                    disabled={llmSaving}
-                    title="Start a new provider (keeps existing ones)"
-                    className="shrink-0"
-                  >
-                    <IconPlus className="h-4 w-4" /> New provider
-                  </Button>
                   <Button variant="outline" onClick={() => void testLLM()} disabled={testing}>
                     {testing ? <Spinner className="h-4 w-4" /> : 'Test connection'}
                   </Button>
@@ -1921,6 +1966,7 @@ export default function Settings() {
                 </p>
               ))}
           </form>
+          )}
 
           {providers.length > 0 && (
             <div className="border-t border-border pt-3">
@@ -1954,6 +2000,15 @@ export default function Settings() {
                       <span className="shrink-0 text-[10px] text-red-400">no key</span>
                     )}
                     <div className="flex shrink-0 items-center gap-1">
+                      <Button
+                        variant="outline"
+                        className="h-7 px-2 text-xs"
+                        disabled={provBusyId === p.id}
+                        onClick={() => startEdit(p)}
+                        aria-label={`Edit provider ${p.name}`}
+                      >
+                        Edit
+                      </Button>
                       {p.id !== activeProviderId && (
                         <Button
                           variant="outline"
@@ -1984,6 +2039,23 @@ export default function Settings() {
               </ul>
             </div>
           )}
+
+          <Field label="Currency for cost display">
+            <select
+              value={currency}
+              onChange={(e) => void saveCurrency(e.target.value)}
+              className="w-full rounded-lg border border-border-strong bg-surface px-3 py-2 text-sm text-text outline-none transition-colors focus:border-subtle"
+            >
+              {['USD', 'EUR', 'GBP', 'JPY', 'CAD', 'AUD', 'INR', 'CHF', 'CNY', 'KRW', 'SEK', 'DKK'].map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-[11px] text-subtle">
+              Used to format provider-supplied cost at the end of each chat turn.
+            </p>
+          </Field>
         </Section>
 
         <Section

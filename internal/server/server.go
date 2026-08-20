@@ -286,6 +286,7 @@ const (
 	keyLLMModel            = "llm_model"
 	keyLLMProviders        = "llm_providers"
 	keyLLMActiveProvider   = "llm_active_provider"
+	keyLLMCurrency         = "llm_currency"
 	keyGitHubToken         = "github_token"
 	keyGitHubTokenSource   = "github_token_source"
 	keyGitHubOAuthClientID = "github_oauth_client_id"
@@ -505,6 +506,15 @@ func (s *Server) contextThreshold(userID string) float64 {
 		t = 0.8
 	}
 	return t
+}
+
+// currency resolves the currency used to display provider-supplied cost.
+// Defaults to USD when unset.
+func (s *Server) currency(userID string) string {
+	if v, ok := s.userSetting(userID, keyLLMCurrency); ok && v != "" {
+		return v
+	}
+	return "USD"
 }
 
 // githubTokenSource reports how the current token got configured:

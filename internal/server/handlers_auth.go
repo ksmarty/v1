@@ -181,6 +181,7 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 			"models":           models,
 			"providers":        providerJSON,
 			"activeProviderId": activeProviderID,
+			"currency":         s.currency(userID),
 		},
 		"github": map[string]any{
 			"tokenSet":      s.githubToken(userID) != "",
@@ -217,6 +218,7 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 			Model            *string              `json:"model"`
 			Providers        *[]llmProviderRecord `json:"providers"`
 			ActiveProviderID *string              `json:"activeProviderId"`
+			Currency         *string              `json:"currency"`
 		} `json:"llm"`
 		GitHubToken         *string             `json:"githubToken"`
 		GitHubOAuthClientID *string             `json:"githubOAuthClientId"`
@@ -324,9 +326,10 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		// 3. Legacy single-provider fields (empty clears).
 		for key, v := range map[string]*string{
-			keyLLMBaseURL: body.LLM.BaseURL,
-			keyLLMAPIKey:  body.LLM.APIKey,
-			keyLLMModel:   body.LLM.Model,
+			keyLLMBaseURL:   body.LLM.BaseURL,
+			keyLLMAPIKey:    body.LLM.APIKey,
+			keyLLMModel:     body.LLM.Model,
+			keyLLMCurrency:  body.LLM.Currency,
 		} {
 			if err := set(key, v); err != nil {
 				writeError(w, http.StatusInternalServerError, err.Error())
