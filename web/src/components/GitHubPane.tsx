@@ -50,7 +50,7 @@ export default function GitHubPane({ repoUrl }: { repoUrl?: string }) {
     try {
       const [w, im] = await Promise.allSettled([
         api.githubWorkflows(repo),
-        api.githubImages(own),
+        api.githubImages(repo),
       ]);
       if (w.status === 'fulfilled') setWorkflows(w.value.workflows);
       else setWorkflows([]);
@@ -169,6 +169,18 @@ export default function GitHubPane({ repoUrl }: { repoUrl?: string }) {
                     {img.visibility}
                   </span>
                 </div>
+                {img.tags.length > 0 && (
+                  <div className="mt-1.5 flex flex-wrap gap-1">
+                    {img.tags.map((t) => (
+                      <code
+                        key={t}
+                        className="rounded bg-border/60 px-1.5 py-0.5 font-mono text-[10px] text-dim"
+                      >
+                        {t}
+                      </code>
+                    ))}
+                  </div>
+                )}
                 <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-dim">
                   <span>updated {img.updated_at ? new Date(img.updated_at).toLocaleString() : '—'}</span>
                   {img.url && (

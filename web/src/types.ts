@@ -169,6 +169,7 @@ export interface Project {
   defaultPreviewCommand?: string;
   instructions?: string;
   autoPush: boolean;
+  previewDisabled?: boolean;
   preview: PreviewInfo;
   updatedAt: string;
 }
@@ -380,6 +381,8 @@ export interface GitHubContainerImage {
   created_at: string;
   updated_at: string;
   full: string;
+  /** Published tag versions of this image (e.g. v0.42.0, latest). */
+  tags: string[];
 }
 
 export interface GitHubImages {

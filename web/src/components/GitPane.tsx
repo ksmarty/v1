@@ -21,6 +21,7 @@ import {
   IconChevronDown,
   IconChevronRight,
   IconFile,
+  IconTrash,
 } from './icons';
 
 function timeAgo(unix: number): string {
@@ -87,25 +88,61 @@ function ChangesModal({
   projectId,
   open,
   onClose,
+  onChanged,
 }: {
   projectId: string;
   open: boolean;
   onClose: () => void;
+  /** Called after a discard/stage so the parent can refresh status. */
+  onChanged?: () => void;
 }) {
   const [changes, setChanges] = useState<GitFileChange[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [openPath, setOpenPath] = useState<string | null>(null);
+  const [discarding, setDiscarding] = useState<string | 'all' | null>(null);
+  const [staging, setStaging] = useState<string | 'all' | null>(null);
+  const [confirmDiscardAll, setConfirmDiscardAll] = useState(false);
 
   useEffect(() => {
     if (!open) return;
     setChanges(null);
     setError(null);
     setOpenPath(null);
+    setConfirmDiscardAll(false);
     api
       .gitChanges(projectId)
       .then((r) => setChanges(r.changes))
       .catch((e) => setError(errMsg(e)));
   }, [open, projectId]);
+
+  const reload = () => {
+    api
+      .gitChanges(projectId)
+      .then((r) => setChanges(r.changes))
+      .catch((e) => setError(errMsg(e)));
+  };
+
+  const run = async (fn: () => Promise<void>, target: string | 'all', kind: 'discard' | 'stage') => {
+    const setter = kind === 'discard' ? setDiscarding : setStaging;
+    setter(target);
+    setError(null);
+    try {
+      await fn();
+      if (kind === 'discard') setOpenPath(null);
+      reload();
+      onChanged?.();
+    } catch (e) {
+      setError(errMsg(e));
+    } finally {
+      setter(null);
+    }
+  };
+
+  const discardOne = (path: string) => run(() => api.gitDiscard(projectId, path), path, 'discard');
+  const stageOne = (path: string) => run(() => api.gitStage(projectId, path), path, 'stage');
+  const discardAll = () => run(() => api.gitDiscard(projectId), 'all', 'discard');
+  const stageAll = () => run(() => api.gitStage(projectId), 'all', 'stage');
+  const hasChanges = (changes?.length ?? 0) > 0;
 
   return (
     <Dialog open={open} onClose={onClose} title="Changed files" wide fullScreen fixedBody align="top">
@@ -140,10 +177,82 @@ function ChangesModal({
                 {c.status}
               </span>
             </button>
+            <div className="flex items-center justify-end gap-1 border-t border-border/60 px-2 py-1.5">
+              <button
+                type="button"
+                onClick={() => void stageOne(c.path)}
+                disabled={staging !== null || discarding !== null}
+                className="inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[11px] text-dim transition-colors hover:bg-surface hover:text-text disabled:opacity-40"
+                title="Stage this file"
+              >
+                {staging === c.path ? <Spinner className="h-3 w-3" /> : <IconArrowUp className="h-3 w-3" />}
+                Stage
+              </button>
+              <button
+                type="button"
+                onClick={() => void discardOne(c.path)}
+                disabled={staging !== null || discarding !== null}
+                className="inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[11px] text-red-400/80 transition-colors hover:bg-surface hover:text-red-400 disabled:opacity-40"
+                title="Discard changes to this file"
+              >
+                {discarding === c.path ? <Spinner className="h-3 w-3" /> : <IconTrash className="h-3 w-3" />}
+                Discard
+              </button>
+            </div>
             {openPath === c.path && <ChangeDiff c={c} />}
           </div>
         ))}
       </div>
+      {hasChanges && (
+        <div className="mt-3 flex items-center justify-between gap-2 border-t border-border pt-3">
+          <span className="text-xs text-subtle">{changes!.length} changed</span>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              className="h-8 px-2.5 text-xs"
+              onClick={() => void stageAll()}
+              disabled={staging !== null || discarding !== null}
+            >
+              {staging === 'all' ? <Spinner className="h-3.5 w-3.5" /> : <IconArrowUp className="h-3.5 w-3.5" />}
+              Stage all
+            </Button>
+            <Button
+              variant="outline"
+              className="h-8 px-2.5 text-xs text-red-400/80"
+              onClick={() => setConfirmDiscardAll(true)}
+              disabled={staging !== null || discarding !== null}
+            >
+              {discarding === 'all' ? <Spinner className="h-3.5 w-3.5" /> : <IconTrash className="h-3.5 w-3.5" />}
+              Discard all
+            </Button>
+          </div>
+        </div>
+      )}
+      <Dialog
+        open={confirmDiscardAll}
+        onClose={() => setConfirmDiscardAll(false)}
+        title="Discard all changes?"
+      >
+        <p className="text-sm text-subtle">
+          This permanently discards every uncommitted change in the worktree, including
+          untracked files. This cannot be undone.
+        </p>
+        <div className="mt-4 flex justify-end gap-2">
+          <Button variant="ghost" onClick={() => setConfirmDiscardAll(false)}>
+            Cancel
+          </Button>
+          <Button
+            variant="danger"
+            onClick={() => {
+              setConfirmDiscardAll(false);
+              void discardAll();
+            }}
+          >
+            {discarding === 'all' && <Spinner className="h-4 w-4" />}
+            Discard all
+          </Button>
+        </div>
+      </Dialog>
     </Dialog>
   );
 }
@@ -545,7 +654,12 @@ export default function GitPane({
         </div>
       </Dialog>
 
-      <ChangesModal projectId={projectId} open={changesOpen} onClose={() => setChangesOpen(false)} />
+      <ChangesModal
+        projectId={projectId}
+        open={changesOpen}
+        onClose={() => setChangesOpen(false)}
+        onChanged={() => void load()}
+      />
 
       <Dialog
         open={confirmRevert !== null}

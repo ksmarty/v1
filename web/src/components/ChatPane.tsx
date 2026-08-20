@@ -1612,6 +1612,8 @@ export default function ChatPane({
   onMemories,
   onProjectRename,
   llmReady,
+  sessionsOpen,
+  onSessionsOpenChange,
   initialPrompt,
   initialProviderId,
   initialModel,
@@ -1625,6 +1627,10 @@ export default function ChatPane({
   onProjectRename?: (name: string) => void;
   /** null while the LLM configuration is still loading. */
   llmReady: boolean | null;
+  /** Session switcher open state, lifted from ChatPane so the project title
+   * in ChatPanel can open the same modal. */
+  sessionsOpen: boolean;
+  onSessionsOpenChange: (open: boolean) => void;
   /** Description from the New project dialog — auto-sent once, when ready. */
   initialPrompt?: string;
   /** Optional model selection from the New project dialog, used when the
@@ -1712,7 +1718,6 @@ export default function ChatPane({
   // The active chat session ('' until the session list loads).
   const [sessionId, setSessionId] = useState('');
   const [sessions, setSessions] = useState<ChatSession[]>([]);
-  const [sessionsOpen, setSessionsOpen] = useState(false);
   const [creatingSession, setCreatingSession] = useState(false);
   const navigate = useNavigate();
 
@@ -2178,13 +2183,13 @@ export default function ChatPane({
       setSessions((prev) => [...prev, res.session]);
       setSessionId(res.session.id);
       localStorage.setItem(sessionStorageKey(projectId), res.session.id);
-      setSessionsOpen(false);
+      onSessionsOpenChange(false);
     } catch {
       // leave the modal open; the list is unchanged
     } finally {
       setCreatingSession(false);
     }
-  }, [projectId]);
+  }, [projectId, onSessionsOpenChange]);
 
   // Keep the queue block in sync while a run is active — messages drain to
   // follow-up turns as they finish. The status poll above refreshes it every
@@ -4195,7 +4200,7 @@ export default function ChatPane({
                     type="button"
                     onClick={() => {
                       setPlusOpen(false);
-                      setSessionsOpen(true);
+                      onSessionsOpenChange(true);
                     }}
                     className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm text-text transition-colors hover:bg-border"
                   >
@@ -4535,7 +4540,7 @@ export default function ChatPane({
 
       <SessionsModal
         open={sessionsOpen}
-        onClose={() => setSessionsOpen(false)}
+        onClose={() => onSessionsOpenChange(false)}
         sessions={sessions}
         activeId={sessionId}
         onSwitch={(id) => {

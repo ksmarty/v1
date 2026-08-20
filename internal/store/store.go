@@ -198,8 +198,13 @@ CREATE TABLE pending_asks_v2 (
 	if err := migrateLegacyUsers(db); err != nil {
 		return err
 	}
-	return migrateAddColumns(db, "memories", map[string]string{
+	if err := migrateAddColumns(db, "memories", map[string]string{
 		"enabled": "ALTER TABLE memories ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1",
+	}); err != nil {
+		return err
+	}
+	return migrateAddColumns(db, "projects", map[string]string{
+		"preview_disabled": "ALTER TABLE projects ADD COLUMN preview_disabled INTEGER NOT NULL DEFAULT 0",
 	})
 }
 
@@ -649,16 +654,17 @@ func (s *Store) DeleteSession(token string) error {
 
 // Project is a row of the projects table.
 type Project struct {
-	ID             string
-	Name           string
-	Path           string
-	RepoURL        string
-	PreviewCommand string
-	Instructions   string
-	OwnerID        string
-	AutoPush       bool
-	CreatedAt      int64
-	UpdatedAt      int64
+	ID              string
+	Name            string
+	Path            string
+	RepoURL         string
+	PreviewCommand  string
+	Instructions    string
+	OwnerID         string
+	AutoPush        bool
+	PreviewDisabled bool
+	CreatedAt       int64
+	UpdatedAt       int64
 }
 
 // CreateProject inserts a project, stamping created_at/updated_at.
@@ -666,9 +672,9 @@ func (s *Store) CreateProject(p *Project) error {
 	t := now()
 	p.CreatedAt = t
 	p.UpdatedAt = t
-	_, err := s.db.Exec(`INSERT INTO projects (id, name, path, repo_url, preview_command, instructions, owner_id, auto_push, created_at, updated_at)
-		VALUES (?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?, ?, ?)`,
-		p.ID, p.Name, p.Path, p.RepoURL, p.PreviewCommand, p.Instructions, p.OwnerID, boolInt(p.AutoPush), p.CreatedAt, p.UpdatedAt)
+	_, err := s.db.Exec(`INSERT INTO projects (id, name, path, repo_url, preview_command, instructions, owner_id, auto_push, preview_disabled, created_at, updated_at)
+		VALUES (?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?, ?, ?, ?)`,
+		p.ID, p.Name, p.Path, p.RepoURL, p.PreviewCommand, p.Instructions, p.OwnerID, boolInt(p.AutoPush), boolInt(p.PreviewDisabled), p.CreatedAt, p.UpdatedAt)
 	return err
 }
 
@@ -679,8 +685,8 @@ type scanner interface {
 func scanProject(row scanner) (*Project, error) {
 	var p Project
 	var repoURL, previewCmd, instructions, ownerID sql.NullString
-	var autoPush int
-	if err := row.Scan(&p.ID, &p.Name, &p.Path, &repoURL, &previewCmd, &instructions, &ownerID, &autoPush, &p.CreatedAt, &p.UpdatedAt); err != nil {
+	var autoPush, previewDisabled int
+	if err := row.Scan(&p.ID, &p.Name, &p.Path, &repoURL, &previewCmd, &instructions, &ownerID, &autoPush, &previewDisabled, &p.CreatedAt, &p.UpdatedAt); err != nil {
 		return nil, err
 	}
 	p.RepoURL = repoURL.String
@@ -688,14 +694,21 @@ func scanProject(row scanner) (*Project, error) {
 	p.Instructions = instructions.String
 	p.OwnerID = ownerID.String
 	p.AutoPush = autoPush != 0
+	p.PreviewDisabled = previewDisabled != 0
 	return &p, nil
 }
 
-const projectCols = `id, name, path, repo_url, preview_command, instructions, owner_id, auto_push, created_at, updated_at`
+const projectCols = `id, name, path, repo_url, preview_command, instructions, owner_id, auto_push, preview_disabled, created_at, updated_at`
 
 // UpdateProjectAutoPush toggles the per-project auto-push flag.
 func (s *Store) UpdateProjectAutoPush(id string, autoPush bool) error {
 	_, err := s.db.Exec(`UPDATE projects SET auto_push = ?, updated_at = ? WHERE id = ?`, boolInt(autoPush), now(), id)
+	return err
+}
+
+// UpdateProjectPreviewDisabled toggles the per-project preview-disabled flag.
+func (s *Store) UpdateProjectPreviewDisabled(id string, disabled bool) error {
+	_, err := s.db.Exec(`UPDATE projects SET preview_disabled = ?, updated_at = ? WHERE id = ?`, boolInt(disabled), now(), id)
 	return err
 }
 

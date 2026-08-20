@@ -18,15 +18,14 @@ import (
 )
 
 type projectJSON struct {
-	ID             string `json:"id"`
-	Name           string `json:"name"`
-	RepoURL        string `json:"repoUrl,omitempty"`
-	PreviewCommand string `json:"previewCommand,omitempty"`
-	// DefaultPreviewCommand is the command used without an override ("" for
-	// static projects) — shown as the override field's placeholder.
+	ID                    string `json:"id"`
+	Name                  string `json:"name"`
+	RepoURL               string `json:"repoUrl,omitempty"`
+	PreviewCommand        string `json:"previewCommand,omitempty"`
 	DefaultPreviewCommand string `json:"defaultPreviewCommand"`
 	Instructions          string `json:"instructions,omitempty"`
 	AutoPush              bool   `json:"autoPush"`
+	PreviewDisabled       bool   `json:"previewDisabled"`
 	CreatedAt             int64  `json:"createdAt"`
 	UpdatedAt             int64  `json:"updatedAt"`
 }
@@ -40,6 +39,7 @@ func toProjectJSON(p *store.Project) projectJSON {
 		DefaultPreviewCommand: preview.DefaultPreviewCommand(p.Path),
 		Instructions:          p.Instructions,
 		AutoPush:              p.AutoPush,
+		PreviewDisabled:       p.PreviewDisabled,
 		CreatedAt:             p.CreatedAt,
 		UpdatedAt:             p.UpdatedAt,
 	}
@@ -52,10 +52,11 @@ func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Name           string `json:"name"`
-		PreviewCommand string `json:"previewCommand"`
-		Instructions   string `json:"instructions"`
-		AutoPush       *bool  `json:"autoPush"`
+		Name            string `json:"name"`
+		PreviewCommand  string `json:"previewCommand"`
+		Instructions    string `json:"instructions"`
+		AutoPush        *bool  `json:"autoPush"`
+		PreviewDisabled *bool  `json:"previewDisabled"`
 	}
 	if !decodeJSON(w, r, &body) {
 		return
@@ -72,6 +73,16 @@ func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
 		if err := s.st.UpdateProjectAutoPush(p.ID, *body.AutoPush); err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
+		}
+	}
+	if body.PreviewDisabled != nil {
+		if err := s.st.UpdateProjectPreviewDisabled(p.ID, *body.PreviewDisabled); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		// Stop any running preview so a disabled preview doesn't linger.
+		if *body.PreviewDisabled {
+			s.previews.Stop(p.ID)
 		}
 	}
 	updated, err := s.st.GetProject(p.ID)

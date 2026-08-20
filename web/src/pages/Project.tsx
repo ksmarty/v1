@@ -151,11 +151,12 @@ export default function Project() {
   return (
     <div className="v1-safe-top flex h-[max(var(--v1-app-height,0px),100dvh)] flex-col overflow-hidden">
       {debugHud && <DebugHud />}
-      {isDesktop ? (        chatCollapsed ? (
+      {isDesktop ? (
+        chatCollapsed || project.previewDisabled ? (
           <div className="flex min-h-0 flex-1">
-            {chatSide === 'left' && expandStrip}
-            <div className="min-h-0 flex-1">{previewPanel}</div>
-            {chatSide === 'right' && expandStrip}
+            {chatSide === 'left' && !project.previewDisabled && expandStrip}
+            <div className="min-h-0 flex-1">{project.previewDisabled ? chatSidePanel : previewPanel}</div>
+            {chatSide === 'right' && !project.previewDisabled && expandStrip}
           </div>
         ) : (
           <div className="min-h-0 flex-1">
@@ -191,17 +192,25 @@ export default function Project() {
               metric iOS currently reports taller wins, so the bar can't float
               above the screen edge in standalone mode. */}
           <div className="min-h-0 flex-1 overflow-hidden">
-            <div className={mobilePane === 'chat' ? 'h-full min-h-0 min-w-0' : 'hidden'}>
+            <div className={mobilePane === 'chat' || project.previewDisabled ? 'h-full min-h-0 min-w-0' : 'hidden'}>
               {chatSidePanel}
             </div>
-            <div className={mobilePane === 'preview' ? 'h-full min-h-0 min-w-0' : 'hidden'}>
-              {previewPanel}
-            </div>
+            {!project.previewDisabled && (
+              <div className={mobilePane === 'preview' ? 'h-full min-h-0 min-w-0' : 'hidden'}>
+                {previewPanel}
+              </div>
+            )}
           </div>
-          <nav className="grid shrink-0 grid-cols-2 border-t border-border bg-bg pb-[calc(env(safe-area-inset-bottom)/2)]">
+          <nav
+            className={`grid shrink-0 border-t border-border bg-bg pb-[calc(env(safe-area-inset-bottom)/2)] ${
+              project.previewDisabled ? 'grid-cols-1' : 'grid-cols-2'
+            }`}
+          >
             {[
               { id: 'chat' as const, label: 'Chat', icon: <IconChat className="h-5 w-5" /> },
-              { id: 'preview' as const, label: 'Preview', icon: <IconMonitor className="h-5 w-5" /> },
+              ...(project.previewDisabled
+                ? []
+                : [{ id: 'preview' as const, label: 'Preview', icon: <IconMonitor className="h-5 w-5" /> }]),
             ].map((item) => (
               <button
                 key={item.id}

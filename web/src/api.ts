@@ -283,7 +283,7 @@ export const api = {
   createProject: (body: { name?: string; description?: string }) =>
     post<Project>('/api/projects', body),
   getProject: (id: string) => request<Project>(`/api/projects/${id}`),
-  updateProject: (id: string, body: { name?: string; previewCommand?: string; instructions?: string; autoPush?: boolean }) =>
+  updateProject: (id: string, body: { name?: string; previewCommand?: string; instructions?: string; autoPush?: boolean; previewDisabled?: boolean }) =>
     patch<Project>(`/api/projects/${id}`, body),
   deleteProject: (id: string) => request<void>(`/api/projects/${id}`, { method: 'DELETE' }),
   importProject: (repoUrl: string, name?: string) =>
@@ -398,8 +398,8 @@ export const api = {
   listGitHubRepos: () => request<GitHubRepo[]>('/api/github/repos'),
   githubWorkflows: (repo: string) =>
     request<GitHubWorkflows>(`/api/github/workflows?repo=${encodeURIComponent(repo)}`),
-  githubImages: (owner: string) =>
-    request<GitHubImages>(`/api/github/images?owner=${encodeURIComponent(owner)}`),
+  githubImages: (repo: string) =>
+    request<GitHubImages>(`/api/github/images?repo=${encodeURIComponent(repo)}`),
   githubCreate: (id: string, name: string, isPrivate: boolean) =>
     post<void>(`/api/projects/${id}/github/create`, { name, private: isPrivate }),
   githubLink: (id: string, repoUrl: string) =>
@@ -419,6 +419,10 @@ export const api = {
     post<{ ok: boolean; hash?: string }>(`/api/projects/${id}/git/commit`, { message }),
   gitPull: (id: string) => post<void>(`/api/projects/${id}/git/pull`),
   gitFetch: (id: string) => post<void>(`/api/projects/${id}/git/fetch`),
+  gitDiscard: (id: string, path?: string) =>
+    post<void>(`/api/projects/${id}/git/discard`, { path: path ?? '' }),
+  gitStage: (id: string, path?: string) =>
+    post<void>(`/api/projects/${id}/git/stage`, { path: path ?? '' }),
   gitChanges: (id: string) => request<{ changes: GitFileChange[] }>(`/api/projects/${id}/git/changes`),
   oauthDeviceStart: () => post<DeviceFlowStart>('/api/github/oauth/device/start'),
   oauthDevicePoll: (flowId: string) =>

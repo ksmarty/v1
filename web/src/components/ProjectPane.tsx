@@ -17,6 +17,7 @@ export default function ProjectPane({
   const [previewCommand, setPreviewCommand] = useState('');
   const [instructions, setInstructions] = useState('');
   const [autoPush, setAutoPush] = useState(false);
+  const [previewDisabled, setPreviewDisabled] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -26,7 +27,8 @@ export default function ProjectPane({
     setPreviewCommand(project?.previewCommand ?? '');
     setInstructions(project?.instructions ?? '');
     setAutoPush(project?.autoPush ?? false);
-  }, [project?.id, project?.name, project?.previewCommand, project?.instructions, project?.autoPush]);
+    setPreviewDisabled(project?.previewDisabled ?? false);
+  }, [project?.id, project?.name, project?.previewCommand, project?.instructions, project?.autoPush, project?.previewDisabled]);
 
   const save = async (e: FormEvent) => {
     e.preventDefault();
@@ -35,7 +37,7 @@ export default function ProjectPane({
     setSaved(false);
     setError(null);
     try {
-      const updated = await api.updateProject(project.id, { name, previewCommand, instructions, autoPush });
+      const updated = await api.updateProject(project.id, { name, previewCommand, instructions, autoPush, previewDisabled });
       onProjectChange({ ...project, ...updated });
       setSaved(true);
     } catch (err) {
@@ -92,6 +94,26 @@ export default function ProjectPane({
               <p className="mt-1.5 text-xs text-subtle">
                 Push this project's finished chat-turn commits to its GitHub
                 remote automatically.
+              </p>
+            </Field>
+            <Field label="Preview">
+              <div className="grid w-full max-w-[200px] grid-cols-2 gap-1 rounded-lg border border-border bg-surface p-1">
+                {([false, true] as const).map((v) => (
+                  <button
+                    key={String(v)}
+                    type="button"
+                    onClick={() => setPreviewDisabled(v)}
+                    className={`min-h-[36px] rounded-md text-sm transition-colors ${
+                      previewDisabled === v ? 'bg-border text-text' : 'text-dim hover:text-text'
+                    }`}
+                  >
+                    {v ? 'Disabled' : 'Enabled'}
+                  </button>
+                ))}
+              </div>
+              <p className="mt-1.5 text-xs text-subtle">
+                Hides the preview pane and its bottom-nav button. Useful on
+                mobile for extra vertical space.
               </p>
             </Field>
             <SaveRow saving={saving} saved={saved} error={error} />

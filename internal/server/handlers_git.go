@@ -202,3 +202,53 @@ func (s *Server) handleGitPull(w http.ResponseWriter, r *http.Request) {
 	_ = s.st.TouchProject(p.ID)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
+
+// handleGitDiscard discards changes for one file (body.path) or, when empty,
+// every uncommitted change in the worktree.
+func (s *Server) handleGitDiscard(w http.ResponseWriter, r *http.Request) {
+	p := s.projectOr404(w, r)
+	if p == nil {
+		return
+	}
+	var body struct {
+		Path string `json:"path"`
+	}
+	_ = decodeJSON(w, r, &body)
+	var err error
+	if body.Path != "" {
+		err = gitops.DiscardFile(p.Path, body.Path)
+	} else {
+		err = gitops.DiscardAll(p.Path)
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	s.previews.TouchRevision(p.ID)
+	_ = s.st.TouchProject(p.ID)
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// handleGitStage stages one file (body.path) or, when empty, every worktree
+// change into the index.
+func (s *Server) handleGitStage(w http.ResponseWriter, r *http.Request) {
+	p := s.projectOr404(w, r)
+	if p == nil {
+		return
+	}
+	var body struct {
+		Path string `json:"path"`
+	}
+	_ = decodeJSON(w, r, &body)
+	var err error
+	if body.Path != "" {
+		err = gitops.StageFile(p.Path, body.Path)
+	} else {
+		err = gitops.StageAll(p.Path)
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}

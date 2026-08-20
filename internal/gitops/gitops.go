@@ -801,6 +801,141 @@ func RevertTo(path, commit string) error {
 	return w.Reset(&git.ResetOptions{Commit: *h, Mode: git.HardReset})
 }
 
+// DiscardFile reverts a single file (or directory) to HEAD, dropping both
+// staged and unstaged changes. Untracked files are removed entirely.
+func DiscardFile(path, file string) error {
+	repo, err := git.PlainOpen(path)
+	if err != nil {
+		return fmt.Errorf("not a git repository")
+	}
+	if err := validate(file); err != nil {
+		return err
+	}
+	w, err := repo.Worktree()
+	if err != nil {
+		return err
+	}
+	abs, err := filepath.Abs(filepath.Join(w.Filesystem.Root(), filepath.FromSlash(file)))
+	if err != nil {
+		return err
+	}
+	root, err := filepath.Abs(w.Filesystem.Root())
+	if err != nil {
+		return err
+	}
+	if abs != root && !strings.HasPrefix(abs, root+string(filepath.Separator)) {
+		return fmt.Errorf("path escapes the repository")
+	}
+	ws, err := w.Status()
+	if err != nil {
+		return err
+	}
+	fs := ws.File(file)
+	if fs != nil && fs.Worktree == git.Untracked {
+		// Untracked: just drop it from disk.
+		return os.RemoveAll(abs)
+	}
+	// Restore the HEAD content on disk (also brings back deleted files), then
+	// re-add so the index entry matches HEAD and the file reads as unmodified.
+	var headTree *object.Tree
+	if head, err := repo.Head(); err == nil {
+		if c, err := repo.CommitObject(head.Hash()); err == nil {
+			headTree, _ = c.Tree()
+		}
+	}
+	if headTree != nil {
+		if f, err := headTree.File(file); err == nil {
+			r, err := f.Blob.Reader()
+			if err == nil {
+				b, err := io.ReadAll(r)
+				r.Close()
+				if err == nil {
+					if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+						return err
+					}
+					if err := os.WriteFile(abs, b, 0o644); err != nil {
+						return err
+					}
+				}
+			}
+		}
+	}
+	return w.AddWithOptions(&git.AddOptions{Path: file})
+}
+
+// DiscardAll discards every uncommitted change: modified and staged files are
+// reset to HEAD and untracked files are removed.
+func DiscardAll(path string) error {
+	repo, err := git.PlainOpen(path)
+	if err != nil {
+		return fmt.Errorf("not a git repository")
+	}
+	head, err := repo.Head()
+	if err != nil {
+		return fmt.Errorf("no HEAD: %w", err)
+	}
+	w, err := repo.Worktree()
+	if err != nil {
+		return err
+	}
+	if err := w.Reset(&git.ResetOptions{Commit: head.Hash(), Mode: git.HardReset}); err != nil {
+		return err
+	}
+	ws, err := w.Status()
+	if err != nil {
+		return err
+	}
+	for name, fs := range ws {
+		if fs.Worktree == git.Untracked {
+			if err := os.RemoveAll(filepath.Join(w.Filesystem.Root(), filepath.FromSlash(name))); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// StageFile adds a single file (or directory) to the index.
+func StageFile(path, file string) error {
+	repo, err := git.PlainOpen(path)
+	if err != nil {
+		return fmt.Errorf("not a git repository")
+	}
+	if err := validate(file); err != nil {
+		return err
+	}
+	w, err := repo.Worktree()
+	if err != nil {
+		return err
+	}
+	return w.AddWithOptions(&git.AddOptions{Path: file})
+}
+
+// StageAll adds every worktree change to the index.
+func StageAll(path string) error {
+	repo, err := git.PlainOpen(path)
+	if err != nil {
+		return fmt.Errorf("not a git repository")
+	}
+	w, err := repo.Worktree()
+	if err != nil {
+		return err
+	}
+	return w.AddWithOptions(&git.AddOptions{All: true})
+}
+
+// validate guards against file paths escaping the worktree (../, absolute paths).
+func validate(path string) error {
+	if path == "" {
+		return fmt.Errorf("path is required")
+	}
+	cleaned := filepath.Clean(filepath.FromSlash(path))
+	if cleaned == ".." || strings.HasPrefix(cleaned, ".."+string(filepath.Separator)) || filepath.IsAbs(cleaned) {
+		return fmt.Errorf("invalid path")
+	}
+	return nil
+}
+
 // CommitIfRepo stages and commits any changes at path when it is a git
 // repository. It returns whether a commit was made, and never fails when path
 // is not a repo (no error, no commit).

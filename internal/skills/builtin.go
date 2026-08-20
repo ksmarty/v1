@@ -65,7 +65,7 @@ Bumps the version on every push to main:
 Builds and pushes a multi-arch image to GHCR on release/tag:
 - Authenticates with GITHUB_TOKEN (automatic, no PAT needed).
 - Uses docker/build-push-action with linux/amd64 + linux/arm64.
-- Tags: the release version (from github.ref) and latest.
+- Tags: the release version (from github.ref, e.g. v0.42.0) and latest.
 - Requires a Dockerfile in the repo root; create one if missing.
 
 ## Workflow

@@ -16,6 +16,7 @@ import {
   IconArrowLeft,
   IconBrain,
   IconChat,
+  IconChevronDown,
   IconChevronLeft,
   IconFolder,
   IconGitBranch,
@@ -72,6 +73,9 @@ export default function ChatPanel({
   chatResetSignal?: number;
 }) {
   const [tabLayout] = useState(() => getChatTabLayout());
+  // Shared with ChatPane: the + menu's Sessions entry and the project title
+  // both open the same session switcher.
+  const [sessionsOpen, setSessionsOpen] = useState(false);
   // Tabs in the user's chosen order, minus the ones they excluded.
   const tabs = TABS.filter((t) => !tabLayout.hidden.includes(t.id)).sort(
     (a, b) => tabLayout.order.indexOf(a.id) - tabLayout.order.indexOf(b.id),
@@ -110,7 +114,15 @@ export default function ChatPanel({
         </Link>
         <div className="min-w-0 flex-1 px-1">
           {project ? (
-            <span className="block truncate text-sm font-medium text-text">{project.name}</span>
+            <button
+              type="button"
+              onClick={() => setSessionsOpen(true)}
+              title="Switch session"
+              className="flex max-w-full items-center gap-1 text-left"
+            >
+              <span className="truncate text-sm font-medium text-text">{project.name}</span>
+              <IconChevronDown className="h-3.5 w-3.5 shrink-0 text-dim" />
+            </button>
           ) : (
             <span className="block h-4 w-32 animate-pulse rounded bg-border" />
           )}
@@ -166,6 +178,8 @@ export default function ChatPanel({
             onMemories={setLiveMemories}
             onProjectRename={onProjectRename}
             llmReady={llmReady}
+            sessionsOpen={sessionsOpen}
+            onSessionsOpenChange={setSessionsOpen}
             initialPrompt={initialPrompt}
             initialProviderId={initialProviderId}
             initialModel={initialModel}

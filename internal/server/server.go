@@ -197,6 +197,8 @@ func (s *Server) routes(m *http.ServeMux) {
 	m.HandleFunc("GET /api/projects/{id}/git/changes", s.handleGitChanges)
 	m.HandleFunc("POST /api/projects/{id}/git/fetch", s.handleGitFetch)
 	m.HandleFunc("POST /api/projects/{id}/git/pull", s.handleGitPull)
+	m.HandleFunc("POST /api/projects/{id}/git/discard", s.handleGitDiscard)
+	m.HandleFunc("POST /api/projects/{id}/git/stage", s.handleGitStage)
 	m.HandleFunc("POST /api/projects/{id}/chat/permission", s.handlePermission)
 
 	m.HandleFunc("GET /api/mcp/status", s.handleMCPStatus)

@@ -1,7 +1,7 @@
 // v1 service worker: installable + offline app shell.
 // API, preview, and WebSocket traffic is never cached.
-const VERSION = 'v1-cache-v2';
-const APP_SHELL = ['/', '/index.html', '/manifest.json', '/icon-192.png', '/icon-512.png'];
+const VERSION = 'v1-cache-v3';
+const APP_SHELL = ['/', '/index.html', '/manifest.json?v=3', '/icon-192.png?v=3', '/icon-512.png?v=3'];
 
 // Turn-finished notifications: open/focus the app and navigate to the exact
 // chat the notification is about (from the notification's data.url).

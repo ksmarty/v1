@@ -14,8 +14,8 @@ async function main() {
   require('fs').writeFileSync(`${outDir}/icon-192.png`, p192);
   require('fs').writeFileSync(`${outDir}/icon-512.png`, p512);
   require('fs').writeFileSync(`${outDir}/apple-touch-icon.png`, pApple);
-  // The tile already leaves a ~13% safe margin, so it doubles as a maskable
-  // icon (safe zone requires the core glyph within the central 80%).
+  // The icon is full-bleed (the tile fills the whole canvas, glyph sits in
+  // the central ~80%), so the 512 PNG doubles as the maskable asset.
   require('fs').writeFileSync(`${outDir}/icon-maskable-512.png`, p512);
   console.log('generated', p192.length, p512.length, pApple.length);
 }

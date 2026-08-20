@@ -12,6 +12,7 @@ export default function ProviderSelector({
   onBaseURLChange,
   onModelChange,
   hideModel = false,
+  hideBrowse = false,
   onPickProvider,
   children,
 }: {
@@ -20,6 +21,9 @@ export default function ProviderSelector({
   onBaseURLChange: (v: string) => void;
   onModelChange: (v: string) => void;
   hideModel?: boolean;
+  /** Hide the models.dev search/dropdown — used when editing an existing
+   * provider, where the provider is already fixed. */
+  hideBrowse?: boolean;
   /** Called with the provider picked from the models.dev search, so the form
    * can auto-fill the provider name. */
   onPickProvider?: (p: Provider) => void;
@@ -91,8 +95,9 @@ export default function ProviderSelector({
 
   return (
     <div className="flex flex-col gap-3">
-      <div>
-        <div className="mb-1 flex items-center justify-between gap-2">
+      {!hideBrowse && (
+        <div>
+          <div className="mb-1 flex items-center justify-between gap-2">
           <span className="text-xs text-subtle">Provider</span>
           <span className="flex items-center gap-1.5">
             {refreshMsg && (
@@ -179,7 +184,7 @@ export default function ProviderSelector({
           </p>
         )}
       </div>
-
+      )}
       <label className="block">
         <span className="mb-1 block text-xs text-subtle">Base URL</span>
         <Input
