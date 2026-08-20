@@ -181,20 +181,20 @@ func registryTags(ctx context.Context, registry, image, token string) ([]string,
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&body); err != nil {
 		return nil, err
 	}
-	out := make([]string, 0, min(len(body.Tags), maxRegistryTags))
+	// The registry does not order tags by recency — sort ALL of them
+	// semver-descending first, THEN cap at the 15 most recent.
+	tags := make([]string, 0, len(body.Tags))
 	for _, t := range body.Tags {
 		if t == "" || t == "latest" {
 			continue
 		}
-		out = append(out, t)
-		if len(out) >= maxRegistryTags {
-			break
-		}
+		tags = append(tags, t)
 	}
-	// Registry tags are unordered; sort descending (v0.0.17 before v0.0.10)
-	// and take the first 15 as "most recent".
-	sortTags(out)
-	return out, nil
+	sortTags(tags)
+	if len(tags) > maxRegistryTags {
+		tags = tags[:maxRegistryTags]
+	}
+	return tags, nil
 }
 
 // fetchRegistryToken performs the Docker registry bearer-token flow. When a
@@ -242,31 +242,46 @@ func fetchRegistryToken(ctx context.Context, registry, challenge, token string) 
 	return body.Token, nil
 }
 
-// sortTags orders semver-like tags descending (v0.0.17 before v0.0.10, then
-// lexical descending as a tiebreak), so the first N are the most recent.
+// sortTags orders semver-like tags descending (v0.0.17 before v0.0.10), so
+// the first N are the most recent. Handles any number of numeric parts and
+// treats pre-release suffixes (v1.2.0-beta) as older than the release.
 func sortTags(tags []string) {
 	sort.SliceStable(tags, func(i, j int) bool {
-		ai, bi := tagParts(tags[i]), tagParts(tags[j])
-		for k := 0; k < 3; k++ {
+		ai, apre := tagParts(tags[i])
+		bi, bpre := tagParts(tags[j])
+		n := min(len(ai), len(bi))
+		for k := 0; k < n; k++ {
 			if ai[k] != bi[k] {
 				return ai[k] > bi[k]
 			}
+		}
+		if len(ai) != len(bi) {
+			return len(ai) > len(bi)
+		}
+		// Same core version: a pre-release is older than the final release.
+		if apre != bpre {
+			return bpre != ""
 		}
 		return tags[i] > tags[j]
 	})
 }
 
-func tagParts(t string) [3]int {
-	var out [3]int
+// tagParts splits a tag like "v1.2.3-beta" into its numeric parts and the
+// pre-release suffix ("" for a final release).
+func tagParts(t string) (nums []int, pre string) {
 	t = strings.TrimPrefix(strings.TrimPrefix(t, "v"), "v")
-	nums := strings.Split(strings.Split(t, "-")[0], ".")
-	for i := 0; i < 3 && i < len(nums); i++ {
-		n, err := strconv.Atoi(nums[i])
-		if err == nil {
-			out[i] = n
-		}
+	if i := strings.IndexByte(t, '-'); i >= 0 {
+		pre = t[i+1:]
+		t = t[:i]
 	}
-	return out
+	for _, s := range strings.Split(t, ".") {
+		n, err := strconv.Atoi(s)
+		if err != nil {
+			break
+		}
+		nums = append(nums, n)
+	}
+	return nums, pre
 }
 
 var registryClient = &http.Client{Timeout: 30 * time.Second}

@@ -182,7 +182,6 @@ export default function GitHubPane({ repoUrl }: { repoUrl?: string }) {
                   </div>
                 )}
                 <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-dim">
-                  <span>updated {img.updated_at ? new Date(img.updated_at).toLocaleString() : '—'}</span>
                   {img.url && (
                     <a href={img.url} target="_blank" rel="noreferrer" className="text-accent hover:underline">
                       open
