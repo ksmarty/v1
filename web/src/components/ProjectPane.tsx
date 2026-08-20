@@ -48,11 +48,12 @@ export default function ProjectPane({
   };
 
   // Glow the Save button while any field differs from what's persisted.
+  // Backend omits empty optional fields, so normalize undefined to ''.
   const dirty = Boolean(
     project &&
       (name !== project.name ||
-        previewCommand !== project.previewCommand ||
-        instructions !== project.instructions ||
+        previewCommand !== (project.previewCommand ?? '') ||
+        instructions !== (project.instructions ?? '') ||
         autoPush !== project.autoPush ||
         previewDisabled !== (project.previewDisabled ?? false)),
   );

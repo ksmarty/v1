@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -94,16 +93,23 @@ func (s *Server) handleGitHubWorkflows(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleGitHubImages lists the container image published for a single repo
-// (owner/name) on ghcr.io, with its published tag versions. GitHub's packages
-// API requires authentication (anonymous requests 404 even for public
-// packages), and the token needs the read:packages scope — the OAuth device
-// flow requests it.
+// (owner/name) on ghcr.io, with its most recent tag versions. GitHub's
+// packages API requires authentication (anonymous requests 404 even for
+// public packages), and the token needs the read:packages scope — the OAuth
+// device flow requests it. An optional `limit` query param (default 10, 0 =
+// unlimited) trims the tags to the N most recent.
 func (s *Server) handleGitHubImages(w http.ResponseWriter, r *http.Request) {
 	c := s.githubActionsClient(s.currentUser(r).ID)
 	owner, repo := githubOwnerRepo(r.URL.Query().Get("repo"))
 	if owner == "" || repo == "" {
 		writeError(w, http.StatusBadRequest, "missing or invalid repo (expected owner/name)")
 		return
+	}
+	limit := 10
+	if v := strings.TrimSpace(r.URL.Query().Get("limit")); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			limit = n
+		}
 	}
 	imageName := strings.ToLower(repo)
 	var status int
@@ -136,14 +142,16 @@ func (s *Server) handleGitHubImages(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "bad response: "+err.Error())
 		return
 	}
-	// Fetch the versions (tags) for this package.
+	// Fetch the versions (tags) for this package. GitHub returns them newest
+	// first, so the first `limit` unique tags are the most recent.
 	var tags []string
+	allSeen := map[string]bool{}
 	vu := "https://api.github.com/" + strings.ToLower(owner) + "/packages/container/" + url.PathEscape(imageName) + "/versions?per_page=100"
 	vstatus, vbody, verr := c.Request(r.Context(), "GET", vu, nil)
 	if verr == nil && vstatus < 400 {
 		var versions []struct {
-			ID   int64  `json:"id"`
-			Name string `json:"name"`
+			ID       int64  `json:"id"`
+			Name     string `json:"name"`
 			Metadata struct {
 				Container struct {
 					Tags []string `json:"tags"`
@@ -151,21 +159,25 @@ func (s *Server) handleGitHubImages(w http.ResponseWriter, r *http.Request) {
 			} `json:"metadata"`
 		}
 		if err := json.Unmarshal(vbody, &versions); err == nil {
-			seen := map[string]bool{}
 			for _, v := range versions {
 				for _, t := range v.Metadata.Container.Tags {
-					if t != "" && !seen[t] {
-						seen[t] = true
+					if t == "" || allSeen[t] {
+						continue
+					}
+					allSeen[t] = true
+					if limit <= 0 || len(tags) < limit {
 						tags = append(tags, t)
 					}
 				}
 			}
 		}
 	}
-	sort.Strings(tags)
+	// Keep the newest-first order (drop the old alphabetical sort).
 	writeJSON(w, http.StatusOK, map[string]any{
 		"owner":     owner,
 		"count":     1,
+		"limit":     limit,
+		"totalTags": len(allSeen),
 		"images": []map[string]any{{
 			"name":       pkg.Name,
 			"visibility": pkg.Visibility,

@@ -20,6 +20,7 @@ export default function GitHubPane({ repoUrl }: { repoUrl?: string }) {
   const [owner, setOwner] = useState(suggested.split('/')[0] ?? '');
   const [workflows, setWorkflows] = useState<GitHubWorkflowRun[] | null>(null);
   const [images, setImages] = useState<GitHubContainerImage[] | null>(null);
+  const [tagLimit, setTagLimit] = useState(10);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const autoLoaded = useRef('');
@@ -35,7 +36,7 @@ export default function GitHubPane({ repoUrl }: { repoUrl?: string }) {
     }
   }, [suggested]);
 
-  const loadRepo = async (repo: string) => {
+  const loadRepo = async (repo: string, limit?: number) => {
     if (!repo) {
       setError('Enter a repository as owner/name, e.g. octocat/Hello-World.');
       return;
@@ -50,7 +51,7 @@ export default function GitHubPane({ repoUrl }: { repoUrl?: string }) {
     try {
       const [w, im] = await Promise.allSettled([
         api.githubWorkflows(repo),
-        api.githubImages(repo),
+        api.githubImages(repo, limit ?? tagLimit),
       ]);
       if (w.status === 'fulfilled') setWorkflows(w.value.workflows);
       else setWorkflows([]);
@@ -65,8 +66,7 @@ export default function GitHubPane({ repoUrl }: { repoUrl?: string }) {
       setLoading(false);
     }
   };
-
-  const load = (e?: FormEvent) => {
+    const load = (e?: FormEvent) => {
     e?.preventDefault();
     void loadRepo(query.trim());
   };
@@ -152,9 +152,31 @@ export default function GitHubPane({ repoUrl }: { repoUrl?: string }) {
       </div>
 
       <div className="p-3 pt-0">
-        <h3 className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-dim">
-          <IconCheck className="h-3.5 w-3.5" /> Container images · <span className="font-mono">{owner || '—'}</span>
-        </h3>
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-dim">
+            <IconCheck className="h-3.5 w-3.5" /> Container images · <span className="font-mono">{owner || '—'}</span>
+          </h3>
+          <label className="flex items-center gap-1.5 text-xs text-subtle">
+            Tags
+            <select
+              value={tagLimit}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                setTagLimit(v);
+                if (query.trim()) void loadRepo(query.trim(), v);
+              }}
+              className="rounded-md border border-border bg-surface px-1.5 py-0.5 text-xs text-text outline-none focus:border-subtle"
+              aria-label="Number of recent image tags to show"
+            >
+              {[5, 10, 20, 50].map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+              <option value={0}>All</option>
+            </select>
+          </label>
+        </div>
         {images === null ? (
           <p className="text-sm text-subtle">Load a repo to see its published images.</p>
         ) : images.length === 0 ? (

@@ -398,8 +398,10 @@ export const api = {
   listGitHubRepos: () => request<GitHubRepo[]>('/api/github/repos'),
   githubWorkflows: (repo: string) =>
     request<GitHubWorkflows>(`/api/github/workflows?repo=${encodeURIComponent(repo)}`),
-  githubImages: (repo: string) =>
-    request<GitHubImages>(`/api/github/images?repo=${encodeURIComponent(repo)}`),
+  githubImages: (repo: string, limit?: number) =>
+    request<GitHubImages>(
+      `/api/github/images?repo=${encodeURIComponent(repo)}${limit && limit > 0 ? `&limit=${limit}` : ''}`,
+    ),
   githubCreate: (id: string, name: string, isPrivate: boolean) =>
     post<void>(`/api/projects/${id}/github/create`, { name, private: isPrivate }),
   githubLink: (id: string, repoUrl: string) =>
