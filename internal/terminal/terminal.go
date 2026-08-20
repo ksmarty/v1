@@ -3,6 +3,7 @@ package terminal
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
@@ -88,6 +89,11 @@ func (m *Manager) ServeWS(w http.ResponseWriter, r *http.Request, projectID, dir
 	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
 	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{Rows: 24, Cols: 80})
 	if err != nil {
+		// Tell the client WHY the PTY failed — otherwise the connection just
+		// vanishes (browser sees 1006) and the user gets an empty terminal.
+		_ = conn.WriteControl(websocket.CloseMessage,
+			websocket.FormatCloseMessage(websocket.CloseInternalServerErr, fmt.Sprintf("failed to start shell: %v", err)),
+			time.Now().Add(5*time.Second))
 		return
 	}
 

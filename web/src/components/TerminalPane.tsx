@@ -82,6 +82,13 @@ export default function TerminalPane({
       ws.onclose = (ev) => {
         setConnected(false);
         const why = ev.reason || `code ${ev.code}`;
+        // A close reason from the server means the shell couldn't start (a
+        // terminal-server problem, not a flaky proxy) — don't retry forever.
+        const serverRejected = ev.code === 1006 && ev.reason !== '';
+        if (serverRejected) {
+          term.write(`\r\n\x1b[2m[terminal failed: ${why}]\x1b[0m\r\n`);
+          return;
+        }
         // Proxies (Cloudflare, Traefik) drop idle/awkward WebSockets —
         // reconnect automatically with backoff instead of dying silently.
         const delay = Math.min(1000 * 2 ** retriesRef.current, 10000);
