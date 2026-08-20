@@ -828,7 +828,7 @@ function RunCommandOutput({ command, detail }: { command: string; detail: string
     }
   }, [detail]);
   return (
-    <StickToBottom className="max-h-60 overflow-auto whitespace-pre-wrap break-words border-t border-border/80 px-3 py-2 font-mono text-[11px] leading-relaxed">
+    <StickToBottom className="max-h-60 overflow-auto whitespace-pre overflow-x-auto break-normal border-t border-border/80 px-3 py-2 font-mono text-[11px] leading-relaxed">
       <span className="text-accent">$ {command}</span>
       {'\n'}
       {output === null ? (
@@ -836,7 +836,7 @@ function RunCommandOutput({ command, detail }: { command: string; detail: string
       ) : output === '' ? (
         <span className="text-faint">(no output)</span>
       ) : (
-        <span className="text-subtle">{output}</span>
+        <span className="text-subtle whitespace-pre">{output}</span>
       )}
     </StickToBottom>
   );

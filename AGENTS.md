@@ -118,6 +118,11 @@ or `make dev`), then report: (1) the new stamped build version (`v1 <version>
   API client in `web/src/api.ts`.
 - Frontend/backend JSON fields are camelCase. Backend keys use the `key*`
   constants in `internal/server/server.go`.
+- Every settings form that saves through `SaveRow` (ui.tsx) must pass `pulse`
+  — a boolean set while the form differs from what's persisted — so the Save
+  button glows (`v1-save-breathe`) until the user saves. Match existing call
+  sites (Settings.tsx, ToolSettings.tsx, ProjectPane.tsx); don't ship a new
+  form with `pulse` omitted or hardcoded.
 - `Dialog` (ui.tsx) locks body scroll while open (`overflow: hidden`); dialog
   bodies that scroll use `overscroll-contain` so wheel/touch momentum doesn't
   chain to the page behind the overlay. `fixedBody` splits a fixed header from

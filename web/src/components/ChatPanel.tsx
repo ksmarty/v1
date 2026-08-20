@@ -9,7 +9,6 @@ import GitPane from './GitPane';
 import MemoriesPane from './MemoriesPane';
 import GitHubPane from './GitHubPane';
 import ProjectPane from './ProjectPane';
-import GitHubMenu from './GitHubMenu';
 import VercelMenu from './VercelMenu';
 import type { Memory } from '../types';
 import {
@@ -127,7 +126,15 @@ export default function ChatPanel({
             <span className="block h-4 w-32 animate-pulse rounded bg-border" />
           )}
         </div>
-        <GitHubMenu projectId={projectId} projectName={project?.name ?? ''} repoUrl={project?.repoUrl ?? ''} />
+        <button
+          type="button"
+          onClick={() => setTab('git')}
+          aria-label="Git"
+          title="Git"
+          className={iconLinkClass}
+        >
+          <IconGitBranch className="h-5 w-5" />
+        </button>
         <VercelMenu projectId={projectId} projectName={project?.name ?? ''} />
         <Link
           to="/settings"
@@ -198,7 +205,12 @@ export default function ChatPanel({
         )}
         {visited.has('git') && (
           <div className={tab === 'git' ? 'h-full min-h-0' : 'hidden'}>
-            <GitPane projectId={projectId} onPreviewRestart={onPreviewRestart} />
+            <GitPane
+              projectId={projectId}
+              projectName={project?.name ?? ''}
+              repoUrl={project?.repoUrl ?? ''}
+              onPreviewRestart={onPreviewRestart}
+            />
           </div>
         )}
         {visited.has('memories') && (

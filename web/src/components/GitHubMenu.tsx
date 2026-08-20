@@ -143,7 +143,7 @@ function PushDialog({
   );
 }
 
-function CreateRepoDialog({
+export function CreateRepoDialog({
   open,
   onClose,
   projectId,
@@ -228,7 +228,7 @@ function CreateRepoDialog({
   );
 }
 
-function LinkRepoDialog({
+export function LinkRepoDialog({
   open,
   onClose,
   projectId,

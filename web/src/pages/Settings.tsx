@@ -1972,11 +1972,6 @@ export default function Settings() {
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5">
                         <span className="truncate text-sm text-text">{p.name}</span>
-                        {p.apiKeySet && (
-                          <span className="shrink-0 rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-500">
-                            key
-                          </span>
-                        )}
                       </div>
                       <div className="truncate font-mono text-[11px] text-faint">
                         {p.baseURL || '(no base URL)'}

@@ -201,33 +201,29 @@ export default function Project() {
               </div>
             )}
           </div>
-          <nav
-            className={`grid shrink-0 border-t border-border bg-bg pb-[calc(env(safe-area-inset-bottom)/2)] ${
-              project.previewDisabled ? 'grid-cols-1' : 'grid-cols-2'
-            }`}
-          >
-            {[
-              { id: 'chat' as const, label: 'Chat', icon: <IconChat className="h-5 w-5" /> },
-              ...(project.previewDisabled
-                ? []
-                : [{ id: 'preview' as const, label: 'Preview', icon: <IconMonitor className="h-5 w-5" /> }]),
-            ].map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => {
-                  setMobilePane(item.id);
-                  if (item.id === 'chat') setChatResetSignal((n) => n + 1);
-                }}
-                className={`flex h-14 flex-col items-center justify-center gap-0.5 text-[10px] transition-colors ${
-                  mobilePane === item.id ? 'text-accent' : 'text-subtle'
-                }`}
-              >
-                {item.icon}
-                {item.label}
-              </button>
-            ))}
-          </nav>
+          {!project.previewDisabled && (
+            <nav className="grid shrink-0 grid-cols-2 border-t border-border bg-bg pb-[calc(env(safe-area-inset-bottom)/2)]">
+              {[
+                { id: 'chat' as const, label: 'Chat', icon: <IconChat className="h-5 w-5" /> },
+                { id: 'preview' as const, label: 'Preview', icon: <IconMonitor className="h-5 w-5" /> },
+              ].map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => {
+                    setMobilePane(item.id);
+                    if (item.id === 'chat') setChatResetSignal((n) => n + 1);
+                  }}
+                  className={`flex h-14 flex-col items-center justify-center gap-0.5 text-[10px] transition-colors ${
+                    mobilePane === item.id ? 'text-accent' : 'text-subtle'
+                  }`}
+                >
+                  {item.icon}
+                  {item.label}
+                </button>
+              ))}
+            </nav>
+          )}
         </>
       )}
     </div>

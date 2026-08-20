@@ -23,6 +23,7 @@ import {
   IconFile,
   IconTrash,
 } from './icons';
+import { CreateRepoDialog, LinkRepoDialog } from './GitHubMenu';
 
 function timeAgo(unix: number): string {
   const secs = Math.floor(Date.now() / 1000 - unix);
@@ -259,9 +260,13 @@ function ChangesModal({
 
 export default function GitPane({
   projectId,
+  projectName,
+  repoUrl,
   onPreviewRestart,
 }: {
   projectId: string;
+  projectName: string;
+  repoUrl: string;
   onPreviewRestart: () => void;
 }) {
   const [info, setInfo] = useState<GitInfo | null>(null);
@@ -276,6 +281,7 @@ export default function GitPane({
   const [commitMsg, setCommitMsg] = useState('');
   const [commitInfo, setCommitInfo] = useState<GitCommit | null>(null);
   const [changesOpen, setChangesOpen] = useState(false);
+  const [repoDialog, setRepoDialog] = useState<'create' | 'link' | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -374,6 +380,7 @@ export default function GitPane({
   const dirty = (st?.modified ?? 0) + (st?.untracked ?? 0) > 0;
   const ahead = st?.ahead ?? 0;
   const behind = st?.behind ?? 0;
+  const href = (st?.repoUrl || repoUrl || '').trim();
 
   if (loading) {
     return (
@@ -407,6 +414,29 @@ export default function GitPane({
           {busy ? <Spinner className="h-4 w-4" /> : <IconPlus className="h-4 w-4" />}
           Initialize git repo
         </Button>
+        {!href && (
+          <div className="mt-2 flex items-center gap-2">
+            <Button variant="outline" onClick={() => setRepoDialog('link')} disabled={busy}>
+              Link existing repo…
+            </Button>
+            <Button variant="outline" onClick={() => setRepoDialog('create')} disabled={busy}>
+              <IconPlus className="h-3.5 w-3.5" /> Create GitHub repo & push
+            </Button>
+          </div>
+        )}
+        <CreateRepoDialog
+          open={repoDialog === 'create'}
+          onClose={() => setRepoDialog(null)}
+          projectId={projectId}
+          projectName={projectName}
+          onDone={() => void load()}
+        />
+        <LinkRepoDialog
+          open={repoDialog === 'link'}
+          onClose={() => setRepoDialog(null)}
+          projectId={projectId}
+          onDone={() => void load()}
+        />
       </div>
     );
   }
@@ -529,9 +559,45 @@ export default function GitPane({
                 <IconArrowDown className="h-3.5 w-3.5" /> Pull
               </Button>
             )}
+          {!href && (
+              <>
+                <Button
+                  variant="outline"
+                  className="h-8 px-2.5 text-xs sm:h-7"
+                  onClick={() => setRepoDialog('link')}
+                  disabled={busy}
+                  title="Link this project to an existing GitHub repo"
+                >
+                  Link repo…
+                </Button>
+                <Button
+                  variant="outline"
+                  className="h-8 px-2.5 text-xs sm:h-7"
+                  onClick={() => setRepoDialog('create')}
+                  disabled={busy}
+                  title="Create a GitHub repo for this project and push"
+                >
+                  <IconPlus className="h-3.5 w-3.5" /> Create repo
+                </Button>
+              </>
+            )}
           </div>
         </div>
       )}
+
+      <CreateRepoDialog
+        open={repoDialog === 'create'}
+        onClose={() => setRepoDialog(null)}
+        projectId={projectId}
+        projectName={projectName}
+        onDone={() => void load()}
+      />
+      <LinkRepoDialog
+        open={repoDialog === 'link'}
+        onClose={() => setRepoDialog(null)}
+        projectId={projectId}
+        onDone={() => void load()}
+      />
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="flex flex-col gap-1.5">

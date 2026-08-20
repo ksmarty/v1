@@ -47,6 +47,16 @@ export default function ProjectPane({
     }
   };
 
+  // Glow the Save button while any field differs from what's persisted.
+  const dirty = Boolean(
+    project &&
+      (name !== project.name ||
+        previewCommand !== project.previewCommand ||
+        instructions !== project.instructions ||
+        autoPush !== project.autoPush ||
+        previewDisabled !== (project.previewDisabled ?? false)),
+  );
+
   return (
     <div className="fade-y h-full overflow-y-auto p-3 md:p-4">
       <div className="mx-auto flex max-w-2xl flex-col gap-4">
@@ -116,7 +126,7 @@ export default function ProjectPane({
                 mobile for extra vertical space.
               </p>
             </Field>
-            <SaveRow saving={saving} saved={saved} error={error} />
+            <SaveRow saving={saving} saved={saved} error={error} pulse={dirty} />
           </form>
         </Section>
       </div>
