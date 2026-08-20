@@ -164,6 +164,28 @@ func TestMiddlewareAttachesUser(t *testing.T) {
 	if seen != nil {
 		t.Fatal("unauthenticated request reached the handler")
 	}
+
+	// The SPA shell (non-/api, non-/preview) is public so the app can mount
+	// and route to /login — no session required.
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest("GET", "/", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("SPA shell should be served without auth, got %d", rr.Code)
+	}
+	seen = nil
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/assets/index-abc.js", nil))
+	if seen != nil {
+		t.Fatal("asset request should not carry a user without a session")
+	}
+
+	// With a session, the SPA shell still attaches the user.
+	seen = nil
+	withSess := httptest.NewRequest("GET", "/", nil)
+	withSess.AddCookie(cookie)
+	h.ServeHTTP(httptest.NewRecorder(), withSess)
+	if seen == nil || seen.Username != "alice" {
+		t.Fatalf("authenticated SPA shell should attach user: %#v", seen)
+	}
 }
 
 func TestDisabledManagerAllowsAll(t *testing.T) {

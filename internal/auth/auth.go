@@ -175,22 +175,30 @@ func (m *Manager) User(r *http.Request) (*store.User, bool) {
 		u := &store.User{ID: "local", Username: "local", IsAdmin: true}
 		return u, true
 	}
+	u := m.UserFrom(r)
+	return u, u != nil
+}
+
+// UserFrom returns the authenticated user for the request without the
+// auth-disabled fallback, so the middleware can attach the user when one
+// exists for otherwise-public routes (SPA shell).
+func (m *Manager) UserFrom(r *http.Request) *store.User {
 	if u, ok := UserFromContext(r.Context()); ok {
-		return u, true
+		return u
 	}
 	c, err := r.Cookie(CookieName)
 	if err != nil || c.Value == "" {
-		return nil, false
+		return nil
 	}
 	userID, ok, err := m.st.SessionUser(c.Value)
 	if err != nil || !ok {
-		return nil, false
+		return nil
 	}
 	u, err := m.st.GetUserByID(userID)
 	if err != nil {
-		return nil, false
+		return nil
 	}
-	return u, true
+	return u
 }
 
 // UserFromContext returns the user the middleware attached to the request.
@@ -205,9 +213,12 @@ func (m *Manager) Authenticated(r *http.Request) bool {
 	return ok
 }
 
-// Middleware protects everything except /api/auth/* and /api/healthz. The
-// authenticated user is attached to the request context (the local dev user
-// when auth is disabled).
+// Middleware protects the API surface (everything under /api, and other
+// non-SPA paths). The SPA shell + static assets are intentionally public so
+// the app can render and its router can send unauthenticated users to /login
+// (where OIDC/password sign-in lives); the API requests it then makes are
+// what enforce auth. Frontend SPA HTML is served under "/" (net/http 1.22
+// method-pattern mux: only the exact "/" and non-API prefixes reach this).
 func (m *Manager) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if m.disabled {
@@ -216,6 +227,19 @@ func (m *Manager) Middleware(next http.Handler) http.Handler {
 			return
 		}
 		if r.URL.Path == "/api/healthz" || strings.HasPrefix(r.URL.Path, "/api/auth/") {
+			next.ServeHTTP(w, r)
+			return
+		}
+		// Public SPA shell + bundled assets (hashed JS/CSS, icons, manifest,
+		// sw.js): let them through so the app can mount and route to /login.
+		// API and preview requests below are the auth boundary.
+		if !strings.HasPrefix(r.URL.Path, "/api/") && !strings.HasPrefix(r.URL.Path, "/preview/") {
+			// Still attach the authenticated user when a session exists, so
+			// the SPA can render personalized state immediately on load.
+			if u := m.UserFrom(r); u != nil {
+				next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), userCtxKey{}, u)))
+				return
+			}
 			next.ServeHTTP(w, r)
 			return
 		}
