@@ -1082,7 +1082,7 @@ function AskBlock({
                 <Button
                   key={o}
                   variant="outline"
-                  className={`h-8 px-3 text-xs ${cur === o ? 'border-accent text-text' : ''}`}
+                  className={`px-3 text-xs whitespace-normal break-words text-left ${cur === o ? 'border-accent text-text' : ''}`}
                   onClick={() => setCur(o)}
                 >
                   {o}

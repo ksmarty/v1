@@ -254,6 +254,11 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 	toolCallsIssued := 0 // local ids for providers that omit tool_call_id
 	assistantSaved := false
 	vision := hasImageParts(history)
+	// Auto-resume: a stream that drops mid-reply keeps whatever made it out and
+	// continues from there instead of restarting the turn. Bounded so a
+	// persistently failing provider can't loop forever.
+	var resumes int
+	const maxAutoResumes = 3
 	// Continue mode: the history ends with the partial assistant reply — ask
 	// the model to pick up where it stopped instead of repeating itself.
 	if p.ContinueFromID > 0 {
@@ -314,10 +319,27 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 				func(d string) { p.Emit(ChatEvent{Type: "reasoning", Text: d}) })
 		}
 		if err != nil {
-			// A mid-response failure (token limit, network drop) still leaves
-			// the streamed partial reply — persist it so the transcript shows
-			// what made it out and a retry can continue from here instead of
-			// regenerating everything.
+			// Auto-resume a mid-reply drop: the streamed partial is valid, so
+			// persist it, hand it back to the model with a continue instruction,
+			// and run the round again — continuing where the provider failed
+			// rather than regenerating the whole turn from scratch.
+			if resumes < maxAutoResumes && res != nil && (res.Text != "" || res.Reasoning != "") {
+				if res.Text != "" || res.Reasoning != "" {
+					partialText += res.Text
+					if partialReasoning != "" && res.Reasoning != "" {
+						partialReasoning += "\n"
+					}
+					partialReasoning += res.Reasoning
+				}
+				history = append(history, llm.Message{Role: "assistant", Content: res.Text, ReasoningContent: res.Reasoning})
+				history = append(history, llm.Message{Role: "user", Content: "Continue from where you left off. Do not repeat what is already written above."})
+				resumes++
+				p.Emit(ChatEvent{Type: "info", Text: "The connection dropped mid-reply; resuming the turn automatically."})
+				continue
+			}
+			// A mid-response failure with no resumable partial (no output yet):
+			// persist what streamed so the transcript shows it, then surface the
+			// error. There is nothing to continue from, so the turn stops here.
 			if res != nil && (res.Text != "" || res.Reasoning != "") {
 				_, _ = p.Store.AddMessage(p.Project.ID, p.SessionID, "assistant", res.Text, "", p.Client.Model, res.Reasoning, "", "")
 			}
