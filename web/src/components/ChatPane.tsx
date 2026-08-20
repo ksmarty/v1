@@ -858,28 +858,82 @@ function summarizeTools(calls: ToolCall[], results: ToolCall[]): string {
   return parts.join(' · ');
 }
 
+// The pieces one assistant message contributes to the tool collapse: its
+// reasoning, its tool calls/results (ask_user split out), and the ask itself.
+type CollapseData = {
+  reasoning?: string;
+  calls: ToolCall[];
+  results: ToolCall[];
+  ask: { questions: AskQuestionView[]; result?: AskAnswerView[]; failed?: boolean } | null;
+  askCount: number;
+};
+
+function collapseData(item: MsgItem): CollapseData {
+  const askCall = item.toolCalls?.find((c) => c.name === 'ask_user');
+  const askResult = item.toolResults?.find((r) => r.name === 'ask_user');
+  const ask = askCall
+    ? {
+        questions: askQuestions(askCall.detail),
+        result: askResult ? askAnswers(askResult.detail) : undefined,
+      }
+    : null;
+  return {
+    reasoning: item.reasoning,
+    calls: (item.toolCalls ?? []).filter((c) => c.name !== 'ask_user'),
+    results: (item.toolResults ?? []).filter((r) => r.name !== 'ask_user'),
+    ask: ask
+      ? { ...ask, failed: ask.result !== undefined && ask.result.length === 0 }
+      : null,
+    askCount: ask ? ask.questions.length : 0,
+  };
+}
+
+// The expanded body of a collapse entry: reasoning, tool blocks, and the ask.
+function CollapsedToolBlocks({
+  d,
+  onAskAnswered,
+}: {
+  d: CollapseData;
+  onAskAnswered: (answers: AskAnswerView[]) => void;
+}) {
+  return (
+    <>
+      {d.reasoning && <ReasoningBlock text={d.reasoning} autoOpen={false} />}
+      <ToolBlocks calls={d.calls} results={d.results} />
+      {d.ask && (
+        <AskBlock
+          questions={d.ask.questions}
+          result={d.ask.result}
+          failed={d.ask.failed}
+          onAnswer={onAskAnswered}
+        />
+      )}
+    </>
+  );
+}
+
+function collapseSummary(calls: ToolCall[], results: ToolCall[], askCount: number): string {
+  const summary = calls.length + results.length > 0 ? summarizeTools(calls, results) : '';
+  const askPart =
+    askCount > 0 ? `Asked user ${askCount === 1 ? '1 question' : `${askCount} questions`}` : '';
+  return [summary, askPart].filter(Boolean).join(' · ');
+}
+
 // Collapses an assistant message's reasoning and tool calls into a single
 // summary line (e.g. "Made 1 edit · Ran 1 command: npm test"); expanding
 // shows the individual blocks. It starts expanded while the message is still
 // streaming and only collapses once everything inside has completed. Toggle
 // in Settings → Appearance → Tool calls.
 function CollapsedTools({
-  reasoning,
-  calls,
-  results,
+  d,
   streaming,
-  ask,
-  askCount,
   onAskAnswered,
 }: {
-  reasoning?: string;
-  calls: ToolCall[];
-  results: ToolCall[];
+  d: CollapseData;
   streaming: boolean;
-  ask?: { questions: AskQuestionView[]; result?: AskAnswerView[]; failed?: boolean } | null;
-  askCount: number;
   onAskAnswered: (answers: AskAnswerView[]) => void;
 }) {
+  const { reasoning, calls, results, ask, askCount } = d;
   // A pending question must stay visible so it can be answered — only
   // collapse once it has answers (or failed); manual toggles are respected.
   const pendingAsk = ask != null && ask.result === undefined && !ask.failed;
@@ -887,9 +941,7 @@ function CollapsedTools({
   useEffect(() => {
     if (!streaming && !pendingAsk) setOpen(false);
   }, [streaming, pendingAsk]);
-  const summary = calls.length + results.length > 0 ? summarizeTools(calls, results) : '';
-  const askPart = askCount > 0 ? `Asked user ${askCount === 1 ? '1 question' : `${askCount} questions`}` : '';
-  const fullSummary = [summary, askPart].filter(Boolean).join(' · ');
+  const fullSummary = collapseSummary(calls, results, askCount);
   const hasTools = calls.length + results.length > 0 || askCount > 0;
   return (
     <div className="text-[10px]">
@@ -914,16 +966,59 @@ function CollapsedTools({
       </button>
       {open && (
         <div className="flex flex-col gap-1.5 px-1 pb-1">
-          {reasoning && <ReasoningBlock text={reasoning} autoOpen={false} />}
-          <ToolBlocks calls={calls} results={results} />
-          {ask && (
-            <AskBlock
-              questions={ask.questions}
-              result={ask.result}
-              failed={ask.failed}
-              onAnswer={onAskAnswered}
-            />
-          )}
+          <CollapsedToolBlocks d={d} onAskAnswered={onAskAnswered} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Groups a run of consecutive collapsed tool summaries into one entry with a
+// combined summary ("Read 4 files · Ran 2 commands"); expanding shows each
+// message's blocks in order. Starts open while any member has an unanswered
+// question.
+function CollapsedToolsGroup({
+  members,
+  onAskAnswered,
+}: {
+  members: CollapseData[];
+  onAskAnswered: (answers: AskAnswerView[]) => void;
+}) {
+  const anyPendingAsk = members.some((m) => m.ask != null && m.ask.result === undefined && !m.ask.failed);
+  const [open, setOpen] = useState(anyPendingAsk);
+  useEffect(() => {
+    if (anyPendingAsk) setOpen(true);
+  }, [anyPendingAsk]);
+  const calls = members.flatMap((m) => m.calls);
+  const results = members.flatMap((m) => m.results);
+  const askCount = members.reduce((a, m) => a + m.askCount, 0);
+  const fullSummary = collapseSummary(calls, results, askCount);
+  const hasTools = calls.length + results.length > 0 || askCount > 0;
+  const hasReasoning = members.some((m) => m.reasoning);
+  return (
+    <div className="text-[10px]">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex min-h-[26px] w-full items-center gap-1.5 px-1 py-1 text-left text-dim transition-colors hover:text-text"
+      >
+        {open ? (
+          <IconChevronDown className="h-3 w-3 shrink-0" />
+        ) : (
+          <IconChevronRight className="h-3 w-3 shrink-0" />
+        )}
+        {hasTools ? (
+          <IconWrench className="h-3 w-3 shrink-0 text-faint" />
+        ) : (
+          hasReasoning && <IconBrain className="h-3 w-3 shrink-0 text-accent" />
+        )}
+        <span className="min-w-0 flex-1 truncate text-faint">{fullSummary}</span>
+      </button>
+      {open && (
+        <div className="flex flex-col gap-1.5 px-1 pb-1">
+          {members.map((m, j) => (
+            <CollapsedToolBlocks key={j} d={m} onAskAnswered={onAskAnswered} />
+          ))}
         </div>
       )}
     </div>
@@ -1399,17 +1494,8 @@ const MessageRow = memo(function MessageRow({
   }
   // The ask joins the tool collapse like everything else, but stays open
   // while the question is unanswered so it can always be answered.
-  const askCall = item.toolCalls?.find((c) => c.name === 'ask_user');
-  const askResult = item.toolResults?.find((r) => r.name === 'ask_user');
-  const ask = askCall
-    ? {
-        questions: askQuestions(askCall.detail),
-        result: askResult ? askAnswers(askResult.detail) : undefined,
-      }
-    : null;
-  const askCount = ask ? ask.questions.length : 0;
-  const calls = (item.toolCalls ?? []).filter((c) => c.name !== 'ask_user');
-  const results = (item.toolResults ?? []).filter((r) => r.name !== 'ask_user');
+  const d = collapseData(item);
+  const { calls, results, ask, askCount } = d;
   const hasTools = calls.length + results.length > 0 || askCount > 0;
   const collapseTools = getToolCallsCollapsed();
   return (
@@ -1418,12 +1504,8 @@ const MessageRow = memo(function MessageRow({
     >
       {collapseTools && hasTools ? (
         <CollapsedTools
-          reasoning={item.reasoning}
-          calls={calls}
-          results={results}
+          d={d}
           streaming={item.streaming ?? false}
-          ask={ask ? { questions: ask.questions, result: ask.result, failed: ask.result !== undefined && ask.result.length === 0 } : null}
-          askCount={askCount}
           onAskAnswered={onAskAnswered}
         />
       ) : (
@@ -1441,7 +1523,7 @@ const MessageRow = memo(function MessageRow({
             <AskBlock
               questions={ask.questions}
               result={ask.result}
-              failed={ask.result !== undefined && ask.result.length === 0}
+              failed={ask.failed}
               onAnswer={onAskAnswered}
             />
           )}
@@ -3695,44 +3777,79 @@ export default function ChatPane({
         )}
         {!loading && !loadError && items.length > 0 && (
           <div className="mx-auto flex max-w-2xl flex-col gap-3">
-            {items.map((it, i) => {
-              // Consecutive collapsed tool summaries read better packed
-              // closer together than as full message blocks.
-              const prev = items[i - 1];
-              // Only pack onto a row that renders nothing below its summary
-              // (no content, no usage line) — otherwise the negative margin
-              // would overlap that content. Usage is persisted on every
-              // assistant message; the line only renders for turn finals.
-              const prevBare =
-                prev !== undefined &&
-                prev.kind === 'msg' &&
-                !prev.content &&
-                !(prev.usage && turnEndKeys.has(prev.key));
-              const condense =
-                prev !== undefined && isCollapsedToolsRow(it) && isCollapsedToolsRow(prev) && prevBare;
-              return (
-                <div
-                  key={it.key}
-                  data-msg-key={it.key}
-                  className={condense ? '-mt-2.5' : undefined}
-                >
-                  <MessageRow
-                    item={it}
-                    isLast={i === lastMsgIdx}
-                    streaming={streaming}
-                    turnEnd={turnEndKeys.has(it.key)}
-                    validTag={validTag}
-                    onEdit={editUserMessage}
-                    onRewind={requestRewind}
-                    onRegenerate={regenerate}
-                    onEditStart={setItemEditing}
-                    onImageClick={openLightbox}
-                    onAskAnswered={(answer) => void answerAsk(answer)}
-                    currency={currency}
-                  />
-                </div>
-              );
-            })}
+            {(() => {
+              // Consecutive bare collapsed-tool rows (no text, no usage line)
+              // merge into one grouped collapse with a combined summary
+              // instead of a stack of near-identical summary rows.
+              const rows: ReactNode[] = [];
+              let run: { it: MsgItem; i: number }[] = [];
+              const flush = () => {
+                if (run.length === 0) return;
+                if (run.length === 1) {
+                  const { it, i } = run[0];
+                  rows.push(
+                    <div key={it.key} data-msg-key={it.key}>
+                      <MessageRow
+                        item={it}
+                        isLast={i === lastMsgIdx}
+                        streaming={streaming}
+                        turnEnd={turnEndKeys.has(it.key)}
+                        validTag={validTag}
+                        onEdit={editUserMessage}
+                        onRewind={requestRewind}
+                        onRegenerate={regenerate}
+                        onEditStart={setItemEditing}
+                        onImageClick={openLightbox}
+                        onAskAnswered={(answer) => void answerAsk(answer)}
+                        currency={currency}
+                      />
+                    </div>,
+                  );
+                } else {
+                  rows.push(
+                    <div key={run[0].it.key} data-msg-key={run[0].it.key}>
+                      <CollapsedToolsGroup
+                        members={run.map(({ it }) => collapseData(it))}
+                        onAskAnswered={(answer) => void answerAsk(answer)}
+                      />
+                    </div>,
+                  );
+                }
+                run = [];
+              };
+              items.forEach((it, i) => {
+                if (
+                  it.kind === 'msg' &&
+                  isCollapsedToolsRow(it) &&
+                  !it.content &&
+                  !(it.usage && turnEndKeys.has(it.key))
+                ) {
+                  run.push({ it, i });
+                  return;
+                }
+                flush();
+                rows.push(
+                  <div key={it.key} data-msg-key={it.key}>
+                    <MessageRow
+                      item={it}
+                      isLast={i === lastMsgIdx}
+                      streaming={streaming}
+                      turnEnd={turnEndKeys.has(it.key)}
+                      validTag={validTag}
+                      onEdit={editUserMessage}
+                      onRewind={requestRewind}
+                      onRegenerate={regenerate}
+                      onEditStart={setItemEditing}
+                      onImageClick={openLightbox}
+                      onAskAnswered={(answer) => void answerAsk(answer)}
+                      currency={currency}
+                    />
+                  </div>,
+                );
+              });
+              flush();
+              return rows;
+            })()}
             {!streaming && (resuming || runActive) && (
               <div className="flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-xs text-dim">
                 <Spinner className="h-3.5 w-3.5 shrink-0" />

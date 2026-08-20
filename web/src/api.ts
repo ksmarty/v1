@@ -416,6 +416,7 @@ export const api = {
   gitCommit: (id: string, message: string) =>
     post<{ ok: boolean; hash?: string }>(`/api/projects/${id}/git/commit`, { message }),
   gitPull: (id: string) => post<void>(`/api/projects/${id}/git/pull`),
+  gitFetch: (id: string) => post<void>(`/api/projects/${id}/git/fetch`),
   oauthDeviceStart: () => post<DeviceFlowStart>('/api/github/oauth/device/start'),
   oauthDevicePoll: (flowId: string) =>
     post<DeviceFlowPoll>('/api/github/oauth/device/poll', { flowId }),

@@ -159,6 +159,20 @@ func (s *Server) handleGitCommit(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "hash": hash})
 }
 
+// handleGitFetch updates origin's remote-tracking refs without merging, so
+// the status reflects what's actually on the remote.
+func (s *Server) handleGitFetch(w http.ResponseWriter, r *http.Request) {
+	p := s.projectOr404(w, r)
+	if p == nil {
+		return
+	}
+	if err := gitops.Fetch(r.Context(), p.Path, s.githubToken(s.currentUser(r).ID)); err != nil {
+		writeError(w, http.StatusBadGateway, "fetch failed: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
 // handleGitPull fast-forwards the current branch from the origin remote.
 func (s *Server) handleGitPull(w http.ResponseWriter, r *http.Request) {
 	p := s.projectOr404(w, r)

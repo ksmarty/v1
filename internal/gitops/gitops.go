@@ -422,19 +422,26 @@ func Commit(ctx context.Context, path, message, authorLogin string) (string, err
 	return h.String(), nil
 }
 
-// Pull fetches and fast-forwards the current branch from origin.
+// Pull fetches and fast-forwards the current branch from origin. The branch
+// is passed explicitly: repos pushed by v1 have no upstream configured, and
+// go-git errors out when it has to guess one.
 func Pull(ctx context.Context, path, token string) error {
 	repo, err := git.PlainOpen(path)
 	if err != nil {
 		return fmt.Errorf("not a git repository")
+	}
+	head, err := repo.Head()
+	if err != nil {
+		return fmt.Errorf("no HEAD: %w", err)
 	}
 	w, err := repo.Worktree()
 	if err != nil {
 		return err
 	}
 	opts := &git.PullOptions{
-		RemoteName: "origin",
-		Force:      false,
+		RemoteName:    "origin",
+		ReferenceName: plumbing.NewBranchReferenceName(head.Name().Short()),
+		Force:         false,
 	}
 	if token != "" {
 		opts.Auth = basicAuth(token)
@@ -443,6 +450,23 @@ func Pull(ctx context.Context, path, token string) error {
 		if err == git.NoErrAlreadyUpToDate {
 			return nil
 		}
+		return err
+	}
+	return nil
+}
+
+// Fetch updates origin's remote-tracking refs without touching the worktree,
+// so the ahead/behind counts reflect the remote's current state.
+func Fetch(ctx context.Context, path, token string) error {
+	repo, err := git.PlainOpen(path)
+	if err != nil {
+		return fmt.Errorf("not a git repository")
+	}
+	opts := &git.FetchOptions{RemoteName: "origin"}
+	if token != "" {
+		opts.Auth = basicAuth(token)
+	}
+	if err := repo.FetchContext(ctx, opts); err != nil && err != git.NoErrAlreadyUpToDate {
 		return err
 	}
 	return nil

@@ -17,6 +17,7 @@ import {
   IconRewind,
   IconPlus,
   IconCheck,
+  IconRefresh,
 } from './icons';
 
 function timeAgo(unix: number): string {
@@ -125,10 +126,24 @@ export default function GitPane({
     }
   };
 
+  // Fetch only refreshes remote-tracking refs (no worktree change), so it
+  // skips the preview restart that act() does.
+  const fetchRemote = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.gitFetch(projectId);
+      await load();
+    } catch (e) {
+      setError(errMsg(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const dirty = (st?.modified ?? 0) + (st?.untracked ?? 0) > 0;
   const ahead = st?.ahead ?? 0;
   const behind = st?.behind ?? 0;
-  const upToDate = !dirty && ahead === 0 && behind === 0;
 
   if (loading) {
     return (
@@ -254,23 +269,23 @@ export default function GitPane({
                 <IconArrowUp className="h-3.5 w-3.5" /> {dirty ? 'Commit & push' : 'Push'}
               </Button>
             )}
-            {!upToDate && (
+            {st?.repoUrl && (
               <Button
                 variant="outline"
                 className="shrink-0 px-2.5 text-xs"
-                onClick={() => {
-                  setBusy(true);
-                  setError(null);
-                  api
-                    .gitPull(projectId)
-                    .then(async () => {
-                      await load();
-                      onPreviewRestart();
-                    })
-                    .catch((e) => setError(errMsg(e)))
-                    .finally(() => setBusy(false));
-                }}
-                disabled={busy || !st?.repoUrl}
+                onClick={() => void fetchRemote()}
+                disabled={busy}
+                title="Fetch from origin (refresh ahead/behind without changing files)"
+              >
+                <IconRefresh className="h-3.5 w-3.5" /> Fetch
+              </Button>
+            )}
+            {st?.repoUrl && (
+              <Button
+                variant="outline"
+                className="shrink-0 px-2.5 text-xs"
+                onClick={() => void act(() => api.gitPull(projectId))}
+                disabled={busy}
                 title="Pull from origin"
               >
                 <IconArrowDown className="h-3.5 w-3.5" /> Pull

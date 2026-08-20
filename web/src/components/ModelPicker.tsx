@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { ProviderModel, SavedProvider } from '../types';
 import { Dialog, Input } from './ui';
-import { IconCheck, IconPaperclip } from './icons';
+import { IconCheck, IconPaperclip, IconStar } from './icons';
 
 /**
  * Fullscreen (on mobile) model picker: provider pills on top, searchable
@@ -52,6 +52,15 @@ export default function ModelPicker({
   // When true, the selected provider shows a free-text field so you can enter
   // an arbitrary model id without switching to the separate Custom provider.
   const [customModel, setCustomModel] = useState(false);
+  // Favourite model ids per provider, kept on this device.
+  const favKey = `v1-fav-models:${providerId || 'custom'}`;
+  const [favs, setFavs] = useState<string[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem(favKey) ?? '[]');
+    } catch {
+      return [];
+    }
+  });
 
   useEffect(() => {
     if (open) {
@@ -61,19 +70,40 @@ export default function ModelPicker({
     }
   }, [open, model]);
 
+  useEffect(() => {
+    try {
+      setFavs(JSON.parse(localStorage.getItem(favKey) ?? '[]'));
+    } catch {
+      setFavs([]);
+    }
+  }, [favKey]);
+
+  const toggleFav = (id: string) => {
+    setFavs((prev) => {
+      const next = prev.includes(id) ? prev.filter((f) => f !== id) : [...prev, id];
+      localStorage.setItem(favKey, JSON.stringify(next));
+      return next;
+    });
+  };
+
   const filtered = useMemo(() => {
+    const favFirst = (a: ProviderModel, b: ProviderModel) => {
+      const fa = favs.includes(a.id) ? 0 : 1;
+      const fb = favs.includes(b.id) ? 0 : 1;
+      return fa - fb;
+    };
     const q = query.trim();
-    if (!q) return models.slice(0, 200);
+    if (!q) return [...models].sort(favFirst).slice(0, 200);
     return models
       .map((m) => ({
         m,
         s: Math.min(fuzzyScore(q, m.name) ?? Infinity, fuzzyScore(q, m.id) ?? Infinity),
       }))
       .filter((x) => x.s !== Infinity)
-      .sort((a, b) => a.s - b.s)
+      .sort((a, b) => favFirst(a.m, b.m) || a.s - b.s)
       .slice(0, 200)
       .map((x) => x.m);
-  }, [models, query]);
+  }, [models, query, favs]);
 
   return (
     <Dialog open={open} onClose={onClose} title="Model" wide fullScreen fixedBody align="top">
@@ -146,8 +176,8 @@ export default function ModelPicker({
         ) : (
           <>
             <section className="shrink-0">
-              <div className="flex items-center justify-between gap-2">
-                <h3 className="mb-2 text-xs font-medium text-subtle">Model</h3>
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <h3 className="text-xs font-medium text-subtle">Model</h3>
                 <button
                   type="button"
                   onClick={() => setCustomModel((v) => !v)}
@@ -202,28 +232,60 @@ export default function ModelPicker({
                     <p className="px-1 py-2 text-xs text-faint">No models match.</p>
                   )}
                   {filtered.map((m) => (
-                    <button
+                    <div
                       key={m.id}
-                      type="button"
+                      role="button"
+                      tabIndex={0}
                       onClick={() => {
                         onModelChange(m.id);
                         onClose();
                       }}
-                      className={`flex min-h-[44px] items-center gap-2 rounded-lg border px-3 py-2 text-left transition-colors ${
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          onModelChange(m.id);
+                          onClose();
+                        }
+                      }}
+                      className={`flex min-h-[44px] w-full cursor-pointer items-center gap-2 overflow-hidden rounded-lg border px-3 py-2 text-left transition-colors ${
                         m.id === model
                           ? 'border-accent bg-surface'
                           : 'border-border hover:border-border-strong'
                       }`}
                     >
-                      <span className="min-w-0 flex-1 truncate text-sm text-text">{m.name}</span>
+                      <span className="min-w-0 flex-1 truncate text-sm text-text" title={m.name}>
+                        {m.name}
+                      </span>
                       {m.imageInput && (
                         <span title="Supports image uploads" className="shrink-0 text-accent">
                           <IconPaperclip className="h-3.5 w-3.5" />
                         </span>
                       )}
-                      <span className="shrink-0 font-mono text-[11px] text-faint">{m.id}</span>
+                      <span
+                        className="max-w-[40%] truncate font-mono text-[11px] text-faint"
+                        title={m.id}
+                      >
+                        {m.id}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleFav(m.id);
+                        }}
+                        title={favs.includes(m.id) ? 'Remove from favourites' : 'Favourite'}
+                        className={`shrink-0 rounded p-0.5 transition-colors ${
+                          favs.includes(m.id)
+                            ? 'text-amber-400'
+                            : 'text-faint hover:text-text'
+                        }`}
+                      >
+                        <IconStar
+                          className="h-3.5 w-3.5"
+                          fill={favs.includes(m.id) ? 'currentColor' : 'none'}
+                        />
+                      </button>
                       {m.id === model && <IconCheck className="h-4 w-4 shrink-0 text-accent" />}
-                    </button>
+                    </div>
                   ))}
                 </div>
               </div>
