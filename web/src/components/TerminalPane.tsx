@@ -16,6 +16,8 @@ export default function TerminalPane({
   const fitRef = useRef<FitAddon | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const connectRef = useRef<() => void>(() => {});
+  const retriesRef = useRef(0);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [connected, setConnected] = useState(false);
 
   useEffect(() => {
@@ -62,6 +64,7 @@ export default function TerminalPane({
       );
       wsRef.current = ws;
       ws.onopen = () => {
+        retriesRef.current = 0;
         setConnected(true);
         sendResize();
       };
@@ -75,12 +78,26 @@ export default function TerminalPane({
           // ignore malformed frames
         }
       };
-      ws.onclose = () => {
+      ws.onclose = (ev) => {
         setConnected(false);
-        term.write('\r\n\x1b[2m[connection closed]\x1b[0m\r\n');
+        const why = ev.reason || `code ${ev.code}`;
+        // Proxies (Cloudflare, Traefik) drop idle/awkward WebSockets —
+        // reconnect automatically with backoff instead of dying silently.
+        const delay = Math.min(1000 * 2 ** retriesRef.current, 10000);
+        retriesRef.current += 1;
+        term.write(`\r\n\x1b[2m[connection closed: ${why} — reconnecting…]\x1b[0m\r\n`);
+        retryTimerRef.current = setTimeout(connect, delay);
       };
     };
-    connectRef.current = connect;
+    connectRef.current = () => {
+      // Manual reconnect: cancel any pending backoff retry and start fresh.
+      if (retryTimerRef.current) {
+        clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+      }
+      retriesRef.current = 0;
+      connect();
+    };
     connect();
 
     const dataSub = term.onData((data) => {
@@ -105,6 +122,10 @@ export default function TerminalPane({
       ro.disconnect();
       dataSub.dispose();
       connectRef.current = () => {};
+      if (retryTimerRef.current) {
+        clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+      }
       wsRef.current?.close();
       wsRef.current = null;
       term.dispose();

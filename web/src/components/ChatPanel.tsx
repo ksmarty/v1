@@ -50,6 +50,7 @@ export default function ChatPanel({
   initialProviderId,
   initialModel,
   initialThinking,
+  chatResetSignal,
 }: {
   projectId: string;
   project: ProjectType | null;
@@ -67,6 +68,8 @@ export default function ChatPanel({
   initialProviderId?: string;
   initialModel?: string;
   initialThinking?: string;
+  /** Changes when the bottom-nav Chat button is pressed — resets the subtab. */
+  chatResetSignal?: number;
 }) {
   const [tabLayout] = useState(() => getChatTabLayout());
   // Tabs in the user's chosen order, minus the ones they excluded.
@@ -90,6 +93,14 @@ export default function ChatPanel({
       return next;
     });
   }, [tab]);
+
+  // The mobile bottom nav's Chat button returns the subtab to chat (or the
+  // first visible tab when chat is hidden in the layout settings).
+  useEffect(() => {
+    if (chatResetSignal === undefined || chatResetSignal === 0) return;
+    const target = tabs.some((t) => t.id === 'chat') ? 'chat' : (tabs[0]?.id ?? 'chat');
+    setTab((cur) => (cur === target ? cur : target));
+  }, [chatResetSignal]);
 
   return (
     <div className="flex h-full min-h-0 flex-col">

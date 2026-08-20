@@ -30,7 +30,7 @@ import type {
   SavedProvider,
   Todo,
 } from '../types';
-import { errMsg, getJsonPretty, getThinkingCollapsed, getToolCallsCollapsed } from '../utils';
+import { errMsg, diffLines, getDebugHud, getJsonPretty, getThinkingCollapsed, getToolCallsCollapsed } from '../utils';
 import { notifyTurnDone } from '../notify';
 import { permissionMeta } from '../permissions';
 
@@ -583,26 +583,7 @@ function ReasoningBlock({ text, autoOpen }: { text: string; autoOpen: boolean })
 }
 
 // Splits an edit's old/new strings into shared context lines and the changed
-// middle section, for the chat's edit diff view.
-function diffLines(oldText: string, newText: string) {
-  const a = oldText.split('\n');
-  const b = newText.split('\n');
-  let start = 0;
-  while (start < a.length && start < b.length && a[start] === b[start]) start++;
-  let endA = a.length;
-  let endB = b.length;
-  while (endA > start && endB > start && a[endA - 1] === b[endB - 1]) {
-    endA--;
-    endB--;
-  }
-  return {
-    before: a.slice(0, start),
-    removed: a.slice(start, endA),
-    added: b.slice(start, endB),
-    after: a.slice(endA),
-  };
-}
-
+// middle section, for the chat's edit diff view. (Shared: web/src/utils.ts)
 function parseEditDiff(detail: string) {
   try {
     const a = JSON.parse(detail) as { path?: string; old_string?: string; new_string?: string };
@@ -669,7 +650,56 @@ function ToolChip({ name, detail }: ToolCall) {
   const [open, setOpen] = useState(false);
   const Icon = toolIcon(name);
   const diff = name === 'edit_file' ? parseEditDiff(detail) : null;
+  // write_file expands to just the file content — the path is already in the
+  // header, and the JSON envelope around the content is noise.
+  const writeContent = useMemo(() => {
+    if (name !== 'write_file') return null;
+    try {
+      const a = JSON.parse(detail) as { content?: unknown };
+      return typeof a.content === 'string' ? a.content : null;
+    } catch {
+      return null;
+    }
+  }, [name, detail]);
   const label = diff ? diff.path : chipLabel(detail);
+  // Nothing worth expanding (e.g. restart_preview with empty args) renders as
+  // a static row — no chevron, no dropdown.
+  const expandable = diff !== null || writeContent !== null || meaningfulDetail(detail);
+  const header = (
+    <>
+      {expandable ? (
+        open ? (
+          <IconChevronDown className="h-3 w-3 shrink-0" />
+        ) : (
+          <IconChevronRight className="h-3 w-3 shrink-0" />
+        )
+      ) : (
+        <span className="w-3 shrink-0" />
+      )}
+      <Icon className="h-3 w-3 shrink-0 text-faint" />
+      <span className="shrink-0 text-text">{toolLabel(name)}</span>
+      {label && <span className="min-w-0 flex-1 truncate text-faint">{label}</span>}
+      {diff && (
+        <span className="ml-auto flex shrink-0 items-center gap-1 font-mono">
+          <span className="rounded bg-red-500/10 px-1 py-0.5 text-red-400">
+            -{diff.removed.length}
+          </span>
+          <span className="rounded bg-emerald-500/10 px-1 py-0.5 text-emerald-400">
+            +{diff.added.length}
+          </span>
+        </span>
+      )}
+    </>
+  );
+  if (!expandable) {
+    return (
+      <div className="w-full overflow-hidden rounded-md border border-border bg-surface/50 font-mono text-[10px]">
+        <div className="flex min-h-[26px] w-full items-center gap-1.5 px-2 py-1 text-left text-dim">
+          {header}
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="w-full overflow-hidden rounded-md border border-border bg-surface/50 font-mono text-[10px]">
       <button
@@ -677,24 +707,7 @@ function ToolChip({ name, detail }: ToolCall) {
         onClick={() => setOpen((o) => !o)}
         className="flex min-h-[26px] w-full items-center gap-1.5 px-2 py-1 text-left text-dim transition-colors hover:text-text"
       >
-        {open ? (
-          <IconChevronDown className="h-3 w-3 shrink-0" />
-        ) : (
-          <IconChevronRight className="h-3 w-3 shrink-0" />
-        )}
-        <Icon className="h-3 w-3 shrink-0 text-faint" />
-        <span className="shrink-0 text-text">{toolLabel(name)}</span>
-        {label && <span className="min-w-0 flex-1 truncate text-faint">{label}</span>}
-        {diff && (
-          <span className="ml-auto flex shrink-0 items-center gap-1 font-mono">
-            <span className="rounded bg-red-500/10 px-1 py-0.5 text-red-400">
-              -{diff.removed.length}
-            </span>
-            <span className="rounded bg-emerald-500/10 px-1 py-0.5 text-emerald-400">
-              +{diff.added.length}
-            </span>
-          </span>
-        )}
+        {header}
       </button>
       {open &&
         (diff ? (
@@ -711,6 +724,10 @@ function ToolChip({ name, detail }: ToolCall) {
               </div>
             ))}
             <DiffContext lines={diff.after} side="after" />
+          </StickToBottom>
+        ) : writeContent !== null ? (
+          <StickToBottom className="max-h-60 overflow-auto whitespace-pre-wrap break-words border-t border-border/80 px-3 py-2 font-mono text-[11px] leading-relaxed text-subtle">
+            {writeContent}
           </StickToBottom>
         ) : (
           meaningfulDetail(detail) && <ToolBody detail={detail} />
@@ -769,8 +786,9 @@ function ToolBody({ detail }: { detail: string }) {
   );
 }
 
-// A run_command call and its result merged into one card: the command in the
-// header (with an exit-code indicator), the result body below.
+// A run_command call and its result merged into one card: the header carries
+// the command with a plain ✓/✗ status; expanding shows a code block with the
+// command line followed by the raw output — not the JSON envelope.
 function RunCommandBlock({ command, result }: { command: string; result: ToolCall }) {
   const [open, setOpen] = useState(false);
   const exitCode = runExitCode(result.detail);
@@ -792,8 +810,35 @@ function RunCommandBlock({ command, result }: { command: string; result: ToolCal
         {exitCode === 0 && <IconCheck className="h-3 w-3 shrink-0 text-emerald-500" />}
         {exitCode !== null && exitCode !== 0 && <IconX className="h-3 w-3 shrink-0 text-red-500" />}
       </button>
-      {open && <ToolBody detail={result.detail} />}
+      {open && <RunCommandOutput command={command} detail={result.detail} />}
     </div>
+  );
+}
+
+// The expanded run_command body: `$ <command>` followed by the raw output.
+// Falls back to the raw result when it isn't the {exitCode, output} shape
+// (e.g. an error string).
+function RunCommandOutput({ command, detail }: { command: string; detail: string }) {
+  const output = useMemo(() => {
+    try {
+      const d = JSON.parse(detail) as { output?: unknown };
+      return typeof d.output === 'string' ? d.output : null;
+    } catch {
+      return null;
+    }
+  }, [detail]);
+  return (
+    <StickToBottom className="max-h-60 overflow-auto whitespace-pre-wrap break-words border-t border-border/80 px-3 py-2 font-mono text-[11px] leading-relaxed">
+      <span className="text-accent">$ {command}</span>
+      {'\n'}
+      {output === null ? (
+        <span className="text-subtle">{detail}</span>
+      ) : output === '' ? (
+        <span className="text-faint">(no output)</span>
+      ) : (
+        <span className="text-subtle">{output}</span>
+      )}
+    </StickToBottom>
   );
 }
 
@@ -1707,6 +1752,8 @@ export default function ChatPane({
   const [fileList, setFileList] = useState<string[]>([]);
   const [skillList, setSkillList] = useState<{ name: string; hint: string }[]>([]);
   const [currency, setCurrency] = useState('USD');
+  // Debug HUD flag (Settings → Appearance) also gates the diagnostics export.
+  const [debugEnabled] = useState(() => getDebugHud());
   const restartRef = useRef(onPreviewRestart);
   restartRef.current = onPreviewRestart;
   const onMemoriesRef = useRef(onMemories);
@@ -1744,16 +1791,16 @@ export default function ChatPane({
           persisted ??
           (initialProviderId || initialModel || initialThinking
             ? {
-                providerId: initialProviderId ?? s.llm.activeProviderId ?? '',
+                providerId: initialProviderId ?? saved[0]?.id ?? '',
                 model: initialModel ?? s.llm.model,
                 thinking: initialThinking ?? '',
               }
-            : { providerId: s.llm.activeProviderId ?? '', model: s.llm.model });
-        // A persisted provider that was deleted falls back to the active one.
+            : { providerId: saved[0]?.id ?? '', model: s.llm.model });
+        // A persisted provider that was deleted falls back to the first one.
         if (sel.providerId === '' || saved.some((p) => p.id === sel.providerId)) {
           setProviderId(sel.providerId);
         } else {
-          setProviderId(s.llm.activeProviderId ?? '');
+          setProviderId(saved[0]?.id ?? '');
         }
         setModel(sel.model);
         setThinking(typeof sel.thinking === 'string' ? sel.thinking : '');
@@ -3587,6 +3634,25 @@ export default function ChatPane({
           setInput(e.target.value);
           void updateSuggestions(e.target.value);
         }}
+        onPaste={(e) => {
+          const text = e.clipboardData.getData('text/plain');
+          // Large pastes become a text attachment instead of flooding the
+          // composer — the sent message references it as a highlighted chip.
+          if (!text || (text.length <= 1200 && text.split('\n').length <= 40)) return;
+          e.preventDefault();
+          if (text.length > MAX_ATTACHMENT_BYTES) {
+            setAttachError('Pasted text is too large to attach (max 2 MB).');
+            return;
+          }
+          setAttachments((prev) => {
+            if (prev.length >= MAX_ATTACHMENTS) {
+              setAttachError(`Too many attachments (max ${MAX_ATTACHMENTS}).`);
+              return prev;
+            }
+            const name = `paste-${new Date().toISOString().replace(/[:.]/g, '-')}.txt`;
+            return [...prev, { name, mime: 'text/plain', kind: 'text', content: text }];
+          });
+        }}
         onKeyDown={(e) => {
           if (suggestions.length > 0 && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
             e.preventDefault();
@@ -3925,12 +3991,14 @@ export default function ChatPane({
                   </span>
                 )}
                 {queueEditId === m.id ? (
-                  <Input
+                  <textarea
                     autoFocus
+                    rows={2}
                     value={queueEditText}
                     onChange={(e) => setQueueEditText(e.target.value)}
                     onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
                         void editQueued(m.id, queueEditText);
                         setQueueEditing(null, '');
                       } else if (e.key === 'Escape') {
@@ -3943,7 +4011,7 @@ export default function ChatPane({
                         setQueueEditing(null, '');
                       }
                     }}
-                    className="h-7 min-w-0 flex-1 px-1.5 text-xs"
+                    className="min-h-[52px] min-w-0 flex-1 resize-y rounded-md border border-border bg-bg px-2 py-1.5 text-xs text-text outline-none focus:border-subtle"
                   />
                 ) : (
                   <span className="min-w-0 flex-1 truncate text-dim">{m.text}</span>
@@ -4134,17 +4202,19 @@ export default function ChatPane({
                     <IconLayers className="h-4 w-4 shrink-0 text-dim" />
                     Sessions
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setPlusOpen(false);
-                      void exportDiagnostics();
-                    }}
-                    className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm text-text transition-colors hover:bg-border"
-                  >
-                    <IconDownload className="h-4 w-4 shrink-0 text-dim" />
-                    Export diagnostics
-                  </button>
+                  {debugEnabled && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPlusOpen(false);
+                        void exportDiagnostics();
+                      }}
+                      className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm text-text transition-colors hover:bg-border"
+                    >
+                      <IconDownload className="h-4 w-4 shrink-0 text-dim" />
+                      Export diagnostics
+                    </button>
+                  )}
                   {!isDesktop && (
                     <button
                       type="button"

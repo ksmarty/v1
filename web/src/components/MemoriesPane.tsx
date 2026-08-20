@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { api } from '../api';
 import type { Memory } from '../types';
 import { errMsg } from '../utils';
-import { Button, IconButton, Input, Spinner } from './ui';
+import { Button, IconButton, Spinner, Textarea } from './ui';
 import { IconBrain, IconCheck, IconPencil, IconX } from './icons';
 
 // Browse, add, edit and delete the facts the agent saved with the remember
@@ -103,12 +103,14 @@ export default function MemoriesPane({
       <div className="mx-auto flex max-w-2xl flex-col gap-2">
         <form onSubmit={(e) => void add(e)} className="flex items-end gap-2">
           <div className="flex-1">
-            <Input
+            <Textarea
               value={newText}
               onChange={(e) => setNewText(e.target.value)}
               placeholder="Add a memory (max 300 chars)…"
               autoComplete="off"
               maxLength={300}
+              rows={2}
+              className="resize-y"
             />
           </div>
           <Button type="submit" variant="outline" disabled={adding || !newText.trim()} className="h-[42px] sm:h-[38px]">
@@ -134,11 +136,11 @@ export default function MemoriesPane({
             {editing?.id === m.id ? (
               <div className="flex min-w-0 flex-1 items-end gap-2">
                 <div className="flex-1">
-                  <Input
+                  <Textarea
                     value={editing.text}
                     onChange={(e) => setEditing({ id: m.id, text: e.target.value })}
                     onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
+                      if (e.key === 'Enter' && !e.shiftKey) {
                         e.preventDefault();
                         void saveEdit();
                       }
@@ -146,6 +148,8 @@ export default function MemoriesPane({
                     }}
                     autoFocus
                     maxLength={300}
+                    rows={3}
+                    className="resize-y"
                   />
                 </div>
                 <IconButton

@@ -169,7 +169,7 @@ export default function VercelMenu({
           )}
 
           {data && !data.connected && !err && (
-            <div className="mb-2 flex flex-col gap-2.5 rounded-lg border border-border p-3">
+            <div className="-mx-3 mb-2 flex flex-col gap-2.5 border-t border-border px-3 pt-3">
               <p className="text-xs leading-relaxed text-dim">
                 Connect your Vercel account in Settings to deploy this project.
               </p>

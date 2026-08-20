@@ -96,7 +96,9 @@ func (s *Server) handleSkillsInstall(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		installed := append(s.installedSkills(), b.Skill)
+		sk := b.Skill
+		sk.Builtin = true // persist the flag so the UI can hide marketplace links
+		installed := append(s.installedSkills(), sk)
 		if err := s.saveSkills(installed); err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return

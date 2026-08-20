@@ -221,3 +221,43 @@ export function setChatTabLayout(l: ChatTabLayout): void {
     // ignore (private mode etc.)
   }
 }
+// Splits old/new texts into shared context lines and the changed middle
+// section, for diff rendering (chat edit diffs, the git changes modal).
+export function diffLines(oldText: string, newText: string) {
+  const a = oldText.split('\n');
+  const b = newText.split('\n');
+  let start = 0;
+  while (start < a.length && start < b.length && a[start] === b[start]) start++;
+  let endA = a.length;
+  let endB = b.length;
+  while (endA > start && endB > start && a[endA - 1] === b[endB - 1]) {
+    endA--;
+    endB--;
+  }
+  return {
+    before: a.slice(0, start),
+    removed: a.slice(start, endA),
+    added: b.slice(start, endB),
+    after: a.slice(endA),
+  };
+}
+
+// VSCode-style fuzzy match: subsequence with penalties for gaps and mid-word
+// hits. Returns a score (lower = better), or null when the query is not a
+// subsequence of the text.
+export function fuzzyScore(query: string, text: string): number | null {
+  const q = query.toLowerCase();
+  const t = text.toLowerCase();
+  let qi = 0;
+  let score = 0;
+  let prev = -2;
+  for (let i = 0; i < t.length && qi < q.length; i++) {
+    if (t[i] === q[qi]) {
+      if (i !== prev + 1) score += 3;
+      if (i > 0 && /[a-z0-9]/.test(t[i - 1])) score += 2;
+      prev = i;
+      qi++;
+    }
+  }
+  return qi === q.length ? score : null;
+}

@@ -124,15 +124,17 @@ function SkillPreviewDialog({
               </Button>
             )
           )}
-          <a
-            href={skillsmpHref(target)}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="ml-auto inline-flex items-center gap-1 text-xs text-dim transition-colors hover:text-text"
-          >
-            View on SkillsMP
-            <IconExternalLink className="h-3 w-3" />
-          </a>
+          {skillsmpHref(target) && (
+            <a
+              href={skillsmpHref(target)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="ml-auto inline-flex items-center gap-1 text-xs text-dim transition-colors hover:text-text"
+            >
+              View on SkillsMP
+              <IconExternalLink className="h-3 w-3" />
+            </a>
+          )}
         </div>
       </div>
     </Dialog>
@@ -477,12 +479,13 @@ function ToolSettings({
           saved={false}
           error={mcpError}
           pulse={mcpCommand.trim() !== ''}
+          disabled={mcpCommand.trim() === ''}
           extra={
             <Button
               type="button"
               variant="outline"
               onClick={() => void testMCP()}
-              disabled={mcpTesting}
+              disabled={mcpTesting || mcpCommand.trim() === ''}
             >
               {mcpTesting ? <Spinner className="h-4 w-4" /> : 'Test'}
             </Button>
@@ -651,7 +654,7 @@ function ToolSettings({
                           type="submit"
                           variant="outline"
                           className="h-8 px-3 text-xs"
-                          disabled={editSaving}
+                          disabled={editSaving || editCommand.trim() === ''}
                         >
                           {editSaving ? <Spinner className="h-3.5 w-3.5" /> : 'Save'}
                         </Button>
@@ -716,18 +719,18 @@ function ToolSettings({
             />
           </Field>
         </div>
-        <Button type="submit" variant="outline" disabled={skillBusy} className="h-[42px] sm:h-[38px]">
+        <Button type="submit" variant="outline" disabled={skillBusy || skillQuery.trim() === ''} className="h-[42px] sm:h-[38px]">
           {skillBusy ? <Spinner className="h-4 w-4" /> : 'Search'}
         </Button>
       </form>
 
-      {suggestedSkills.length > 0 && (
+      {suggestedSkills.filter((sk) => !skills.some((s) => s.id === sk.id)).length > 0 && (
         <div className="shrink-0">
           <h4 className="mb-2 text-xs font-medium text-dim">Suggested / included</h4>
           <ul className="flex flex-col gap-2">
-            {suggestedSkills.map((sk) => {
-              const installed = skills.find((s) => s.id === sk.id);
-              return (
+            {suggestedSkills
+              .filter((sk) => !skills.some((s) => s.id === sk.id))
+              .map((sk) => (
                 <li
                   key={sk.id}
                   className="flex items-center gap-2 rounded-xl border border-border bg-surface/50 px-3 py-2"
@@ -735,47 +738,22 @@ function ToolSettings({
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5">
                       <span className="truncate text-sm font-medium text-text">{sk.name}</span>
-                      {installed && (
-                        <span className="shrink-0 rounded-full bg-accent/15 px-1.5 py-0.5 text-[10px] font-medium text-accent">
-                          included
-                        </span>
-                      )}
                     </div>
                     <div className="truncate text-[11px] text-faint">
                       {sk.author}
                       {sk.description ? ` · ${sk.description}` : ''}
                     </div>
                   </div>
-                  {installed ? (
-                    <button
-                      type="button"
-                      className="shrink-0 text-xs font-medium text-accent hover:underline"
-                      onClick={() =>
-                        setSkillPreview({
-                          name: installed.name,
-                          author: installed.author,
-                          description: installed.description,
-                          githubUrl: installed.githubUrl,
-                          skillsmpUrl: installed.skillsmpUrl,
-                          installed,
-                        })
-                      }
-                    >
-                      View
-                    </button>
-                  ) : (
-                    <Button
-                      variant="outline"
-                      className="h-7 shrink-0 px-2 text-xs"
-                      disabled={skillBusyId === sk.id}
-                      onClick={() => void installSkill(sk)}
-                    >
-                      {skillBusyId === sk.id ? <Spinner className="h-3.5 w-3.5" /> : 'Install'}
-                    </Button>
-                  )}
+                  <Button
+                    variant="outline"
+                    className="h-7 shrink-0 px-2 text-xs"
+                    disabled={skillBusyId === sk.id}
+                    onClick={() => void installSkill(sk)}
+                  >
+                    {skillBusyId === sk.id ? <Spinner className="h-3.5 w-3.5" /> : 'Install'}
+                  </Button>
                 </li>
-              );
-            })}
+              ))}
           </ul>
         </div>
       )}
@@ -818,7 +796,7 @@ function ToolSettings({
                     {sk.description ? ` · ${sk.description}` : ''}
                   </div>
                 </button>
-                <ViewOnSkillsMP href={skillsmpHref(sk)} name={sk.name} />
+                {!sk.builtin && <ViewOnSkillsMP href={skillsmpHref(sk)} name={sk.name} />}
                 <Button
                   variant="outline"
                   className="h-7 shrink-0 px-2 text-xs"
@@ -891,7 +869,9 @@ function ToolSettings({
                       {sk.description ? ` · ${sk.description}` : ''}
                     </div>
                   </button>
-                  <ViewOnSkillsMP href={skillsmpHref(sk)} name={sk.name} />
+                  {!sk.builtin && skillsmpHref(sk) !== '' && (
+                    <ViewOnSkillsMP href={skillsmpHref(sk)} name={sk.name} />
+                  )}
                   <button
                     type="button"
                     aria-label={`Remove skill ${sk.name}`}

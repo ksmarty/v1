@@ -159,6 +159,21 @@ func (s *Server) handleGitCommit(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "hash": hash})
 }
 
+// handleGitChanges lists worktree changes with both sides' contents so the UI
+// can render per-file diffs in a modal.
+func (s *Server) handleGitChanges(w http.ResponseWriter, r *http.Request) {
+	p := s.projectOr404(w, r)
+	if p == nil {
+		return
+	}
+	changes, err := gitops.Changes(p.Path)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "changes failed: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"changes": changes})
+}
+
 // handleGitFetch updates origin's remote-tracking refs without merging, so
 // the status reflects what's actually on the remote.
 func (s *Server) handleGitFetch(w http.ResponseWriter, r *http.Request) {

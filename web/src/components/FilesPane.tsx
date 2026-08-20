@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import { api } from '../api';
 import type { FileEntry } from '../types';
-import { errMsg, formatBytes } from '../utils';
+import { errMsg, formatBytes, fuzzyScore } from '../utils';
 import { useMediaQuery } from '../hooks/useMediaQuery';
-import { ErrorBox, IconButton, Spinner } from './ui';
+import { ErrorBox, IconButton, Input, Spinner } from './ui';
 import CodeEditor from './CodeEditor';
 import Markdown from './Markdown';
 import FileIcon from './FileIcon';
@@ -16,6 +16,7 @@ import {
   IconFolder,
   IconFolderOpen,
   IconRefresh,
+  IconSearch,
 } from './icons';
 
 interface TreeNode {
@@ -130,18 +131,49 @@ export default function FilesPane({ projectId }: { projectId: string }) {
   const [fileError, setFileError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
-  // README files open in a rendered markdown preview with an Edit toggle.
+  // Markdown files open in a rendered preview with an Edit toggle.
   const [preview, setPreview] = useState(true);
   const expandedRef = useRef<Set<string>>(new Set());
 
   const dirty = content !== savedContent;
-  const isReadme = !!selected && /^readme(\.|$)/i.test(selected.path.split('/').pop() ?? '');
+  const isMarkdown = !!selected && /\.(md|markdown|mdx)$/i.test(selected.path);
+
+  // VSCode-style file search over the whole project (recursive listing,
+  // fetched on first use and refreshed whenever the tree reloads).
+  const [fileQuery, setFileQuery] = useState('');
+  const [allFiles, setAllFiles] = useState<FileEntry[] | null>(null);
+  useEffect(() => {
+    if (!fileQuery.trim() || allFiles !== null) return;
+    let live = true;
+    api
+      .listFiles(projectId, '', true)
+      .then((r) => {
+        if (live) setAllFiles(r.entries);
+      })
+      .catch(() => {
+        if (live) setAllFiles([]);
+      });
+    return () => {
+      live = false;
+    };
+  }, [fileQuery, allFiles, projectId]);
+  const searchResults = useMemo(() => {
+    const q = fileQuery.trim();
+    if (!q || !allFiles) return null;
+    return allFiles
+      .map((f) => ({ f, s: fuzzyScore(q, f.path) ?? Infinity }))
+      .filter((x) => x.s !== Infinity)
+      .sort((a, b) => a.s - b.s)
+      .slice(0, 100)
+      .map((x) => x.f);
+  }, [fileQuery, allFiles]);
 
   const loadRoot = useCallback(async () => {
     try {
       const res = await api.listFiles(projectId, '');
       setRoot(sortEntries(res.entries).map(toNode));
       setTreeError(null);
+      setAllFiles(null); // refresh the search cache too
     } catch (e) {
       setTreeError(errMsg(e));
     }
@@ -171,6 +203,7 @@ export default function FilesPane({ projectId }: { projectId: string }) {
         }
       }
       setRoot(nodes);
+      setAllFiles(null); // keep the search cache as fresh as the tree
     } catch {
       // transient failure — keep the previous tree
     }
@@ -269,28 +302,71 @@ export default function FilesPane({ projectId }: { projectId: string }) {
           <IconRefresh className="h-3.5 w-3.5" />
         </IconButton>
       </div>
-      <div className="min-h-0 flex-1 overflow-auto p-1.5">
-        {root === null && !treeError && (
-          <div className="flex justify-center py-8">
-            <Spinner className="h-4 w-4" />
-          </div>
-        )}
-        {treeError && (
-          <div className="p-2">
-            <ErrorBox message={treeError} />
-          </div>
-        )}
-        {root !== null && root.length === 0 && (
-          <p className="p-3 text-xs text-faint">No files yet.</p>
-        )}
-        {root !== null && root.length > 0 && (
-          <TreeView
-            nodes={root}
-            depth={0}
-            selectedPath={selected?.path ?? null}
-            onToggleDir={(n) => void toggleDir(n)}
-            onOpenFile={(e) => void openFile(e)}
+      <div className="shrink-0 border-b border-border p-1.5">
+        <div className="relative">
+          <IconSearch className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-faint" />
+          <Input
+            value={fileQuery}
+            onChange={(e) => setFileQuery(e.target.value)}
+            placeholder="Search files…"
+            autoComplete="off"
+            spellCheck={false}
+            className="h-8 pl-7 text-xs"
           />
+        </div>
+      </div>
+      <div className="min-h-0 flex-1 overflow-auto p-1.5">
+        {fileQuery.trim() ? (
+          searchResults === null ? (
+            <div className="flex justify-center py-8">
+              <Spinner className="h-4 w-4" />
+            </div>
+          ) : searchResults.length === 0 ? (
+            <p className="p-3 text-xs text-faint">No files match.</p>
+          ) : (
+            searchResults.map((f) => (
+              <button
+                key={f.path}
+                type="button"
+                onClick={() => void openFile(f)}
+                className={`flex min-h-[36px] w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-[13px] transition-colors md:min-h-[28px] md:py-1 ${
+                  f.path === selected?.path
+                    ? 'bg-border text-text'
+                    : 'text-dim hover:bg-surface hover:text-text'
+                }`}
+              >
+                <FileIcon name={f.name} className="h-4 w-4 shrink-0" />
+                <span className="min-w-0 flex-1 truncate" title={f.path}>
+                  {f.path}
+                </span>
+              </button>
+            ))
+          )
+        ) : (
+          <>
+            {root === null && !treeError && (
+              <div className="flex justify-center py-8">
+                <Spinner className="h-4 w-4" />
+              </div>
+            )}
+            {treeError && (
+              <div className="p-2">
+                <ErrorBox message={treeError} />
+              </div>
+            )}
+            {root !== null && root.length === 0 && (
+              <p className="p-3 text-xs text-faint">No files yet.</p>
+            )}
+            {root !== null && root.length > 0 && (
+              <TreeView
+                nodes={root}
+                depth={0}
+                selectedPath={selected?.path ?? null}
+                onToggleDir={(n) => void toggleDir(n)}
+                onOpenFile={(e) => void openFile(e)}
+              />
+            )}
+          </>
         )}
       </div>
     </div>
@@ -315,7 +391,7 @@ export default function FilesPane({ projectId }: { projectId: string }) {
         {selected && (
           <span className="shrink-0 text-xs text-faint">{formatBytes(selected.size)}</span>
         )}
-        {isReadme && (
+        {isMarkdown && (
           <div className="flex shrink-0 items-center gap-0.5 rounded-md border border-border p-0.5">
             {(['preview', 'edit'] as const).map((m) => (
               <button
@@ -359,7 +435,7 @@ export default function FilesPane({ projectId }: { projectId: string }) {
           <div className="p-3">
             <ErrorBox message={fileError} />
           </div>
-        ) : isReadme && preview ? (
+        ) : isMarkdown && preview ? (
           <div className="h-full overflow-y-auto overscroll-contain">
             <div className="mx-auto max-w-3xl px-5 py-5">
               <Markdown text={content} />

@@ -7,6 +7,7 @@ import type {
   DeviceFlowPoll,
   DeviceFlowStart,
   FileEntry,
+  GitFileChange,
   GitHubRepo,
   GitStatus,
   GitInfo,
@@ -182,7 +183,6 @@ export interface SettingsUpdate {
     apiKey?: string;
     model?: string;
     providers?: SavedProviderInput[];
-    activeProviderId?: string;
     currency?: string;
   };
   githubToken?: string;
@@ -290,8 +290,10 @@ export const api = {
     post<Project>('/api/projects/import', name ? { repoUrl, name } : { repoUrl }),
 
   // Files
-  listFiles: (id: string, path: string) =>
-    request<{ entries: FileEntry[] }>(`/api/projects/${id}/files?path=${encodeURIComponent(path)}`),
+  listFiles: (id: string, path: string, recursive = false) =>
+    request<{ entries: FileEntry[] }>(
+      `/api/projects/${id}/files?path=${encodeURIComponent(path)}${recursive ? '&recursive=true' : ''}`,
+    ),
   listAllFiles: (id: string) =>
     request<{ entries: FileEntry[] }>(`/api/projects/${id}/files?recursive=true`),
   readFile: (id: string, path: string) =>
@@ -417,6 +419,7 @@ export const api = {
     post<{ ok: boolean; hash?: string }>(`/api/projects/${id}/git/commit`, { message }),
   gitPull: (id: string) => post<void>(`/api/projects/${id}/git/pull`),
   gitFetch: (id: string) => post<void>(`/api/projects/${id}/git/fetch`),
+  gitChanges: (id: string) => request<{ changes: GitFileChange[] }>(`/api/projects/${id}/git/changes`),
   oauthDeviceStart: () => post<DeviceFlowStart>('/api/github/oauth/device/start'),
   oauthDevicePoll: (flowId: string) =>
     post<DeviceFlowPoll>('/api/github/oauth/device/poll', { flowId }),

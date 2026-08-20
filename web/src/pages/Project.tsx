@@ -64,6 +64,9 @@ export default function Project() {
   const [error, setError] = useState<string | null>(null);
   const [mobilePane, setMobilePane] = useState<'chat' | 'preview'>('chat');
   const [chatCollapsed, setChatCollapsed] = useState(false);
+  // Bumped when the bottom-nav Chat button is pressed — tells ChatPanel to
+  // return to its chat subtab even if the user was on files/terminal/etc.
+  const [chatResetSignal, setChatResetSignal] = useState(0);
   const [previewRefreshKey, setPreviewRefreshKey] = useState(0);
   const [chatSide] = useState<'left' | 'right'>(() => getChatSide());
   const [debugHud] = useState(() => getDebugHud());
@@ -123,6 +126,7 @@ export default function Project() {
       initialProviderId={initialState?.providerId}
       initialModel={initialState?.model}
       initialThinking={initialState?.thinking}
+      chatResetSignal={chatResetSignal}
     />
   );
 
@@ -202,7 +206,10 @@ export default function Project() {
               <button
                 key={item.id}
                 type="button"
-                onClick={() => setMobilePane(item.id)}
+                onClick={() => {
+                  setMobilePane(item.id);
+                  if (item.id === 'chat') setChatResetSignal((n) => n + 1);
+                }}
                 className={`flex h-14 flex-col items-center justify-center gap-0.5 text-[10px] transition-colors ${
                   mobilePane === item.id ? 'text-accent' : 'text-subtle'
                 }`}

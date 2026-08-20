@@ -101,7 +101,7 @@ function NewProjectDialog({
         .getSettings()
         .then((s) => {
           setProviders(s.llm.providers ?? []);
-          setProviderId(s.llm.activeProviderId ?? '');
+          setProviderId(s.llm.providers?.[0]?.id ?? '');
           setModel(s.llm.model);
           setBaseURL(s.llm.baseURL);
           setDefaultThinking(s.defaultThinking ?? '');

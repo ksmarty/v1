@@ -61,20 +61,18 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-// diagnosticsProvider reports the effective LLM provider: the saved provider
-// when one is active, otherwise the legacy keyed settings. The API key is
-// masked to its first and last four characters.
+// diagnosticsProvider reports the effective LLM provider: the first saved
+// provider when the user has any, otherwise the legacy keyed settings. The
+// API key is masked to its first and last four characters.
 func (s *Server) diagnosticsProvider(userID string) map[string]any {
-	baseURL, apiKey, model := "", "", ""
-	if activeID, _, _ := s.st.GetUserSetting(userID, keyLLMActiveProvider); activeID != "" {
-		if p := s.findLLMProvider(userID, activeID); p != nil {
-			return map[string]any{
-				"id": p.ID, "name": p.Name, "baseURL": p.BaseURL, "model": p.Model,
-				"apiKey": maskKey(p.APIKey),
-			}
+	if ps := s.llmProviders(userID); len(ps) > 0 {
+		p := ps[0]
+		return map[string]any{
+			"id": p.ID, "name": p.Name, "baseURL": p.BaseURL, "model": p.Model,
+			"apiKey": maskKey(p.APIKey),
 		}
 	}
-	baseURL, apiKey, model = s.llmConfig(userID)
+	baseURL, apiKey, model := s.llmConfig(userID)
 	return map[string]any{
 		"name": "legacy settings", "baseURL": baseURL, "model": model, "apiKey": maskKey(apiKey),
 	}

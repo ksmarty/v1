@@ -300,6 +300,104 @@ func GetStatus(path string) Status {
 	return st
 }
 
+// FileChange is one worktree change vs HEAD, with both sides' contents so the
+// caller can render a diff. Binary files carry no contents.
+type FileChange struct {
+	Path      string `json:"path"`
+	Status    string `json:"status"` // modified | added | deleted | untracked
+	Old       string `json:"old"`
+	New       string `json:"new"`
+	Binary    bool   `json:"binary,omitempty"`
+	Truncated bool   `json:"truncated,omitempty"`
+}
+
+// maxChangeBytes caps each side of a change's contents.
+const maxChangeBytes = 256 << 10
+
+// Changes lists worktree changes (tracked modifications and untracked files)
+// with old (HEAD) and new (disk) contents for diff rendering.
+func Changes(path string) ([]FileChange, error) {
+	repo, err := git.PlainOpen(path)
+	if err != nil {
+		return nil, fmt.Errorf("not a git repository")
+	}
+	w, err := repo.Worktree()
+	if err != nil {
+		return nil, err
+	}
+	ws, err := w.Status()
+	if err != nil {
+		return nil, err
+	}
+	if ws.IsClean() {
+		return []FileChange{}, nil
+	}
+	var headTree *object.Tree
+	if head, err := repo.Head(); err == nil {
+		if c, err := repo.CommitObject(head.Hash()); err == nil {
+			headTree, _ = c.Tree()
+		}
+	}
+	capped := func(b []byte, err error) (string, bool) {
+		if err != nil {
+			return "", false
+		}
+		if len(b) > maxChangeBytes {
+			return string(b[:maxChangeBytes]), true
+		}
+		return string(b), false
+	}
+	headContent := func(p string) (string, bool) {
+		if headTree == nil {
+			return "", false
+		}
+		f, err := headTree.File(p)
+		if err != nil {
+			return "", false
+		}
+		r, err := f.Blob.Reader()
+		if err != nil {
+			return "", false
+		}
+		defer r.Close()
+		b, err := io.ReadAll(io.LimitReader(r, maxChangeBytes+1))
+		return capped(b, err)
+	}
+	out := []FileChange{}
+	for p, fs := range ws {
+		fc := FileChange{Path: p}
+		switch {
+		case fs.Worktree == git.Untracked:
+			fc.Status = "untracked"
+		case fs.Worktree == git.Deleted:
+			fc.Status = "deleted"
+		case fs.Worktree == git.Unmodified && fs.Staging == git.Unmodified:
+			continue
+		case fs.Staging == git.Added && fs.Worktree == git.Unmodified:
+			fc.Status = "added"
+		default:
+			fc.Status = "modified"
+		}
+		if fc.Status != "untracked" {
+			fc.Old, fc.Truncated = headContent(p)
+		}
+		if fc.Status != "deleted" {
+			b, err := os.ReadFile(filepath.Join(path, p))
+			newContent, newTrunc := capped(b, err)
+			fc.New = newContent
+			fc.Truncated = fc.Truncated || newTrunc
+		}
+		if strings.ContainsRune(fc.Old, 0) || strings.ContainsRune(fc.New, 0) {
+			fc.Old, fc.New = "", ""
+			fc.Binary = true
+			fc.Truncated = false
+		}
+		out = append(out, fc)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Path < out[j].Path })
+	return out, nil
+}
+
 func authorSignature(login string) *object.Signature {
 	if login == "" {
 		return &object.Signature{Name: "v1", Email: "v1@localhost", When: time.Now()}

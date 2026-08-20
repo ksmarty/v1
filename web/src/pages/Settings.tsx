@@ -117,7 +117,7 @@ const SETTINGS_SEARCH: {
   { id: 'sec-chat-side', page: 'appearance', label: 'Chat side', hint: 'Chat pane left or right', keywords: 'chat side left right desktop layout appearance' },
   { id: 'sec-chat-tabs', page: 'appearance', label: 'Chat tabs', hint: 'Reorder and hide project tabs', keywords: 'tabs chat files terminal git memories project order hide drag' },
   { id: 'sec-tool-calls', page: 'appearance', label: 'Tool calls', hint: 'Pretty-print JSON', keywords: 'tool calls json pretty print format result arguments' },
-  { id: 'sec-thinking-collapsed', page: 'appearance', label: 'Thinking', hint: 'Collapse reasoning blocks by default', keywords: 'thinking reasoning collapse blocks default stream hide' },
+  { id: 'sec-thinking-collapsed', page: 'appearance', label: 'Thinking blocks', hint: 'Collapse reasoning blocks by default', keywords: 'thinking reasoning collapse blocks default stream hide' },
   { id: 'sec-clear-cache', page: 'llm', label: 'Cached data', hint: 'Clear the provider catalog cache', keywords: 'cache clear providers catalog thinking metadata refetch reset' },
   { id: 'sec-auth', page: 'auth', label: 'Auth', hint: 'Change the password', keywords: 'password auth login security change password' },
   { id: 'sec-oidc', page: 'auth', label: 'OIDC login', hint: 'Single sign-on (admin)', keywords: 'oidc sso single sign on authentik keycloak google issuer client id secret callback redirect allowed emails login' },
@@ -682,8 +682,8 @@ function OidcControl() {
         </span>
       </Field>
       <div className="rounded-lg border border-border/70 bg-surface/60 px-3 py-2 text-xs text-dim">
-        Register this URI with your provider:{' '}
-        <span className="break-all font-mono text-text">
+        Register this URI with your provider:
+        <span className="mt-0.5 block break-all font-mono text-text">
           {callbackUri.trim() || defaultCallback}
         </span>
       </div>
@@ -833,7 +833,11 @@ function UsersControl() {
           {firstUser && (
             <p className="text-xs text-faint">The first user must be an admin.</p>
           )}
-          <Button type="submit" disabled={busy} className="h-8 whitespace-nowrap px-3 text-sm">
+          <Button
+            type="submit"
+            disabled={busy || username.trim() === '' || password === ''}
+            className="h-8 whitespace-nowrap px-3 text-sm"
+          >
             {busy ? <Spinner className="h-3.5 w-3.5" /> : 'Add user'}
           </Button>
         </div>
@@ -1285,7 +1289,6 @@ export default function Settings() {
 
   // Saved providers
   const [providers, setProviders] = useState<SettingsType['llm']['providers']>([]);
-  const [activeProviderId, setActiveProviderId] = useState('');
   const [provName, setProvName] = useState('');
   const [provBusyId, setProvBusyId] = useState<string | null>(null);
   const [provError, setProvError] = useState<string | null>(null);
@@ -1421,10 +1424,7 @@ export default function Settings() {
         setOauthClientId(s.github.oauthClientId);
         setVercelClientId(s.vercel.oauthClientId);
         setProviders(s.llm.providers ?? []);
-        setActiveProviderId(s.llm.activeProviderId ?? '');
         setCurrency(s.llm?.currency ?? 'USD');
-        const active = (s.llm.providers ?? []).find((p) => p.id === s.llm.activeProviderId);
-        setProvName(active?.name ?? '');
         setSysPrompt(s.systemPrompt ?? '');
         setDefThinking(s.defaultThinking ?? '');
       })
@@ -1460,7 +1460,7 @@ export default function Settings() {
       }
       const name = provName.trim() || host || 'Provider';
       if (editing && editing !== 'new') {
-        // Editing one saved provider only — the active provider is untouched.
+        // Editing one saved provider only.
         const list = providers.map((p) =>
           p.id === editing
             ? { id: p.id, name, baseURL, model, ...(apiKey ? { apiKey } : {}) }
@@ -1468,8 +1468,9 @@ export default function Settings() {
         );
         await api.updateSettings({ llm: { providers: list } });
       } else {
-        // Adding a fresh provider: append, and only auto-activate it when
-        // there is no active provider yet (e.g. first setup).
+        // Adding a fresh provider: append it. On the very first save the
+        // backend mirrors it into the effective config so chat works
+        // immediately.
         const newId = randomId();
         const list = providers.map((p) => ({
           id: p.id,
@@ -1478,11 +1479,7 @@ export default function Settings() {
           model: p.model,
         }));
         list.push({ id: newId, name, baseURL, model, ...(apiKey ? { apiKey } : {}) });
-        const patch: { providers: typeof list; activeProviderId?: string } = {
-          providers: list,
-        };
-        if (!activeProviderId) patch.activeProviderId = newId;
-        await api.updateSettings({ llm: patch });
+        await api.updateSettings({ llm: { providers: list } });
       }
       setLlmSaved(true);
       setApiKey('');
@@ -1505,8 +1502,7 @@ export default function Settings() {
     setLlmError(null);
   };
 
-  // Load a saved provider into the form for editing. Does not switch the
-  // active provider — saving updates only this entry.
+  // Load a saved provider into the form for editing.
   const startEdit = (p: { id: string; name: string; baseURL: string; model: string }) => {
     setEditing(p.id);
     setProvName(p.name);
@@ -1530,30 +1526,14 @@ export default function Settings() {
     }
   };
 
-  const useProvider = async (id: string) => {
-    setProvBusyId(id);
-    setProvError(null);
-    try {
-      await api.updateSettings({ llm: { activeProviderId: id } });
-      reloadSettings();
-    } catch (err) {
-      setProvError(errMsg(err));
-    } finally {
-      setProvBusyId(null);
-    }
-  };
-
   const deleteProvider = async (id: string) => {
     setProvBusyId(id);
     setProvError(null);
     try {
       const rest = providers.filter((p) => p.id !== id);
-      const nextActive =
-        rest.length > 0 ? (activeProviderId === id ? rest[0].id : activeProviderId) : '';
       await api.updateSettings({
         llm: {
           providers: rest.map((p) => ({ id: p.id, name: p.name, baseURL: p.baseURL, model: p.model })),
-          activeProviderId: nextActive,
         },
       });
       reloadSettings();
@@ -1939,7 +1919,10 @@ export default function Settings() {
                   ? baseURL !== settings.llm.baseURL ||
                     model !== settings.llm.model ||
                     apiKey !== '' ||
-                    provName !== (providers.find((p) => p.id === activeProviderId)?.name ?? '')
+                    provName !==
+                      (editing && editing !== 'new'
+                        ? (providers.find((p) => p.id === editing)?.name ?? '')
+                        : '')
                   : false
               }
               extra={
@@ -1979,18 +1962,11 @@ export default function Settings() {
                 {providers.map((p) => (
                   <li
                     key={p.id}
-                    className={`flex items-center gap-2 rounded-lg border border-border px-3 py-2 ${
-                      p.id === activeProviderId ? 'bg-surface' : ''
-                    }`}
+                    className="flex items-center gap-2 rounded-lg border border-border px-3 py-2"
                   >
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5">
                         <span className="truncate text-sm text-text">{p.name}</span>
-                        {p.id === activeProviderId && (
-                          <span className="rounded-full bg-emerald-950 px-1.5 py-0.5 text-[10px] text-emerald-400">
-                            active
-                          </span>
-                        )}
                       </div>
                       <div className="truncate font-mono text-[11px] text-faint">
                         {p.baseURL || '(no base URL)'}
@@ -2009,20 +1985,6 @@ export default function Settings() {
                       >
                         Edit
                       </Button>
-                      {p.id !== activeProviderId && (
-                        <Button
-                          variant="outline"
-                          className="h-7 px-2 text-xs"
-                          disabled={provBusyId === p.id}
-                          onClick={() => void useProvider(p.id)}
-                        >
-                          {provBusyId === p.id ? (
-                            <Spinner className="h-3.5 w-3.5" />
-                          ) : (
-                            'Use'
-                          )}
-                        </Button>
-                      )}
                       <button
                         type="button"
                         aria-label={`Delete provider ${p.name}`}
@@ -2400,11 +2362,11 @@ export default function Settings() {
         </Section>
         <Section
           id="sec-thinking-collapsed"
-          title="Thinking"
-          description="Start reasoning blocks collapsed instead of following the stream. Off shows thinking as it arrives."
+          title="Thinking blocks"
+          description="Controls how the model's reasoning appears in the chat. On: thinking starts collapsed — expand a block to read it. Off: thinking stays open and streams in as the model reasons."
         >
           <div>
-            <span className="mb-1 block text-xs text-subtle">Collapse thinking by default</span>
+            <span className="mb-1 block text-xs text-subtle">Start thinking blocks collapsed</span>
             <ThinkingCollapsedControl />
           </div>
         </Section>

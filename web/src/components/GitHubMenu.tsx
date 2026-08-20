@@ -8,7 +8,6 @@ import {
   IconArrowUp,
   IconExternalLink,
   IconGitBranch,
-  IconGitHub,
 } from './icons';
 
 function sanitizeRepoName(name: string): string {
@@ -403,7 +402,7 @@ export default function GitHubMenu({
   return (
     <div className="relative" ref={menuRef}>
       <IconButton aria-label="GitHub" title="GitHub" onClick={() => setOpen((o) => !o)}>
-        <IconGitHub className="h-5 w-5" />
+        <IconGitBranch className="h-5 w-5" />
       </IconButton>
 
       {open && (

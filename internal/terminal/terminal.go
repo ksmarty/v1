@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"sync"
+	"time"
 
 	"github.com/creack/pty"
 	"github.com/gorilla/websocket"
@@ -50,6 +51,33 @@ func (m *Manager) ServeWS(w http.ResponseWriter, r *http.Request, projectID, dir
 		return
 	}
 	defer conn.Close()
+
+	// Keepalive: reverse proxies (Cloudflare, Traefik) drop WebSockets that
+	// sit idle — an open terminal with no output looks exactly like that.
+	// Ping every 25s and treat any pong as proof of life.
+	conn.SetReadLimit(1 << 20)
+	_ = conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+	conn.SetPongHandler(func(string) error {
+		_ = conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+		return nil
+	})
+	stopPing := make(chan struct{})
+	defer close(stopPing)
+	go func() {
+		t := time.NewTicker(25 * time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-stopPing:
+				return
+			case <-t.C:
+				// WriteControl is safe alongside the output goroutine's writes.
+				if err := conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(10*time.Second)); err != nil {
+					return
+				}
+			}
+		}
+	}()
 
 	shell := "bash"
 	if _, err := exec.LookPath("bash"); err != nil {

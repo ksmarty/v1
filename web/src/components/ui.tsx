@@ -209,6 +209,7 @@ export function SaveRow({
   error,
   extra,
   pulse = false,
+  disabled = false,
 }: {
   saving: boolean;
   saved: boolean;
@@ -216,14 +217,16 @@ export function SaveRow({
   extra?: ReactNode;
   /** Breathing accent glow on Save — set while there are unsaved changes. */
   pulse?: boolean;
+  /** Form validation — the button stays off until required fields are valid. */
+  disabled?: boolean;
 }) {
   return (
     <div className="flex items-center gap-2">
       <Button
         type="submit"
         variant="outline"
-        disabled={saving}
-        className={pulse ? 'v1-save-breathe' : ''}
+        disabled={saving || disabled}
+        className={pulse && !disabled ? 'v1-save-breathe' : ''}
       >
         {saving ? <Spinner className="h-4 w-4" /> : 'Save'}
       </Button>

@@ -172,16 +172,14 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 			"apiKeySet": p.APIKey != "",
 		})
 	}
-	activeProviderID, _, _ := s.st.GetUserSetting(userID, keyLLMActiveProvider)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"llm": map[string]any{
-			"baseURL":          baseURL,
-			"model":            model,
-			"apiKeySet":        apiKey != "",
-			"models":           models,
-			"providers":        providerJSON,
-			"activeProviderId": activeProviderID,
-			"currency":         s.currency(userID),
+			"baseURL":   baseURL,
+			"model":     model,
+			"apiKeySet": apiKey != "",
+			"models":    models,
+			"providers": providerJSON,
+			"currency":  s.currency(userID),
 		},
 		"github": map[string]any{
 			"tokenSet":      s.githubToken(userID) != "",
@@ -213,12 +211,11 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	userID := s.currentUser(r).ID
 	var body struct {
 		LLM *struct {
-			BaseURL          *string              `json:"baseURL"`
-			APIKey           *string              `json:"apiKey"`
-			Model            *string              `json:"model"`
-			Providers        *[]llmProviderRecord `json:"providers"`
-			ActiveProviderID *string              `json:"activeProviderId"`
-			Currency         *string              `json:"currency"`
+			BaseURL   *string              `json:"baseURL"`
+			APIKey    *string              `json:"apiKey"`
+			Model     *string              `json:"model"`
+			Providers *[]llmProviderRecord `json:"providers"`
+			Currency  *string              `json:"currency"`
 		} `json:"llm"`
 		GitHubToken         *string             `json:"githubToken"`
 		GitHubOAuthClientID *string             `json:"githubOAuthClientId"`
@@ -293,34 +290,23 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 			// drop cached live model lists so the next providers request
 			// repopulates them instead of serving stale or missing models.
 			invalidateCustomModelsCache()
-		}
-		// 2. Activate a provider: mirrors it into the legacy single-provider
-		// keys so every existing code path (chat gating, retries, test) works.
-		if body.LLM.ActiveProviderID != nil {
-			if *body.LLM.ActiveProviderID == "" {
-				if err := s.st.DeleteUserSetting(userID, keyLLMActiveProvider); err != nil {
-					writeError(w, http.StatusInternalServerError, err.Error())
-					return
-				}
-			} else {
-				p := s.findLLMProvider(userID, *body.LLM.ActiveProviderID)
-				if p == nil {
-					writeError(w, http.StatusBadRequest, "unknown provider id")
-					return
-				}
-				for key, v := range map[string]string{
-					keyLLMBaseURL: p.BaseURL,
-					keyLLMAPIKey:  p.APIKey,
-					keyLLMModel:   p.Model,
-				} {
-					if err := s.st.SetUserSetting(userID, key, v); err != nil {
-						writeError(w, http.StatusInternalServerError, err.Error())
-						return
+			// First-run convenience: when the user saves their first provider
+			// and has no effective config of their own yet, mirror that
+			// provider into the single-provider keys so chat works without a
+			// separate "activate" step. There is no active-provider concept —
+			// projects and new chats just default to the first saved provider.
+			if len(merged) > 0 {
+				if v, ok := s.userSetting(userID, keyLLMBaseURL); !ok || v == "" {
+					for key, v := range map[string]string{
+						keyLLMBaseURL: merged[0].BaseURL,
+						keyLLMAPIKey:  merged[0].APIKey,
+						keyLLMModel:   merged[0].Model,
+					} {
+						if err := s.st.SetUserSetting(userID, key, v); err != nil {
+							writeError(w, http.StatusInternalServerError, err.Error())
+							return
+						}
 					}
-				}
-				if err := s.st.SetUserSetting(userID, keyLLMActiveProvider, p.ID); err != nil {
-					writeError(w, http.StatusInternalServerError, err.Error())
-					return
 				}
 			}
 		}

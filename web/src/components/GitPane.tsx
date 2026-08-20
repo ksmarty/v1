@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api';
-import type { GitCommit, GitInfo, GitStatus } from '../types';
-import { errMsg } from '../utils';
+import type { GitCommit, GitFileChange, GitInfo, GitStatus } from '../types';
+import { diffLines, errMsg } from '../utils';
 import {
   Button,
   Dialog,
@@ -18,6 +18,9 @@ import {
   IconPlus,
   IconCheck,
   IconRefresh,
+  IconChevronDown,
+  IconChevronRight,
+  IconFile,
 } from './icons';
 
 function timeAgo(unix: number): string {
@@ -26,6 +29,123 @@ function timeAgo(unix: number): string {
   if (secs < 3600) return `${Math.floor(secs / 60)}m ago`;
   if (secs < 86400) return `${Math.floor(secs / 3600)}h ago`;
   return `${Math.floor(secs / 86400)}d ago`;
+}
+
+// Compact diff for one changed file: 2 context lines either side of the
+// changed block, removed lines red, added lines green.
+function ChangeDiff({ c }: { c: GitFileChange }) {
+  if (c.binary) {
+    return <p className="px-3 py-2 font-mono text-[11px] text-faint">Binary file — no diff.</p>;
+  }
+  const d = diffLines(c.old, c.new);
+  const ctx = (lines: string[], side: 'before' | 'after') => {
+    const truncated = lines.length > 2;
+    const shown = side === 'before' ? lines.slice(-2) : lines.slice(0, 2);
+    return (
+      <>
+        {side === 'before' && truncated && <div className="text-faint">⋮</div>}
+        {shown.map((l, i) => (
+          <div key={i} className="whitespace-pre-wrap break-words text-faint">
+            {'  '}
+            {l}
+          </div>
+        ))}
+        {side === 'after' && truncated && <div className="text-faint">⋮</div>}
+      </>
+    );
+  };
+  return (
+    <div className="overflow-x-auto border-t border-border/80 px-3 py-2 font-mono text-[11px] leading-relaxed">
+      {ctx(d.before, 'before')}
+      {d.removed.map((l, i) => (
+        <div key={`r${i}`} className="whitespace-pre-wrap break-words bg-red-500/10 text-red-400">
+          - {l}
+        </div>
+      ))}
+      {d.added.map((l, i) => (
+        <div key={`a${i}`} className="whitespace-pre-wrap break-words bg-emerald-500/10 text-emerald-400">
+          + {l}
+        </div>
+      ))}
+      {ctx(d.after, 'after')}
+      {c.truncated && (
+        <p className="pt-1 text-faint">…file too large — diff truncated at 256 KB.</p>
+      )}
+    </div>
+  );
+}
+
+const changeStatusStyle: Record<GitFileChange['status'], string> = {
+  modified: 'bg-amber-500/15 text-amber-300',
+  added: 'bg-emerald-500/15 text-emerald-300',
+  untracked: 'bg-sky-500/15 text-sky-300',
+  deleted: 'bg-red-500/15 text-red-300',
+};
+
+// Modal listing worktree changes with per-file diffs.
+function ChangesModal({
+  projectId,
+  open,
+  onClose,
+}: {
+  projectId: string;
+  open: boolean;
+  onClose: () => void;
+}) {
+  const [changes, setChanges] = useState<GitFileChange[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [openPath, setOpenPath] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setChanges(null);
+    setError(null);
+    setOpenPath(null);
+    api
+      .gitChanges(projectId)
+      .then((r) => setChanges(r.changes))
+      .catch((e) => setError(errMsg(e)));
+  }, [open, projectId]);
+
+  return (
+    <Dialog open={open} onClose={onClose} title="Changed files" wide fullScreen fixedBody align="top">
+      {error && <ErrorBox message={error} />}
+      {!error && changes === null && (
+        <div className="flex justify-center py-8">
+          <Spinner className="h-5 w-5" />
+        </div>
+      )}
+      {changes !== null && changes.length === 0 && (
+        <p className="py-4 text-center text-sm text-subtle">No changes — the worktree is clean.</p>
+      )}
+      <div className="flex flex-col gap-1.5">
+        {(changes ?? []).map((c) => (
+          <div key={c.path} className="overflow-hidden rounded-lg border border-border bg-surface/50">
+            <button
+              type="button"
+              onClick={() => setOpenPath((p) => (p === c.path ? null : c.path))}
+              className="flex min-h-[36px] w-full items-center gap-2 px-3 py-1.5 text-left"
+            >
+              {openPath === c.path ? (
+                <IconChevronDown className="h-3 w-3 shrink-0 text-faint" />
+              ) : (
+                <IconChevronRight className="h-3 w-3 shrink-0 text-faint" />
+              )}
+              <span className="min-w-0 flex-1 truncate font-mono text-xs text-text" title={c.path}>
+                {c.path}
+              </span>
+              <span
+                className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${changeStatusStyle[c.status]}`}
+              >
+                {c.status}
+              </span>
+            </button>
+            {openPath === c.path && <ChangeDiff c={c} />}
+          </div>
+        ))}
+      </div>
+    </Dialog>
+  );
 }
 
 export default function GitPane({
@@ -46,6 +166,7 @@ export default function GitPane({
   const [action, setAction] = useState<'commit' | 'push' | null>(null);
   const [commitMsg, setCommitMsg] = useState('');
   const [commitInfo, setCommitInfo] = useState<GitCommit | null>(null);
+  const [changesOpen, setChangesOpen] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -243,22 +364,30 @@ export default function GitPane({
             </span>
             <span className="font-mono text-[11px] text-dim">{st.modified} mod</span>
             <span className="font-mono text-[11px] text-dim">{st.untracked} untracked</span>
-            <div className="flex-1" />
-            {dirty && (
-              <Button
-                variant="outline"
-                className="shrink-0 px-2.5 text-xs"
-                onClick={() => void runAction('commit')}
-                disabled={busy}
-                title="Commit local changes"
-              >
-                <IconCheck className="h-3.5 w-3.5" /> Commit
-              </Button>
-            )}
+          </div>
+          <div className="grid grid-cols-2 gap-1.5 sm:flex sm:flex-wrap">
+            <Button
+              variant="outline"
+              className="h-8 px-2.5 text-xs sm:h-7"
+              onClick={() => setChangesOpen(true)}
+              disabled={busy || !dirty}
+              title="View changed files and their diffs"
+            >
+              <IconFile className="h-3.5 w-3.5" /> Changes ({st.modified + st.untracked})
+            </Button>
+            <Button
+              variant="outline"
+              className="h-8 px-2.5 text-xs sm:h-7"
+              onClick={() => void runAction('commit')}
+              disabled={busy || !dirty}
+              title={dirty ? 'Commit local changes' : 'No changes to commit'}
+            >
+              <IconCheck className="h-3.5 w-3.5" /> Commit
+            </Button>
             {(dirty || ahead > 0) && (
               <Button
                 variant="outline"
-                className="shrink-0 px-2.5 text-xs"
+                className="h-8 px-2.5 text-xs sm:h-7"
                 onClick={() => {
                   setAction('push');
                   setCommitMsg('');
@@ -272,7 +401,7 @@ export default function GitPane({
             {st?.repoUrl && (
               <Button
                 variant="outline"
-                className="shrink-0 px-2.5 text-xs"
+                className="h-8 px-2.5 text-xs sm:h-7"
                 onClick={() => void fetchRemote()}
                 disabled={busy}
                 title="Fetch from origin (refresh ahead/behind without changing files)"
@@ -283,7 +412,7 @@ export default function GitPane({
             {st?.repoUrl && (
               <Button
                 variant="outline"
-                className="shrink-0 px-2.5 text-xs"
+                className="h-8 px-2.5 text-xs sm:h-7"
                 onClick={() => void act(() => api.gitPull(projectId))}
                 disabled={busy}
                 title="Pull from origin"
@@ -416,12 +545,13 @@ export default function GitPane({
         </div>
       </Dialog>
 
+      <ChangesModal projectId={projectId} open={changesOpen} onClose={() => setChangesOpen(false)} />
+
       <Dialog
         open={confirmRevert !== null}
         onClose={() => setConfirmRevert(null)}
         title="Revert repo to this commit?"
-      >
-        <p className="text-sm text-subtle">
+      >        <p className="text-sm text-subtle">
           Hard-resets the working tree to{' '}
           <span className="font-mono text-text">{confirmRevert?.short}</span> —{' '}
           {confirmRevert?.message ?? ''}. Every change made after this commit will

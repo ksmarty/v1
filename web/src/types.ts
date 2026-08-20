@@ -35,7 +35,6 @@ export interface LLMSettings {
   apiKeySet: boolean;
   models: ProviderModel[];
   providers: SavedProvider[];
-  activeProviderId: string;
   /** ISO 4217 currency code used to display provider-supplied cost. */
   currency?: string;
 }
@@ -281,6 +280,7 @@ export interface InstalledSkill {
   skillsmpUrl?: string;
   dir: string;
   enabled: boolean;
+  builtin?: boolean;
 }
 
 export interface SkillSearchResult {
@@ -330,6 +330,15 @@ export interface GitCommit {
   message: string;
   author: string;
   time: number;
+}
+
+export interface GitFileChange {
+  path: string;
+  status: 'modified' | 'added' | 'deleted' | 'untracked';
+  old: string;
+  new: string;
+  binary?: boolean;
+  truncated?: boolean;
 }
 
 export interface GitInfo {
