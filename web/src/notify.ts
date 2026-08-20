@@ -51,6 +51,25 @@ export async function notifyTurnDone(
   await showNotification(title, body, `v1-turn-${projectId}`, url);
 }
 
+/**
+ * System notification for a failed chat turn (LLM request error, tool
+ * failure, network drop, ...). Fires only when the window doesn't have
+ * focus, mirroring the finished-turn notification.
+ */
+export async function notifyTurnError(
+  projectId: string,
+  sessionId: string,
+  projectName: string,
+  message: string,
+) {
+  if (!getNotifyEnabled()) return;
+  if (document.hasFocus()) return;
+  const title = projectName ? `${projectName} — turn failed` : 'Turn failed';
+  const body = (message.replace(/\s+/g, ' ').trim() || 'Something went wrong.').slice(0, 140);
+  const url = `/project/${encodeURIComponent(projectId)}?session=${encodeURIComponent(sessionId)}`;
+  await showNotification(title, body, `v1-turn-${projectId}`, url);
+}
+
 // Test notification for the Settings → About control: fires regardless of the
 // foreground state so the user can verify the permission + service worker
 // path on their device.

@@ -31,7 +31,7 @@ import type {
   Todo,
 } from '../types';
 import { errMsg, diffLines, getDebugHud, getJsonPretty, getThinkingCollapsed, getToolCallsCollapsed } from '../utils';
-import { notifyTurnDone } from '../notify';
+import { notifyTurnDone, notifyTurnError } from '../notify';
 import { permissionMeta } from '../permissions';
 
 // sessionStorageKey is the localStorage key remembering the last-used chat
@@ -2719,6 +2719,7 @@ export default function ChatPane({
             ...prev,
             { kind: 'msg', key: `e${++counterRef.current}`, role: 'error', content: ev.error },
           ]);
+          void notifyTurnError(projectId, sessionId, projectName, ev.error ?? '');
           setAskPrompt(null);
           setSteering([]);
           setLocalStatus(null);
