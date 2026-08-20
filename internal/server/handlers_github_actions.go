@@ -93,7 +93,9 @@ func (s *Server) handleGitHubWorkflows(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleGitHubImages lists container image packages published for an owner
-// (user or org) on ghcr.io. Works for public packages without a token.
+// (user or org) on ghcr.io. GitHub's packages API requires authentication
+// (anonymous requests 404 even for public packages), and the token needs the
+// read:packages scope — the OAuth device flow requests it.
 func (s *Server) handleGitHubImages(w http.ResponseWriter, r *http.Request) {
 	c := s.githubActionsClient(s.currentUser(r).ID)
 	owner := strings.TrimSpace(r.URL.Query().Get("owner"))
@@ -115,6 +117,12 @@ func (s *Server) handleGitHubImages(w http.ResponseWriter, r *http.Request) {
 		if status < 400 {
 			break
 		}
+	}
+	if status == http.StatusNotFound {
+		// Packages 404 means "no token", "token lacks read:packages", or
+		// "no such owner" — GitHub doesn't distinguish them.
+		writeError(w, status, "GitHub returned 404 for "+owner+"'s packages — listing container images needs a GitHub token with the read:packages scope (Settings → GitHub; reconnect OAuth if you linked it before read:packages was added)")
+		return
 	}
 	if status >= 400 {
 		writeError(w, status, "GitHub API "+strconv.Itoa(status)+" for owner "+owner+": "+ghErrBody(body))

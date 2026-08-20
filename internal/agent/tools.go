@@ -388,6 +388,8 @@ func (e *Executor) runCommandBackground(ctx context.Context, argsJSON string) (s
 
 // setProjectName renames the project — the agent uses it at the start of a
 // new project so the display name comes from the work, not the first prompt.
+// Only the project's first session may rename it; later sessions get a
+// refusal so they don't clobber the established name.
 func (e *Executor) setProjectName(argsJSON string) (string, error) {
 	var args struct {
 		Name string `json:"name"`
@@ -405,6 +407,13 @@ func (e *Executor) setProjectName(argsJSON string) (string, error) {
 	}
 	if e.Store == nil {
 		return "", fmt.Errorf("project store unavailable")
+	}
+	def, err := e.Store.EnsureDefaultSession(e.ProjectID)
+	if err != nil {
+		return "", err
+	}
+	if e.SessionID != "" && def.ID != e.SessionID {
+		return "", fmt.Errorf("only the project's first session can set the project name")
 	}
 	if err := e.Store.RenameProject(e.ProjectID, name); err != nil {
 		return "", err

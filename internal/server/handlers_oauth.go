@@ -26,7 +26,7 @@ type oauthFlow struct {
 const (
 	deviceCodeURL  = "https://github.com/login/device/code"
 	accessTokenURL = "https://github.com/login/oauth/access_token"
-	deviceScope    = "repo read:user"
+	deviceScope    = "repo read:user read:packages"
 )
 
 // githubFormPost posts a form to a github.com endpoint and decodes the JSON

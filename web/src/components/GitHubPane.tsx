@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { api } from '../api';
 import type { GitHubContainerImage, GitHubWorkflowRun } from '../types';
 import { errMsg } from '../utils';
@@ -22,17 +22,20 @@ export default function GitHubPane({ repoUrl }: { repoUrl?: string }) {
   const [images, setImages] = useState<GitHubContainerImage[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const autoLoaded = useRef('');
 
   useEffect(() => {
     if (suggested) {
       setQuery(suggested);
       setOwner(suggested.split('/')[0] ?? '');
+      if (autoLoaded.current !== suggested) {
+        autoLoaded.current = suggested;
+        void loadRepo(suggested);
+      }
     }
   }, [suggested]);
 
-  const load = async (e?: FormEvent) => {
-    e?.preventDefault();
-    const repo = query.trim();
+  const loadRepo = async (repo: string) => {
     if (!repo) {
       setError('Enter a repository as owner/name, e.g. octocat/Hello-World.');
       return;
@@ -61,6 +64,11 @@ export default function GitHubPane({ repoUrl }: { repoUrl?: string }) {
     } finally {
       setLoading(false);
     }
+  };
+
+  const load = (e?: FormEvent) => {
+    e?.preventDefault();
+    void loadRepo(query.trim());
   };
 
   const badge = (s: string, c: string | null) => {

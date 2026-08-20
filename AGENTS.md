@@ -84,7 +84,8 @@ or `make dev`), then report: (1) the new stamped build version (`v1 <version>
   composer. Sessions can be renamed (`POST /sessions/{id}/rename`). Edits and
   retries reject with `run_active` (409) while a run is active.
 - Agent tools beyond file/command work: `set_project_name` renames the
-  project (emits a `project_renamed` event so the UI header updates);
+  project (emits a `project_renamed` event so the UI header updates) — only
+  the project's first session may rename it, later sessions are refused;
   `run_command_background` starts a command detached from the turn (shared
   `agent.BackgroundManager` on the server): the tool returns a job id, and the
   result is persisted as a user message ("[Background #id: …] finished…") when

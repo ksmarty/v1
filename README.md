@@ -232,7 +232,7 @@ Uses GitHub's device flow — no redirect URLs, works behind any reverse proxy:
 
 1. Create an OAuth App at <https://github.com/settings/developers> → **New OAuth App**. Homepage and callback URLs don't matter (device flow doesn't use them), but you must enable **Device Flow** in the app's settings.
 2. Paste the app's **Client ID** into Settings → GitHub in v1 (or set `V1_GITHUB_OAUTH_CLIENT_ID`). No client secret is needed or stored.
-3. Click **Connect with GitHub**, enter the shown code at github.com/login/device, done. v1 requests the `repo read:user` scopes.
+3. Click **Connect with GitHub**, enter the shown code at github.com/login/device, done. v1 requests the `repo read:user read:packages` scopes (`read:packages` is needed to list your ghcr.io container images in the GitHub tab).
 
 ### Personal access token
 

@@ -32,6 +32,11 @@ type Usage struct {
 	Output int64    `json:"output"`
 	Model  string   `json:"model"`
 	Cost   *float64 `json:"cost,omitempty"`
+	// Context is the final round's prompt size (prompt + completion tokens) —
+	// the real context-window fill at the end of the turn. Input/Output sum
+	// every round for billing, so they overstate the context fill; Context
+	// does not.
+	Context int64 `json:"context,omitempty"`
 }
 
 // TurnResult carries the outcome of one chat turn so the caller can attach
@@ -371,6 +376,7 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 			usage.Input += res.Usage.PromptTokens
 			usage.Output += res.Usage.CompletionTokens
 			usage.Model = p.Client.Model
+			usage.Context = res.Usage.PromptTokens + res.Usage.CompletionTokens
 			if res.Usage.Cost != nil {
 				var total float64
 				if usage.Cost != nil {
@@ -804,7 +810,7 @@ var tools = []llm.Tool{
 		Type: "function",
 		Function: llm.ToolFunction{
 			Name:        "set_project_name",
-			Description: "Set the project's display name. Call it at the start of a new project to give it a short, descriptive name based on what you are building.",
+			Description: "Set the project's display name. Only available in the project's first session: call it at the start of a new project to give it a short, descriptive name based on what you are building. Later sessions cannot rename the project.",
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{

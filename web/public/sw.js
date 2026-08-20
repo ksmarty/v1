@@ -1,6 +1,6 @@
 // v1 service worker: installable + offline app shell.
 // API, preview, and WebSocket traffic is never cached.
-const VERSION = 'v1-cache-v1';
+const VERSION = 'v1-cache-v2';
 const APP_SHELL = ['/', '/index.html', '/manifest.json', '/icon-192.png', '/icon-512.png'];
 
 // Turn-finished notifications: open/focus the app and navigate to the exact

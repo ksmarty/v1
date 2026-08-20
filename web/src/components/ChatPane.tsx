@@ -1589,6 +1589,25 @@ export default function ChatPane({
   const [creatingSession, setCreatingSession] = useState(false);
   const navigate = useNavigate();
 
+  // Composer drafts persist per project+session so typed text survives app
+  // restarts and session switches.
+  const draftKey = sessionId ? `v1-chat-draft:${projectId}:${sessionId}` : '';
+  const prevDraftKey = useRef('');
+  useEffect(() => {
+    setInput(draftKey ? (localStorage.getItem(draftKey) ?? '') : '');
+  }, [draftKey]);
+  useEffect(() => {
+    if (!draftKey) return;
+    if (prevDraftKey.current !== draftKey) {
+      // Just switched sessions — the restore above applied the saved draft;
+      // don't write the previous session's text into this key.
+      prevDraftKey.current = draftKey;
+      return;
+    }
+    if (input) localStorage.setItem(draftKey, input);
+    else localStorage.removeItem(draftKey);
+  }, [draftKey, input]);
+
   const itemsRef = useRef<Item[]>([]);
   const counterRef = useRef(0);
   const assistantKeyRef = useRef<string | null>(null);
