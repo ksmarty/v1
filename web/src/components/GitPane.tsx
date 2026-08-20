@@ -22,6 +22,7 @@ import {
   IconChevronRight,
   IconFile,
   IconTrash,
+  IconX,
 } from './icons';
 import { CreateRepoDialog, LinkRepoDialog } from './GitHubMenu';
 
@@ -282,6 +283,7 @@ export default function GitPane({
   const [commitInfo, setCommitInfo] = useState<GitCommit | null>(null);
   const [changesOpen, setChangesOpen] = useState(false);
   const [repoDialog, setRepoDialog] = useState<'create' | 'link' | null>(null);
+  const [newBranchOpen, setNewBranchOpen] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -443,7 +445,9 @@ export default function GitPane({
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-3 p-3">
-      <div className="rounded-xl border border-border bg-surface/50 p-3">
+      {/* Branch + status + actions in one card; the new-branch input stays
+          collapsed behind a toggle. */}
+      <div className="flex flex-col gap-2.5 rounded-xl border border-border bg-surface/50 p-3">
         <div className="flex items-center gap-2">
           <IconGitBranch className="h-4 w-4 shrink-0 text-dim" />
           <select
@@ -462,34 +466,8 @@ export default function GitPane({
             {info.commits?.length ?? 0} commits
           </span>
         </div>
-        <div className="mt-2 flex items-center gap-2">
-          <Input
-            value={newBranch}
-            onChange={(e) => setNewBranch(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') createBranch();
-            }}
-            placeholder="New branch name"
-            className="min-w-0 flex-1"
-          />
-          <Button
-            variant="outline"
-            onClick={createBranch}
-            disabled={busy || !newBranch.trim()}
-            className="shrink-0 px-2.5 text-xs"
-          >
-            Create
-          </Button>
-        </div>
-        <p className="mt-2 text-[11px] leading-relaxed text-faint">
-          Every finished chat turn is committed automatically, so each step of a
-          conversation is a checkpoint you can return to.
-        </p>
 
-      </div>
-
-      {st?.isRepo && (
-        <div className="flex flex-col gap-2.5 rounded-lg border border-border bg-surface p-3">
+        {st?.isRepo && (
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
             <span className="inline-flex items-center gap-1 rounded-md bg-surface px-1.5 py-0.5 font-mono text-[11px]">
               <IconGitBranch className="h-3.5 w-3.5 text-subtle" />
@@ -504,86 +482,133 @@ export default function GitPane({
             <span className="font-mono text-[11px] text-dim">{st.modified} mod</span>
             <span className="font-mono text-[11px] text-dim">{st.untracked} untracked</span>
           </div>
-          <div className="grid grid-cols-2 gap-1.5 sm:flex sm:flex-wrap">
+        )}
+
+        <div className="grid grid-cols-2 gap-1.5 sm:flex sm:flex-wrap">
+          <Button
+            variant="outline"
+            className="h-8 px-2.5 text-xs sm:h-7"
+            onClick={() => setChangesOpen(true)}
+            disabled={busy || !dirty}
+            title="View changed files and their diffs"
+          >
+            <IconFile className="h-3.5 w-3.5" /> Changes ({(st?.modified ?? 0) + (st?.untracked ?? 0)})
+          </Button>
+          <Button
+            variant="outline"
+            className="h-8 px-2.5 text-xs sm:h-7"
+            onClick={() => void runAction('commit')}
+            disabled={busy || !dirty}
+            title={dirty ? 'Commit local changes' : 'No changes to commit'}
+          >
+            <IconCheck className="h-3.5 w-3.5" /> Commit
+          </Button>
+          {(dirty || ahead > 0) && (
             <Button
               variant="outline"
               className="h-8 px-2.5 text-xs sm:h-7"
-              onClick={() => setChangesOpen(true)}
-              disabled={busy || !dirty}
-              title="View changed files and their diffs"
+              onClick={() => {
+                setAction('push');
+                setCommitMsg('');
+              }}
+              disabled={busy}
+              title={dirty ? 'Commit & push' : 'Push commits'}
             >
-              <IconFile className="h-3.5 w-3.5" /> Changes ({st.modified + st.untracked})
+              <IconArrowUp className="h-3.5 w-3.5" /> {dirty ? 'Commit & push' : 'Push'}
             </Button>
+          )}
+          {st?.repoUrl && (
             <Button
               variant="outline"
               className="h-8 px-2.5 text-xs sm:h-7"
-              onClick={() => void runAction('commit')}
-              disabled={busy || !dirty}
-              title={dirty ? 'Commit local changes' : 'No changes to commit'}
+              onClick={() => void fetchRemote()}
+              disabled={busy}
+              title="Fetch from origin (refresh ahead/behind without changing files)"
             >
-              <IconCheck className="h-3.5 w-3.5" /> Commit
+              <IconRefresh className="h-3.5 w-3.5" /> Fetch
             </Button>
-            {(dirty || ahead > 0) && (
-              <Button
-                variant="outline"
-                className="h-8 px-2.5 text-xs sm:h-7"
-                onClick={() => {
-                  setAction('push');
-                  setCommitMsg('');
-                }}
-                disabled={busy}
-                title={dirty ? 'Commit & push' : 'Push commits'}
-              >
-                <IconArrowUp className="h-3.5 w-3.5" /> {dirty ? 'Commit & push' : 'Push'}
-              </Button>
-            )}
-            {st?.repoUrl && (
-              <Button
-                variant="outline"
-                className="h-8 px-2.5 text-xs sm:h-7"
-                onClick={() => void fetchRemote()}
-                disabled={busy}
-                title="Fetch from origin (refresh ahead/behind without changing files)"
-              >
-                <IconRefresh className="h-3.5 w-3.5" /> Fetch
-              </Button>
-            )}
-            {st?.repoUrl && (
-              <Button
-                variant="outline"
-                className="h-8 px-2.5 text-xs sm:h-7"
-                onClick={() => void act(() => api.gitPull(projectId))}
-                disabled={busy}
-                title="Pull from origin"
-              >
-                <IconArrowDown className="h-3.5 w-3.5" /> Pull
-              </Button>
-            )}
+          )}
+          {st?.repoUrl && (
+            <Button
+              variant="outline"
+              className="h-8 px-2.5 text-xs sm:h-7"
+              onClick={() => void act(() => api.gitPull(projectId))}
+              disabled={busy}
+              title="Pull from origin"
+            >
+              <IconArrowDown className="h-3.5 w-3.5" /> Pull
+            </Button>
+          )}
           {!href && (
-              <>
-                <Button
-                  variant="outline"
-                  className="h-8 px-2.5 text-xs sm:h-7"
-                  onClick={() => setRepoDialog('link')}
-                  disabled={busy}
-                  title="Link this project to an existing GitHub repo"
-                >
-                  Link repo…
-                </Button>
-                <Button
-                  variant="outline"
-                  className="h-8 px-2.5 text-xs sm:h-7"
-                  onClick={() => setRepoDialog('create')}
-                  disabled={busy}
-                  title="Create a GitHub repo for this project and push"
-                >
-                  <IconPlus className="h-3.5 w-3.5" /> Create repo
-                </Button>
-              </>
-            )}
-          </div>
+            <>
+              <Button
+                variant="outline"
+                className="h-8 px-2.5 text-xs sm:h-7"
+                onClick={() => setRepoDialog('link')}
+                disabled={busy}
+                title="Link this project to an existing GitHub repo"
+              >
+                Link repo…
+              </Button>
+              <Button
+                variant="outline"
+                className="h-8 px-2.5 text-xs sm:h-7"
+                onClick={() => setRepoDialog('create')}
+                disabled={busy}
+                title="Create a GitHub repo for this project and push"
+              >
+                <IconPlus className="h-3.5 w-3.5" /> Create repo
+              </Button>
+            </>
+          )}
         </div>
-      )}
+
+        {newBranchOpen ? (
+          <div className="flex items-center gap-2">
+            <Input
+              autoFocus
+              value={newBranch}
+              onChange={(e) => setNewBranch(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') createBranch();
+                if (e.key === 'Escape') setNewBranchOpen(false);
+              }}
+              placeholder="New branch name"
+              className="min-w-0 flex-1"
+            />
+            <Button
+              variant="outline"
+              onClick={createBranch}
+              disabled={busy || !newBranch.trim()}
+              className="shrink-0 px-2.5 text-xs"
+            >
+              Create
+            </Button>
+            <button
+              type="button"
+              onClick={() => setNewBranchOpen(false)}
+              aria-label="Cancel new branch"
+              title="Cancel"
+              className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-dim transition-colors hover:bg-border hover:text-text"
+            >
+              <IconX className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setNewBranchOpen(true)}
+            className="flex w-fit items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-dim transition-colors hover:bg-border hover:text-text"
+          >
+            <IconPlus className="h-3.5 w-3.5" /> New branch
+          </button>
+        )}
+
+        <p className="text-[11px] leading-relaxed text-faint">
+          Every finished chat turn is committed automatically, so each step of a
+          conversation is a checkpoint you can return to.
+        </p>
+      </div>
 
       <CreateRepoDialog
         open={repoDialog === 'create'}

@@ -224,14 +224,10 @@ export default function Project() {
               ))}
             </nav>
           ) : (
-            /* Keep the navbar's bottom clearance (3.5rem button row + half the
-               home-indicator inset) when it's hidden so content doesn't slide
-               down to the screen edge. */
-            <div
-              aria-hidden
-              className="shrink-0"
-              style={{ height: 'calc(3.5rem + env(safe-area-inset-bottom)/2)' }}
-            />
+            /* When the preview is disabled the nav is hidden; keep the same
+               bottom safe-area inset the nav would add, without the nav's
+               3.5rem button row, so the composer isn't flush to the edge. */
+            <div aria-hidden className="shrink-0 pb-[calc(env(safe-area-inset-bottom)/2)]" />
           )}
         </>
       )}

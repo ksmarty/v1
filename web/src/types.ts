@@ -381,8 +381,9 @@ export interface GitHubContainerImage {
   created_at: string;
   updated_at: string;
   full: string;
-  /** Published tag versions of this image (e.g. v0.42.0, latest). */
-  tags: string[];
+  /** Published tag versions of this image (e.g. v0.42.0, latest). Older
+   * backends may omit this. */
+  tags?: string[];
 }
 
 export interface GitHubImages {

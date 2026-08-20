@@ -169,9 +169,9 @@ export default function GitHubPane({ repoUrl }: { repoUrl?: string }) {
                     {img.visibility}
                   </span>
                 </div>
-                {img.tags.length > 0 && (
+                {(img.tags?.length ?? 0) > 0 && (
                   <div className="mt-1.5 flex flex-wrap gap-1">
-                    {img.tags.map((t) => (
+                    {img.tags!.map((t) => (
                       <code
                         key={t}
                         className="rounded bg-border/60 px-1.5 py-0.5 font-mono text-[10px] text-dim"
