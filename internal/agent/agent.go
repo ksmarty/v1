@@ -372,7 +372,12 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 			usage.Output += res.Usage.CompletionTokens
 			usage.Model = p.Client.Model
 			if res.Usage.Cost != nil {
-				usage.Cost = (usage.Cost ?? 0) + *res.Usage.Cost
+				var total float64
+				if usage.Cost != nil {
+					total = *usage.Cost
+				}
+				total += *res.Usage.Cost
+				usage.Cost = &total
 			}
 			if b, err := json.Marshal(usage); err == nil {
 				usageJSON = string(b)
