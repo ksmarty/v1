@@ -201,7 +201,7 @@ export default function Project() {
               </div>
             )}
           </div>
-          {!project.previewDisabled && (
+          {!project.previewDisabled ? (
             <nav className="grid shrink-0 grid-cols-2 border-t border-border bg-bg pb-[calc(env(safe-area-inset-bottom)/2)]">
               {[
                 { id: 'chat' as const, label: 'Chat', icon: <IconChat className="h-5 w-5" /> },
@@ -223,6 +223,15 @@ export default function Project() {
                 </button>
               ))}
             </nav>
+          ) : (
+            /* Keep the navbar's bottom clearance (3.5rem button row + half the
+               home-indicator inset) when it's hidden so content doesn't slide
+               down to the screen edge. */
+            <div
+              aria-hidden
+              className="shrink-0"
+              style={{ height: 'calc(3.5rem + env(safe-area-inset-bottom)/2)' }}
+            />
           )}
         </>
       )}

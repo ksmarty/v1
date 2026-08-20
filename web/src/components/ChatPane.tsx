@@ -1921,6 +1921,11 @@ export default function ChatPane({
   const thinkingMetaCache = useRef(new Map<string, { levels: string[]; off: boolean }>());  // The level a fresh selection gets: the global default when the model
   // supports it, otherwise the next highest available level (or the lowest
   // when the default sits below everything the model offers).
+  // The level a fresh selection gets: the global default when the model
+  // supports it, otherwise the next highest available level (or the lowest
+  // when the default sits below everything the model offers). A non-"off"
+  // default always turns thinking on — it maps to the next available
+  // thinking level even when the model's list starts with "off".
   const freshThinkingLevel = (meta: { levels: string[]; off: boolean }): string => {
     if (defaultThinking === 'off' && (meta.off || meta.levels.includes('none'))) return 'off';
     if (defaultThinking === '') return meta.levels[0] ?? '';
@@ -1930,12 +1935,15 @@ export default function ChatPane({
     let bestRank = -Infinity;
     meta.levels.forEach((lvl, i) => {
       const rank = THINKING_LEVEL_RANK[lvl] ?? i + 10;
+      // Skip off/none when the default asks for thinking: a non-off default
+      // must not land on "off".
+      if (defaultThinking !== 'off' && (lvl === 'off' || lvl === 'none')) return;
       if (rank <= reqRank && rank > bestRank) {
         best = lvl;
         bestRank = rank;
       }
     });
-    return best || meta.levels[0] || '';
+    return best || (defaultThinking !== 'off' ? meta.levels.find((l) => l !== 'off' && l !== 'none') ?? '' : '') || meta.levels[0] || '';
   };
   useEffect(() => {
     if (!model.trim()) {

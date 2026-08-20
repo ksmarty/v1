@@ -63,6 +63,7 @@ import {
   IconLock,
   IconLogout,
   IconModel,
+  IconPencil,
   IconSettings,
   IconTerminal,
   IconTrash,
@@ -1981,15 +1982,16 @@ export default function Settings() {
                       <span className="shrink-0 text-[10px] text-red-400">no key</span>
                     )}
                     <div className="flex shrink-0 items-center gap-1">
-                      <Button
-                        variant="outline"
-                        className="h-7 px-2 text-xs"
+                      <button
+                        type="button"
+                        aria-label={`Edit provider ${p.name}`}
+                        title="Edit provider"
                         disabled={provBusyId === p.id}
                         onClick={() => startEdit(p)}
-                        aria-label={`Edit provider ${p.name}`}
+                        className="inline-flex h-7 w-7 items-center justify-center rounded-md text-dim transition-colors hover:bg-border hover:text-text disabled:opacity-40"
                       >
-                        Edit
-                      </Button>
+                        <IconPencil className="h-3.5 w-3.5" />
+                      </button>
                       <button
                         type="button"
                         aria-label={`Delete provider ${p.name}`}

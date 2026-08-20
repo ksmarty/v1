@@ -58,10 +58,11 @@ export default function TerminalPane({
       if (prev && (prev.readyState === WebSocket.OPEN || prev.readyState === WebSocket.CONNECTING)) {
         return;
       }
-      const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
-      const ws = new WebSocket(
-        `${proto}://${window.location.host}/api/projects/${projectId}/terminal`,
-      );
+      // Relative URL: resolves against the page origin so it inherits the same
+      // scheme and host the browser used to load v1 — robust behind reverse
+      // proxies (Traefik, Caddy, nginx, Cloudflare) regardless of TLS offload
+      // or forwarded-host rewriting.
+      const ws = new WebSocket(`/api/projects/${projectId}/terminal`);
       wsRef.current = ws;
       ws.onopen = () => {
         retriesRef.current = 0;
