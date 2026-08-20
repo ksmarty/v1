@@ -65,6 +65,14 @@ All configuration is via environment variables:
 | `V1_OIDC_REDIRECT_URI` | — | Callback URI, e.g. `https://v1.example.com/api/auth/oidc/callback`. Auto-derived if unset. |
 | `V1_OIDC_ALLOWED_EMAILS` | — | Comma list of emails allowed to log in (empty = any authenticated user). |
 | `V1_MAX_PREVIEWS` | `3` | Max preview dev servers running at once. |
+| `V1_ALLOW_SIGNUP` | `false` | `true` lets anyone register a (non-admin) account from the login page. |
+| `V1_VERCEL_TOKEN` | — | Vercel personal access token (see Vercel integration below). |
+| `V1_VERCEL_CLIENT_ID` / `V1_VERCEL_CLIENT_SECRET` | — | Vercel OAuth app credentials. |
+| `V1_VERCEL_REDIRECT_URI` | auto-derived | Pins the Vercel OAuth callback URI. |
+| `V1_CONTEXT_BUDGET` | `12000` | Token budget the context indicator and auto-compaction are computed against. |
+| `V1_CONTEXT_THRESHOLD` | `0.80` | Fraction of the context budget that triggers auto-compaction. |
+| `V1_SYSTEM_PROMPT` | — | Extra global system-prompt text (fallback for the Settings value). |
+| `V1_CHROME_PATH` | auto-detect | Chrome/Chromium binary for the `screenshot_app` tool. |
 
 ### LLM providers
 
@@ -260,6 +268,12 @@ make dev      # backend (:8080, auth disabled, ./data) + frontend dev server
 make build    # production build → bin/v1 (frontend built and embedded)
 make docker   # local docker build (tags v1:local)
 ```
+
+## Contributing
+
+Bug reports and PRs welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for setup,
+local checks, and the conventional-commit flow that drives releases. Agent
+instructions are in [AGENTS.md](AGENTS.md).
 
 ## Security
 

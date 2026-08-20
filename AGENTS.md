@@ -164,3 +164,16 @@ or `make dev`), then report: (1) the new stamped build version (`v1 <version>
   `overflow-hidden` stage (PreviewPane) because iOS expands in-flow iframes
   to their content height, which stretches the whole page.
 - No comments unless they add real value; match surrounding style.
+
+## Boundaries
+
+- Always: run the checks in "Key commands" after changes; keep edits scoped;
+  update this file and the README when you change what they document.
+- Ask first: git mutations (commit/push/reset/rebase), deleting files or data
+  outside the task's scope, installing dependencies, touching `data/` (the dev
+  database), changing auth or permissions logic.
+- Never: commit secrets or `data/`, weaken path-escape/SSRF guards in the
+  agent tools, or add non-stdlib Go dependencies without a stated reason.
+
+Contributor workflow (PR flow, CI gates, releases) is in
+[CONTRIBUTING.md](CONTRIBUTING.md).
