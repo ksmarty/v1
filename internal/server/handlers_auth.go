@@ -184,9 +184,12 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 			"currency":  s.currency(userID),
 		},
 		"github": map[string]any{
-			"tokenSet":      s.githubToken(userID) != "",
-			"oauthClientId": s.githubOAuthClientID(),
-			"source":        s.githubTokenSource(userID),
+			"tokenSet":             s.githubToken(userID) != "",
+			"oauthClientId":        s.githubOAuthClientID(),
+			"oauthClientIdFromEnv": s.cfg.GitHubOAuthClientID != "",
+			"oauthClientSecretSet":        s.githubOAuthClientSecret() != "",
+				"oauthClientSecretFromEnv":    s.cfg.GitHubOAuthClientSecret != "",
+			"source":               s.githubTokenSource(userID),
 		},
 		"vercel": map[string]any{
 			"tokenSet":        s.vercelToken(userID) != "",
@@ -219,20 +222,21 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 			Providers *[]llmProviderRecord `json:"providers"`
 			Currency  *string              `json:"currency"`
 		} `json:"llm"`
-		GitHubToken         *string             `json:"githubToken"`
-		GitHubOAuthClientID *string             `json:"githubOAuthClientId"`
-		VercelToken         *string             `json:"vercelToken"`
-		VercelOAuthClientID *string             `json:"vercelOAuthClientId"`
-		VercelClientSecret  *string             `json:"vercelOAuthClientSecret"`
-		Password            *string             `json:"password"`
-		MCP                 *[]mcp.ServerConfig `json:"mcp"`
-		PermissionMode      *string             `json:"permissionMode"`
-		RewindApproval      *bool               `json:"rewindApproval"`
-		DefaultThinking     *string             `json:"defaultThinking"`
-		ToonEnabled         *bool               `json:"toonEnabled"`
-		AutoPushDefault     *bool               `json:"autoPushDefault"`
-		ContextThreshold    *float64            `json:"contextThreshold"`
-		SystemPrompt        *string             `json:"systemPrompt"`
+		GitHubToken             *string             `json:"githubToken"`
+		GitHubOAuthClientID     *string             `json:"githubOAuthClientId"`
+		GitHubOAuthClientSecret *string             `json:"githubOAuthClientSecret"`
+		VercelToken             *string             `json:"vercelToken"`
+		VercelOAuthClientID     *string             `json:"vercelOAuthClientId"`
+		VercelClientSecret      *string             `json:"vercelOAuthClientSecret"`
+		Password                *string             `json:"password"`
+		MCP                     *[]mcp.ServerConfig `json:"mcp"`
+		PermissionMode          *string             `json:"permissionMode"`
+		RewindApproval          *bool               `json:"rewindApproval"`
+		DefaultThinking         *string             `json:"defaultThinking"`
+		ToonEnabled             *bool               `json:"toonEnabled"`
+		AutoPushDefault         *bool               `json:"autoPushDefault"`
+		ContextThreshold        *float64            `json:"contextThreshold"`
+		SystemPrompt            *string             `json:"systemPrompt"`
 	}
 	if !decodeJSON(w, r, &body) {
 		return
@@ -314,10 +318,10 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		// 3. Legacy single-provider fields (empty clears).
 		for key, v := range map[string]*string{
-			keyLLMBaseURL:   body.LLM.BaseURL,
-			keyLLMAPIKey:    body.LLM.APIKey,
-			keyLLMModel:     body.LLM.Model,
-			keyLLMCurrency:  body.LLM.Currency,
+			keyLLMBaseURL:  body.LLM.BaseURL,
+			keyLLMAPIKey:   body.LLM.APIKey,
+			keyLLMModel:    body.LLM.Model,
+			keyLLMCurrency: body.LLM.Currency,
 		} {
 			if err := set(key, v); err != nil {
 				writeError(w, http.StatusInternalServerError, err.Error())
@@ -351,6 +355,12 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	// they stay in the shared settings table.
 	if body.GitHubOAuthClientID != nil {
 		if err := setGlobal(keyGitHubOAuthClientID, body.GitHubOAuthClientID); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+	if body.GitHubOAuthClientSecret != nil {
+		if err := setGlobal(keyGitHubOAuthClientSecret, body.GitHubOAuthClientSecret); err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}

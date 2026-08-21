@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"v1/internal/auth"
 	"v1/internal/gitops"
 	"v1/internal/store"
 )
@@ -252,5 +253,149 @@ func (s *Server) handleOAuthDevicePoll(w http.ResponseWriter, r *http.Request) {
 func (s *Server) deleteOAuthFlow(flowID string) {
 	s.oauthMu.Lock()
 	delete(s.oauthFlows, flowID)
+	s.oauthMu.Unlock()
+}
+
+// ---- redirect (authorization-code) flow ----
+
+// An OAuth application registered for the redirect flow needs a client
+// secret, which the device flow does not. When one is configured we can do
+// the modern "click connect, bounce to GitHub, bounce back" flow instead of
+// the device code.
+
+type githubOAuthFlow struct {
+	expiresAt time.Time
+}
+
+const githubOAuthFlowTTL = 10 * time.Minute
+
+// githubOAuthRedirectURI resolves the callback URI: derived from the request
+// (X-Forwarded-Proto when present) so it works behind a reverse proxy.
+func (s *Server) githubOAuthRedirectURI(r *http.Request) string {
+	scheme := "http"
+	if r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
+		scheme = "https"
+	}
+	return scheme + "://" + r.Host + "/api/auth/github/oauth/callback"
+}
+
+// handleGitHubOAuthStart begins the redirect flow: stores a random state and
+// redirects the browser to GitHub's authorize endpoint. Lives under
+// /api/auth/ so it is exempt from the auth middleware.
+func (s *Server) handleGitHubOAuthStart(w http.ResponseWriter, r *http.Request) {
+	clientID := s.githubOAuthClientID()
+	clientSecret := s.githubOAuthClientSecret()
+	if clientID == "" || clientSecret == "" {
+		writeError(w, http.StatusBadRequest, "GitHub OAuth client id and secret are not configured (add them in Settings)")
+		return
+	}
+	state, err := auth.RandomHex(32)
+	if err != nil {
+		log.Printf("github oauth: generating state: %v", err)
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	s.pruneOAuthFlows()
+	f := &githubOAuthFlow{expiresAt: time.Now().Add(githubOAuthFlowTTL)}
+	s.oauthMu.Lock()
+	s.oauthCodeFlows[state] = f
+	s.oauthMu.Unlock()
+	q := url.Values{
+		"client_id":    {clientID},
+		"redirect_uri": {s.githubOAuthRedirectURI(r)},
+		"scope":        {deviceScope},
+		"state":        {state},
+	}
+	http.Redirect(w, r, "https://github.com/login/oauth/authorize?"+q.Encode(), http.StatusFound)
+}
+
+// handleGitHubOAuthCallback exchanges the authorization code for a token and
+// stores it bound to the current user's session. Failures redirect back to
+// the settings GitHub tab with a marker.
+func (s *Server) handleGitHubOAuthCallback(w http.ResponseWriter, r *http.Request) {
+	fail := func() {
+		http.Redirect(w, r, "/settings?page=github&gherror=1", http.StatusFound)
+	}
+	q := r.URL.Query()
+	if q.Get("error") != "" || q.Get("state") == "" || q.Get("code") == "" {
+		fail()
+		return
+	}
+	state := q.Get("state")
+	s.oauthMu.Lock()
+	_, ok := s.oauthCodeFlows[state]
+	deleted := false
+	if ok && time.Now().After(s.oauthCodeFlows[state].expiresAt) {
+		delete(s.oauthCodeFlows, state)
+		ok = false
+		deleted = true
+	}
+	if ok {
+		delete(s.oauthCodeFlows, state)
+	}
+	s.oauthMu.Unlock()
+	if !ok {
+		log.Printf("github oauth: unknown/expired state in callback (state %q, expired=%v)", state, deleted)
+		fail()
+		return
+	}
+	clientID := s.githubOAuthClientID()
+	clientSecret := s.githubOAuthClientSecret()
+	tok, err := githubExchangeCode(r.Context(), clientID, clientSecret, q.Get("code"), s.githubOAuthRedirectURI(r))
+	if err != nil {
+		log.Printf("github oauth: exchanging code: %v", err)
+		fail()
+		return
+	}
+	u, ok := s.auth.User(r)
+	if !ok {
+		log.Printf("github oauth: no session on callback")
+		fail()
+		return
+	}
+	if err := s.st.SetUserSetting(u.ID, keyGitHubToken, tok); err != nil {
+		log.Printf("github oauth: storing token: %v", err)
+		fail()
+		return
+	}
+	if err := s.st.SetUserSetting(u.ID, keyGitHubTokenSource, "oauth"); err != nil {
+		log.Printf("github oauth: storing token source: %v", err)
+	}
+	http.Redirect(w, r, "/settings?page=github", http.StatusFound)
+}
+
+// githubExchangeCode trades an authorization code for an access token at
+// GitHub's token endpoint.
+func githubExchangeCode(ctx context.Context, clientID, clientSecret, code, redirectURI string) (string, error) {
+	status, resp, err := githubFormPost(ctx, accessTokenURL, url.Values{
+		"client_id":     {clientID},
+		"client_secret": {clientSecret},
+		"code":          {code},
+		"redirect_uri":  {redirectURI},
+	})
+	if err != nil {
+		return "", err
+	}
+	if status != http.StatusOK {
+		return "", fmt.Errorf("GitHub token endpoint returned HTTP %d", status)
+	}
+	if e := jsonStr(resp, "error"); e != "" {
+		return "", fmt.Errorf("GitHub: %s", e)
+	}
+	token := jsonStr(resp, "access_token")
+	if token == "" {
+		return "", fmt.Errorf("GitHub returned no access token")
+	}
+	return token, nil
+}
+
+func (s *Server) pruneOAuthFlows() {
+	now := time.Now()
+	s.oauthMu.Lock()
+	for st, f := range s.oauthCodeFlows {
+		if now.After(f.expiresAt) {
+			delete(s.oauthCodeFlows, st)
+		}
+	}
 	s.oauthMu.Unlock()
 }

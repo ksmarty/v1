@@ -1444,8 +1444,12 @@ export default function Settings() {
   const [ghSaved, setGhSaved] = useState(false);
   const [ghError, setGhError] = useState<string | null>(null);
 
-  // GitHub OAuth client ID
+  // GitHub OAuth client ID + secret
   const [oauthClientId, setOauthClientId] = useState('');
+  const [oauthClientIdEnv, setOauthClientIdEnv] = useState(false);
+  const [oauthClientSecret, setOauthClientSecret] = useState('');
+  const [oauthClientSecretSet, setOauthClientSecretSet] = useState(false);
+  const [secretEnv, setSecretEnv] = useState(false);
   const [cidSaving, setCidSaving] = useState(false);
   const [cidSaved, setCidSaved] = useState(false);
   const [cidError, setCidError] = useState<string | null>(null);
@@ -1571,6 +1575,9 @@ export default function Settings() {
         setBaseURL(s.llm.baseURL);
         setModel(s.llm.model);
         setOauthClientId(s.github.oauthClientId);
+        setOauthClientIdEnv(s.github.oauthClientIdFromEnv ?? false);
+        setOauthClientSecretSet(s.github.oauthClientSecretSet ?? false);
+        setSecretEnv(s.github.oauthClientSecretFromEnv ?? false);
         setVercelClientId(s.vercel.oauthClientId);
         setProviders(s.llm.providers ?? []);
         setCurrency(s.llm?.currency ?? 'USD');
@@ -1735,11 +1742,24 @@ export default function Settings() {
     setCidSaved(false);
     setCidError(null);
     try {
-      await api.updateSettings({ githubOAuthClientId: oauthClientId.trim() });
+      // Both fields save together; empty secret keeps whatever is stored
+      // (server only overwrites when non-empty is sent).
+      await api.updateSettings({
+        githubOAuthClientId: oauthClientId.trim(),
+        ...(oauthClientSecret !== '' ? { githubOAuthClientSecret: oauthClientSecret.trim() } : {}),
+      });
+      setOauthClientSecret('');
       setCidSaved(true);
       setSettings((prev) =>
         prev
-          ? { ...prev, github: { ...prev.github, oauthClientId: oauthClientId.trim() } }
+          ? {
+              ...prev,
+              github: {
+                ...prev.github,
+                oauthClientId: oauthClientId.trim(),
+                oauthClientSecretSet: oauthClientSecret.trim() !== '' || prev.github.oauthClientSecretSet === true,
+              },
+            }
           : prev,
       );
     } catch (err) {
@@ -2282,12 +2302,27 @@ export default function Settings() {
               <summary className="cursor-pointer select-none text-faint hover:text-dim">
                 Required token scopes
               </summary>
-              <p className="mt-1.5 leading-relaxed">
-                Classic PAT: needs the <code className="font-mono text-dim">repo</code> scope.
-                Fine-grained PAT: Contents: Read &amp; write on your repos — but fine-grained
-                tokens can&apos;t create new repos, so use a classic PAT or OAuth below if you
-                want v1 to create repos for you.
-              </p>
+              <div className="mt-2 flex flex-col gap-2">
+                <div>
+                  <p className="font-medium text-dim">Classic PAT</p>
+                  <ul className="mt-0.5 list-inside list-disc">
+                    <li><code className="font-mono text-dim">repo</code> — full repo access (read/write)</li>
+                  </ul>
+                </div>
+                <div>
+                  <p className="font-medium text-dim">Fine-grained PAT</p>
+                  <ul className="mt-0.5 list-inside list-disc">
+                    <li>
+                      Contents: <span className="font-medium text-text">Read &amp; write</span> on your
+                      repos
+                    </li>
+                    <li className="text-faint">
+                      Fine-grained tokens can&apos;t create new repos — use a classic PAT or OAuth if
+                      you want v1 to create repos for you.
+                    </li>
+                  </ul>
+                </div>
+              </div>
             </details>
             <p className="text-xs text-subtle">
               <a
@@ -2310,12 +2345,45 @@ export default function Settings() {
 
           <form onSubmit={(e) => void saveClientId(e)} className="flex flex-col gap-3">
             <Field label="OAuth Client ID">
-              <Input
-                value={oauthClientId}
-                onChange={(e) => setOauthClientId(e.target.value)}
-                placeholder="Ov23li…"
-                autoComplete="off"
-              />
+              {oauthClientIdEnv ? (
+                <>
+                  <div className="v1-no-scrollbar w-full overflow-x-auto whitespace-nowrap rounded-lg border border-border-strong bg-surface px-3 py-2 font-mono text-xs text-text opacity-70">
+                    {oauthClientId}
+                  </div>
+                  <span className="mt-1 block text-[11px] text-faint">
+                    Set via <code className="font-mono text-dim">V1_GITHUB_OAUTH_CLIENT_ID</code> — read-only.
+                  </span>
+                </>
+              ) : (
+                <Input
+                  value={oauthClientId}
+                  onChange={(e) => setOauthClientId(e.target.value)}
+                  placeholder="Ov23li…"
+                  autoComplete="off"
+                />
+              )}
+            </Field>
+            <Field label="OAuth Client Secret">
+              {secretEnv ? (
+                <>
+                  <div className="v1-no-scrollbar w-full overflow-x-auto whitespace-nowrap rounded-lg border border-border-strong bg-surface px-3 py-2 font-mono text-xs text-text opacity-70">
+                    {oauthClientSecretSet ? '•••••••• (set via env)' : ''}
+                  </div>
+                  <span className="mt-1 block text-[11px] text-faint">
+                    Set via <code className="font-mono text-dim">V1_GITHUB_OAUTH_CLIENT_SECRET</code> — read-only.
+                  </span>
+                </>
+              ) : (
+                <Input
+                  type="password"
+                  value={oauthClientSecret}
+                  onChange={(e) => setOauthClientSecret(e.target.value)}
+                  placeholder={
+                    oauthClientSecretSet ? '(saved — enter to replace)' : 'GitHub OAuth client secret'
+                  }
+                  autoComplete="new-password"
+                />
+              )}
             </Field>
             <p className="text-xs leading-relaxed text-subtle">
               Create an OAuth App at{' '}
@@ -2327,17 +2395,23 @@ export default function Settings() {
               >
                 github.com/settings/developers
               </a>{' '}
-              (any homepage/callback URL), enable Device Flow, paste the Client ID here. Save an
-              empty value to clear it.
+              — callback URL: <span className="break-all font-mono text-dim">{window.location.origin}/api/auth/github/oauth/callback</span>. Saving
+              the secret enables the automatic redirect flow (no code entry); without
+              it, v1 falls back to the device flow.
             </p>
             <SaveRow
               saving={cidSaving}
               saved={cidSaved}
               error={cidError}
-              pulse={settings ? oauthClientId !== settings.github.oauthClientId : false}
+              pulse={
+                settings
+                  ? oauthClientId !== settings.github.oauthClientId || oauthClientSecret !== ''
+                  : false
+              }
               extra={
                 <GitHubConnect
                   enabled={settings.github.oauthClientId !== ''}
+                  secretEnabled={settings.github.oauthClientSecretSet ?? false}
                   onConnected={reloadSettings}
                 />
               }

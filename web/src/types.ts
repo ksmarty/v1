@@ -44,6 +44,12 @@ export interface LLMSettings {
 export interface GitHubSettings {
   tokenSet: boolean;
   oauthClientId: string;
+  /** True when the OAuth client ID comes from an env var (read-only UI). */
+  oauthClientIdFromEnv?: boolean;
+  /** True when an OAuth client secret is configured (needed for redirect flow). */
+  oauthClientSecretSet?: boolean;
+  /** True when the client secret comes from an env var (read-only UI). */
+  oauthClientSecretFromEnv?: boolean;
   source: 'oauth' | 'pat' | 'env' | null;
 }
 

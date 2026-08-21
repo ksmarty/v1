@@ -9,33 +9,34 @@ import (
 
 // Config holds all process configuration, read once from the environment.
 type Config struct {
-	Port                int
-	DataDir             string
-	AuthDisabled        bool
-	Password            string
-	AllowSignup         bool
-	OpenAIKey           string
-	OpenAIBase          string
-	Model               string
-	GitHubToken         string
-	GitHubOAuthClientID string
-	VercelToken         string
-	VercelClientID      string
-	VercelClientSecret  string
-	VercelRedirectURI   string
-	AuthOIDCEnabled     bool
-	OIDCIssuer          string
-	OIDCClientID        string
-	OIDCClientSecret    string
-	OIDCRedirectURI     string
-	OIDCAllowedEmails   []string
-	OIDCAdminEmails     []string
-	MaxPreviews         int
-	ContextBudget       int
-	ContextThreshold    float64
-	SystemPrompt        string
-	Version             string
-	Commit              string
+	Port                    int
+	DataDir                 string
+	AuthDisabled            bool
+	Password                string
+	AllowSignup             bool
+	OpenAIKey               string
+	OpenAIBase              string
+	Model                   string
+	GitHubToken             string
+	GitHubOAuthClientID     string
+	GitHubOAuthClientSecret string
+	VercelToken             string
+	VercelClientID          string
+	VercelClientSecret      string
+	VercelRedirectURI       string
+	AuthOIDCEnabled         bool
+	OIDCIssuer              string
+	OIDCClientID            string
+	OIDCClientSecret        string
+	OIDCRedirectURI         string
+	OIDCAllowedEmails       []string
+	OIDCAdminEmails         []string
+	MaxPreviews             int
+	ContextBudget           int
+	ContextThreshold        float64
+	SystemPrompt            string
+	Version                 string
+	Commit                  string
 }
 
 // Load reads configuration from environment variables.
@@ -79,6 +80,7 @@ func Load(version, commit string) Config {
 		c.GitHubToken = os.Getenv("GITHUB_TOKEN")
 	}
 	c.GitHubOAuthClientID = os.Getenv("V1_GITHUB_OAUTH_CLIENT_ID")
+	c.GitHubOAuthClientSecret = os.Getenv("V1_GITHUB_OAUTH_CLIENT_SECRET")
 	c.VercelToken = os.Getenv("V1_VERCEL_TOKEN")
 	c.VercelClientID = os.Getenv("V1_VERCEL_CLIENT_ID")
 	c.VercelClientSecret = os.Getenv("V1_VERCEL_CLIENT_SECRET")

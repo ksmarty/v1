@@ -12,14 +12,19 @@ type Phase =
   | { kind: 'failed'; message: string };
 
 /**
- * GitHub OAuth device-flow connect button + modal. `enabled` should be true
- * only once an OAuth Client ID has been saved in settings.
+ * GitHub OAuth connect button + modal. `enabled` should be true once an OAuth
+ * Client ID has been saved in settings. When `secretEnabled` (a client secret
+ * is configured), the connect button uses the redirect (authorization-code)
+ * flow — bounce to GitHub and back, no code entry. Otherwise it uses the
+ * device flow (enter a code).
  */
 export default function GitHubConnect({
   enabled,
+  secretEnabled = false,
   onConnected,
 }: {
   enabled: boolean;
+  secretEnabled?: boolean;
   onConnected: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -79,6 +84,12 @@ export default function GitHubConnect({
   const start = async () => {
     cancelledRef.current = false;
     setCopied(false);
+    // Redirect (authorization-code) flow: bounce to GitHub and back to the
+    // app — no code entry. Requires a saved client secret.
+    if (secretEnabled) {
+      window.location.href = '/api/auth/github/oauth/start';
+      return;
+    }
     setOpen(true);
     setPhase({ kind: 'starting' });
     try {

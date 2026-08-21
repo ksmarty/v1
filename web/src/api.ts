@@ -187,6 +187,7 @@ export interface SettingsUpdate {
   };
   githubToken?: string;
   githubOAuthClientId?: string;
+  githubOAuthClientSecret?: string;
   vercelToken?: string;
   vercelOAuthClientId?: string;
   vercelOAuthClientSecret?: string;

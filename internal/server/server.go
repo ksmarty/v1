@@ -50,6 +50,8 @@ type Server struct {
 
 	oauthMu    sync.Mutex
 	oauthFlows map[string]*oauthFlow
+	// Redirect (authorization-code) flow states, keyed by the OAuth state.
+	oauthCodeFlows map[string]*githubOAuthFlow
 
 	oidcMu    sync.Mutex
 	oidcFlows map[string]*oidcFlow
@@ -63,20 +65,21 @@ type Server struct {
 // New builds the server, its routes and middleware.
 func New(cfg config.Config, st *store.Store) *Server {
 	s := &Server{
-		cfg:           cfg,
-		st:            st,
-		auth:          auth.NewManager(st, cfg.AuthDisabled, cfg.Password),
-		previews:      preview.NewManager(cfg.MaxPreviews),
-		terminals:     terminal.NewManager(),
-		turns:         newTurnManager(),
-		background:    agent.NewBackgroundManager(),
-		oauthFlows:    map[string]*oauthFlow{},
-		oidcFlows:     map[string]*oidcFlow{},
-		vercelFlows:   map[string]*vercelFlow{},
-		vercelDeploys: map[string]*deployState{},
-		oidc:          auth.NewOIDC(auth.OIDCConfig{}),
-		perm:          permRegistry{reqs: map[string]*permRequest{}},
-		ask:           askRegistry{reqs: map[string]*askRequest{}},
+		cfg:            cfg,
+		st:             st,
+		auth:           auth.NewManager(st, cfg.AuthDisabled, cfg.Password),
+		previews:       preview.NewManager(cfg.MaxPreviews),
+		terminals:      terminal.NewManager(),
+		turns:          newTurnManager(),
+		background:     agent.NewBackgroundManager(),
+		oauthFlows:     map[string]*oauthFlow{},
+		oauthCodeFlows: map[string]*githubOAuthFlow{},
+		oidcFlows:      map[string]*oidcFlow{},
+		vercelFlows:    map[string]*vercelFlow{},
+		vercelDeploys:  map[string]*deployState{},
+		oidc:           auth.NewOIDC(auth.OIDCConfig{}),
+		perm:           permRegistry{reqs: map[string]*permRequest{}},
+		ask:            askRegistry{reqs: map[string]*askRequest{}},
 	}
 	s.mcp = mcp.NewManager(s.mcpServers)
 	s.auth.BootstrapAdmin()
@@ -113,6 +116,8 @@ func (s *Server) routes(m *http.ServeMux) {
 	m.HandleFunc("POST /api/settings/oidc", s.handleOIDCSettingsSave)
 	m.HandleFunc("GET /api/auth/vercel/oauth/start", s.handleVercelOAuthStart)
 	m.HandleFunc("GET /api/auth/vercel/oauth/callback", s.handleVercelOAuthCallback)
+	m.HandleFunc("GET /api/auth/github/oauth/start", s.handleGitHubOAuthStart)
+	m.HandleFunc("GET /api/auth/github/oauth/callback", s.handleGitHubOAuthCallback)
 
 	m.HandleFunc("GET /api/users", s.handleListUsers)
 	m.HandleFunc("POST /api/users", s.handleCreateUser)
@@ -285,30 +290,31 @@ func (s *Server) projectOr404(w http.ResponseWriter, r *http.Request) *store.Pro
 // Settings keys stored in the settings table. Values set via the API take
 // precedence over environment fallbacks.
 const (
-	keyLLMBaseURL          = "llm_base_url"
-	keyLLMAPIKey           = "llm_api_key"
-	keyLLMModel            = "llm_model"
-	keyLLMProviders        = "llm_providers"
-	keyLLMCurrency         = "llm_currency"
-	keyGitHubToken         = "github_token"
-	keyGitHubTokenSource   = "github_token_source"
-	keyGitHubOAuthClientID = "github_oauth_client_id"
-	keyVercelToken         = "vercel_token"
-	keyVercelTokenSource   = "vercel_token_source"
-	keyVercelRefreshToken  = "vercel_refresh_token"
-	keyVercelOAuthClientID = "vercel_oauth_client_id"
-	keyVercelClientSecret  = "vercel_oauth_client_secret"
-	keyProvidersCache      = "providers_cache"
-	keyProvidersCustom     = "providers_custom"
-	keyMCP                 = "mcp_servers"
-	keySkills              = "skills_installed"
-	keyPermissionMode      = "permission_mode"
-	keyRewindApproval      = "rewind_approval"
-	keyThinkingDefault     = "thinking_default"
-	keyToonEnabled         = "toon_enabled"
-	keyAutoPushDefault     = "auto_push_default"
-	keySystemPrompt        = "system_prompt"
-	keyContextThreshold    = "context_threshold"
+	keyLLMBaseURL              = "llm_base_url"
+	keyLLMAPIKey               = "llm_api_key"
+	keyLLMModel                = "llm_model"
+	keyLLMProviders            = "llm_providers"
+	keyLLMCurrency             = "llm_currency"
+	keyGitHubToken             = "github_token"
+	keyGitHubTokenSource       = "github_token_source"
+	keyGitHubOAuthClientID     = "github_oauth_client_id"
+	keyGitHubOAuthClientSecret = "github_oauth_client_secret"
+	keyVercelToken             = "vercel_token"
+	keyVercelTokenSource       = "vercel_token_source"
+	keyVercelRefreshToken      = "vercel_refresh_token"
+	keyVercelOAuthClientID     = "vercel_oauth_client_id"
+	keyVercelClientSecret      = "vercel_oauth_client_secret"
+	keyProvidersCache          = "providers_cache"
+	keyProvidersCustom         = "providers_custom"
+	keyMCP                     = "mcp_servers"
+	keySkills                  = "skills_installed"
+	keyPermissionMode          = "permission_mode"
+	keyRewindApproval          = "rewind_approval"
+	keyThinkingDefault         = "thinking_default"
+	keyToonEnabled             = "toon_enabled"
+	keyAutoPushDefault         = "auto_push_default"
+	keySystemPrompt            = "system_prompt"
+	keyContextThreshold        = "context_threshold"
 )
 
 // oidcEnabled reports whether the OIDC flow is active: it needs auth enabled
@@ -557,6 +563,16 @@ func (s *Server) githubOAuthClientID() string {
 		return v
 	}
 	return s.cfg.GitHubOAuthClientID
+}
+
+// githubOAuthClientSecret resolves the effective OAuth App client secret
+// (sqlite overrides env). Needed for the redirect (authorization-code) flow;
+// device flow only needs the client ID.
+func (s *Server) githubOAuthClientSecret() string {
+	if v, ok, _ := s.st.GetSetting(keyGitHubOAuthClientSecret); ok && v != "" {
+		return v
+	}
+	return s.cfg.GitHubOAuthClientSecret
 }
 
 // vercelToken resolves the user's effective Vercel token (user settings
