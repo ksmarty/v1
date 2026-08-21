@@ -29,6 +29,9 @@ type OIDCConfig struct {
 	// AllowedEmails, when non-empty, restricts sign-in to these addresses
 	// (case-insensitive). An empty list allows everyone.
 	AllowedEmails []string
+	// AdminEmails grants admin to OIDC users with these addresses
+	// (case-insensitive). They are applied on auto-provision and promotion.
+	AdminEmails []string
 }
 
 // OIDC implements the authorization-code flow with PKCE and ID-token

@@ -203,8 +203,21 @@ func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 	if errors.Is(err, store.ErrNotFound) {
 		// Auto-provision: the first OIDC sign-in for an email creates the
 		// account. The random hash keeps the row valid for users that never
-		// use a password.
-		u, err = s.auth.CreateUser(email, store.NewID(), false)
+		// use a password. Emails listed in V1_OIDC_ADMIN_EMAILS become admins.
+		admin := s.isOIDCAdmin(email)
+		u, err = s.auth.CreateUser(email, store.NewID(), admin)
+		if err == nil {
+			u.OIDC = true
+			_ = s.st.SetUserOIDC(u.ID, true)
+		}
+	} else if err == nil && !u.IsAdmin && s.isOIDCAdmin(email) {
+		// A listed email signing in later gets promoted to admin.
+		if ua := s.st.SetUserAdmin(u.ID, true); ua == nil {
+			u.IsAdmin = true
+		}
+	} else if err == nil && !u.OIDC {
+		u.OIDC = true
+		_ = s.st.SetUserOIDC(u.ID, true)
 	}
 	if err != nil {
 		log.Printf("oidc: resolving user %s: %v", email, err)

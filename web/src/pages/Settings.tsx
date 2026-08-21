@@ -1332,12 +1332,14 @@ export default function Settings() {
   // Current user — the Users page is admin-only and About shows the identity.
   const [me, setMe] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [oidcUser, setOidcUser] = useState(false);
   useEffect(() => {
     api
       .getAuthStatus()
       .then((s) => {
         setMe(s.user?.username ?? null);
         setIsAdmin(s.user?.isAdmin ?? false);
+        setOidcUser(s.user?.oidcUser ?? false);
       })
       .catch(() => {});
   }, []);
@@ -1382,11 +1384,17 @@ export default function Settings() {
     const p = params.get('page');
     if (p && NAV.some((n) => n.id === p)) setPage(p as NavId);
   }, [params]);
-  // Non-admins can't open the Users page.
+  // Non-admins can't open the Users page; OIDC users can't open Auth.
   useEffect(() => {
     if (!isAdmin && page === 'users') setPage('llm');
-  }, [isAdmin, page]);
-  const visibleNav = NAV.filter((n) => !('admin' in n) || !n.admin || isAdmin);
+    if (oidcUser && page === 'auth') setPage('llm');
+  }, [isAdmin, oidcUser, page]);
+  const visibleNav = NAV.filter(
+    (n) =>
+      (!('admin' in n) || !n.admin || isAdmin) &&
+      // OIDC users can't change a password — hide the Auth nav entry.
+      !(n.id === 'auth' && oidcUser),
+  );
   // Tools deep links pick the MCP/skills/perms tab.
   const toolsSection = params.get('section');
   const toolsInitialTab: ToolsTab =

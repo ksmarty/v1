@@ -203,6 +203,11 @@ CREATE TABLE pending_asks_v2 (
 	}); err != nil {
 		return err
 	}
+	if err := migrateAddColumns(db, "users", map[string]string{
+		"oidc": "ALTER TABLE users ADD COLUMN oidc INTEGER NOT NULL DEFAULT 0",
+	}); err != nil {
+		return err
+	}
 	return migrateAddColumns(db, "projects", map[string]string{
 		"preview_disabled": "ALTER TABLE projects ADD COLUMN preview_disabled INTEGER NOT NULL DEFAULT 0",
 	})
@@ -363,13 +368,14 @@ type User struct {
 	Username     string
 	PasswordHash string
 	IsAdmin      bool
+	OIDC         bool
 	CreatedAt    int64
 }
 
 // CreateUser inserts a user; ErrConflict when the username is taken.
 func (s *Store) CreateUser(u *User) error {
-	if _, err := s.db.Exec(`INSERT INTO users (id, username, password_hash, is_admin, created_at) VALUES (?, ?, ?, ?, ?)`,
-		u.ID, u.Username, u.PasswordHash, boolInt(u.IsAdmin), now()); err != nil {
+	if _, err := s.db.Exec(`INSERT INTO users (id, username, password_hash, is_admin, oidc, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+		u.ID, u.Username, u.PasswordHash, boolInt(u.IsAdmin), boolInt(u.OIDC), now()); err != nil {
 		if isUniqueErr(err) {
 			return ErrConflict
 		}
@@ -380,17 +386,17 @@ func (s *Store) CreateUser(u *User) error {
 
 // GetUserByUsername returns a user by exact username, or ErrNotFound.
 func (s *Store) GetUserByUsername(username string) (*User, error) {
-	return scanUser(s.db.QueryRow(`SELECT id, username, password_hash, is_admin, created_at FROM users WHERE username = ?`, username))
+	return scanUser(s.db.QueryRow(`SELECT id, username, password_hash, is_admin, oidc, created_at FROM users WHERE username = ?`, username))
 }
 
 // GetUserByID returns a user by id, or ErrNotFound.
 func (s *Store) GetUserByID(id string) (*User, error) {
-	return scanUser(s.db.QueryRow(`SELECT id, username, password_hash, is_admin, created_at FROM users WHERE id = ?`, id))
+	return scanUser(s.db.QueryRow(`SELECT id, username, password_hash, is_admin, oidc, created_at FROM users WHERE id = ?`, id))
 }
 
 // ListUsers returns all users, oldest first.
 func (s *Store) ListUsers() ([]*User, error) {
-	rows, err := s.db.Query(`SELECT id, username, password_hash, is_admin, created_at FROM users ORDER BY created_at, username`)
+	rows, err := s.db.Query(`SELECT id, username, password_hash, is_admin, oidc, created_at FROM users ORDER BY created_at, username`)
 	if err != nil {
 		return nil, err
 	}
@@ -421,6 +427,18 @@ func (s *Store) SetUserPassword(id, hash string) error {
 // SetUserAdmin flips a user's admin flag, or returns ErrNotFound.
 func (s *Store) SetUserAdmin(id string, isAdmin bool) error {
 	res, err := s.db.Exec(`UPDATE users SET is_admin = ? WHERE id = ?`, boolInt(isAdmin), id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// SetUserOIDC marks whether a user authenticates via OIDC, or ErrNotFound.
+func (s *Store) SetUserOIDC(id string, oidc bool) error {
+	res, err := s.db.Exec(`UPDATE users SET oidc = ? WHERE id = ?`, boolInt(oidc), id)
 	if err != nil {
 		return err
 	}
@@ -501,14 +519,15 @@ func (s *Store) DeleteUserSetting(userID, key string) error {
 
 func scanUser(row scanner) (*User, error) {
 	var u User
-	var isAdmin int
-	if err := row.Scan(&u.ID, &u.Username, &u.PasswordHash, &isAdmin, &u.CreatedAt); err != nil {
+	var isAdmin, oidc int
+	if err := row.Scan(&u.ID, &u.Username, &u.PasswordHash, &isAdmin, &oidc, &u.CreatedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}
 		return nil, err
 	}
 	u.IsAdmin = isAdmin != 0
+	u.OIDC = oidc != 0
 	return &u, nil
 }
 

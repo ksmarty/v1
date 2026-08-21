@@ -29,13 +29,15 @@ func (s *Server) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
 	var user *struct {
 		Username string `json:"username"`
 		IsAdmin  bool   `json:"isAdmin"`
+		OIDC     bool   `json:"oidcUser"`
 	}
 	u, ok := s.auth.User(r)
 	if ok && u != nil {
 		user = &struct {
 			Username string `json:"username"`
 			IsAdmin  bool   `json:"isAdmin"`
-		}{Username: u.Username, IsAdmin: u.IsAdmin}
+			OIDC     bool   `json:"oidcUser"`
+		}{Username: u.Username, IsAdmin: u.IsAdmin, OIDC: u.OIDC}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"authRequired":  !s.cfg.AuthDisabled,

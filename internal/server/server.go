@@ -338,6 +338,7 @@ func (s *Server) oidcConfig() auth.OIDCConfig {
 		ClientSecret:  s.cfg.OIDCClientSecret,
 		RedirectURI:   s.cfg.OIDCRedirectURI,
 		AllowedEmails: s.cfg.OIDCAllowedEmails,
+		AdminEmails:   s.cfg.OIDCAdminEmails,
 	}
 	if v, _, _ := s.st.GetSetting(keyOIDCIssuer); v != "" {
 		cfg.Issuer = v
@@ -355,6 +356,17 @@ func (s *Server) oidcConfig() auth.OIDCConfig {
 		cfg.AllowedEmails = splitCSV(v)
 	}
 	return cfg
+}
+
+// isOIDCAdmin reports whether an OIDC email is granted the admin role
+// (V1_OIDC_ADMIN_EMAILS in the effective config, case-insensitive).
+func (s *Server) isOIDCAdmin(email string) bool {
+	for _, e := range s.oidcConfig().AdminEmails {
+		if strings.EqualFold(e, email) {
+			return true
+		}
+	}
+	return false
 }
 
 // rebuildOIDC swaps in a fresh OIDC client from the effective config — called

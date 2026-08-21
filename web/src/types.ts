@@ -4,7 +4,7 @@ export interface AuthStatus {
   setupRequired: boolean;
   oidcEnabled: boolean;
   signupEnabled: boolean;
-  user: { username: string; isAdmin: boolean } | null;
+  user: { username: string; isAdmin: boolean; oidcUser?: boolean } | null;
 }
 
 export interface UserInfo {

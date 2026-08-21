@@ -29,6 +29,7 @@ type Config struct {
 	OIDCClientSecret    string
 	OIDCRedirectURI     string
 	OIDCAllowedEmails   []string
+	OIDCAdminEmails     []string
 	MaxPreviews         int
 	ContextBudget       int
 	ContextThreshold    float64
@@ -93,6 +94,13 @@ func Load(version, commit string) Config {
 		for _, part := range strings.Split(v, ",") {
 			if e := strings.TrimSpace(part); e != "" {
 				c.OIDCAllowedEmails = append(c.OIDCAllowedEmails, e)
+			}
+		}
+	}
+	if v := os.Getenv("V1_OIDC_ADMIN_EMAILS"); v != "" {
+		for _, part := range strings.Split(v, ",") {
+			if e := strings.TrimSpace(part); e != "" {
+				c.OIDCAdminEmails = append(c.OIDCAdminEmails, e)
 			}
 		}
 	}
