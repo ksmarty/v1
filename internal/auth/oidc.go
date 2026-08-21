@@ -40,9 +40,12 @@ type OIDC struct {
 	provider *oidc.Provider
 }
 
-// NewOIDC builds an OIDC client from static configuration.
+// NewOIDC builds an OIDC client from static configuration. The issuer is
+// kept verbatim (no trailing-slash trimming): go-oidc compares the passed
+// issuer against the discovery document's `issuer` field, and providers
+// (Authentik included) commonly publish a trailing-slash issuer, so trimming
+// here would produce a false mismatch.
 func NewOIDC(cfg OIDCConfig) *OIDC {
-	cfg.Issuer = strings.TrimSuffix(cfg.Issuer, "/")
 	return &OIDC{cfg: cfg}
 }
 

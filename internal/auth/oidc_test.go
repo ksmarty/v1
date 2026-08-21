@@ -23,6 +23,18 @@ func TestOIDCEnabled(t *testing.T) {
 	}
 }
 
+// The issuer must be passed to go-oidc verbatim. Authentik (and other
+// providers) publish a trailing-slash issuer in their discovery document
+// (https://…/application/o/v1/); NewOIDC must not trim it, or go-oidc's
+// "issuer did not match" check fails and /oidc/start 502s.
+func TestOIDCIssuerKeptVerbatim(t *testing.T) {
+	issuer := "https://auth.example.com/application/o/v1/"
+	o := NewOIDC(OIDCConfig{Issuer: issuer, ClientID: "id", ClientSecret: "secret"})
+	if o.cfg.Issuer != issuer {
+		t.Fatalf("issuer was rewritten: got %q, want %q", o.cfg.Issuer, issuer)
+	}
+}
+
 func TestOIDCAllowed(t *testing.T) {
 	o := NewOIDC(OIDCConfig{AllowedEmails: []string{"Alice@Example.com"}})
 	cases := []struct {
