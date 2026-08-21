@@ -108,7 +108,15 @@ func (s *Server) handleOAuthDeviceStart(w http.ResponseWriter, r *http.Request) 
 			writeError(w, http.StatusBadGateway, "GitHub rejected the OAuth Client ID (404 Not Found) — check the Client ID saved in Settings matches your OAuth App at github.com/settings/developers")
 			return
 		}
-		log.Printf("github oauth: device code request returned HTTP %d (client_id %q)", status, clientID)
+		// GitHub returns 400 with {"error":"device_flow_disabled"} when the
+		// App hasn't enabled Device Flow — the client ID is valid, this is a
+		// checkbox on the OAuth App settings page.
+		if e := jsonStr(resp, "error"); e == "device_flow_disabled" {
+			log.Printf("github oauth: device flow disabled for client_id %q", clientID)
+			writeError(w, http.StatusBadGateway, "GitHub rejected the request: Device Flow is not enabled for this OAuth App. Enable it at github.com/settings/developers (OAuth App → Enable Device Flow → Update application), then retry.")
+			return
+		}
+		log.Printf("github oauth: device code request returned HTTP %d (client_id %q): %v", status, clientID, resp)
 		writeError(w, http.StatusBadGateway, fmt.Sprintf("GitHub device flow start failed (HTTP %d)", status))
 		return
 	}
