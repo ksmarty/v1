@@ -2394,14 +2394,9 @@ export default function Settings() {
                   <OidcControl />
                 </Section>
               )}
+              {!oidcUser && (
               <Section id="sec-auth" title="Auth">
-          {oidcUser ? (
-            <p className="text-sm text-subtle">
-              You sign in with OIDC (single sign-on), so there is no password
-              to change here. Password changes are managed by your identity
-              provider.
-            </p>
-          ) : settings.auth.disabled ? (
+          {settings.auth.disabled ? (
             <p className="text-sm text-dim">
               Password authentication is disabled for this instance.
             </p>
@@ -2437,6 +2432,7 @@ export default function Settings() {
             </form>
           )}
         </Section>
+              )}
             </div>
 
             <div

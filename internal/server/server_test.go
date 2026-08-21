@@ -493,3 +493,49 @@ func TestAuthEndpoints(t *testing.T) {
 		t.Fatalf("bad login = %d, want 401", rr.Code)
 	}
 }
+
+func TestAuthStatusReportsOIDCUser(t *testing.T) {
+	s, adminTok, aliceTok := newAuthServer(t)
+	session := func(token string) *http.Request {
+		r := httptest.NewRequest("GET", "/api/auth/status", nil)
+		r.Header.Set("Cookie", cookieHeader(token))
+		return r
+	}
+	// Non-OIDC user: oidcUser false.
+	rr := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rr, session(aliceTok))
+	var res struct {
+		User *struct {
+			OIDC bool `json:"oidcUser"`
+		} `json:"user"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &res); err != nil {
+		t.Fatal(err)
+	}
+	if res.User == nil || res.User.OIDC {
+		t.Fatalf("plain user oidcUser = %+v, want false", res.User)
+	}
+
+	// Mark alice as an OIDC user in the store, new session, flag true.
+	u, err := s.st.GetUserByUsername("alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.st.SetUserOIDC(u.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	rr = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rr, session(aliceTok))
+	var res2 struct {
+		User *struct {
+			OIDC bool `json:"oidcUser"`
+		} `json:"user"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &res2); err != nil {
+		t.Fatal(err)
+	}
+	if res2.User == nil || !res2.User.OIDC {
+		t.Fatalf("oidc user oidcUser = %+v, want true", res2.User)
+	}
+	_ = adminTok
+}
