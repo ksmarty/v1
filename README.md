@@ -57,7 +57,8 @@ All configuration is via environment variables:
 | `OPENAI_BASE_URL` | `https://api.openai.com/v1` | Any OpenAI-compatible endpoint. |
 | `V1_MODEL` | `gpt-4o` | Model used to generate apps. |
 | `V1_GITHUB_TOKEN` | — | GitHub personal access token (repo import/push). |
-| `V1_GITHUB_OAUTH_CLIENT_ID` | — | Client ID of a GitHub OAuth App for device-flow login (see below). |
+| `V1_GITHUB_OAUTH_CLIENT_ID` | — | Client ID of a GitHub OAuth App (for the OAuth connect flows below). |
+| `V1_GITHUB_OAUTH_CLIENT_SECRET` | — | Client secret of the GitHub OAuth App; enables the redirect (authorization-code) connect flow with no code entry. Fields set via env are read-only in Settings. |
 | `V1_AUTH_OIDC_ENABLED` | — | `true` forces OIDC login on (also auto-enables when all `V1_OIDC_*` are set). |
 | `V1_OIDC_ISSUER` | — | OIDC issuer URL. For Authentik: `https://auth.example.com/application/o/<slug>/`. |
 | `V1_OIDC_CLIENT_ID` | — | OIDC client ID registered with the provider. |
@@ -242,11 +243,30 @@ Two ways to connect GitHub — either one enables **importing existing repos** a
 
 ### OAuth (recommended)
 
-Uses GitHub's device flow — no redirect URLs, works behind any reverse proxy:
+Connect with GitHub by OAuth. Two flows, chosen automatically based on whether
+a **client secret** is configured:
 
-1. Create an OAuth App at <https://github.com/settings/developers> → **New OAuth App**. Homepage and callback URLs don't matter (device flow doesn't use them), but you must enable **Device Flow** in the app's settings.
-2. Paste the app's **Client ID** into Settings → GitHub in v1 (or set `V1_GITHUB_OAUTH_CLIENT_ID`). No client secret is needed or stored.
-3. Click **Connect with GitHub**, enter the shown code at github.com/login/device, done. v1 requests the `repo read:user read:packages` scopes (`read:packages` is needed to list your ghcr.io container images in the GitHub tab).
+- **Redirect flow (no code entry)** — used when a client secret is saved (or
+  set via `V1_GITHUB_OAUTH_CLIENT_SECRET`). Clicking **Connect with GitHub**
+  bounces to GitHub and straight back to the app.
+- **Device flow (code entry)** — used when only the Client ID is set. You
+  enter a code shown in the app at github.com/login/device. Works behind any
+  reverse proxy without a callback URL.
+
+Setup:
+
+1. Create an OAuth App at <https://github.com/settings/developers> → **New
+   OAuth App**.
+2. **Callback URL**: `<your-origin>/api/auth/github/oauth/callback` (needed
+   for the redirect flow; the exact origin v1 is served at, plus that path).
+   Enable **Device Flow** in the app's settings too, so the fallback works.
+3. Paste the app's **Client ID** (and **Client Secret** for the redirect
+   flow) into Settings → GitHub, or set `V1_GITHUB_OAUTH_CLIENT_ID` /
+   `V1_GITHUB_OAUTH_CLIENT_SECRET`. When either is set via env, the field is
+   read-only in Settings.
+4. Click **Connect with GitHub**. v1 requests the `repo read:user
+   read:packages` scopes (`read:packages` is needed to list your ghcr.io
+   container images in the GitHub tab).
 
 ### Personal access token
 
