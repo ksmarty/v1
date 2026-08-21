@@ -56,13 +56,9 @@ func (s *Server) handleOIDCSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cfg := s.oidcConfig()
-	// A field is "from env" when no saved value overrides it and the env
-	// provides one — such fields are read-only in the UI (env is the source
-	// of truth; saved settings override env). Secret is tracked the same way.
-	saved := func(key string) bool {
-		v, ok, _ := s.st.GetSetting(key)
-		return ok && v != ""
-	}
+	// A field is read-only in the UI when its env var is configured — the env
+	// is the deployment-level source of truth, and editing those in the UI
+	// would just be overridden at the next restart anyway.
 	writeJSON(w, http.StatusOK, map[string]any{
 		"issuer":               cfg.Issuer,
 		"clientId":             cfg.ClientID,
@@ -70,11 +66,11 @@ func (s *Server) handleOIDCSettings(w http.ResponseWriter, r *http.Request) {
 		"callbackUri":          cfg.RedirectURI,
 		"allowedEmails":        strings.Join(cfg.AllowedEmails, ", "),
 		"enabled":              s.oidcEnabled(),
-		"issuerFromEnv":        cfg.Issuer != "" && !saved(keyOIDCIssuer),
-		"clientIdFromEnv":      cfg.ClientID != "" && !saved(keyOIDCClientID),
-		"clientSecretFromEnv":  cfg.ClientSecret != "" && !saved(keyOIDCClientSecret),
-		"callbackUriFromEnv":   cfg.RedirectURI != "" && !saved(keyOIDCCallbackURI),
-		"allowedEmailsFromEnv": cfg.AllowedEmails != nil && !saved(keyOIDCAllowedEmails),
+		"issuerFromEnv":        s.cfg.OIDCIssuer != "",
+		"clientIdFromEnv":      s.cfg.OIDCClientID != "",
+		"clientSecretFromEnv":  s.cfg.OIDCClientSecret != "",
+		"callbackUriFromEnv":   s.cfg.OIDCRedirectURI != "",
+		"allowedEmailsFromEnv": len(s.cfg.OIDCAllowedEmails) > 0,
 	})
 }
 

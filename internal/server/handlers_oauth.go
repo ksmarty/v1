@@ -96,6 +96,13 @@ func (s *Server) handleOAuthDeviceStart(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if status != http.StatusOK {
+		// GitHub returns 404 with {"error":"Not Found"} when the client_id
+		// doesn't match a real OAuth App — tell the user that instead of a
+		// mysterious 502.
+		if status == http.StatusNotFound {
+			writeError(w, http.StatusBadGateway, "GitHub rejected the OAuth Client ID (404 Not Found) — check the Client ID saved in Settings matches your OAuth App at github.com/settings/developers")
+			return
+		}
 		writeError(w, http.StatusBadGateway, fmt.Sprintf("GitHub device flow start failed (HTTP %d)", status))
 		return
 	}
