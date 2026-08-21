@@ -236,6 +236,11 @@ export const api = {
       callbackUri: string;
       allowedEmails: string;
       enabled: boolean;
+      issuerFromEnv?: boolean;
+      clientIdFromEnv?: boolean;
+      clientSecretFromEnv?: boolean;
+      callbackUriFromEnv?: boolean;
+      allowedEmailsFromEnv?: boolean;
     }>('/api/settings/oidc'),
   oidcSettingsSave: (body: {
     issuer?: string;

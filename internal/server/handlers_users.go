@@ -28,6 +28,7 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 			"id":        u.ID,
 			"username":  u.Username,
 			"isAdmin":   u.IsAdmin,
+			"oidc":      u.OIDC,
 			"createdAt": u.CreatedAt,
 		})
 	}

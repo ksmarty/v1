@@ -56,13 +56,25 @@ func (s *Server) handleOIDCSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cfg := s.oidcConfig()
+	// A field is "from env" when no saved value overrides it and the env
+	// provides one — such fields are read-only in the UI (env is the source
+	// of truth; saved settings override env). Secret is tracked the same way.
+	saved := func(key string) bool {
+		v, ok, _ := s.st.GetSetting(key)
+		return ok && v != ""
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"issuer":          cfg.Issuer,
-		"clientId":        cfg.ClientID,
-		"clientSecretSet": cfg.ClientSecret != "",
-		"callbackUri":     cfg.RedirectURI,
-		"allowedEmails":   strings.Join(cfg.AllowedEmails, ", "),
-		"enabled":         s.oidcEnabled(),
+		"issuer":               cfg.Issuer,
+		"clientId":             cfg.ClientID,
+		"clientSecretSet":      cfg.ClientSecret != "",
+		"callbackUri":          cfg.RedirectURI,
+		"allowedEmails":        strings.Join(cfg.AllowedEmails, ", "),
+		"enabled":              s.oidcEnabled(),
+		"issuerFromEnv":        cfg.Issuer != "" && !saved(keyOIDCIssuer),
+		"clientIdFromEnv":      cfg.ClientID != "" && !saved(keyOIDCClientID),
+		"clientSecretFromEnv":  cfg.ClientSecret != "" && !saved(keyOIDCClientSecret),
+		"callbackUriFromEnv":   cfg.RedirectURI != "" && !saved(keyOIDCCallbackURI),
+		"allowedEmailsFromEnv": cfg.AllowedEmails != nil && !saved(keyOIDCAllowedEmails),
 	})
 }
 

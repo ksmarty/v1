@@ -49,6 +49,7 @@ import {
   IconChat,
   IconCheck,
   IconChevronDown,
+  IconCopy,
   IconChevronUp,
   IconDots,
   IconExternalLink,
@@ -559,6 +560,8 @@ function DebugHudControl() {
 // issuer + client id + secret; the callback URI defaults to
 // <origin>/api/auth/oidc/callback and allowed emails defaults to everyone.
 function OidcControl() {
+  // The values loaded from the server, so dirty only reflects real changes.
+  const loaded = useRef({ issuer: '', clientId: '', callbackUri: '', allowedEmails: '' });
   const [issuer, setIssuer] = useState('');
   const [clientId, setClientId] = useState('');
   const [clientSecret, setClientSecret] = useState('');
@@ -566,6 +569,12 @@ function OidcControl() {
   const [callbackUri, setCallbackUri] = useState('');
   const [allowedEmails, setAllowedEmails] = useState('');
   const [enabled, setEnabled] = useState(false);
+  const [issuerEnv, setIssuerEnv] = useState(false);
+  const [clientIdEnv, setClientIdEnv] = useState(false);
+  const [secretEnv, setSecretEnv] = useState(false);
+  const [callbackEnv, setCallbackEnv] = useState(false);
+  const [allowedEnv, setAllowedEnv] = useState(false);
+  const [copied, setCopied] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -580,6 +589,17 @@ function OidcControl() {
         setCallbackUri(c.callbackUri);
         setAllowedEmails(c.allowedEmails);
         setEnabled(c.enabled);
+        setIssuerEnv(c.issuerFromEnv ?? false);
+        setClientIdEnv(c.clientIdFromEnv ?? false);
+        setSecretEnv(c.clientSecretFromEnv ?? false);
+        setCallbackEnv(c.callbackUriFromEnv ?? false);
+        setAllowedEnv(c.allowedEmailsFromEnv ?? false);
+        loaded.current = {
+          issuer: c.issuer,
+          clientId: c.clientId,
+          callbackUri: c.callbackUri,
+          allowedEmails: c.allowedEmails,
+        };
       })
       .catch(() => {});
   }, []);
@@ -588,12 +608,17 @@ function OidcControl() {
   }, [load]);
 
   const defaultCallback = `${window.location.origin}/api/auth/oidc/callback`;
-  const dirty =
-    issuer.trim() !== '' ||
-    clientId.trim() !== '' ||
-    clientSecret.trim() !== '' ||
-    callbackUri.trim() !== '' ||
-    allowedEmails.trim() !== '';
+  const effectiveCallback = callbackUri.trim() || defaultCallback;
+  // Only glow the save button when there are real unsaved changes. Env-sourced
+  // fields are read-only and never count; an untouched secret input never
+  // counts when a secret is already set (saved or env).
+  const dirty = Boolean(
+    !issuerEnv && issuer.trim() !== loaded.current.issuer.trim() ||
+    !clientIdEnv && clientId.trim() !== loaded.current.clientId.trim() ||
+    !secretEnv && clientSecret.trim() !== '' ||
+    !callbackEnv && callbackUri.trim() !== loaded.current.callbackUri.trim() ||
+    !allowedEnv && allowedEmails.trim() !== loaded.current.allowedEmails.trim(),
+  );
 
   const save = async () => {
     setSaving(true);
@@ -618,6 +643,21 @@ function OidcControl() {
     }
   };
 
+  const copyCallback = () => {
+    void navigator.clipboard.writeText(effectiveCallback).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  };
+
+  // A read-only, horizontally scrollable box for env-managed values (long
+  // URLs/issuers) — inputs can't scroll horizontally on every browser.
+  const EnvValue = ({ value }: { value: string }) => (
+    <div className="v1-no-scrollbar w-full overflow-x-auto whitespace-nowrap rounded-lg border border-border-strong bg-surface px-3 py-2 font-mono text-xs text-text opacity-70">
+      {value || '(unset)'}
+    </div>
+  );
+
   return (
     <form onSubmit={(e) => { e.preventDefault(); void save(); }} className="flex flex-col gap-3">
       <p className="text-xs text-faint">
@@ -633,63 +673,146 @@ function OidcControl() {
         <p className="text-xs text-faint">OIDC login is not configured yet.</p>
       )}
       <Field label="Issuer URL (required)">
-        <Input
-          value={issuer}
-          onChange={(e) => setIssuer(e.target.value)}
-          placeholder="https://auth.example.com/application/o/<slug>/"
-          spellCheck={false}
-          autoComplete="off"
-        />
+        {issuerEnv ? (
+          <>
+            <EnvValue value={issuer} />
+            <span className="mt-1 block text-[11px] text-faint">
+              Set via{' '}
+              <code className="font-mono text-dim">V1_OIDC_ISSUER</code>{' '}
+              — read-only.
+            </span>
+          </>
+        ) : (
+          <Input
+            value={issuer}
+            onChange={(e) => setIssuer(e.target.value)}
+            placeholder="https://auth.example.com/application/o/<slug>/"
+            spellCheck={false}
+            autoComplete="off"
+          />
+        )}
       </Field>
       <Field label="Client ID (required)">
-        <Input
-          value={clientId}
-          onChange={(e) => setClientId(e.target.value)}
-          placeholder="OIDC client ID from your provider"
-          spellCheck={false}
-          autoComplete="off"
-        />
+        {clientIdEnv ? (
+          <>
+            <EnvValue value={clientId} />
+            <span className="mt-1 block text-[11px] text-faint">
+              Set via{' '}
+              <code className="font-mono text-dim">V1_OIDC_CLIENT_ID</code>{' '}
+              — read-only.
+            </span>
+          </>
+        ) : (
+          <Input
+            value={clientId}
+            onChange={(e) => setClientId(e.target.value)}
+            placeholder="OIDC client ID from your provider"
+            spellCheck={false}
+            autoComplete="off"
+          />
+        )}
       </Field>
       <Field label="Client secret (required)">
-        <Input
-          type="password"
-          value={clientSecret}
-          onChange={(e) => setClientSecret(e.target.value)}
-          placeholder={secretSet ? '(saved — leave blank to keep it)' : 'OIDC client secret'}
-          autoComplete="new-password"
-        />
+        {secretEnv ? (
+          <>
+            <EnvValue value={secretSet ? '•••••••• (set via env)' : ''} />
+            <span className="mt-1 block text-[11px] text-faint">
+              Set via{' '}
+              <code className="font-mono text-dim">V1_OIDC_CLIENT_SECRET</code>{' '}
+              — read-only.
+            </span>
+          </>
+        ) : (
+          <Input
+            type="password"
+            value={clientSecret}
+            onChange={(e) => setClientSecret(e.target.value)}
+            placeholder={secretSet ? '(saved — leave blank to keep it)' : 'OIDC client secret'}
+            autoComplete="new-password"
+            className={secretEnv ? 'cursor-not-allowed opacity-60' : ''}
+          />
+        )}
       </Field>
       <Field label="Callback URI">
-        <Input
-          value={callbackUri}
-          onChange={(e) => setCallbackUri(e.target.value)}
-          placeholder={defaultCallback}
-          spellCheck={false}
-          autoComplete="off"
-        />
-        <span className="mt-1 block text-[11px] text-faint">
-          Leave blank to use the default: <span className="font-mono">{defaultCallback}</span>
-        </span>
+        {callbackEnv ? (
+          <>
+            <div className="relative">
+              <EnvValue value={effectiveCallback} />
+              <button
+                type="button"
+                onClick={copyCallback}
+                aria-label="Copy callback URI"
+                title="Copy"
+                className="absolute right-2 top-1/2 inline-flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md text-faint transition-colors hover:bg-border hover:text-text"
+              >
+                {copied ? <IconCheck className="h-3.5 w-3.5" /> : <IconCopy className="h-3.5 w-3.5" />}
+              </button>
+            </div>
+            <span className="mt-1 block text-[11px] text-faint">
+              Set via{' '}
+              <code className="font-mono text-dim">V1_OIDC_REDIRECT_URI</code>{' '}
+              — read-only.
+            </span>
+          </>
+        ) : (
+          <>
+            <Input
+              value={callbackUri}
+              onChange={(e) => setCallbackUri(e.target.value)}
+              placeholder={defaultCallback}
+              spellCheck={false}
+              autoComplete="off"
+              className="font-mono text-xs"
+            />
+            <span className="mt-1 block break-all font-mono text-[11px] text-faint">
+              {effectiveCallback}
+            </span>
+          </>
+        )}
       </Field>
       <Field label="Allowed emails">
-        <Input
-          value={allowedEmails}
-          onChange={(e) => setAllowedEmails(e.target.value)}
-          placeholder="you@example.com, teammate@example.com"
-          spellCheck={false}
-          autoComplete="off"
-        />
-        <span className="mt-1 block text-[11px] text-faint">
-          Comma-separated list; blank allows any authenticated user.
-        </span>
+        {allowedEnv ? (
+          <>
+            <EnvValue value={allowedEmails} />
+            <span className="mt-1 block text-[11px] text-faint">
+              Set via{' '}
+              <code className="font-mono text-dim">V1_OIDC_ALLOWED_EMAILS</code>{' '}
+              — read-only.
+            </span>
+          </>
+        ) : (
+          <>
+            <Input
+              value={allowedEmails}
+              onChange={(e) => setAllowedEmails(e.target.value)}
+              placeholder="you@example.com, teammate@example.com"
+              spellCheck={false}
+              autoComplete="off"
+            />
+            <span className="mt-1 block text-[11px] text-faint">
+              Comma-separated list; blank allows any authenticated user.
+            </span>
+          </>
+        )}
       </Field>
-      <div className="rounded-lg border border-border/70 bg-surface/60 px-3 py-2 text-xs text-dim">
-        Register this URI with your provider:
-        <span className="mt-0.5 block break-all font-mono text-text">
-          {callbackUri.trim() || defaultCallback}
-        </span>
+      <div className="flex items-center gap-2 rounded-lg border border-border-strong bg-surface/60 px-3 py-2 text-xs text-dim">
+        <div className="min-w-0 flex-1">
+          Register this URI with your provider:
+          <span className="mt-0.5 block v1-no-scrollbar overflow-x-auto whitespace-nowrap font-mono text-text">
+            {effectiveCallback}
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={copyCallback}
+          aria-label="Copy callback URI"
+          title="Copy"
+          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-faint transition-colors hover:bg-border hover:text-text"
+        >
+          {copied ? <IconCheck className="h-4 w-4" /> : <IconCopy className="h-4 w-4" />}
+        </button>
       </div>
-      <SaveRow saving={saving} saved={saved} error={error} pulse={dirty} />
+      <SaveRow saving={saving} saved={saved} error={error} pulse={dirty} disabled={secretEnv && clientSecret !== ''} />
     </form>
   );
 }
@@ -864,6 +987,21 @@ function UsersControl() {
                     <span className="min-w-0 flex-1 truncate text-sm font-medium text-text">
                       {u.username}
                     </span>
+                    {u.oidc ? (
+                      <span
+                        className="shrink-0 rounded-full bg-accent/15 px-1.5 py-0.5 text-[10px] font-medium text-accent"
+                        title="This account signs in via OIDC (no local password)"
+                      >
+                        OIDC
+                      </span>
+                    ) : (
+                      <span
+                        className="shrink-0 rounded-full bg-border px-1.5 py-0.5 text-[10px] text-dim"
+                        title="Local account with a password"
+                      >
+                        internal
+                      </span>
+                    )}
                     {isMe && (
                       <span className="shrink-0 rounded-full bg-border px-1.5 py-0.5 text-[10px] text-dim">
                         you

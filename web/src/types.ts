@@ -11,6 +11,8 @@ export interface UserInfo {
   id: string;
   username: string;
   isAdmin: boolean;
+  /** True when the account authenticates via OIDC (no local password). */
+  oidc?: boolean;
   createdAt: number;
 }
 
