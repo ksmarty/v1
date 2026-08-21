@@ -64,6 +64,7 @@ All configuration is via environment variables:
 | `V1_OIDC_CLIENT_SECRET` | — | OIDC client secret. |
 | `V1_OIDC_REDIRECT_URI` | — | Callback URI, e.g. `https://v1.example.com/api/auth/oidc/callback`. Auto-derived if unset. |
 | `V1_OIDC_ALLOWED_EMAILS` | — | Comma list of emails allowed to log in (empty = any authenticated user). |
+| `V1_OIDC_ADMIN_EMAILS` | — | Comma list of emails granted the admin role on OIDC sign-in (case-insensitive; applied on first login and promotions). |
 | `V1_MAX_PREVIEWS` | `3` | Max preview dev servers running at once. |
 | `V1_ALLOW_SIGNUP` | `false` | `true` lets anyone register a (non-admin) account from the login page. |
 | `V1_VERCEL_TOKEN` | — | Vercel personal access token (see Vercel integration below). |
@@ -137,6 +138,10 @@ other OIDC provider) as an alternative to — or instead of — the password:
      headers). The Settings page shows the effective URI.
    - `V1_OIDC_ALLOWED_EMAILS` — optional comma list to restrict sign-in
      (blank = any authenticated user).
+   - `V1_OIDC_ADMIN_EMAILS` — optional comma list of emails granted the
+     **admin** role (case-insensitive). Applied when an account is first
+     auto-provisioned, and on later sign-ins it promotes an existing matching
+     user. Omit to make every OIDC user a regular (non-admin) account.
 3. Restart (env vars only). The login screen shows **Sign in with Authentik**
    alongside the password field. The sign-out button still ends the local
    session.
@@ -150,6 +155,15 @@ client ID / client secret / redirect URI are set. When OIDC is configured the
 first-run password setup is skipped, so it can be the only authentication
 method. The flow uses Authorization Code + PKCE and validates the ID token
 signature, issuer, audience and nonce.
+
+> Keep the Issuer URL verbatim, including the trailing slash — Authentik
+> publishes it with one (e.g. `https://auth.example.com/application/o/v1/`)
+> and v1 passes it through to the provider's discovery document unchanged.
+
+Users who sign in via OIDC have no password to change, so the **Auth**
+(change password) settings are hidden from them. Admins who use OIDC keep the
+Auth page so they can still reach the OIDC configuration, but the password
+form is replaced with a note pointing at the identity provider.
 
 ## Reverse proxy
 
