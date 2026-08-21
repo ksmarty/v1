@@ -1384,16 +1384,17 @@ export default function Settings() {
     const p = params.get('page');
     if (p && NAV.some((n) => n.id === p)) setPage(p as NavId);
   }, [params]);
-  // Non-admins can't open the Users page; OIDC users can't open Auth.
+  // Non-admins can't open the Users page; OIDC non-admins can't open Auth.
   useEffect(() => {
     if (!isAdmin && page === 'users') setPage('llm');
-    if (oidcUser && page === 'auth') setPage('llm');
+    if (oidcUser && !isAdmin && page === 'auth') setPage('llm');
   }, [isAdmin, oidcUser, page]);
   const visibleNav = NAV.filter(
     (n) =>
       (!('admin' in n) || !n.admin || isAdmin) &&
-      // OIDC users can't change a password — hide the Auth nav entry.
-      !(n.id === 'auth' && oidcUser),
+      // OIDC non-admins can't change a password — hide the Auth nav entry.
+      // Admins keep it so they can reach the OIDC configuration.
+      !(n.id === 'auth' && oidcUser && !isAdmin),
   );
   // Tools deep links pick the MCP/skills/perms tab.
   const toolsSection = params.get('section');
@@ -2394,7 +2395,13 @@ export default function Settings() {
                 </Section>
               )}
               <Section id="sec-auth" title="Auth">
-          {settings.auth.disabled ? (
+          {oidcUser ? (
+            <p className="text-sm text-subtle">
+              You sign in with OIDC (single sign-on), so there is no password
+              to change here. Password changes are managed by your identity
+              provider.
+            </p>
+          ) : settings.auth.disabled ? (
             <p className="text-sm text-dim">
               Password authentication is disabled for this instance.
             </p>
