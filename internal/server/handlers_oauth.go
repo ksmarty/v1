@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -92,6 +93,9 @@ func (s *Server) handleOAuthDeviceStart(w http.ResponseWriter, r *http.Request) 
 		"scope":     {deviceScope},
 	})
 	if err != nil {
+		// The container couldn't reach GitHub (DNS/egress/TLS). Log the exact
+		// error so the operator can see whether it's transport vs GitHub.
+		log.Printf("github oauth: device code request failed (client_id %q): %v", clientID, err)
 		writeError(w, http.StatusBadGateway, "GitHub device flow start failed: "+err.Error())
 		return
 	}
@@ -100,9 +104,11 @@ func (s *Server) handleOAuthDeviceStart(w http.ResponseWriter, r *http.Request) 
 		// doesn't match a real OAuth App — tell the user that instead of a
 		// mysterious 502.
 		if status == http.StatusNotFound {
+			log.Printf("github oauth: GitHub rejected client_id %q (404)", clientID)
 			writeError(w, http.StatusBadGateway, "GitHub rejected the OAuth Client ID (404 Not Found) — check the Client ID saved in Settings matches your OAuth App at github.com/settings/developers")
 			return
 		}
+		log.Printf("github oauth: device code request returned HTTP %d (client_id %q)", status, clientID)
 		writeError(w, http.StatusBadGateway, fmt.Sprintf("GitHub device flow start failed (HTTP %d)", status))
 		return
 	}
