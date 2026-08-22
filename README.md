@@ -15,11 +15,9 @@ A self-hosted [v0](https://v0.dev) clone: chat with an AI and it builds real web
 ## Quickstart
 
 > The image bundles **rootless podman** so v1 can build and run containers
-> for you (the `run_container` skill). That means the outer container needs
-> to allow nested containers — run it with `--privileged`. If you'd rather
-> not use `--privileged`, grant `CAP_SYS_ADMIN`, keep user namespaces
-> enabled (`kernel.unprivileged_userns_clone=1`) and add
-> `--security-opt seccomp=unconfined` instead.
+> for you (the `run_container` skill). Nested containers need the outer
+> container to run `--privileged` (or equivalent capabilities) — see
+> [Docker container privileges](#docker-container-privileges).
 
 ```bash
 docker run -d \
@@ -37,7 +35,7 @@ Replace `<owner>` with the GitHub user/org that publishes the image (e.g. your f
 
 ### docker compose
 
-A [`docker-compose.yml`](docker-compose.yml) is included for convenience:
+A [`docker-compose.yml`](docker-compose.yml) is included for convenience — the `privileged: true` flag required for nested containers is already set:
 
 ```bash
 # first edit the file: replace <owner> in the image name (or use `build: .`)
@@ -50,6 +48,37 @@ docker compose up -d
 docker build -t v1:local .
 docker run -d -p 8080:8080 -v v1-data:/data --privileged v1:local
 ```
+
+## Docker container privileges
+
+The v1 image bundles **rootless podman** so the agent's `run_container` skill can build and run containers for you. Running containers inside the v1 container (docker-in-docker) requires the *outer* container to allow nested containers — without it, `run_container` fails with `no container runtime found` (podman sees no user namespace).
+
+**Simplest: run the container privileged**
+
+```bash
+docker run -d --privileged -p 8080:8080 -v v1-data:/data ghcr.io/<owner>/v1:latest
+```
+
+**Least privilege alternative** — drop `--privileged` and grant exactly what nested podman needs:
+
+```bash
+docker run -d \
+  -p 8080:8080 \
+  -v v1-data:/data \
+  --cap-add SYS_ADMIN \
+  --security-opt seccomp=unconfined \
+  -e OPENAI_API_KEY=sk-... \
+  ghcr.io/<owner>/v1:latest
+```
+
+Requirements in both modes:
+
+- **Host kernel must allow user namespaces**: `kernel.unprivileged_userns_clone=1` (on Ubuntu 23.10+ also set `kernel.apparmor_restrict_unprivileged_userns=0`).
+- `--privileged` (or the seccomp override above) provides `/dev/fuse`, which the rootless storage driver (fuse-overlayfs) mounts; without it podman falls back to the slower `vfs` storage driver instead of failing.
+- The `node` user inside the image has a subordinate id range (`/etc/subuid`/`/etc/subgid`, `100000:65536`) so rootless podman can map container uids.
+- On Docker Desktop / Podman Desktop / colima (macOS/Windows), nested containers work out of the box with the privileged setting on recent versions — you may also need to enable the "Rosetta"/VM memory settings for large image builds.
+
+`docker compose up -d` from the checked-in [docker-compose.yml](docker-compose.yml) already applies `privileged: true`, so no extra flags are needed there.
 
 ## Configuration
 
