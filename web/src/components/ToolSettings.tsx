@@ -14,7 +14,7 @@ import Markdown from './Markdown';
 import { IconCheck, IconExternalLink, IconFlask, IconPencil, IconX } from './icons';
 
 const TABS = [
-  { id: 'mcp', label: 'MCP servers' },
+  { id: 'mcp', label: 'MCP' },
   { id: 'skills', label: 'Skills' },
   { id: 'tools', label: 'Tools' },
   { id: 'perms', label: 'Permissions' },

@@ -121,7 +121,7 @@ const SETTINGS_SEARCH: {
   { id: 'sec-github', page: 'github', label: 'GitHub', hint: 'Personal access token', keywords: 'github token pat repo import push auth' },
   { id: 'sec-github', page: 'github', label: 'GitHub OAuth', hint: 'OAuth App client ID', keywords: 'github oauth client id connect login' },
   { id: 'sec-vercel', page: 'vercel', label: 'Vercel', hint: 'Deploy token', keywords: 'vercel deploy token push hosting deploy' },
-  { id: 'sec-tools-mcp', page: 'tools', label: 'MCP servers', hint: 'Model Context Protocol servers', keywords: 'mcp servers tools context protocol connect' },
+  { id: 'sec-tools-mcp', page: 'tools', label: 'MCP', hint: 'Model Context Protocol servers', keywords: 'mcp servers tools context protocol connect' },
   { id: 'sec-tools-skills', page: 'tools', label: 'Skills', hint: 'Install skills from SkillsMP', keywords: 'skills skillsmp install markdown' },
   { id: 'sec-tools-perms', page: 'tools', label: 'Permissions', hint: 'Approval mode, rewind approval', keywords: 'permission approve ask auto yolo tools rewind approval confirm' },
   { id: 'sec-theme', page: 'appearance', label: 'Theme', hint: 'Dark, light, custom swatches', keywords: 'theme dark light color appearance swatch applies instantly remembered' },
