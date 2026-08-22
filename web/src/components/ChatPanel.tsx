@@ -125,10 +125,11 @@ export default function ChatPanel({
               <span className="flex items-center gap-1">
                 <span className="truncate text-sm font-medium text-text">{project.name}</span>
               </span>
-              {/* Session subtitle — bordered and full width; clicking it (or the
-                  project title) opens the session switcher. */}
-              <span className="mt-0.5 inline-flex w-full items-center gap-1 rounded-md border border-border bg-surface/50 px-1.5 py-0.5 text-[11px] text-subtle">
-                <IconLayers className="h-3 w-3 shrink-0 text-faint" />
+              {/* Session subtitle — separated from the project title by a
+                  divider; clicking it (or the title) opens the switcher. */}
+              <span className="mt-2 block w-full border-t border-subtle" />
+              <span className="mt-1.5 flex w-full items-center gap-1.5 px-0.5 text-[11px] font-medium text-accent">
+                <IconLayers className="h-3 w-3 shrink-0" />
                 <span className="truncate">{sessionName || 'Session'}</span>
               </span>
             </button>

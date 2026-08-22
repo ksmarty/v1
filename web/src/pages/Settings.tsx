@@ -3,7 +3,8 @@ import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { SiVercel } from 'react-icons/si';
 import { api, clearClientCaches, type SettingsUpdate } from '../api';
 import { testNotification } from '../notify';
-import type { Settings as SettingsType, UserInfo } from '../types';
+import type { ProviderModel, Settings as SettingsType, UserInfo } from '../types';
+import ModelPicker from '../components/ModelPicker';
 import {
   errMsg,
   getChatSide,
@@ -1615,6 +1616,43 @@ export default function Settings() {
   const [dmSaved, setDmSaved] = useState(false);
   const [dmError, setDmError] = useState<string | null>(null);
 
+  // Default-model picker (reuses the chat model selection screen).
+  const [dmPickerOpen, setDmPickerOpen] = useState(false);
+  const [dmProviderId, setDmProviderId] = useState('');
+  const [dmModels, setDmModels] = useState<ProviderModel[]>([]);
+  const refreshDefaultModelModels = useCallback(
+    async (pid: string) => {
+      setDmProviderId(pid);
+      if (!pid) {
+        setDmModels([]);
+        return;
+      }
+      const p = providers.find((x) => x.id === pid);
+      if (!p) {
+        setDmModels([]);
+        return;
+      }
+      try {
+        const res = await api.getProviders();
+        const byId = new Map<string, ProviderModel>();
+        for (const c of res.providers) {
+          if (c.baseURL !== p.baseURL) continue;
+          for (const m of c.models) if (!byId.has(m.id)) byId.set(m.id, m);
+        }
+        setDmModels([...byId.values()]);
+      } catch {
+        setDmModels([]);
+      }
+    },
+    [providers],
+  );
+  const openDefaultModelPicker = () => {
+    refreshDefaultModelModels(
+      providers.find((p) => p.model === defaultModel)?.id ?? providers[0]?.id ?? '',
+    );
+    setDmPickerOpen(true);
+  };
+
   const location = useLocation();
   const from = (location.state as { from?: string } | null)?.from;
   const backTo = from && from.startsWith('/') ? from : '/';
@@ -2396,22 +2434,27 @@ export default function Settings() {
           </Field>
 
           <Field label="Default model">
-            <Input
-              value={defaultModel}
-              onChange={(e) => setDefaultModel(e.target.value)}
-              onBlur={(e) => void saveDefaultModel(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') void saveDefaultModel((e.target as HTMLInputElement).value);
-              }}
-              placeholder="Auto-set from your first provider"
-              spellCheck={false}
-              autoComplete="off"
-              autoCorrect="off"
-              autoCapitalize="off"
-            />
+            <button
+              type="button"
+              onClick={openDefaultModelPicker}
+              className="flex w-full max-w-xs items-center justify-between gap-2 rounded-lg border border-border-strong bg-surface px-3 py-2 text-left text-sm text-text outline-none transition-colors hover:border-subtle"
+            >
+              <span className="flex min-w-0 items-center gap-2">
+                <IconModel className="h-4 w-4 shrink-0 text-subtle" />
+                <span className="truncate">
+                  {defaultModel ? (
+                    defaultModel
+                  ) : (
+                    <span className="text-faint">Select a model…</span>
+                  )}
+                </span>
+              </span>
+              <IconChevronDown className="h-4 w-4 shrink-0 text-subtle" />
+            </button>
             <p className="mt-1 text-[11px] text-subtle">
               Model used by new sessions when nothing is selected yet. Populated
-              automatically from the first provider you add.
+              automatically from the first provider you add. Click to pick from
+              the model selection screen, just like in chat.
             </p>
             <div className="mt-1.5 flex items-center gap-2 text-xs">
               {dmSaved && (
@@ -2421,6 +2464,16 @@ export default function Settings() {
               )}
               {dmError && <span className="text-red-400">{dmError}</span>}
             </div>
+            <ModelPicker
+              open={dmPickerOpen}
+              onClose={() => setDmPickerOpen(false)}
+              providers={providers}
+              providerId={dmProviderId}
+              onProviderChange={(id) => refreshDefaultModelModels(id)}
+              models={dmModels}
+              model={defaultModel}
+              onModelChange={(id) => void saveDefaultModel(id)}
+            />
           </Field>
         </Section>
 
