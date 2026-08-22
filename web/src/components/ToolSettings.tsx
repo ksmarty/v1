@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { memo, useCallback, useEffect, useState, type FormEvent } from 'react';
 import { api } from '../api';
 import type {
   InstalledSkill,
@@ -213,106 +213,117 @@ function ToolSettings({
   const [rewindApproval, setRewindApproval] = useState(false);
   const [savedRewind, setSavedRewind] = useState(false);
   // Builtin agent tools that can be disabled per user in the Tools tab.
-  const TOOLS: { name: string; label: string; hint: string }[] = [
-    { name: 'list_files', label: 'List files', hint: 'List the project directory tree' },
-    { name: 'search_files', label: 'Search files', hint: 'Grep/find inside the project' },
-    { name: 'read_file', label: 'Read file', hint: 'Read a file’s contents' },
-    { name: 'write_file', label: 'Write file', hint: 'Create or overwrite a file' },
-    { name: 'edit_file', label: 'Edit file', hint: 'Apply an edit to a file' },
-    { name: 'delete_file', label: 'Delete file', hint: 'Remove a file' },
-    { name: 'move_file', label: 'Move file', hint: 'Rename/move a file' },
-    { name: 'fetch_url', label: 'Fetch URL', hint: 'Fetch and read a web page' },
-    { name: 'run_command', label: 'Run command', hint: 'Run a command in the project' },
-    { name: 'run_command_background', label: 'Run in background', hint: 'Start a command detached from the turn' },
-    { name: 'restart_preview', label: 'Restart preview', hint: 'Restart the app preview' },
-    { name: 'screenshot_app', label: 'Screenshot app', hint: 'Capture the preview as an image' },
-    { name: 'set_todos', label: 'Update todos', hint: 'Keep the visible todo list' },
-    { name: 'remember', label: 'Remember', hint: 'Save a durable project fact' },
-    { name: 'forget', label: 'Forget', hint: 'Remove a saved fact' },
-    { name: 'ask_user', label: 'Ask user', hint: 'Ask you a question mid-turn' },
-    { name: 'set_project_name', label: 'Set project name', hint: 'Rename the project (first session only)' },
-    { name: 'git', label: 'Git', hint: 'Stage, commit and push' },
-    { name: 'run_container', label: 'Run container', hint: 'Run a container for builds/tests' },
+  // Builtin agent tools that can be disabled per user in the Tools tab,
+  // grouped under headings so related capabilities sit together.
+  const TOOL_GROUPS: { id: string; label: string; tools: { name: string; label: string; hint: string }[] }[] = [
+    {
+      id: 'files',
+      label: 'Files',
+      tools: [
+        { name: 'list_files', label: 'List files', hint: 'List the project directory tree' },
+        { name: 'search_files', label: 'Search files', hint: 'Grep/find inside the project' },
+        { name: 'read_file', label: 'Read file', hint: 'Read a file’s contents' },
+        { name: 'write_file', label: 'Write file', hint: 'Create or overwrite a file' },
+        { name: 'edit_file', label: 'Edit file', hint: 'Apply an edit to a file' },
+        { name: 'delete_file', label: 'Delete file', hint: 'Remove a file' },
+        { name: 'move_file', label: 'Move file', hint: 'Rename/move a file' },
+      ],
+    },
+    {
+      id: 'run',
+      label: 'Run & preview',
+      tools: [
+        { name: 'run_command', label: 'Run command', hint: 'Run a command in the project' },
+        { name: 'run_command_background', label: 'Run in background', hint: 'Start a command detached from the turn' },
+        { name: 'run_container', label: 'Run container', hint: 'Run a container for builds/tests' },
+        { name: 'restart_preview', label: 'Restart preview', hint: 'Restart the app preview' },
+        { name: 'screenshot_app', label: 'Screenshot app', hint: 'Capture the preview as an image' },
+        { name: 'fetch_url', label: 'Fetch URL', hint: 'Fetch and read a web page' },
+      ],
+    },
+    {
+      id: 'session',
+      label: 'Session & memory',
+      tools: [
+        { name: 'set_project_name', label: 'Set project name', hint: 'Rename the project (first session only)' },
+        { name: 'set_session_name', label: 'Set session name', hint: 'Rename the current session (new sessions)' },
+        { name: 'set_todos', label: 'Update todos', hint: 'Keep the visible todo list' },
+        { name: 'remember', label: 'Remember', hint: 'Save a durable project fact' },
+        { name: 'forget', label: 'Forget', hint: 'Remove a saved fact' },
+        { name: 'ask_user', label: 'Ask user', hint: 'Ask you a question mid-turn' },
+      ],
+    },
+    {
+      id: 'git',
+      label: 'Git',
+      tools: [{ name: 'git', label: 'Git', hint: 'Stage, commit and push' }],
+    },
   ];
 
   const [disabledTools, setDisabledTools] = useState<string[]>([]);
-  const [toolsSaving, setToolsSaving] = useState(false);
-  const [toolsSaved, setToolsSaved] = useState(false);
   const [toolsError, setToolsError] = useState<string | null>(null);
-  // Persisted disabled-tools snapshot for the SaveRow pulse.
-  const savedToolsRef = useRef<string[]>([]);
 
+  // Optimistic: flip the switch immediately, persist after (no Save button —
+  // every change auto-saves).
   const toggleTool = (name: string) => {
-    setDisabledTools((prev) => (prev.includes(name) ? prev.filter((t) => t !== name) : [...prev, name]));
-  };
-
-  const saveTools = async () => {
-    setToolsSaving(true);
-    setToolsSaved(false);
     setToolsError(null);
-    try {
-      await api.updateSettings({ disabledTools });
-      setToolsSaved(true);
-    } catch (e) {
-      setToolsError(errMsg(e));
-    } finally {
-      setToolsSaving(false);
-    }
+    const next = disabledTools.includes(name)
+      ? disabledTools.filter((t) => t !== name)
+      : [...disabledTools, name];
+    setDisabledTools(next);
+    api.updateSettings({ disabledTools: next }).catch((e) => setToolsError(errMsg(e)));
   };
 
   const toolsSection = (
-    <form
-      onSubmit={(e) => {
-        e.preventDefault();
-        void saveTools();
-      }}
-      className="flex flex-col gap-2.5"
-    >
-      <p className="text-xs text-faint">
+    <div className="flex h-full min-h-0 min-w-0 flex-col gap-2.5">
+      <p className="shrink-0 text-xs text-faint">
         Disable agent tools you don&apos;t want the model to use. Disabled tools
-        are hidden from the model and refused if called anyway.
+        are hidden from the model and refused if called anyway. Changes save
+        instantly.
       </p>
-      <div className="flex flex-col gap-1.5">
-        {TOOLS.map((t) => {
-          const off = disabledTools.includes(t.name);
-          return (
-            <label
-              key={t.name}
-              className={`flex items-center gap-2.5 rounded-lg border px-3 py-2.5 transition-colors ${
-                off ? 'opacity-60' : 'border-border bg-surface/50'
-              }`}
-            >
-              <div className="min-w-0 flex-1">
-                <p className="text-sm text-text">{t.label}</p>
-                <p className="truncate text-[11px] text-faint">{t.hint}</p>
-              </div>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={!off}
-                aria-label={`${off ? 'Enable' : 'Disable'} ${t.label}`}
-                onClick={() => toggleTool(t.name)}
-                className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${
-                  off ? 'bg-border' : 'bg-accent'
-                }`}
-              >
-                <span
-                  className={`absolute top-0.5 h-4 w-4 rounded-full bg-bg transition-all ${
-                    off ? 'left-0.5' : 'left-[18px]'
-                  }`}
-                />
-              </button>
-            </label>
-          );
-        })}
+      {toolsError && <p className="shrink-0 text-xs text-red-400">{toolsError}</p>}
+      <div className="fade-y min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain pr-0.5">
+        {TOOL_GROUPS.map((g) => (
+          <div key={g.id} className="mb-3">
+            <h4 className="mb-1.5 text-xs font-medium text-subtle">{g.label}</h4>
+            <div className="flex flex-col gap-1.5">
+              {g.tools.map((t) => {
+                const off = disabledTools.includes(t.name);
+                return (
+                  <label
+                    key={t.name}
+                    className={`flex items-center gap-2.5 rounded-lg border px-3 py-2.5 transition-colors ${
+                      off ? 'opacity-60' : 'border-border bg-surface/50'
+                    }`}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm text-text">{t.label}</p>
+                      <p className="truncate text-[11px] text-faint">{t.hint}</p>
+                    </div>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={!off}
+                      aria-label={`${off ? 'Enable' : 'Disable'} ${t.label}`}
+                      onClick={() => toggleTool(t.name)}
+                      className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${
+                        off ? 'bg-border' : 'bg-accent'
+                      }`}
+                    >
+                      <span
+                        className={`absolute top-0.5 h-4 w-4 rounded-full bg-bg transition-all ${
+                          off ? 'left-0.5' : 'left-[18px]'
+                        }`}
+                      />
+                    </button>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+        ))}
       </div>
-      <SaveRow
-        saving={toolsSaving}
-        saved={toolsSaved}
-        error={toolsError}
-        pulse={JSON.stringify([...disabledTools].sort()) !== JSON.stringify([...(savedToolsRef.current ?? [])].sort())}
-      />
-    </form>
+    </div>
   );
 
   const load = useCallback(async () => {
@@ -325,7 +336,6 @@ function ToolSettings({
       setRewindApproval(s.rewindApproval ?? false);
       setSavedRewind(s.rewindApproval ?? false);
       setDisabledTools(s.disabledTools ?? []);
-      savedToolsRef.current = s.disabledTools ?? [];
       const byId: Record<string, MCPServerStatus> = {};
       for (const sv of st.servers) byId[sv.id] = sv;
       setStatus(byId);
@@ -1083,7 +1093,7 @@ function ToolSettings({
       <div className="fade-y min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-3 pt-2 pb-2 overscroll-contain">
         {tab === 'mcp' && mcpSection}
         {tab === 'skills' && <div className="flex h-full min-h-0 flex-col">{skillsSection}</div>}
-        {tab === 'tools' && toolsSection}
+        {tab === 'tools' && <div className="flex h-full min-h-0 flex-col">{toolsSection}</div>}
         {tab === 'perms' && permsSection}
       </div>
       {skillPreview && (

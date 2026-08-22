@@ -182,6 +182,7 @@ export interface SettingsUpdate {
     baseURL?: string;
     apiKey?: string;
     model?: string;
+    defaultModel?: string;
     providers?: SavedProviderInput[];
     currency?: string;
   };

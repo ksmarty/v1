@@ -176,20 +176,21 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"llm": map[string]any{
-			"baseURL":   baseURL,
-			"model":     model,
-			"apiKeySet": apiKey != "",
-			"models":    models,
-			"providers": providerJSON,
-			"currency":  s.currency(userID),
+			"baseURL":      baseURL,
+			"model":        model,
+			"defaultModel": s.defaultLLMModel(userID),
+			"apiKeySet":    apiKey != "",
+			"models":       models,
+			"providers":    providerJSON,
+			"currency":     s.currency(userID),
 		},
 		"github": map[string]any{
-			"tokenSet":             s.githubToken(userID) != "",
-			"oauthClientId":        s.githubOAuthClientID(),
-			"oauthClientIdFromEnv": s.cfg.GitHubOAuthClientID != "",
-			"oauthClientSecretSet":        s.githubOAuthClientSecret() != "",
-				"oauthClientSecretFromEnv":    s.cfg.GitHubOAuthClientSecret != "",
-			"source":               s.githubTokenSource(userID),
+			"tokenSet":                 s.githubToken(userID) != "",
+			"oauthClientId":            s.githubOAuthClientID(),
+			"oauthClientIdFromEnv":     s.cfg.GitHubOAuthClientID != "",
+			"oauthClientSecretSet":     s.githubOAuthClientSecret() != "",
+			"oauthClientSecretFromEnv": s.cfg.GitHubOAuthClientSecret != "",
+			"source":                   s.githubTokenSource(userID),
 		},
 		"vercel": map[string]any{
 			"tokenSet":        s.vercelToken(userID) != "",
@@ -218,11 +219,12 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	userID := s.currentUser(r).ID
 	var body struct {
 		LLM *struct {
-			BaseURL   *string              `json:"baseURL"`
-			APIKey    *string              `json:"apiKey"`
-			Model     *string              `json:"model"`
-			Providers *[]llmProviderRecord `json:"providers"`
-			Currency  *string              `json:"currency"`
+			BaseURL      *string              `json:"baseURL"`
+			APIKey       *string              `json:"apiKey"`
+			Model        *string              `json:"model"`
+			DefaultModel *string              `json:"defaultModel"`
+			Providers    *[]llmProviderRecord `json:"providers"`
+			Currency     *string              `json:"currency"`
 		} `json:"llm"`
 		GitHubToken             *string             `json:"githubToken"`
 		GitHubOAuthClientID     *string             `json:"githubOAuthClientId"`
@@ -236,7 +238,7 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		RewindApproval          *bool               `json:"rewindApproval"`
 		DefaultThinking         *string             `json:"defaultThinking"`
 		ToonEnabled             *bool               `json:"toonEnabled"`
-		DisabledTools           *[]string            `json:"disabledTools"`
+		DisabledTools           *[]string           `json:"disabledTools"`
 		Caveman                 *bool               `json:"caveman"`
 		AutoPushDefault         *bool               `json:"autoPushDefault"`
 		ContextThreshold        *float64            `json:"contextThreshold"`
@@ -308,9 +310,10 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 			if len(merged) > 0 {
 				if v, ok := s.userSetting(userID, keyLLMBaseURL); !ok || v == "" {
 					for key, v := range map[string]string{
-						keyLLMBaseURL: merged[0].BaseURL,
-						keyLLMAPIKey:  merged[0].APIKey,
-						keyLLMModel:   merged[0].Model,
+						keyLLMBaseURL:      merged[0].BaseURL,
+						keyLLMAPIKey:       merged[0].APIKey,
+						keyLLMModel:        merged[0].Model,
+						keyLLMDefaultModel: merged[0].Model,
 					} {
 						if err := s.st.SetUserSetting(userID, key, v); err != nil {
 							writeError(w, http.StatusInternalServerError, err.Error())
@@ -322,10 +325,11 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		// 3. Legacy single-provider fields (empty clears).
 		for key, v := range map[string]*string{
-			keyLLMBaseURL:  body.LLM.BaseURL,
-			keyLLMAPIKey:   body.LLM.APIKey,
-			keyLLMModel:    body.LLM.Model,
-			keyLLMCurrency: body.LLM.Currency,
+			keyLLMBaseURL:      body.LLM.BaseURL,
+			keyLLMAPIKey:       body.LLM.APIKey,
+			keyLLMModel:        body.LLM.Model,
+			keyLLMDefaultModel: body.LLM.DefaultModel,
+			keyLLMCurrency:     body.LLM.Currency,
 		} {
 			if err := set(key, v); err != nil {
 				writeError(w, http.StatusInternalServerError, err.Error())

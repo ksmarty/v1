@@ -73,24 +73,24 @@ type ChatParams struct {
 	Client          *llm.Client
 	Exec            *Executor
 	Message         string
-	SessionID       string          // chat session the turn belongs to
-	Attachments     []Attachment    // files attached to this user turn
-	Model           string          // per-turn override; empty uses p.Client.Model
-	LastUserID      int64           // retry mode: >0 re-runs the existing user message
-	ContinueFromID  int64           // continue mode: >0 resumes from this partial assistant message
-	ExtraTools      []llm.Tool      // dynamically added tools (e.g. MCP), namespaced
-	SkillsPrompt    string          // enabled skills' SKILL.md content for the system prompt
-	MemoriesPrompt  string          // project memories section for the system prompt
-	GlobalPrompt    string          // user's global system prompt (all projects)
-	Vision          bool            // the model reads images — enables screenshot_app
-	ReasoningEffort string          // thinking level; sent as reasoning_effort when set
-	ToonEnabled     bool            // tool results are TOON-encoded for the model
+	SessionID       string       // chat session the turn belongs to
+	Attachments     []Attachment // files attached to this user turn
+	Model           string       // per-turn override; empty uses p.Client.Model
+	LastUserID      int64        // retry mode: >0 re-runs the existing user message
+	ContinueFromID  int64        // continue mode: >0 resumes from this partial assistant message
+	ExtraTools      []llm.Tool   // dynamically added tools (e.g. MCP), namespaced
+	SkillsPrompt    string       // enabled skills' SKILL.md content for the system prompt
+	MemoriesPrompt  string       // project memories section for the system prompt
+	GlobalPrompt    string       // user's global system prompt (all projects)
+	Vision          bool         // the model reads images — enables screenshot_app
+	ReasoningEffort string       // thinking level; sent as reasoning_effort when set
+	ToonEnabled     bool         // tool results are TOON-encoded for the model
 	// DisabledTools are builtin tool names the user turned off in Settings;
 	// they are neither advertised to the model nor executable.
 	DisabledTools map[string]bool
-	Caveman        bool            // terse "caveman" response style (LLM settings)
-	Steer           func() []string // drains mid-run user messages, injected next round
-	Background      *BackgroundManager
+	Caveman       bool            // terse "caveman" response style (LLM settings)
+	Steer         func() []string // drains mid-run user messages, injected next round
+	Background    *BackgroundManager
 	// PollBackground returns the session's finished background commands so the
 	// loop can inject their results into the conversation.
 	PollBackground func() []BackgroundResult
@@ -865,6 +865,23 @@ var tools = []llm.Tool{
 					},
 				},
 				"required": []string{"todos"},
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: llm.ToolFunction{
+			Name:        "set_session_name",
+			Description: "Rename the current chat session — mainly run at the start of a new session so the session list shows what the thread is about (e.g. \"Fix checkout flow\") instead of \"Session 3\". Only the session the turn runs in can be renamed.",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"name": map[string]any{
+						"type":        "string",
+						"description": "The new session name (max 80 chars).",
+					},
+				},
+				"required": []string{"name"},
 			},
 		},
 	},

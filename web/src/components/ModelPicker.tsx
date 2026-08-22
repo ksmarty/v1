@@ -93,11 +93,11 @@ export default function ModelPicker({
   };
 
   const filtered = useMemo(() => {
-    const favFirst = (a: ProviderModel, b: ProviderModel) => {
-      const fa = favs.includes(a.id) ? 0 : 1;
-      const fb = favs.includes(b.id) ? 0 : 1;
-      return fa - fb;
-    };
+    // Ordering: the currently selected model first, then favourites, then the
+    // rest (each group keeping its catalog order).
+    const rank = (m: ProviderModel) =>
+      m.id === model ? 0 : favs.includes(m.id) ? 1 : 2;
+    const favFirst = (a: ProviderModel, b: ProviderModel) => rank(a) - rank(b);
     const q = query.trim();
     if (!q) return [...models].sort(favFirst).slice(0, 200);
     return models
@@ -109,7 +109,7 @@ export default function ModelPicker({
       .sort((a, b) => favFirst(a.m, b.m) || a.s - b.s)
       .slice(0, 200)
       .map((x) => x.m);
-  }, [models, query, favs]);
+  }, [models, query, favs, model]);
 
   return (
     <Dialog open={open} onClose={onClose} title="Model" wide fullScreen fixedBody align="top">

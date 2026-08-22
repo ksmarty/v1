@@ -1720,6 +1720,12 @@ export default function ChatPane({
   }, [streaming]);
   // The active chat session ('' until the session list loads).
   const [sessionId, setSessionId] = useState('');
+  // Latest session id for event handlers (handleEvent is memoized without
+  // sessionId in its deps — the ref keeps it current without re-subscribing).
+  const sessionIdRef = useRef('');
+  useEffect(() => {
+    sessionIdRef.current = sessionId;
+  }, [sessionId]);
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [creatingSession, setCreatingSession] = useState(false);
   const navigate = useNavigate();
@@ -1807,10 +1813,13 @@ export default function ChatPane({
           (initialProviderId || initialModel || initialThinking
             ? {
                 providerId: initialProviderId ?? saved[0]?.id ?? '',
-                model: initialModel ?? s.llm.model,
+                model: initialModel ?? s.llm.defaultModel ?? s.llm.model,
                 thinking: initialThinking ?? '',
               }
-            : { providerId: saved[0]?.id ?? '', model: s.llm.model });
+            : {
+                providerId: saved[0]?.id ?? '',
+                model: s.llm.defaultModel ?? s.llm.model,
+              });
         // A persisted provider that was deleted falls back to the first one.
         if (sel.providerId === '' || saved.some((p) => p.id === sel.providerId)) {
           setProviderId(sel.providerId);
@@ -2661,6 +2670,12 @@ export default function ChatPane({
         }
         case 'project_renamed': {
           onProjectRename?.(ev.text ?? '');
+          break;
+        }
+        case 'session_renamed': {
+          const name = ev.text ?? '';
+          setSessions((prev) => prev.map((s) => (s.id === sessionIdRef.current ? { ...s, name } : s)));
+          onSessionName?.(name);
           break;
         }
         case 'question_request': {

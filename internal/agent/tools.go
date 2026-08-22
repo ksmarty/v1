@@ -50,13 +50,16 @@ type Executor struct {
 	// OnProjectRename notifies the UI when set_project_name renames the
 	// project (nil when the turn cannot rename).
 	OnProjectRename func(string)
+	// OnSessionRename notifies the UI when set_session_name renames the
+	// current chat session (nil when the turn cannot rename).
+	OnSessionRename func(string)
 	MCP             *mcp.Manager // optional: namespaced mcp_<server>_<tool> tools
 	Perm            Resolver     // optional: gates tool calls via allow/deny/ask
 	PlanMode        bool         // read-only planning turn: state-changing tools refused
 	// DisabledTools are builtin tool names turned off in Settings; calls are
 	// refused even if the model somehow sends one.
 	DisabledTools map[string]bool
-	GithubToken     string       // user's GitHub token for the git tool's remote ops
+	GithubToken   string // user's GitHub token for the git tool's remote ops
 	// OnAsk asks the user one or more questions and waits for the answers
 	// (the ask_user tool); nil when the turn cannot prompt.
 	OnAsk func(ctx context.Context, questions []AskQuestion) ([]AskAnswer, error)
@@ -89,6 +92,7 @@ var planBlockedTools = map[string]bool{
 	"screenshot_app":         true,
 	"set_todos":              true,
 	"set_project_name":       true,
+	"set_session_name":       true,
 	"run_command_background": true,
 	"remember":               true,
 	"forget":                 true,
@@ -143,6 +147,8 @@ func (e *Executor) Execute(ctx context.Context, name, argsJSON string) (string, 
 		return e.screenshotApp(ctx, argsJSON)
 	case "set_project_name":
 		return e.setProjectName(argsJSON)
+	case "set_session_name":
+		return e.setSessionName(argsJSON)
 	case "run_command_background":
 		return e.runCommandBackground(ctx, argsJSON)
 	case "set_todos":
@@ -426,6 +432,39 @@ func (e *Executor) setProjectName(argsJSON string) (string, error) {
 	}
 	if e.OnProjectRename != nil {
 		e.OnProjectRename(name)
+	}
+	return toolResult(map[string]any{"ok": true, "name": name}), nil
+}
+
+// setSessionName renames the current chat session — mainly useful at the
+// start of a new session, so the session list shows what the thread is about
+// instead of "Session 3". Only the session the turn runs in can be renamed.
+func (e *Executor) setSessionName(argsJSON string) (string, error) {
+	var args struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
+		return "", fmt.Errorf("invalid arguments: %w", err)
+	}
+	name := strings.TrimSpace(args.Name)
+	r := []rune(name)
+	if r == nil || len(r) == 0 {
+		return "", fmt.Errorf("name is required")
+	}
+	if len(r) > 80 {
+		name = string(r[:80])
+	}
+	if e.SessionID == "" {
+		return "", fmt.Errorf("no active chat session")
+	}
+	if e.Store == nil {
+		return "", fmt.Errorf("session store unavailable")
+	}
+	if err := e.Store.RenameChatSession(e.ProjectID, e.SessionID, name); err != nil {
+		return "", err
+	}
+	if e.OnSessionRename != nil {
+		e.OnSessionRename(name)
 	}
 	return toolResult(map[string]any{"ok": true, "name": name}), nil
 }

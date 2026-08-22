@@ -293,6 +293,7 @@ const (
 	keyLLMBaseURL              = "llm_base_url"
 	keyLLMAPIKey               = "llm_api_key"
 	keyLLMModel                = "llm_model"
+	keyLLMDefaultModel         = "llm_default_model"
 	keyLLMProviders            = "llm_providers"
 	keyLLMCurrency             = "llm_currency"
 	keyGitHubToken             = "github_token"
@@ -312,8 +313,8 @@ const (
 	keyRewindApproval          = "rewind_approval"
 	keyThinkingDefault         = "thinking_default"
 	keyToonEnabled             = "toon_enabled"
-	keyDisabledTools            = "disabled_tools"
-	keyCaveman                  = "caveman"
+	keyDisabledTools           = "disabled_tools"
+	keyCaveman                 = "caveman"
 	keyAutoPushDefault         = "auto_push_default"
 	keySystemPrompt            = "system_prompt"
 	keyContextThreshold        = "context_threshold"
@@ -415,6 +416,14 @@ func (s *Server) llmConfig(userID string) (baseURL, apiKey, model string) {
 func (s *Server) llmClient(userID string) *llm.Client {
 	baseURL, apiKey, model := s.llmConfig(userID)
 	return llm.NewClient(baseURL, apiKey, model)
+}
+
+// defaultLLMModel is the model new sessions fall back to when nothing is
+// selected yet — set automatically from the first saved provider (see
+// handlePutSettings) and editable in Settings → LLM.
+func (s *Server) defaultLLMModel(userID string) string {
+	v, _ := s.userSetting(userID, keyLLMDefaultModel)
+	return v
 }
 
 // llmProviderRecord is one saved LLM provider. APIKey is only ever written

@@ -1610,6 +1610,11 @@ export default function Settings() {
   const [dtSaved, setDtSaved] = useState(false);
   const [dtError, setDtError] = useState<string | null>(null);
 
+  // Default model for new sessions (auto-populated from the first provider).
+  const [defaultModel, setDefaultModel] = useState('');
+  const [dmSaved, setDmSaved] = useState(false);
+  const [dmError, setDmError] = useState<string | null>(null);
+
   const location = useLocation();
   const from = (location.state as { from?: string } | null)?.from;
   const backTo = from && from.startsWith('/') ? from : '/';
@@ -1704,6 +1709,7 @@ export default function Settings() {
         setSettings(s);
         setBaseURL(s.llm.baseURL);
         setModel(s.llm.model);
+        setDefaultModel(s.llm.defaultModel ?? '');
         setOauthClientId(s.github.oauthClientId);
         setOauthClientIdEnv(s.github.oauthClientIdFromEnv ?? false);
         setOauthClientSecretSet(s.github.oauthClientSecretSet ?? false);
@@ -1769,7 +1775,9 @@ export default function Settings() {
       } else {
         // Adding a fresh provider: append it. On the very first save the
         // backend mirrors it into the effective config so chat works
-        // immediately.
+        // immediately, and the default model is populated from the first
+        // model that provider actually serves.
+        const firstProvider = providers.length === 0;
         const newId = randomId();
         const list = providers.map((p) => ({
           id: p.id,
@@ -1779,6 +1787,7 @@ export default function Settings() {
         }));
         list.push({ id: newId, name, baseURL, model, ...(apiKey ? { apiKey } : {}) });
         await api.updateSettings({ llm: { providers: list } });
+        if (firstProvider) await populateDefaultModel(newId);
       }
       setLlmSaved(true);
       setApiKey('');
@@ -1822,6 +1831,36 @@ export default function Settings() {
       await api.updateSettings({ llm: { currency: v } });
     } catch {
       // ignore — the picker still reflects the chosen value locally
+    }
+  };
+
+  const saveDefaultModel = async (v: string) => {
+    const next = v.trim();
+    setDefaultModel(next);
+    setDmError(null);
+    try {
+      await api.updateSettings({ llm: { defaultModel: next } });
+      setDmSaved(true);
+      window.setTimeout(() => setDmSaved(false), 2000);
+    } catch (e) {
+      setDmError(errMsg(e));
+    }
+  };
+
+  // After the very first provider is saved, populate the default model with
+  // the first model that provider actually serves (fall back to the server
+  // mirroring it when the provider list is still empty or offline).
+  const populateDefaultModel = async (providerId: string) => {
+    if (defaultModel.trim()) return;
+    try {
+      const res = await api.getProviders();
+      const p = res.providers.find((x) => x.id === providerId && x.added);
+      const firstModel = p && p.models.length > 0 ? p.models[0].id : '';
+      if (!firstModel) return;
+      await api.updateSettings({ llm: { defaultModel: firstModel } });
+      setDefaultModel(firstModel);
+    } catch {
+      // Non-fatal — the user can set the default manually in the field above.
     }
   };
 
@@ -2354,6 +2393,34 @@ export default function Settings() {
             <p className="mt-1 text-[11px] text-subtle">
               Used to format provider-supplied cost at the end of each chat turn.
             </p>
+          </Field>
+
+          <Field label="Default model">
+            <Input
+              value={defaultModel}
+              onChange={(e) => setDefaultModel(e.target.value)}
+              onBlur={(e) => void saveDefaultModel(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void saveDefaultModel((e.target as HTMLInputElement).value);
+              }}
+              placeholder="Auto-set from your first provider"
+              spellCheck={false}
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+            />
+            <p className="mt-1 text-[11px] text-subtle">
+              Model used by new sessions when nothing is selected yet. Populated
+              automatically from the first provider you add.
+            </p>
+            <div className="mt-1.5 flex items-center gap-2 text-xs">
+              {dmSaved && (
+                <span className="flex items-center gap-1 text-emerald-500">
+                  <IconCheck className="h-3.5 w-3.5" /> Saved
+                </span>
+              )}
+              {dmError && <span className="text-red-400">{dmError}</span>}
+            </div>
           </Field>
         </Section>
 

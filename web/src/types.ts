@@ -37,6 +37,8 @@ export interface LLMSettings {
   apiKeySet: boolean;
   models: ProviderModel[];
   providers: SavedProvider[];
+  /** Default model used by new sessions when nothing is selected yet. */
+  defaultModel?: string;
   /** ISO 4217 currency code used to display provider-supplied cost. */
   currency?: string;
 }
@@ -261,6 +263,7 @@ export type ChatEvent =
       questions?: { question: string; options?: string[] }[];
     }
   | { type: 'project_renamed'; text?: string }
+  | { type: 'session_renamed'; text?: string }
   | {
       type: 'injected_message';
       messageId?: number;
