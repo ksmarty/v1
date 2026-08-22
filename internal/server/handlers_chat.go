@@ -496,6 +496,7 @@ func (s *Server) streamChatTurn(w http.ResponseWriter, r *http.Request, p *store
 	params.GlobalPrompt = s.globalSystemPrompt(userID)
 	params.ToonEnabled = s.toonEnabled(userID)
 	params.DisabledTools = s.disabledTools(userID)
+	params.Caveman = s.cavemanEnabled(userID)
 	if mems, err := s.st.ListMemories(p.ID); err == nil {
 		params.MemoriesPrompt = memoryPrompt(mems)
 	}

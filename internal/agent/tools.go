@@ -1368,6 +1368,15 @@ func (e *Executor) runContainer(ctx context.Context, argsJSON string) (string, e
 	if cmdline == "" {
 		return "", fmt.Errorf("run_container: command is required, e.g. \"images\", \"ps -a\", \"build -t myapp .\"")
 	}
+	if e.Perm != nil {
+		ok, err := e.Perm.Request(ctx, "run_container", cmdline)
+		if err != nil {
+			return "", err
+		}
+		if !ok {
+			return "", fmt.Errorf("container command was not allowed")
+		}
+	}
 	fields := strings.Fields(cmdline)
 	if fields[0] == cli {
 		fields = fields[1:]

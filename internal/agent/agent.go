@@ -88,6 +88,7 @@ type ChatParams struct {
 	// DisabledTools are builtin tool names the user turned off in Settings;
 	// they are neither advertised to the model nor executable.
 	DisabledTools map[string]bool
+	Caveman        bool            // terse "caveman" response style (LLM settings)
 	Steer           func() []string // drains mid-run user messages, injected next round
 	Background      *BackgroundManager
 	// PollBackground returns the session's finished background commands so the
@@ -116,6 +117,11 @@ const maxHistoricalToolResult = 256
 // agent investigates with read-only tools and produces a plan, changing
 // nothing.
 const planModeNote = `Plan mode is active — the user asked you to plan, not to build. You must NOT modify files, run commands, restart previews, or change any state. Investigate the workspace with the read-only tools (list files, search, read file, fetch url), then present a concrete implementation plan: the approach, the files to create or change, and the steps in order.`
+
+// cavemanNote swaps the reply style for terse, primitive-sounding responses:
+// minimal words, caveman-like short declarations. The content stays
+// technically correct — just extremely terse.
+const cavemanNote = `Caveman mode is ON. Talk like caveman: few words, short chunky sentences. No greeting, no summary, no fluff. Say what you do, say what you need, say what broke. Still use your tools and get the job done — just talk like caveman.`
 
 // freshProjectNote is injected into the system prompt while the workspace is
 // still a blank slate (at most the scaffold README): the agent should treat
@@ -182,6 +188,9 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 	}
 	if p.PlanMode {
 		system += "\n\n" + planModeNote
+	}
+	if p.Caveman {
+		system += "\n\n" + cavemanNote
 	}
 	if p.Project.Instructions != "" {
 		system += "\n\nProject instructions from the user:\n" + p.Project.Instructions
@@ -595,13 +604,13 @@ var containerTool = llm.Tool{
 	Type: "function",
 	Function: llm.ToolFunction{
 		Name:        "run_container",
-		Description: "Test container/docker functionality. Runs podman when installed (a daemonless Docker-compatible runtime), otherwise docker. Use it to inspect images/containers (\"images\", \"ps -a\"), build images, run containers, tag and push them. Pass the runtime subcommand and args as a single 'command' string. Note: the host must have podman or docker installed.",
+		Description: "Run arbitrary podman/docker commands (podman when installed, otherwise docker). Use it to inspect images/containers (\"images\", \"ps -a\"), build images, run containers, tag and push them — including ephemeral toolchains to test compilation: e.g. run --rm -v \"$PWD\":/work -w /work node:22 sh -lc 'npm ci && npm run build' or run --rm -v \"$PWD\":/work -w /work golang sh -lc 'go build ./...'. The workspace is mounted read-write at $PWD. Because it can pull and run arbitrary images, the command is subject to the configured permission mode (approval may be required). The host must have podman or docker installed.",
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"command": map[string]any{
 					"type":        "string",
-					"description": "The podman/docker subcommand and arguments to run.",
+					"description": "The podman/docker subcommand and arguments to run (e.g. 'run --rm -v \\\"$PWD\\\":/work -w /work golang sh -lc \\\"go build ./...\\\"').",
 				},
 			},
 			"required": []string{"command"},

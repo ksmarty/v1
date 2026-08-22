@@ -198,6 +198,7 @@ export interface SettingsUpdate {
   defaultThinking?: string;
   toonEnabled?: boolean;
   disabledTools?: string[];
+  caveman?: boolean;
   autoPushDefault?: boolean;
   contextThreshold?: number;
   systemPrompt?: string;

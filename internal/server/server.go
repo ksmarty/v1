@@ -313,6 +313,7 @@ const (
 	keyThinkingDefault         = "thinking_default"
 	keyToonEnabled             = "toon_enabled"
 	keyDisabledTools            = "disabled_tools"
+	keyCaveman                  = "caveman"
 	keyAutoPushDefault         = "auto_push_default"
 	keySystemPrompt            = "system_prompt"
 	keyContextThreshold        = "context_threshold"
@@ -519,6 +520,12 @@ func (s *Server) disabledTools(userID string) map[string]bool {
 		out[n] = true
 	}
 	return out
+}
+
+// cavemanEnabled reports whether the user wants the terse caveman reply style.
+func (s *Server) cavemanEnabled(userID string) bool {
+	v, ok := s.userSetting(userID, keyCaveman)
+	return ok && v == "1"
 }
 
 // autoPushDefault resolves the global default for new projects' auto-push

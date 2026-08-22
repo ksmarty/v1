@@ -205,6 +205,7 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 		"defaultThinking":  s.defaultThinking(userID),
 		"toonEnabled":      s.toonEnabled(userID),
 		"disabledTools":    s.disabledTools(userID),
+		"caveman":          s.cavemanEnabled(userID),
 		"autoPushDefault":  s.autoPushDefault(userID),
 		"contextThreshold": int(s.contextThreshold(userID) * 100),
 		"systemPrompt":     s.globalSystemPrompt(userID),
@@ -236,6 +237,7 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		DefaultThinking         *string             `json:"defaultThinking"`
 		ToonEnabled             *bool               `json:"toonEnabled"`
 		DisabledTools           *[]string            `json:"disabledTools"`
+		Caveman                 *bool               `json:"caveman"`
 		AutoPushDefault         *bool               `json:"autoPushDefault"`
 		ContextThreshold        *float64            `json:"contextThreshold"`
 		SystemPrompt            *string             `json:"systemPrompt"`
@@ -452,6 +454,16 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		} else if err := s.st.SetUserSetting(userID, key, string(b)); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+	if body.Caveman != nil {
+		val := "0"
+		if *body.Caveman {
+			val = "1"
+		}
+		if err := s.st.SetUserSetting(userID, keyCaveman, val); err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
