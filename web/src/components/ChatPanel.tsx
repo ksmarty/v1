@@ -110,7 +110,7 @@ export default function ChatPanel({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header className="flex h-14 shrink-0 items-center gap-1 border-b border-border px-2 md:h-12">
+      <header className="flex h-14 shrink-0 items-center gap-0.5 border-b border-border px-1.5 md:h-12 md:gap-1 md:px-2">
         <Link to="/" aria-label="Back to projects" className={iconLinkClass}>
           <IconArrowLeft className="h-5 w-5" />
         </Link>

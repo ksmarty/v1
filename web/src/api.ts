@@ -402,6 +402,7 @@ export const api = {
 
   // GitHub / git
   listGitHubRepos: () => request<GitHubRepo[]>('/api/github/repos'),
+  githubUser: () => request<{ login: string; name?: string; avatarUrl?: string }>('/api/github/user'),
   githubWorkflows: (repo: string) =>
     request<GitHubWorkflows>(`/api/github/workflows?repo=${encodeURIComponent(repo)}`),
   githubImages: (repo: string) =>

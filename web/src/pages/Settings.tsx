@@ -1453,6 +1453,9 @@ export default function Settings() {
   const [cidSaving, setCidSaving] = useState(false);
   const [cidSaved, setCidSaved] = useState(false);
   const [cidError, setCidError] = useState<string | null>(null);
+  // While connected, the config forms collapse into a details card; this
+  // flips them back without clearing the token.
+  const [editingGithub, setEditingGithub] = useState(false);
 
   // Vercel
   const [vercelToken, setVercelToken] = useState('');
@@ -1463,6 +1466,7 @@ export default function Settings() {
   const [vercelError, setVercelError] = useState<string | null>(null);
   const [vercelUser, setVercelUser] = useState<string | null>(null);
   const [vercelUserError, setVercelUserError] = useState<string | null>(null);
+  const [githubUser, setGithubUser] = useState<string | null>(null);
 
   // Auth
   const [pw, setPw] = useState('');
@@ -1597,10 +1601,23 @@ export default function Settings() {
       .catch((e) => setVercelUserError(errMsg(e)));
   }, []);
 
+  const loadGithubUser = useCallback(() => {
+    api
+      .githubUser()
+      .then((u) => setGithubUser(u.login ?? null))
+      .catch(() => setGithubUser(null));
+  }, []);
+
   useEffect(() => {
     reloadSettings();
     void loadVercelUser();
   }, [loadVercelUser]);
+
+  // Fetch the GitHub login whenever a GitHub token is present.
+  useEffect(() => {
+    if (settings?.github.tokenSet) void loadGithubUser();
+    else setGithubUser(null);
+  }, [settings?.github.tokenSet, loadGithubUser]);
 
   const saveLLM = async (e: FormEvent) => {
     e.preventDefault();
@@ -1729,6 +1746,24 @@ export default function Settings() {
       setSettings((prev) =>
         prev ? { ...prev, github: { ...prev.github, tokenSet: true, source: 'pat' } } : prev,
       );
+    } catch (err) {
+      setGhError(errMsg(err));
+    } finally {
+      setGhSaving(false);
+    }
+  };
+
+  const disconnectToken = async () => {
+    if (!window.confirm('Disconnect GitHub? The stored token will be cleared.')) return;
+    setGhSaving(true);
+    setGhError(null);
+    try {
+      await api.updateSettings({ githubToken: '' });
+      setSettings((prev) =>
+        prev ? { ...prev, github: { ...prev.github, tokenSet: false, source: null } } : prev,
+      );
+      setGithubUser(null);
+      reloadSettings();
     } catch (err) {
       setGhError(errMsg(err));
     } finally {
@@ -2286,8 +2321,54 @@ export default function Settings() {
           description="Used for repo import, create, and push."
           badge={ghBadge}
         >
+          {settings.github.tokenSet ? (
+            /* Connected — show the connection details instead of the config
+               forms, so re-entering tokens/OAuth credentials changes the
+               wrong thing while a connection is live. */
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center gap-3 rounded-lg border border-border-strong bg-surface px-3 py-2.5">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-border text-sm font-semibold text-dim">
+                  {(githubUser ?? '?')[0]?.toUpperCase()}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm text-text">
+                    {githubUser ? `@${githubUser}` : 'GitHub connected'}
+                  </p>
+                  <p className="text-[11px] text-subtle">
+                    via{' '}
+                    {settings.github.source === 'oauth'
+                      ? 'OAuth (redirect/device flow)'
+                      : settings.github.source === 'env'
+                        ? 'environment token'
+                        : 'personal access token'}
+                  </p>
+                </div>
+                <Button
+                  variant="ghost"
+                  className="shrink-0"
+                  title="Disconnect (clears the stored GitHub token)"
+                  onClick={() => void disconnectToken()}
+                >
+                  Disconnect
+                </Button>
+              </div>
+              <p className="text-xs text-subtle">
+                Need to change the connection?{' '}
+                <button
+                  type="button"
+                  className="text-accent hover:underline"
+                  onClick={() => setEditingGithub(true)}
+                >
+                  Show configuration
+                </button>{' '}
+                (the token stays stored until you replace it or disconnect).
+              </p>
+            </div>
+          ) : (
+          <>{(editingGithub || !settings.github.tokenSet) && (
+          <>
           <form onSubmit={(e) => void saveGitHub(e)} className="flex flex-col gap-3">
-            <Field label={settings.github.tokenSet ? 'Personal access token (a token is set)' : 'Personal access token'}>
+            <Field label={settings.github.source === 'oauth' ? 'GitHub OAuth token' : 'Personal access token'}>
               <Input
                 type="password"
                 value={token}
@@ -2399,6 +2480,7 @@ export default function Settings() {
               the secret enables the automatic redirect flow (no code entry); without
               it, v1 falls back to the device flow.
             </p>
+            {!(oauthClientIdEnv && secretEnv) && (
             <SaveRow
               saving={cidSaving}
               saved={cidSaved}
@@ -2409,14 +2491,21 @@ export default function Settings() {
                   : false
               }
               extra={
-                <GitHubConnect
-                  enabled={settings.github.oauthClientId !== ''}
-                  secretEnabled={settings.github.oauthClientSecretSet ?? false}
-                  onConnected={reloadSettings}
-                />
+                !(oauthClientIdEnv && secretEnv) && (
+                  <GitHubConnect
+                    enabled={settings.github.oauthClientId !== ''}
+                    secretEnabled={settings.github.oauthClientSecretSet ?? false}
+                    onConnected={reloadSettings}
+                  />
+                )
               }
             />
+          )}
           </form>
+          </>
+          )}
+          </>
+          )}
         </Section>
 
             </div>
