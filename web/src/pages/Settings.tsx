@@ -1743,6 +1743,7 @@ export default function Settings() {
       await api.updateSettings({ githubToken: token.trim() });
       setGhSaved(true);
       setToken('');
+      setEditingGithub(false);
       setSettings((prev) =>
         prev ? { ...prev, github: { ...prev.github, tokenSet: true, source: 'pat' } } : prev,
       );
@@ -1763,6 +1764,7 @@ export default function Settings() {
         prev ? { ...prev, github: { ...prev.github, tokenSet: false, source: null } } : prev,
       );
       setGithubUser(null);
+      setEditingGithub(false);
       reloadSettings();
     } catch (err) {
       setGhError(errMsg(err));
@@ -2321,7 +2323,7 @@ export default function Settings() {
           description="Used for repo import, create, and push."
           badge={ghBadge}
         >
-          {settings.github.tokenSet ? (
+          {settings.github.tokenSet && !editingGithub ? (
             /* Connected — show the connection details instead of the config
                forms, so re-entering tokens/OAuth credentials changes the
                wrong thing while a connection is live. */
@@ -2365,7 +2367,6 @@ export default function Settings() {
               </p>
             </div>
           ) : (
-          <>{(editingGithub || !settings.github.tokenSet) && (
           <>
           <form onSubmit={(e) => void saveGitHub(e)} className="flex flex-col gap-3">
             <Field label={settings.github.source === 'oauth' ? 'GitHub OAuth token' : 'Personal access token'}>
@@ -2490,20 +2491,19 @@ export default function Settings() {
                   ? oauthClientId !== settings.github.oauthClientId || oauthClientSecret !== ''
                   : false
               }
-              extra={
-                !(oauthClientIdEnv && secretEnv) && (
-                  <GitHubConnect
-                    enabled={settings.github.oauthClientId !== ''}
-                    secretEnabled={settings.github.oauthClientSecretSet ?? false}
-                    onConnected={reloadSettings}
-                  />
-                )
-              }
             />
           )}
+          {/* Reconnect is always available when a client id exists — even when
+              it comes from env — so disconnecting never strands the user. */}
+          <GitHubConnect
+            enabled={settings.github.oauthClientId !== ''}
+            secretEnabled={settings.github.oauthClientSecretSet ?? false}
+            onConnected={() => {
+              setEditingGithub(false);
+              reloadSettings();
+            }}
+          />
           </form>
-          </>
-          )}
           </>
           )}
         </Section>
