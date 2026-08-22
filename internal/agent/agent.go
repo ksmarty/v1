@@ -266,7 +266,10 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 	// "length"), the partial stays in the model's view and a retry continues
 	// it instead of regenerating from scratch; the accumulated text is folded
 	// into the persisted reply so a cap-hit never reads as a finished turn or
-	// an empty one.
+	// an empty one. Rounds are bounded and the partial is REPLACED in history
+	// on each retry — appending a fresh copy every round would re-upload all
+	// earlier partials again and grow the prompt until the request exceeds
+	// the context window.
 	var partialText, partialReasoning string
 	toolCallsIssued := 0 // local ids for providers that omit tool_call_id
 	assistantSaved := false
@@ -276,6 +279,26 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 	// persistently failing provider can't loop forever.
 	var resumes int
 	const maxAutoResumes = 3
+	// Output-window truncation has the same bound, for the same reason.
+	var truncationResumes int
+	const maxTruncationResumes = 3
+	// partialStart is the history index where resumed-partial messages begin
+	// (-1 = none yet). resumeFrom() slices history back to it and re-appends
+	// the latest accumulated partial, so a retrying round re-sends the current
+	// state exactly once instead of every prior state.
+	var partialStart = -1
+	resumeFrom := func() {
+		if partialStart < 0 {
+			partialStart = len(history)
+		}
+		history = history[:partialStart]
+		if partialText != "" || partialReasoning != "" {
+			history = append(history, llm.Message{Role: "assistant", Content: partialText, ReasoningContent: partialReasoning})
+		}
+		if partialText != "" || partialReasoning != "" {
+			history = append(history, llm.Message{Role: "user", Content: "Continue from where you left off. Do not repeat what is already written above."})
+		}
+	}
 	// Continue mode: the history ends with the partial assistant reply — ask
 	// the model to pick up where it stopped instead of repeating itself.
 	if p.ContinueFromID > 0 {
@@ -350,15 +373,12 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 			// and run the round again — continuing where the provider failed
 			// rather than regenerating the whole turn from scratch.
 			if resumes < maxAutoResumes && res != nil && (res.Text != "" || res.Reasoning != "") {
-				if res.Text != "" || res.Reasoning != "" {
-					partialText += res.Text
-					if partialReasoning != "" && res.Reasoning != "" {
-						partialReasoning += "\n"
-					}
-					partialReasoning += res.Reasoning
+				partialText += res.Text
+				if partialReasoning != "" && res.Reasoning != "" {
+					partialReasoning += "\n"
 				}
-				history = append(history, llm.Message{Role: "assistant", Content: res.Text, ReasoningContent: res.Reasoning})
-				history = append(history, llm.Message{Role: "user", Content: "Continue from where you left off. Do not repeat what is already written above."})
+				partialReasoning += res.Reasoning
+				resumeFrom()
 				resumes++
 				p.Emit(ChatEvent{Type: "info", Text: "The connection dropped mid-reply; resuming the turn automatically."})
 				continue
@@ -417,8 +437,13 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 		// repeat) would spin forever — give up then and persist what we have.
 		// A partial tool call whose arguments were cut mid-JSON counts as
 		// truncation too: executing it would persist invalid arguments that
-		// upstream rejects with a hard 400 on every later request.
-		truncated := res.StopReason == "length" && (len(res.ToolCalls) == 0 || hasInvalidToolCallArgs(res.ToolCalls))
+		// upstream rejects with a hard 400 on every later request. Calls that
+		// DID complete keep their place, so a multi-call reply still runs the
+		// calls that finished.
+		if res.StopReason == "length" && len(res.ToolCalls) > 0 {
+			res.ToolCalls = stripBrokenToolCalls(res.ToolCalls)
+		}
+		truncated := res.StopReason == "length" && len(res.ToolCalls) == 0
 		if truncated {
 			if res.Text != "" || res.Reasoning != "" {
 				partialText += res.Text
@@ -426,9 +451,18 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 					partialReasoning += "\n"
 				}
 				partialReasoning += res.Reasoning
-				history = append(history, llm.Message{Role: "assistant", Content: res.Text, ReasoningContent: res.Reasoning})
-				history = append(history, llm.Message{Role: "user", Content: "Continue from where you left off. Do not repeat what is already written above."})
-				p.Emit(ChatEvent{Type: "info", Text: "Output window hit mid-reply; continuing turn."})
+				truncationResumes++
+				if truncationResumes > maxTruncationResumes {
+					// Bounded, like auto-resume: a provider stuck on "length"
+					// gets a few chances, then the partial becomes the reply
+					// (persisted below) instead of looping forever.
+					p.Emit(ChatEvent{Type: "info", Text: "Still truncated after several retries — keeping the partial reply."})
+					break
+				}
+				if truncationResumes == 1 {
+					p.Emit(ChatEvent{Type: "info", Text: "Output window hit mid-reply; continuing turn."})
+				}
+				resumeFrom()
 				continue
 			}
 			break // no progress — a provider stuck on "length" with no output
@@ -457,6 +491,7 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 				persistReasoning = partialReasoning
 			}
 			partialText, partialReasoning = "", ""
+			partialStart = -1 // a later truncation must not slice past this round's messages
 		}
 		if _, err := p.Store.AddMessage(p.Project.ID, p.SessionID, "assistant", persistText, toolJSON, p.Client.Model, persistReasoning, usageJSON, ""); err != nil {
 			return nil, err
@@ -542,16 +577,19 @@ func elideHistoricalToolResult(name, content string) string {
 	return fmt.Sprintf("[%s result omitted — %d bytes; re-read the file if you need it again]", name, len(content))
 }
 
-// hasInvalidToolCallArgs reports whether any tool call in the set carries
-// arguments that are not valid JSON (a stream truncated mid-arguments).
-func hasInvalidToolCallArgs(tcs []llm.ToolCall) bool {
+// stripBrokenToolCalls drops tool calls whose arguments are not valid JSON —
+// a stream cut mid-arguments (finish_reason "length") leaves fragments that
+// upstream rejects with a hard 400 on every later request. Calls that did
+// complete keep their place, so a multi-call truncation still runs the calls
+// that finished and only the broken ones are discarded.
+func stripBrokenToolCalls(tcs []llm.ToolCall) []llm.ToolCall {
+	out := make([]llm.ToolCall, 0, len(tcs))
 	for _, tc := range tcs {
-		args := tc.Function.Arguments
-		if args == "" || !json.Valid([]byte(args)) {
-			return true
+		if tc.Function.Arguments != "" && json.Valid([]byte(tc.Function.Arguments)) {
+			out = append(out, tc)
 		}
 	}
-	return false
+	return out
 }
 
 // toolDetail extracts a short human-readable detail for a tool call.
