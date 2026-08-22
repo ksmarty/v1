@@ -1,4 +1,4 @@
-import { getNotifyEnabled } from './utils';
+import { getNotifyEnabled, getNotifyOnlyBackground, getNotifyTurnDone, getNotifyTurnError } from './utils';
 
 // Shows a notification through the service worker when one is registered
 // (the path iOS PWAs support), falling back to the page constructor. Returns
@@ -31,11 +31,19 @@ async function showNotification(
   }
 }
 
+// Common gating for turn notifications: master toggle, the specific
+// category toggle, and (by default) only when the window is not focused.
+async function shouldNotify(category: boolean, projectId: string, title: string, body: string, url: string) {
+  if (!getNotifyEnabled() || !category) return;
+  if (getNotifyOnlyBackground() && document.hasFocus()) return;
+  await showNotification(title, body, `v1-turn-${projectId}`, url);
+}
+
 /**
  * System notification for a finished chat turn. Fires whenever the window
  * does not have focus (backgrounded tab or another window is active) — the
  * user is not watching the respond otherwise. Requires the Notifications
- * toggle (Settings → About) and a granted browser permission.
+ * toggle and a granted browser permission.
  */
 export async function notifyTurnDone(
   projectId: string,
@@ -43,12 +51,10 @@ export async function notifyTurnDone(
   projectName: string,
   text: string,
 ) {
-  if (!getNotifyEnabled()) return;
-  if (document.hasFocus()) return;
   const title = projectName ? `${projectName} — turn finished` : 'Turn finished';
   const body = (text.replace(/\s+/g, ' ').trim() || 'Response complete.').slice(0, 140);
   const url = `/project/${encodeURIComponent(projectId)}?session=${encodeURIComponent(sessionId)}`;
-  await showNotification(title, body, `v1-turn-${projectId}`, url);
+  await shouldNotify(getNotifyTurnDone(), projectId, title, body, url);
 }
 
 /**
@@ -62,12 +68,10 @@ export async function notifyTurnError(
   projectName: string,
   message: string,
 ) {
-  if (!getNotifyEnabled()) return;
-  if (document.hasFocus()) return;
   const title = projectName ? `${projectName} — turn failed` : 'Turn failed';
   const body = (message.replace(/\s+/g, ' ').trim() || 'Something went wrong.').slice(0, 140);
   const url = `/project/${encodeURIComponent(projectId)}?session=${encodeURIComponent(sessionId)}`;
-  await showNotification(title, body, `v1-turn-${projectId}`, url);
+  await shouldNotify(getNotifyTurnError(), projectId, title, body, url);
 }
 
 // Test notification for the Settings → About control: fires regardless of the

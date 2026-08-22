@@ -204,6 +204,7 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 		"rewindApproval":   s.rewindApproval(userID),
 		"defaultThinking":  s.defaultThinking(userID),
 		"toonEnabled":      s.toonEnabled(userID),
+		"disabledTools":    s.disabledTools(userID),
 		"autoPushDefault":  s.autoPushDefault(userID),
 		"contextThreshold": int(s.contextThreshold(userID) * 100),
 		"systemPrompt":     s.globalSystemPrompt(userID),
@@ -234,6 +235,7 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		RewindApproval          *bool               `json:"rewindApproval"`
 		DefaultThinking         *string             `json:"defaultThinking"`
 		ToonEnabled             *bool               `json:"toonEnabled"`
+		DisabledTools           *[]string            `json:"disabledTools"`
 		AutoPushDefault         *bool               `json:"autoPushDefault"`
 		ContextThreshold        *float64            `json:"contextThreshold"`
 		SystemPrompt            *string             `json:"systemPrompt"`
@@ -437,6 +439,19 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 			val = "1"
 		}
 		if err := s.st.SetUserSetting(userID, keyToonEnabled, val); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+	if body.DisabledTools != nil {
+		b, _ := json.Marshal(*body.DisabledTools)
+		key := keyDisabledTools
+		if len(*body.DisabledTools) == 0 {
+			if err := s.st.DeleteUserSetting(userID, key); err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+		} else if err := s.st.SetUserSetting(userID, key, string(b)); err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}

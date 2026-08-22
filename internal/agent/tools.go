@@ -53,6 +53,9 @@ type Executor struct {
 	MCP             *mcp.Manager // optional: namespaced mcp_<server>_<tool> tools
 	Perm            Resolver     // optional: gates tool calls via allow/deny/ask
 	PlanMode        bool         // read-only planning turn: state-changing tools refused
+	// DisabledTools are builtin tool names turned off in Settings; calls are
+	// refused even if the model somehow sends one.
+	DisabledTools map[string]bool
 	GithubToken     string       // user's GitHub token for the git tool's remote ops
 	// OnAsk asks the user one or more questions and waits for the answers
 	// (the ask_user tool); nil when the turn cannot prompt.
@@ -105,6 +108,9 @@ func planSafeTools(in []llm.Tool) []llm.Tool {
 
 // Execute runs one tool call and returns the result string fed back to the LLM.
 func (e *Executor) Execute(ctx context.Context, name, argsJSON string) (string, error) {
+	if e.DisabledTools[name] {
+		return "", fmt.Errorf("%s is disabled in Settings → Tools & permissions → Tools", name)
+	}
 	if e.PlanMode && (planBlockedTools[name] || strings.HasPrefix(name, "mcp_")) {
 		return "", fmt.Errorf("%s is not available in plan mode — planning only reads files and pages", name)
 	}

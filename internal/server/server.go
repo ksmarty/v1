@@ -312,6 +312,7 @@ const (
 	keyRewindApproval          = "rewind_approval"
 	keyThinkingDefault         = "thinking_default"
 	keyToonEnabled             = "toon_enabled"
+	keyDisabledTools            = "disabled_tools"
 	keyAutoPushDefault         = "auto_push_default"
 	keySystemPrompt            = "system_prompt"
 	keyContextThreshold        = "context_threshold"
@@ -501,6 +502,23 @@ func (s *Server) toonEnabled(userID string) bool {
 		return true
 	}
 	return v == "1"
+}
+
+// disabledTools resolves the user's disabled builtin tool names (JSON array).
+func (s *Server) disabledTools(userID string) map[string]bool {
+	v, ok := s.userSetting(userID, keyDisabledTools)
+	if !ok || v == "" {
+		return nil
+	}
+	var names []string
+	if json.Unmarshal([]byte(v), &names) != nil {
+		return nil
+	}
+	out := make(map[string]bool, len(names))
+	for _, n := range names {
+		out[n] = true
+	}
+	return out
 }
 
 // autoPushDefault resolves the global default for new projects' auto-push

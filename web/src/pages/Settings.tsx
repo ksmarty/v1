@@ -11,6 +11,9 @@ import {
   getDebugHud,
   getJsonPretty,
   getNotifyEnabled,
+  getNotifyOnlyBackground,
+  getNotifyTurnDone,
+  getNotifyTurnError,
   getThinkingCollapsed,
   getToolCallsCollapsed,
   iosVersion,
@@ -22,6 +25,9 @@ import {
   setDebugHud,
   setJsonPretty,
   setNotifyEnabled,
+  setNotifyOnlyBackground,
+  setNotifyTurnDone,
+  setNotifyTurnError,
   setThinkingCollapsed,
   setToolCallsCollapsed,
   type ChatSide,
@@ -44,6 +50,7 @@ import {
   Spinner,
 } from '../components/ui';
 import {
+  IconAlert,
   IconArrowLeft,
   IconBrain,
   IconChat,
@@ -80,6 +87,7 @@ import ToolSettings, { type ToolsTab } from '../components/ToolSettings';
 const NAV = [
   { id: 'llm', label: 'LLM & providers', icon: <IconModel className="h-4 w-4" /> },
   { id: 'tools', label: 'Tools & permissions', icon: <IconWrench className="h-4 w-4" /> },
+  { id: 'notifications', label: 'Notifications', icon: <IconAlert className="h-4 w-4" /> },
   { id: 'github', label: 'GitHub', icon: <IconGitHub className="h-4 w-4" /> },
   { id: 'vercel', label: 'Vercel', icon: <SiVercel className="h-4 w-4" /> },
   { id: 'appearance', label: 'Appearance', icon: <IconSettings className="h-4 w-4" /> },
@@ -125,7 +133,7 @@ const SETTINGS_SEARCH: {
   { id: 'sec-auth', page: 'auth', label: 'Auth', hint: 'Change the password', keywords: 'password auth login security change password' },
   { id: 'sec-oidc', page: 'auth', label: 'OIDC login', hint: 'Single sign-on (admin)', keywords: 'oidc sso single sign on authentik keycloak google issuer client id secret callback redirect allowed emails login' },
   { id: 'sec-users', page: 'users', label: 'Users', hint: 'Admin: create and delete accounts', keywords: 'users accounts admin create delete signup password login' },
-  { id: 'sec-notifications', page: 'appearance', label: 'Notifications', hint: 'Turn-finished alerts', keywords: 'notifications notify alerts push ios pwa banner turn' },
+  { id: 'sec-notifications', page: 'notifications', label: 'Notifications', hint: 'Turn-finished/failed alerts, background-only', keywords: 'notifications notify alerts push ios pwa banner turn finished failed error background' },
   { id: 'sec-debug-hud', page: 'about', label: 'Debug HUD', hint: 'Viewport metrics overlay', keywords: 'debug hud viewport metrics overlay diagnostics' },
 ];
 
@@ -1111,6 +1119,9 @@ function NotificationsControl() {
   const standalone = isStandalone();
   const ver = iosVersion();
   const [on, setOn] = useState(() => getNotifyEnabled());
+  const [turnDone, setTurnDone] = useState(() => getNotifyTurnDone());
+  const [turnError, setTurnError] = useState(() => getNotifyTurnError());
+  const [onlyBackground, setOnlyBackground] = useState(() => getNotifyOnlyBackground());
   const [perm, setPerm] = useState(() => (supported ? Notification.permission : 'denied'));
   const [testing, setTesting] = useState(false);
   const [tested, setTested] = useState<'ok' | 'fail' | null>(null);
@@ -1144,6 +1155,24 @@ function NotificationsControl() {
       }
     }
   };
+
+  // Small segmented toggle reused by each fine-grained option.
+  const Seg = ({ value, onChoose }: { value: boolean; onChoose: (v: boolean) => void }) => (
+    <div className="grid w-full max-w-[120px] grid-cols-2 gap-1 rounded-lg border border-border bg-surface p-1">
+      {([true, false] as const).map((v) => (
+        <button
+          key={String(v)}
+          type="button"
+          onClick={() => onChoose(v)}
+          className={`min-h-[30px] rounded-md text-sm transition-colors ${
+            value === v ? 'bg-border text-text' : 'text-dim hover:text-text'
+          }`}
+        >
+          {v ? 'On' : 'Off'}
+        </button>
+      ))}
+    </div>
+  );
 
   const sendTest = async () => {
     setTesting(true);
@@ -1230,6 +1259,32 @@ function NotificationsControl() {
             </span>
           )}
           {tested === 'fail' && <span className="text-xs text-red-400">Could not send</span>}
+        </div>
+      )}
+      {/* Fine-grained options (only meaningful when notifications are on). */}
+      {on && (
+        <div className="mt-1 flex flex-col gap-3 border-t border-border pt-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="text-sm text-text">Turn finished</p>
+              <p className="text-[11px] text-faint">When a chat turn completes</p>
+            </div>
+            <Seg value={turnDone} onChoose={(v) => { setTurnDone(v); setNotifyTurnDone(v); }} />
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="text-sm text-text">Turn failed</p>
+              <p className="text-[11px] text-faint">When a chat turn errors out</p>
+            </div>
+            <Seg value={turnError} onChoose={(v) => { setTurnError(v); setNotifyTurnError(v); }} />
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="text-sm text-text">Only while backgrounded</p>
+              <p className="text-[11px] text-faint">Skip notifications when the app is focused</p>
+            </div>
+            <Seg value={onlyBackground} onChoose={(v) => { setOnlyBackground(v); setNotifyOnlyBackground(v); }} />
+          </div>
         </div>
       )}
     </div>
@@ -2368,6 +2423,18 @@ export default function Settings() {
             </div>
           ) : (
           <>
+          {settings.github.tokenSet && editingGithub && (
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-subtle">Editing the connection configuration.</p>
+              <Button
+                variant="ghost"
+                className="h-8 px-2.5 text-xs"
+                onClick={() => setEditingGithub(false)}
+              >
+                Close configuration
+              </Button>
+            </div>
+          )}
           <form onSubmit={(e) => void saveGitHub(e)} className="flex flex-col gap-3">
             <Field label={settings.github.source === 'oauth' ? 'GitHub OAuth token' : 'Personal access token'}>
               <Input
@@ -2650,13 +2717,6 @@ export default function Settings() {
                 <ChatSideControl />
               </Section>
         <Section
-          id="sec-notifications"
-          title="Notifications"
-          description="Get a system notification when a chat turn finishes while the app is in the background."
-        >
-          <NotificationsControl />
-        </Section>
-        <Section
           id="sec-chat-tabs"
           title="Chat tabs"
           description="Choose which tabs appear in the project view and their order. Drag to reorder; the eye toggles a tab on or off."
@@ -2687,6 +2747,16 @@ export default function Settings() {
             <ThinkingCollapsedControl />
           </div>
         </Section>
+            </div>
+
+            <div className={page === 'notifications' ? 'flex flex-col gap-4' : 'hidden'}>
+              <Section
+                id="sec-notifications"
+                title="Notifications"
+                description="System alerts when a chat turn finishes or fails. Requires browser permission and, on iOS, the installed app."
+              >
+                <NotificationsControl />
+              </Section>
             </div>
 
             <div className={page === 'auth' ? 'flex flex-col gap-4' : 'hidden'}>

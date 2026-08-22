@@ -197,6 +197,7 @@ export interface SettingsUpdate {
   rewindApproval?: boolean;
   defaultThinking?: string;
   toonEnabled?: boolean;
+  disabledTools?: string[];
   autoPushDefault?: boolean;
   contextThreshold?: number;
   systemPrompt?: string;

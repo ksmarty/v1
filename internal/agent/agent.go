@@ -85,6 +85,9 @@ type ChatParams struct {
 	Vision          bool            // the model reads images — enables screenshot_app
 	ReasoningEffort string          // thinking level; sent as reasoning_effort when set
 	ToonEnabled     bool            // tool results are TOON-encoded for the model
+	// DisabledTools are builtin tool names the user turned off in Settings;
+	// they are neither advertised to the model nor executable.
+	DisabledTools map[string]bool
 	Steer           func() []string // drains mid-run user messages, injected next round
 	Background      *BackgroundManager
 	// PollBackground returns the session's finished background commands so the
@@ -306,6 +309,15 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 		}
 		if len(p.ExtraTools) > 0 {
 			allTools = append(allTools, p.ExtraTools...)
+		}
+		if len(p.DisabledTools) > 0 {
+			filtered := allTools[:0]
+			for _, t := range allTools {
+				if !p.DisabledTools[t.Function.Name] {
+					filtered = append(filtered, t)
+				}
+			}
+			allTools = filtered
 		}
 		if p.PlanMode {
 			allTools = planSafeTools(allTools)

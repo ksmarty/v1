@@ -495,6 +495,7 @@ func (s *Server) streamChatTurn(w http.ResponseWriter, r *http.Request, p *store
 	params.SkillsPrompt = s.skillsSystemPrompt()
 	params.GlobalPrompt = s.globalSystemPrompt(userID)
 	params.ToonEnabled = s.toonEnabled(userID)
+	params.DisabledTools = s.disabledTools(userID)
 	if mems, err := s.st.ListMemories(p.ID); err == nil {
 		params.MemoriesPrompt = memoryPrompt(mems)
 	}
@@ -530,6 +531,7 @@ func (s *Server) streamChatTurn(w http.ResponseWriter, r *http.Request, p *store
 		MCP:            s.mcp,
 		GithubToken:    s.githubToken(userID),
 		Perm:           &turnPerm{s: s, emit: emit, userID: userID},
+		DisabledTools:  params.DisabledTools,
 		OnTodos: func(t []store.Todo) {
 			emit(agent.ChatEvent{Type: "todos", Todos: t})
 		},

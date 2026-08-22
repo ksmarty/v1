@@ -66,6 +66,8 @@ export interface Settings {
   rewindApproval: boolean;
   defaultThinking: string;
   toonEnabled: boolean;
+  /** Builtin agent tool names the user disabled in Tools & permissions. */
+  disabledTools?: string[];
   autoPushDefault?: boolean;
   /** Compaction threshold in percent of the context window (e.g. 80). */
   contextThreshold: number;
