@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -78,12 +79,12 @@ func (s *Server) handleVercelOAuthStart(w http.ResponseWriter, r *http.Request) 
 // stores it. Failures redirect to /settings with a marker instead of showing
 // an error page.
 func (s *Server) handleVercelOAuthCallback(w http.ResponseWriter, r *http.Request) {
-	fail := func() {
-		http.Redirect(w, r, "/settings?page=vercel&vercel=error", http.StatusFound)
+	fail := func(why string) {
+		http.Redirect(w, r, "/settings?page=vercel&vercel="+url.QueryEscape(why), http.StatusFound)
 	}
 	q := r.URL.Query()
 	if q.Get("error") != "" || q.Get("state") == "" || q.Get("code") == "" {
-		fail()
+		fail("error")
 		return
 	}
 	state := q.Get("state")
@@ -98,7 +99,7 @@ func (s *Server) handleVercelOAuthCallback(w http.ResponseWriter, r *http.Reques
 	}
 	s.vercelMu.Unlock()
 	if !ok {
-		fail()
+		fail("expired")
 		return
 	}
 
@@ -106,18 +107,24 @@ func (s *Server) handleVercelOAuthCallback(w http.ResponseWriter, r *http.Reques
 	tok, err := vercel.ExchangeCode(r.Context(), clientID, clientSecret, q.Get("code"), s.vercelRedirectURI(r))
 	if err != nil {
 		log.Printf("vercel: exchanging code: %v", err)
-		fail()
+		// Vercel reports a bad client id/secret as invalid_client — tell the
+		// user what to check instead of a silent error.
+		reason := "error"
+		if strings.Contains(strings.ToLower(err.Error()), "invalid_client") {
+			reason = "invalid_client"
+		}
+		fail(reason)
 		return
 	}
 	u, ok := s.auth.User(r)
 	if !ok {
 		log.Printf("vercel: no session for OAuth callback")
-		fail()
+		fail("error")
 		return
 	}
 	if err := s.st.SetUserSetting(u.ID, keyVercelToken, tok.AccessToken); err != nil {
 		log.Printf("vercel: storing token: %v", err)
-		fail()
+		fail("error")
 		return
 	}
 	if tok.RefreshToken != "" {

@@ -1618,6 +1618,24 @@ export default function Settings() {
   const [page, setPage] = useState<NavId>(
     NAV.some((n) => n.id === initialPage) ? (initialPage as NavId) : 'llm',
   );
+  // OAuth-callback failures come back as ?page=vercel&vercel=<reason>.
+  const [vercelOAuthError, setVercelOAuthError] = useState<string | null>(null);
+  useEffect(() => {
+    const why = params.get('vercel');
+    if (why) {
+      setVercelOAuthError(
+        why === 'invalid_client'
+          ? 'Vercel rejected the OAuth Client ID/Secret — check that the Client ID and Secret saved above match the OAuth2 app at vercel.com/account/settings/oauth (the secret is shown only when the app is created; a token is not the secret).'
+          : why === 'expired'
+            ? 'The Vercel authorization expired before completing — try connecting again.'
+            : 'The Vercel OAuth flow failed. Check the Client ID/Secret and callback URL, then try again.',
+      );
+      // Clear the param so the banner doesn't persist on reloads.
+      const next = new URLSearchParams(params);
+      next.delete('vercel');
+      setSearchParams(next, { replace: true });
+    }
+  }, [params, setSearchParams]);
   // Settings search: a loose query over the catalog; picking a result
   // deep-links to ?page=…&section=… which switches the tab and scrolls.
   const [query, setQuery] = useState('');
@@ -2727,16 +2745,16 @@ export default function Settings() {
             </Field>
           </div>
           <p className="text-xs leading-relaxed text-subtle">
-            Create an OAuth app at{' '}
+            Create an OAuth2 app at{' '}
             <a
-              href="https://console.vercel.co"
+              href="https://vercel.com/account/settings/oauth"
               target="_blank"
               rel="noopener noreferrer"
               className="text-accent hover:underline"
             >
-              console.vercel.co
+              vercel.com/account/settings/oauth
             </a>{' '}
-            (Settings → OAuth) and use this callback URL:
+            and use this callback URL:
             <code className="mt-1 block break-all rounded-md bg-surface px-2 py-1 font-mono text-[11px] leading-relaxed text-dim">
               {window.location.origin}/api/auth/vercel/oauth/callback
             </code>
@@ -2744,6 +2762,11 @@ export default function Settings() {
             expire after an hour; v1 refreshes them automatically.
           </p>
           <div className="flex items-center gap-2">
+            {vercelOAuthError && (
+              <p className="w-full rounded-lg border border-red-900/60 bg-red-950/40 px-3 py-2 text-xs text-red-300">
+                {vercelOAuthError}
+              </p>
+            )}
             {oauthReady ? (
               <a
                 href="/api/auth/vercel/oauth/start"

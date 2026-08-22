@@ -281,7 +281,7 @@ Deploy any v1 project to Vercel from the project page — the ⚡ button next to
 
 ### OAuth (recommended)
 
-1. Create an OAuth app at <https://console.vercel.co> → **Settings → OAuth** (or <https://vercel.com/account/settings/oauth>). Add the callback URL
+1. Create an OAuth2 app at <https://vercel.com/account/settings/oauth>. Add the callback URL
    `<your-origin>/api/auth/vercel/oauth/callback` (see the exact value on the Settings → Vercel page; it's derived from the request host and honors `X-Forwarded-Proto`, so it works behind a reverse proxy — set `V1_VERCEL_REDIRECT_URI` if you'd rather pin it).
 2. Paste the **Client ID** and **Client Secret** into Settings → Vercel in v1 (or set `V1_VERCEL_CLIENT_ID` / `V1_VERCEL_CLIENT_SECRET`) and save.
 3. Click **Connect with Vercel** and authorize. Access tokens expire after an hour; v1 refreshes them automatically with the refresh token.
