@@ -284,6 +284,8 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		Vision:          s.modelSupportsImages(userID, body.ProviderID, body.Model),
 		ReasoningEffort: body.Thinking,
 		PlanMode:        isPlan,
+		SoftTimeout:     s.cfg.TurnSoftTimeout,
+		HardTimeout:     s.cfg.TurnHardTimeout,
 	}
 	// Editing an existing user message rewinds the thread to it and re-runs
 	// from the edited text: update its content, then run with LastUserID set so
@@ -316,7 +318,15 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "run_active")
 		return
 	}
-	q, started, queuedID := s.turns.beginOrQueue(p.ID, params.SessionID, body.Message)
+	q, started, queuedID, qerr := s.turns.beginOrQueue(p.ID, params.SessionID, body.Message, userID, s.cfg.MaxConcurrentRunsPerUser)
+	if qerr != nil {
+		if errors.Is(qerr, errTooManyRuns) {
+			writeError(w, http.StatusTooManyRequests, "too_many_runs")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, qerr.Error())
+		return
+	}
 	if !started {
 		writeJSON(w, http.StatusAccepted, map[string]any{"queued": true, "id": queuedID})
 		return
@@ -396,11 +406,19 @@ func (s *Server) handleChatRetry(w http.ResponseWriter, r *http.Request) {
 		params.LastUserID = 0
 		params.ContinueFromID = partialID
 	}
-	q, started, _ := s.turns.beginOrQueue(p.ID, sessionID, "")
-	if !started {
-		writeError(w, http.StatusConflict, "run_active")
-		return
-	}
+	q, started, _, qerr := s.turns.beginOrQueue(p.ID, sessionID, "", userID, s.cfg.MaxConcurrentRunsPerUser)
+		if qerr != nil {
+			if errors.Is(qerr, errTooManyRuns) {
+				writeError(w, http.StatusTooManyRequests, "too_many_runs")
+				return
+			}
+			writeError(w, http.StatusInternalServerError, qerr.Error())
+			return
+		}
+		if !started {
+			writeError(w, http.StatusConflict, "run_active")
+			return
+		}
 	s.streamChatTurn(w, r, p, userID, params, q)
 }
 
@@ -703,7 +721,13 @@ func (s *Server) handleChatStop(w http.ResponseWriter, r *http.Request) {
 	if p == nil {
 		return
 	}
-	_ = s.turns.cancelRun(p.ID, s.chatSessionID(p, r.URL.Query().Get("sessionId")))
+	sessionID := s.chatSessionID(p, r.URL.Query().Get("sessionId"))
+	_ = s.turns.cancelRun(p.ID, sessionID)
+	// Kill detached commands started by this session too, so a stop leaves no
+	// orphaned builds or servers behind.
+	if s.background != nil {
+		s.background.CancelSession(sessionID)
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 

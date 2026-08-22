@@ -1265,9 +1265,23 @@ func (e *Executor) runCommand(ctx context.Context, argsJSON string) (string, err
 	go func() { waitCh <- cmd.Wait() }()
 
 	timedOut := false
+	cancelled := false
 	var runErr error
 	select {
 	case runErr = <-waitCh:
+	case <-ctx.Done():
+		// The turn was stopped (stop button, hard timeout, session end): kill
+		// the whole process group so grandchildren don't outlive the turn.
+		cancelled = true
+		if cmd.Process != nil {
+			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
+			select {
+			case runErr = <-waitCh:
+			case <-time.After(5 * time.Second):
+				_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+				runErr = <-waitCh
+			}
+		}
 	case <-time.After(timeout):
 		timedOut = true
 		if cmd.Process != nil {
@@ -1297,6 +1311,10 @@ func (e *Executor) runCommand(ctx context.Context, argsJSON string) (string, err
 			note = fmt.Sprintf("command exceeded timeout of %s; it looked like a long-running dev server and was killed", timeout)
 		}
 		res["note"] = note
+	}
+	if cancelled {
+		res["cancelled"] = true
+		res["note"] = "command was cancelled (the turn was stopped or the session ended)"
 	}
 	return toolResult(res), nil
 }

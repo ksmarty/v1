@@ -4,11 +4,18 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 )
 
+// estSecondsPerTurn is the rough per-turn duration used to estimate how long
+// a queued message will wait before its follow-up turn starts.
+const estSecondsPerTurn = 60
+
 // handleChatQueue returns the run's queued messages in processing order, or
-// an empty list when the session is idle. `steering` lists the messages that
-// have been steered into the run and are waiting to be injected.
+// an empty list when the session is idle. Each entry carries its position and
+// an estimated wait (position * estSecondsPerTurn) so the UI can show the
+// user how long their queued message may take. `steering` lists the messages
+// that have been steered into the run and are waiting to be injected.
 func (s *Server) handleChatQueue(w http.ResponseWriter, r *http.Request) {
 	p := s.projectOr404(w, r)
 	if p == nil {
@@ -17,8 +24,14 @@ func (s *Server) handleChatQueue(w http.ResponseWriter, r *http.Request) {
 	messages := []map[string]any{}
 	steering := []map[string]any{}
 	if q := s.turns.get(p.ID, s.chatSessionID(p, r.URL.Query().Get("sessionId"))); q != nil {
-		for _, m := range q.list() {
-			messages = append(messages, map[string]any{"id": m.ID, "text": m.Text})
+		for i, m := range q.list() {
+			messages = append(messages, map[string]any{
+				"id":                   m.ID,
+				"text":                 m.Text,
+				"position":             i + 1,
+				"estimatedWaitSeconds": (i + 1) * estSecondsPerTurn,
+				"queuedAt":             m.QueuedAt.Format(time.RFC3339),
+			})
 		}
 		for _, m := range q.listSteers() {
 			steering = append(steering, map[string]any{"id": m.ID, "text": m.Text})

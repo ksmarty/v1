@@ -359,7 +359,10 @@ export const api = {
       `/api/projects/${id}/chat/status?sessionId=${encodeURIComponent(sessionId)}`,
     ),
   chatQueue: (id: string, sessionId: string) =>
-    request<{ messages: { id: string; text: string }[]; steering: { id: string; text: string }[] }>(
+    request<{
+      messages: { id: string; text: string; position?: number; estimatedWaitSeconds?: number; queuedAt?: string }[];
+      steering: { id: string; text: string }[];
+    }>(
       `/api/projects/${id}/chat/queue?sessionId=${encodeURIComponent(sessionId)}`,
     ),
   chatQueueReorder: (id: string, sessionId: string, ids: string[]) =>

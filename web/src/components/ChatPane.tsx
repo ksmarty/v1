@@ -212,6 +212,12 @@ function formatElapsed(ms: number): string {
   return `${Math.floor(s / 60)}m ${s % 60}s`;
 }
 
+// Formats a queue wait estimate in seconds, e.g. "45s" or "2m".
+function fmtQueueWait(seconds: number): string {
+  if (seconds < 60) return `${Math.max(1, Math.round(seconds))}s`;
+  return `${Math.ceil(seconds / 60)}m`;
+}
+
 // Formats a timestamp as a short local time, e.g. "10:42 AM".
 function formatTime(ms: number): string {
   return new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
@@ -1703,7 +1709,7 @@ export default function ChatPane({
   // Messages sent while a run is active, in processing order. They become
   // follow-up turns when the run finishes; the steer button injects one into
   // the current run immediately.
-  const [queued, setQueued] = useState<{ id: string; text: string }[]>([]);
+  const [queued, setQueued] = useState<{ id: string; text: string; position?: number; estimatedWaitSeconds?: number }[]>([]);
   // Messages steered into the current run, waiting to be injected at the next
   // round boundary.
   const [steering, setSteering] = useState<{ id: string; text: string }[]>([]);
@@ -4052,6 +4058,11 @@ export default function ChatPane({
             <div className="mb-1.5 flex items-center gap-1.5 px-1 text-[10px] font-medium uppercase tracking-wider text-faint">
               <IconSend className="h-3 w-3 text-accent" />
               Queued ({queued.length})
+              {queued.some((m) => m.estimatedWaitSeconds != null) && (
+                <span className="ml-auto normal-case tracking-normal text-dim">
+                  ~{fmtQueueWait(Math.max(...queued.map((m) => m.estimatedWaitSeconds ?? 0)))} to next turn
+                </span>
+              )}
             </div>
             {queued.map((m, i) => (
               <div

@@ -33,6 +33,7 @@ type BackgroundJob struct {
 	Err      error
 	Output   string
 	done     chan struct{}
+	cmd      *exec.Cmd
 
 	// Filled by the completion callback once the result is persisted.
 	Text   string
@@ -75,6 +76,7 @@ func (m *BackgroundManager) Start(dir, command string, timeout time.Duration, se
 	if err := cmd.Start(); err != nil {
 		return "", fmt.Errorf("failed to start: %w", err)
 	}
+	job.cmd = cmd
 	m.mu.Lock()
 	m.jobs[job.ID] = job
 	m.mu.Unlock()
@@ -105,6 +107,40 @@ func (m *BackgroundManager) Start(dir, command string, timeout time.Duration, se
 		}
 	}()
 	return job.ID, nil
+}
+
+// CancelSession terminates every still-running job started by the chat
+// session: SIGTERM to the process group, SIGKILL to whatever survives after a
+// 5-second grace. Finished jobs are unaffected. Used when the user stops a
+// turn so detached commands don't outlive it.
+func (m *BackgroundManager) CancelSession(sessionID string) {
+	m.mu.Lock()
+	var procs []*os.Process
+	for _, j := range m.jobs {
+		if j.SessionID != sessionID {
+			continue
+		}
+		select {
+		case <-j.done:
+			continue
+		default:
+		}
+		if j.cmd != nil && j.cmd.Process != nil {
+			procs = append(procs, j.cmd.Process)
+		}
+	}
+	m.mu.Unlock()
+	if len(procs) == 0 {
+		return
+	}
+	for _, p := range procs {
+		_ = syscall.Kill(-p.Pid, syscall.SIGTERM)
+	}
+	time.AfterFunc(5*time.Second, func() {
+		for _, p := range procs {
+			_ = syscall.Kill(-p.Pid, syscall.SIGKILL)
+		}
+	})
 }
 
 // Wait blocks until the job finishes (used by tests and status checks).

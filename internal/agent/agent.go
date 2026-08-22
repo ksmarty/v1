@@ -6,9 +6,12 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"math/rand"
 	"os"
 	"strings"
+	"time"
 
 	"v1/internal/llm"
 	"v1/internal/store"
@@ -103,6 +106,11 @@ type ChatParams struct {
 	ContextThreshold float64
 	Summarizer       Summarizer
 	Emit             func(ChatEvent)
+	// SoftTimeout warns the model (via an injected system message) that it has
+	// been working too long; 0 uses the default of 5 minutes.
+	SoftTimeout time.Duration
+	// HardTimeout aborts the turn outright; 0 uses the default of 10 minutes.
+	HardTimeout time.Duration
 }
 
 // maxHistoricalToolResult is the largest a replayed (pre-turn) tool result may
@@ -261,6 +269,25 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 		}
 	}
 
+	// Turn timeouts: a hard deadline bounds the whole turn (streaming and tool
+	// calls alike), and a soft deadline injects a single "are you still
+	// working?" warning so the model gets a chance to stop and ask the user
+	// before the hard cutoff hits.
+	soft, hard := p.SoftTimeout, p.HardTimeout
+	if hard <= 0 {
+		hard = 10 * time.Minute
+	}
+	if soft <= 0 {
+		soft = 5 * time.Minute
+	}
+	if soft >= hard {
+		soft = hard / 2
+	}
+	turnCtx, turnCancel := context.WithTimeout(ctx, hard)
+	defer turnCancel()
+	startedAt := time.Now()
+	softWarned := false
+
 	var usage *Usage
 	// When the provider's output window runs out mid-reply (finish_reason
 	// "length"), the partial stays in the model's view and a retry continues
@@ -314,6 +341,14 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 	// the only guard is progress — a truncation that adds nothing new stops the
 	// turn so a broken provider can't spin forever.
 	for {
+		// Soft timeout: warn the model once it has been working past the soft
+		// mark so it can stop and ask the user instead of grinding on.
+		if !softWarned && time.Since(startedAt) >= soft {
+			softWarned = true
+			warn := fmt.Sprintf("You have been working for %s (the soft time limit). If you are stuck, stop and ask the user instead of continuing to loop.", soft.Round(time.Minute))
+			history = append(history, llm.Message{Role: "system", Content: warn})
+			p.Emit(ChatEvent{Type: "info", Text: warn})
+		}
 		// Steered messages join the turn between rounds: persisted like a
 		// normal user turn and rendered in the UI via injected_message.
 		if p.Steer != nil {
@@ -355,7 +390,7 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 			allTools = planSafeTools(allTools)
 		}
 		requestHistory := compactForModel(ctx, history, p)
-		res, err := p.Client.ChatStream(ctx, requestHistory, allTools,
+		res, err := p.Client.ChatStream(turnCtx, requestHistory, allTools,
 			func(d string) { p.Emit(ChatEvent{Type: "delta", Text: d}) },
 			func(d string) { p.Emit(ChatEvent{Type: "reasoning", Text: d}) })
 		// Models that don't support vision reject image parts; retry once with
@@ -363,11 +398,19 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 		if err != nil && !assistantSaved && vision {
 			history = stripImageParts(history)
 			vision = false
-			res, err = p.Client.ChatStream(ctx, compactForModel(ctx, history, p), allTools,
+			res, err = p.Client.ChatStream(turnCtx, compactForModel(ctx, history, p), allTools,
 				func(d string) { p.Emit(ChatEvent{Type: "delta", Text: d}) },
 				func(d string) { p.Emit(ChatEvent{Type: "reasoning", Text: d}) })
 		}
 		if err != nil {
+			// Hard timeout: persist any partial reply, then abort the turn —
+			// retrying past the deadline is pointless.
+			if errors.Is(err, context.DeadlineExceeded) {
+				if res != nil && (res.Text != "" || res.Reasoning != "") {
+					_, _ = p.Store.AddMessage(p.Project.ID, p.SessionID, "assistant", res.Text, "", p.Client.Model, res.Reasoning, "", "")
+				}
+				return nil, fmt.Errorf("turn exceeded the hard timeout of %s and was aborted", hard)
+			}
 			// Auto-resume a mid-reply drop: the streamed partial is valid, so
 			// persist it, hand it back to the model with a continue instruction,
 			// and run the round again — continuing where the provider failed
@@ -381,6 +424,7 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 				resumeFrom()
 				resumes++
 				p.Emit(ChatEvent{Type: "info", Text: "The connection dropped mid-reply; resuming the turn automatically."})
+				waitResumeBackoff(resumes)
 				continue
 			}
 			// A mid-response failure with no resumable partial (no output yet):
@@ -504,7 +548,7 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 		}
 		for _, tc := range res.ToolCalls {
 			p.Emit(ChatEvent{Type: "tool_start", Name: tc.Function.Name, Detail: toolDetail(tc)})
-			result, execErr := p.Exec.Execute(ctx, tc.Function.Name, tc.Function.Arguments)
+			result, execErr := p.Exec.Execute(turnCtx, tc.Function.Name, tc.Function.Arguments)
 			ok := execErr == nil
 			if !ok {
 				result = "error: " + execErr.Error()
@@ -1008,6 +1052,18 @@ var tools = []llm.Tool{
 			},
 		},
 	},
+}
+
+// waitResumeBackoff sleeps between auto-resume retries: 2^attempt seconds
+// with jitter, capped at 60s, so a provider hiccup gets a moment to recover
+// before the resumed round retries.
+func waitResumeBackoff(attempt int) {
+	delay := time.Duration(1<<uint(attempt)) * time.Second
+	if delay > 60*time.Second {
+		delay = 60 * time.Second
+	}
+	delay += time.Duration(rand.Intn(500)) * time.Millisecond
+	time.Sleep(delay)
 }
 
 // toolResult marshals a tool result map to the JSON string fed back to the LLM.

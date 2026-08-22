@@ -5,6 +5,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Config holds all process configuration, read once from the environment.
@@ -37,6 +38,9 @@ type Config struct {
 	SystemPrompt            string
 	Version                 string
 	Commit                  string
+	MaxConcurrentRunsPerUser int
+	TurnSoftTimeout          time.Duration
+	TurnHardTimeout          time.Duration
 }
 
 // Load reads configuration from environment variables.
@@ -51,6 +55,9 @@ func Load(version, commit string) Config {
 		ContextThreshold: 0.80,
 		Version:          version,
 		Commit:           commit,
+		MaxConcurrentRunsPerUser: 2,
+		TurnSoftTimeout:          5 * time.Minute,
+		TurnHardTimeout:          10 * time.Minute,
 	}
 	if v := os.Getenv("V1_PORT"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 && n < 65536 {
@@ -119,6 +126,21 @@ func Load(version, commit string) Config {
 	if v := os.Getenv("V1_CONTEXT_THRESHOLD"); v != "" {
 		if n, err := strconv.ParseFloat(v, 64); err == nil && n > 0 && n <= 1 {
 			c.ContextThreshold = n
+		}
+	}
+	if v := os.Getenv("V1_MAX_CONCURRENT_RUNS_PER_USER"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			c.MaxConcurrentRunsPerUser = n
+		}
+	}
+	if v := os.Getenv("V1_TURN_SOFT_TIMEOUT"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d > 0 {
+			c.TurnSoftTimeout = d
+		}
+	}
+	if v := os.Getenv("V1_TURN_HARD_TIMEOUT"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d > 0 {
+			c.TurnHardTimeout = d
 		}
 	}
 	c.SystemPrompt = os.Getenv("V1_SYSTEM_PROMPT")

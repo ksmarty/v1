@@ -46,6 +46,31 @@ func TestBackgroundManagerLifecycle(t *testing.T) {
 	}
 }
 
+// TestBackgroundCancelSession verifies that cancelling a session terminates
+// its running detached commands quickly instead of leaving them to run on.
+func TestBackgroundCancelSession(t *testing.T) {
+	m := NewBackgroundManager()
+	var notified *BackgroundJob
+	if _, err := m.Start(t.TempDir(), "sleep 30", 60*time.Second, "sessK", func(j *BackgroundJob) { notified = j }); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	m.CancelSession("sessK")
+	deadline := time.Now().Add(10 * time.Second)
+	for notified == nil && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if notified == nil {
+		t.Fatal("cancelled job never finished")
+	}
+	if time.Since(start) > 10*time.Second {
+		t.Fatal("cancelled job was not killed promptly")
+	}
+	if notified.ExitCode == 0 {
+		t.Fatalf("expected a killed (non-zero) exit code, got 0")
+	}
+}
+
 func TestBackgroundManagerTimeout(t *testing.T) {
 	m := NewBackgroundManager()
 	var notified *BackgroundJob

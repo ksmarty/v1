@@ -143,6 +143,29 @@ func TestRunCommandTimeoutKills(t *testing.T) {
 	}
 }
 
+// TestRunCommandCancelKills verifies that cancelling the turn's context kills
+// the command's whole process group (stop button / hard timeout) and reports
+// the cancellation to the model.
+func TestRunCommandCancelKills(t *testing.T) {
+	e := newTestExecutor(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(300 * time.Millisecond)
+		cancel()
+	}()
+	start := time.Now()
+	res, err := e.Execute(ctx, "run_command", `{"command":"sleep 30"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if time.Since(start) > 10*time.Second {
+		t.Fatal("command was not killed on cancellation")
+	}
+	if !strings.Contains(res, `"cancelled":true`) {
+		t.Fatalf("expected cancelled in %q", res)
+	}
+}
+
 // TestSetProjectName: the tool renames the project and notifies the UI.
 func TestSetProjectName(t *testing.T) {
 	st, err := store.Open(t.TempDir())

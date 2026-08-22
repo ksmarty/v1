@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"sync"
+	"time"
 
 	"v1/internal/agent"
 	"v1/internal/store"
@@ -17,9 +18,10 @@ var errNotQueued = errors.New("message is not in the queue")
 // queuedMsg is one message waiting in a run's queue. Held messages are being
 // edited in the UI: the follow-up drain skips them until they are released.
 type queuedMsg struct {
-	ID   string
-	Text string
-	Held bool
+	ID       string
+	Text     string
+	Held     bool
+	QueuedAt time.Time
 }
 
 // turnQueue holds messages sent while a run is active. They process in order
@@ -36,7 +38,7 @@ type turnQueue struct {
 func (q *turnQueue) add(text string) string {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	m := queuedMsg{ID: store.NewID(), Text: text}
+	m := queuedMsg{ID: store.NewID(), Text: text, QueuedAt: time.Now()}
 	q.pending = append(q.pending, m)
 	return m.ID
 }
@@ -288,31 +290,44 @@ func (h *runHub) close() {
 	h.subs = map[chan agent.ChatEvent]struct{}{}
 }
 
-// runState is one active run: its queue and the event hub attached to it.
+// runState is one active run: its queue, the event hub attached to it, and
+// the user that started it (for the per-user concurrency cap).
 type runState struct {
-	queue *turnQueue
-	hub   *runHub
+	queue  *turnQueue
+	hub    *runHub
+	userID string
 }
 
 // turnManager tracks at most one active run per chat session. Runs are
 // detached from their client connection, so each one also carries a cancel
 // function for explicit stops (the stop endpoint).
 type turnManager struct {
-	mu      sync.Mutex
-	runs    map[string]*runState
-	cancels map[string]context.CancelFunc
+	mu       sync.Mutex
+	runs     map[string]*runState
+	cancels  map[string]context.CancelFunc
+	userRuns map[string]int // active concurrent runs per user
 }
 
 func newTurnManager() *turnManager {
-	return &turnManager{runs: map[string]*runState{}, cancels: map[string]context.CancelFunc{}}
+	return &turnManager{
+		runs:     map[string]*runState{},
+		cancels:  map[string]context.CancelFunc{},
+		userRuns: map[string]int{},
+	}
 }
+
+// errTooManyRuns is returned by beginOrQueue when the per-user concurrent run
+// cap is reached; the server maps it to HTTP 429.
+var errTooManyRuns = errors.New("too many concurrent runs for this user")
 
 // beginOrQueue registers a message for the session atomically: if a run is
 // active the message is queued onto it (started=false, queuedID is its id)
 // and can never be lost to a run that just ended; otherwise a new run is
 // registered for the caller to execute (started=true — msg is NOT queued,
-// the caller runs it).
-func (m *turnManager) beginOrQueue(projectID, sessionID, msg string) (q *turnQueue, started bool, queuedID string) {
+// the caller runs it). Starting a new run for userID is refused with
+// errTooManyRuns when the user already has maxRuns active runs (maxRuns <= 0
+// disables the cap) so one user can't saturate the host.
+func (m *turnManager) beginOrQueue(projectID, sessionID, msg, userID string, maxRuns int) (q *turnQueue, started bool, queuedID string, err error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	key := runKey(projectID, sessionID)
@@ -320,11 +335,17 @@ func (m *turnManager) beginOrQueue(projectID, sessionID, msg string) (q *turnQue
 		if msg != "" {
 			queuedID = rs.queue.add(msg)
 		}
-		return rs.queue, false, queuedID
+		return rs.queue, false, queuedID, nil
 	}
-	rs := &runState{queue: &turnQueue{}, hub: newRunHub()}
+	if maxRuns > 0 && userID != "" && m.userRuns[userID] >= maxRuns {
+		return nil, false, "", errTooManyRuns
+	}
+	rs := &runState{queue: &turnQueue{}, hub: newRunHub(), userID: userID}
 	m.runs[key] = rs
-	return rs.queue, true, ""
+	if userID != "" {
+		m.userRuns[userID]++
+	}
+	return rs.queue, true, "", nil
 }
 
 // get returns the active run's queue, or nil when the session is idle.
@@ -394,8 +415,15 @@ func (m *turnManager) cancelRun(projectID, sessionID string) bool {
 // end removes the run; the caller must drain follow-ups before calling it.
 func (m *turnManager) end(projectID, sessionID string) {
 	m.mu.Lock()
+	defer m.mu.Unlock()
 	key := runKey(projectID, sessionID)
+	if rs, ok := m.runs[key]; ok && rs.userID != "" {
+		if n := m.userRuns[rs.userID]; n > 1 {
+			m.userRuns[rs.userID] = n - 1
+		} else {
+			delete(m.userRuns, rs.userID)
+		}
+	}
 	delete(m.runs, key)
 	delete(m.cancels, key)
-	m.mu.Unlock()
 }
