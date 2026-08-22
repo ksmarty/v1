@@ -1950,19 +1950,29 @@ export default function ChatPane({
     if (defaultThinking === '') return meta.levels[0] ?? '';
     if (meta.levels.includes(defaultThinking)) return defaultThinking;
     const reqRank = THINKING_LEVEL_RANK[defaultThinking] ?? -1;
+    // The effective level always matches or exceeds the requested default:
+    // pick the lowest available level that is at least as strong as it. Only
+    // when the model has nothing that strong, settle for its strongest level
+    // below the request. On/off rules are unchanged.
     let best = '';
-    let bestRank = -Infinity;
+    let bestRank = Infinity;
+    let fallback = '';
+    let fallbackRank = -Infinity;
     meta.levels.forEach((lvl, i) => {
       const rank = THINKING_LEVEL_RANK[lvl] ?? i + 10;
       // Skip off/none when the default asks for thinking: a non-off default
       // must not land on "off".
       if (defaultThinking !== 'off' && (lvl === 'off' || lvl === 'none')) return;
-      if (rank <= reqRank && rank > bestRank) {
+      if (rank >= reqRank && rank < bestRank) {
         best = lvl;
         bestRank = rank;
       }
+      if (rank < reqRank && rank > fallbackRank) {
+        fallback = lvl;
+        fallbackRank = rank;
+      }
     });
-    return best || (defaultThinking !== 'off' ? meta.levels.find((l) => l !== 'off' && l !== 'none') ?? '' : '') || meta.levels[0] || '';
+    return best || fallback || (defaultThinking !== 'off' ? meta.levels.find((l) => l !== 'off' && l !== 'none') ?? '' : '') || meta.levels[0] || '';
   };
   useEffect(() => {
     if (!model.trim()) {
@@ -3714,6 +3724,30 @@ export default function ChatPane({
             e.preventDefault();
             setSuggestions([]);
             return;
+          }
+          // Markdown list continuation: starting a new line inside a list
+          // item autofills the bullet/number marker (keeping the indent);
+          // an empty item ends the list instead.
+          if (e.key === 'Enter' && (e.shiftKey || !isDesktop)) {
+            const ta = taRef.current;
+            if (ta && suggestions.length === 0) {
+              const selStart = ta.selectionStart;
+              const before = input.slice(0, selStart);
+              const lineStart = before.lastIndexOf('\n') + 1;
+              const line = before.slice(lineStart);
+              const m = line.match(/^([ \t]*)([-*+]|\d+[.)])\s+(.*)$/);
+              if (m && m[2].trim() !== '') {
+                const marker = m[1] + m[2] + ' ';
+                const pos = selStart + marker.length;
+                e.preventDefault();
+                setInput(input.slice(0, selStart) + marker + input.slice(ta.selectionEnd));
+                requestAnimationFrame(() => {
+                  ta.selectionStart = pos;
+                  ta.selectionEnd = pos;
+                });
+                return;
+              }
+            }
           }
           if (e.key === 'Enter' && !e.shiftKey && isDesktop) {
             e.preventDefault();

@@ -117,7 +117,54 @@ const chatBackoffBase = 500 * time.Millisecond
 
 // Complete requests a non-streaming chat completion and returns its text.
 // It is intentionally small so agent features can inject an equivalent client.
+// sanitizeToolCallArgs guarantees every assistant tool call inside the request
+// carries valid JSON arguments. Providers hard-reject assistant tool calls
+// whose arguments are not valid JSON ("function.arguments must be valid JSON",
+// HTTP 400). A stream that hit the length cap mid-arguments — or compaction
+// that sliced an arguments string — can otherwise leave corrupt JSON in
+// history and poison every later request with the same 400. This runs on every
+// request, so histories corrupted earlier are auto-recovered too.
+func sanitizeToolCallArgs(messages []Message) []Message {
+	changed := false
+	cp := make([]Message, len(messages))
+	copy(cp, messages)
+	for i := range cp {
+		if cp[i].Role == "assistant" && len(cp[i].ToolCalls) > 0 {
+			tcs := make([]ToolCall, len(cp[i].ToolCalls))
+			copy(tcs, cp[i].ToolCalls)
+			cp[i].ToolCalls = tcs
+		}
+	}
+	for i := range messages {
+		m := &cp[i]
+		if m.Role != "assistant" || len(m.ToolCalls) == 0 {
+			continue
+		}
+		for j := range m.ToolCalls {
+			args := m.ToolCalls[j].Function.Arguments
+			if args == "" {
+				// A zero-argument call; some gateways reject an empty string.
+				m.ToolCalls[j].Function.Arguments = "{}"
+				changed = true
+			} else if !json.Valid([]byte(args)) {
+				m.ToolCalls[j].Function.Arguments = `{"note":"tool call arguments were truncated and could not be parsed"}`
+				changed = true
+			} else if len(strings.TrimSpace(args)) == 0 || strings.TrimSpace(args)[0] != '{' {
+				// Valid JSON but not an object (e.g. a bare string, number or
+				// array) — several gateways reject those as arguments too.
+				m.ToolCalls[j].Function.Arguments = `{"note":"tool call arguments were malformed and could not be parsed"}`
+				changed = true
+			}
+		}
+	}
+	if !changed {
+		return messages
+	}
+	return cp
+}
+
 func (c *Client) Complete(ctx context.Context, messages []Message) (string, error) {
+	messages = sanitizeToolCallArgs(messages)
 	body := map[string]any{"model": c.Model, "messages": messages}
 	payload, err := json.Marshal(body)
 	if err != nil {
@@ -157,6 +204,7 @@ func (c *Client) Complete(ctx context.Context, messages []Message) (string, erro
 }
 
 func (c *Client) ChatStream(ctx context.Context, messages []Message, tools []Tool, onDelta func(string), onReasoning func(string)) (*StreamResult, error) {
+	messages = sanitizeToolCallArgs(messages)
 	res := &StreamResult{}
 	streamOptions := true
 	maxTokens := true

@@ -158,10 +158,16 @@ func truncateMessage(m llm.Message, budget int) llm.Message {
 		}
 	}
 	if n := len(m.ToolCalls); n > 0 {
+		// Never slice a tool call's arguments — cutting a JSON string
+		// mid-character yields invalid arguments that providers reject with a
+		// hard HTTP 400 on every later request. Oversized arguments are
+		// replaced wholesale with a short valid-JSON placeholder, keeping the
+		// call (and its tool-result pairing) intact.
+		placeholder := `{"note":"arguments omitted during compaction (too large)"}`
 		argRoom := room / (2 * n)
 		for i := range m.ToolCalls {
 			if len(m.ToolCalls[i].Function.Arguments) > argRoom {
-				m.ToolCalls[i].Function.Arguments = m.ToolCalls[i].Function.Arguments[:argRoom]
+				m.ToolCalls[i].Function.Arguments = placeholder
 			}
 		}
 	}

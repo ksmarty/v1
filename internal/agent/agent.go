@@ -415,7 +415,10 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 		// "chats stop prematurely"), keep the partial in the model's view and
 		// retry the same round. A truncation that adds nothing new (an empty
 		// repeat) would spin forever — give up then and persist what we have.
-		truncated := len(res.ToolCalls) == 0 && res.StopReason == "length"
+		// A partial tool call whose arguments were cut mid-JSON counts as
+		// truncation too: executing it would persist invalid arguments that
+		// upstream rejects with a hard 400 on every later request.
+		truncated := res.StopReason == "length" && (len(res.ToolCalls) == 0 || hasInvalidToolCallArgs(res.ToolCalls))
 		if truncated {
 			if res.Text != "" || res.Reasoning != "" {
 				partialText += res.Text
@@ -537,6 +540,18 @@ func elideHistoricalToolResult(name, content string) string {
 		return content
 	}
 	return fmt.Sprintf("[%s result omitted — %d bytes; re-read the file if you need it again]", name, len(content))
+}
+
+// hasInvalidToolCallArgs reports whether any tool call in the set carries
+// arguments that are not valid JSON (a stream truncated mid-arguments).
+func hasInvalidToolCallArgs(tcs []llm.ToolCall) bool {
+	for _, tc := range tcs {
+		args := tc.Function.Arguments
+		if args == "" || !json.Valid([]byte(args)) {
+			return true
+		}
+	}
+	return false
 }
 
 // toolDetail extracts a short human-readable detail for a tool call.

@@ -212,3 +212,39 @@ func TestChatStreamOpenRouterReasoningField(t *testing.T) {
 		t.Errorf("res.Text = %q, want %q", res.Text, "Answer.")
 	}
 }
+
+func TestSanitizeToolCallArgs(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string // "" means expect a valid JSON object replacement
+	}{
+		{name: "valid object passes through", in: `{"path":"web/index.html"}`, want: `{"path":"web/index.html"}`},
+		{name: "empty string replaced", in: "", want: "{}"},
+		{name: "truncated JSON replaced", in: `{"path":"web/src/main.t`, want: ""},
+		{name: "bare string replaced", in: `hello`, want: ""},
+		{name: "array replaced", in: `[1,2,3]`, want: ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			msgs := []Message{{
+				Role:      "assistant",
+				Content:   "call",
+				ToolCalls: []ToolCall{{ID: "t1", Type: "function", Function: FunctionCall{Name: "read_file", Arguments: tt.in}}},
+			}}
+			got := sanitizeToolCallArgs(msgs)
+			gotArgs := got[0].ToolCalls[0].Function.Arguments
+			if tt.want != "" {
+				if gotArgs != tt.want {
+					t.Fatalf("arguments = %q, want %q", gotArgs, tt.want)
+				}
+			} else if !json.Valid([]byte(gotArgs)) || strings.TrimSpace(gotArgs)[0] != '{' {
+				t.Fatalf("arguments = %q, want valid JSON object", gotArgs)
+			}
+			// The caller's slice must not be mutated.
+			if msgs[0].ToolCalls[0].Function.Arguments != tt.in {
+				t.Fatalf("input slice mutated: %q", msgs[0].ToolCalls[0].Function.Arguments)
+			}
+		})
+	}
+}
