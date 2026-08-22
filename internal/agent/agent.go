@@ -24,6 +24,7 @@ Rules:
 - All file paths are relative to the workspace root.
 - The app preview runs inside an iframe on an insecure (http) proxied origin: crypto.randomUUID() is unavailable there and throws. Never use it in generated apps — generate ids with Math.random()/Date.now() or a counter instead.
 - After writing or changing code, call restart_preview so the user can see the result.
+- Verify before declaring success: after a batch of code changes, run the verify_project tool — it installs stale deps, runs lint/typecheck/build/test, scans for leaked secrets, and health-checks the preview. Fix every failed step and re-verify (max 3 attempts); if it still fails, stop and tell the user the blocker. Never report a feature as done while verification fails.
 - Keep a visible todo list of your work using set_todos; add items up front and mark them done as they complete.
 - Save durable facts, decisions and user preferences with the remember tool; delete stale ones with forget.
 - If something important is unclear or you need a decision, use ask_user instead of guessing.
@@ -370,7 +371,7 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 				p.Emit(ChatEvent{Type: "injected_message", MessageID: r.MessageID, Text: r.Text})
 			}
 		}
-		allTools := append(append([]llm.Tool{}, tools...), gitTool, containerTool)
+		allTools := append(append(append([]llm.Tool{}, tools...), gitTool, containerTool), verifyProjectTool)
 		if p.Vision {
 			allTools = append(allTools, screenshotAppTool)
 		}
@@ -675,6 +676,18 @@ var screenshotAppTool = llm.Tool{
 					"description": "Route path inside the app to capture (e.g. /about). Defaults to the app's root page.",
 				},
 			},
+		},
+	},
+}
+
+var verifyProjectTool = llm.Tool{
+	Type: "function",
+	Function: llm.ToolFunction{
+		Name:        "verify_project",
+		Description: "Run the verification pipeline over the project after a batch of code changes: installs dependencies when the manifest changed, runs the project's lint/typecheck/build/test scripts (node/go/python detected), scans sources for leaked credentials, and health-checks the live preview. Returns {ok, projectType, steps, errors, suggestions}. Call it after writing or editing code and before declaring the work done; fix failed steps and re-run (up to 3 attempts), then stop and report the blocker if it still fails.",
+		Parameters: map[string]any{
+			"type":       "object",
+			"properties": map[string]any{},
 		},
 	},
 }

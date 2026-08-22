@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -32,6 +33,29 @@ type PreviewStarter interface {
 	Start(projectID, dir, previewCommand string) (string, error)
 }
 
+// maxVerifyOutput caps each verification step's captured output (the model
+// gets the interesting tail, not megabytes of logs).
+const maxVerifyOutput = 32 << 10
+
+// verifyStep is one pipeline stage: install, lint, typecheck, build, test,
+// secrets-scan, preview. Skipped stages don't count against ok.
+type verifyStep struct {
+	Name    string `json:"name"`
+	Success bool   `json:"success"`
+	Skipped bool   `json:"skipped"`
+	Output  string `json:"output,omitempty"`
+	DurMS   int64  `json:"durationMs"`
+}
+
+// verifyReport is the structured result of the verify_project tool.
+type verifyReport struct {
+	OK          bool         `json:"ok"`
+	ProjectType string       `json:"projectType"`
+	Steps       []verifyStep `json:"steps"`
+	Errors      []string     `json:"errors"`
+	Suggestions []string     `json:"suggestions"`
+}
+
 // Executor executes agent tool calls against a project workspace.
 type Executor struct {
 	Root           string
@@ -39,8 +63,11 @@ type Executor struct {
 	SessionID      string // chat session the turn belongs to (background jobs)
 	PreviewCommand string
 	Previews       PreviewStarter
-	Store          *store.Store
-	Background     *BackgroundManager // detached commands (run_command_background)
+	// PreviewURL, when non-nil, resolves the live preview URL for the
+	// verify_project health check. Nil skips the preview step.
+	PreviewURL func() string
+	Store      *store.Store
+	Background *BackgroundManager // detached commands (run_command_background)
 	// BackgroundNotify persists a finished background command's result into
 	// the chat transcript (wired by the server).
 	BackgroundNotify func(*BackgroundJob)
@@ -169,6 +196,8 @@ func (e *Executor) Execute(ctx context.Context, name, argsJSON string) (string, 
 		return e.forget(argsJSON)
 	case "ask_user":
 		return e.askUser(ctx, argsJSON)
+	case "verify_project":
+		return e.verifyProject(ctx, argsJSON)
 	default:
 		if strings.HasPrefix(name, "mcp_") {
 			return e.mcpCall(ctx, name, argsJSON)
@@ -1550,6 +1579,268 @@ func isGitRemoteOp(sub string) bool {
 // runtime) and falls back to docker. Container image repo tests can go through
 // whatever is installed — e.g. `run_container` with "images", "ps", or build
 // & run commands.
+func (e *Executor) verifyProject(ctx context.Context, argsJSON string) (string, error) {
+	report := verifyReport{ProjectType: "plain"}
+	steps := func(s verifyStep) { report.Steps = append(report.Steps, s) }
+
+	// Detect the project type from the files that actually drive its build.
+	var pkg map[string]any
+	var scripts map[string]any
+	hasTS := false
+	if data, err := os.ReadFile(filepath.Join(e.Root, "package.json")); err == nil {
+		_ = json.Unmarshal(data, &pkg)
+		if s, ok := pkg["scripts"].(map[string]any); ok {
+			scripts = s
+		}
+		report.ProjectType = "node"
+		if _, err := os.Stat(filepath.Join(e.Root, "tsconfig.json")); err == nil {
+			hasTS = true
+		}
+	} else if _, err := os.Stat(filepath.Join(e.Root, "pyproject.toml")); err == nil {
+		report.ProjectType = "python"
+	} else if _, err := os.Stat(filepath.Join(e.Root, "requirements.txt")); err == nil {
+		report.ProjectType = "python"
+	} else if _, err := os.Stat(filepath.Join(e.Root, "go.mod")); err == nil {
+		report.ProjectType = "go"
+	}
+	if report.ProjectType == "plain" {
+		report.OK = true
+		return reportResult(report)
+	}
+
+	// 1. Install — only when the manifest is newer than the installed tree,
+	//    so a cold checkout installs but unchanged projects skip the network.
+	if report.ProjectType == "node" {
+		need := true
+		marker := filepath.Join(e.Root, "node_modules", ".package-lock.json")
+		if st, err := os.Stat(marker); err == nil {
+			mtime := st.ModTime()
+			newer := false
+			for _, f := range []string{"package.json", "package-lock.json", "yarn.lock", "pnpm-lock.yaml"} {
+				if mst, err := os.Stat(filepath.Join(e.Root, f)); err == nil && mst.ModTime().After(mtime) {
+					newer = true
+				}
+			}
+			need = newer
+		}
+		if need {
+			var cmdLine string
+			if _, err := os.Stat(filepath.Join(e.Root, "yarn.lock")); err == nil {
+				cmdLine = "yarn install --frozen-lockfile"
+			} else if _, err := os.Stat(filepath.Join(e.Root, "pnpm-lock.yaml")); err == nil {
+				cmdLine = "pnpm install --frozen-lockfile"
+			} else {
+				cmdLine = "npm install"
+			}
+			steps(e.runVerifyCmd(ctx, "install", cmdLine, 10*time.Minute))
+		} else {
+			steps(verifyStep{Name: "install", Success: true, Skipped: true, Output: "dependencies are up to date"})
+		}
+		steps(e.runVerifyScript(ctx, scripts, "lint", "lint", 5*time.Minute))
+		if scripts["typecheck"] != nil {
+			steps(e.runVerifyScript(ctx, scripts, "typecheck", "typecheck", 5*time.Minute))
+		} else if hasTS {
+			steps(e.runVerifyCmd(ctx, "typecheck", "npx tsc --noEmit", 5*time.Minute))
+		} else {
+			steps(verifyStep{Name: "typecheck", Success: true, Skipped: true, Output: "no typecheck script or TypeScript config"})
+		}
+		steps(e.runVerifyScript(ctx, scripts, "build", "build", 10*time.Minute))
+		steps(e.runVerifyScript(ctx, scripts, "test", "test", 10*time.Minute))
+	} else if report.ProjectType == "go" {
+		steps(e.runVerifyCmd(ctx, "vet", "go vet ./...", 5*time.Minute))
+		steps(e.runVerifyCmd(ctx, "build", "go build ./...", 10*time.Minute))
+	} else if report.ProjectType == "python" {
+		if _, err := os.Stat(filepath.Join(e.Root, "pyproject.toml")); err == nil {
+			steps(e.runVerifyCmd(ctx, "build", "python -m build", 5*time.Minute))
+		}
+	}
+
+	// Static analysis: leaked secrets + unsafe eval in sources.
+	secretStep, suggestions := e.scanForSecrets()
+	steps(secretStep)
+	report.Suggestions = append(report.Suggestions, suggestions...)
+
+	// Preview health: the running dev server must answer 2xx.
+	if e.PreviewURL != nil {
+		if url := e.PreviewURL(); url != "" {
+			start := time.Now()
+			ok := false
+			cctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+			req, err := http.NewRequestWithContext(cctx, http.MethodGet, url, nil)
+			if err == nil {
+				resp, herr := http.DefaultClient.Do(req)
+				if herr == nil {
+					ok = resp.StatusCode >= 200 && resp.StatusCode < 400
+					resp.Body.Close()
+				}
+			}
+			cancel()
+			out := ""
+			if !ok {
+				out = "the preview did not answer with 2xx/3xx — the dev server may be down or still starting"
+			}
+			steps(verifyStep{Name: "preview", Success: ok, Output: out, DurMS: time.Since(start).Milliseconds()})
+		} else {
+			steps(verifyStep{Name: "preview", Success: true, Skipped: true, Output: "no live preview"})
+		}
+	}
+
+	report.OK = true
+	for _, s := range report.Steps {
+		if s.Skipped {
+			continue
+		}
+		if !s.Success {
+			report.OK = false
+			report.Errors = append(report.Errors, fmt.Sprintf("%s: %s", s.Name, s.Output))
+		}
+	}
+	return reportResult(report)
+}
+
+// reportResult flattens a struct report into the flat JSON tool-result
+// contract ({ok, steps, errors, …}) the model consumes.
+func reportResult(r verifyReport) (string, error) {
+	b, err := json.Marshal(r)
+	if err != nil {
+		return "", err
+	}
+	var m map[string]any
+	if err := json.Unmarshal(b, &m); err != nil {
+		return "", err
+	}
+	return toolResult(m), nil
+}
+
+// runVerifyScript runs a package.json script when it exists (and isn't a
+// placeholder like "echo ok"), skipping it otherwise.
+func (e *Executor) runVerifyScript(ctx context.Context, scripts map[string]any, key, label string, timeout time.Duration) verifyStep {
+	raw, ok := scripts[key]
+	if !ok {
+		return verifyStep{Name: label, Success: true, Skipped: true, Output: "no " + key + " script"}
+	}
+	cmd, _ := raw.(string)
+	if cmd == "" || strings.HasPrefix(cmd, "echo ") {
+		return verifyStep{Name: label, Success: true, Skipped: true, Output: key + " script is a placeholder"}
+	}
+	return e.runVerifyCmd(ctx, label, "npm run "+key, timeout)
+}
+
+// runVerifyCmd runs one pipeline command against the project root, capturing
+// capped output and a duration.
+func (e *Executor) runVerifyCmd(ctx context.Context, name, cmdline string, timeout time.Duration) verifyStep {
+	start := time.Now()
+	cctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	cmd := exec.CommandContext(cctx, "sh", "-c", cmdline)
+	cmd.Dir = e.Root
+	cmd.Env = os.Environ()
+	out := &limitWriter{max: maxVerifyOutput}
+	cmd.Stdout = out
+	cmd.Stderr = out
+	err := cmd.Run()
+	output := strings.TrimSpace(trimHeadTail(out.String(), 12000))
+	// Cap what the model must read: first and last lines with elision.
+	if len(output) > 4000 {
+		output = output[:2000] + "\n... (" + fmt.Sprint(len(output)-4000) + " bytes elided) ...\n" + output[len(output)-2000:]
+	}
+	return verifyStep{Name: name, Success: err == nil, Output: output, DurMS: time.Since(start).Milliseconds()}
+}
+
+// secretPatterns are high-precision, low-false-positive credentials. Anything
+// they match in project sources means a real secret is probably in the tree.
+var secretPatterns = []struct{ label, re string }{
+	{"OpenAI API key", `\bsk-[A-Za-z0-9]{20,}\b`},
+	{"Anthropic API key", `\bsk-ant-[A-Za-z0-9]{20,}\b`},
+	{"Google API key", `\bAIza[0-9A-Za-z_-]{35}\b`},
+	{"AWS access key", `\bAKIA[0-9A-Z]{16}\b`},
+	{"GitHub token", `\bgh[pousr]_[A-Za-z0-9]{36,}\b`},
+	{"GitHub fine-grained PAT", `\bgithub_pat_[A-Za-z0-9_]{20,}\b`},
+	{"Slack token", `\bxox[baprs]-[A-Za-z0-9-]{10,}\b`},
+	{"Stripe key", `\b(?:sk|pk)_(?:live|test)_[A-Za-z0-9]{16,}\b`},
+	{"Private key block", `-----BEGIN [A-Z ]*PRIVATE KEY-----`},
+}
+
+// scanForSecrets walks the source tree (skipping vendors/builds/git) looking
+// for high-signal credential patterns, and checks .env is gitignored.
+func (e *Executor) scanForSecrets() (verifyStep, []string) {
+	start := time.Now()
+	var findings []string
+	skipDirs := map[string]bool{
+		"node_modules": true, ".git": true, "dist": true, "build": true,
+		".next": true, "out": true, "target": true, "vendor": true,
+		"__pycache__": true, ".cache": true, ".venv": true, "venv": true,
+	}
+	regexes := make([]*regexp.Regexp, 0, len(secretPatterns))
+	for _, p := range secretPatterns {
+		regexes = append(regexes, regexp.MustCompile(p.re))
+	}
+	visit := func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			if path != e.Root && skipDirs[d.Name()] {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		base := d.Name()
+		if strings.HasPrefix(base, ".env") || strings.HasSuffix(base, ".lock") ||
+			strings.HasSuffix(base, ".min.js") || strings.HasSuffix(base, ".map") ||
+			strings.HasSuffix(base, ".png") || strings.HasSuffix(base, ".jpg") ||
+			strings.HasSuffix(base, ".jpeg") || strings.HasSuffix(base, ".gif") ||
+			strings.HasSuffix(base, ".woff") || strings.HasSuffix(base, ".woff2") ||
+			strings.HasSuffix(base, ".ico") {
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil || info.Size() > 512<<10 {
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil
+		}
+		rel, _ := filepath.Rel(e.Root, path)
+		lines := strings.Split(string(data), "\n")
+		for li, line := range lines {
+			for i, re := range regexes {
+				if m := re.FindString(line); m != "" {
+					findings = append(findings, fmt.Sprintf("%s (%s:%d): %s", secretPatterns[i].label, rel, li+1, maskSecret(m)))
+				}
+			}
+		}
+		return nil
+	}
+	_ = filepath.WalkDir(e.Root, visit)
+	step := verifyStep{Name: "secrets-scan", Success: len(findings) == 0, DurMS: time.Since(start).Milliseconds()}
+	if len(findings) > 0 {
+		step.Output = "possible secrets in the source tree (rotate them and move to environment variables):\n" + strings.Join(findings, "\n")
+	}
+	// .env must never be committed: missing or non-covering .gitignore both
+	// count as a red flag worth surfacing.
+	var sug []string
+	envFiles, _ := filepath.Glob(filepath.Join(e.Root, ".env*"))
+	gi, _ := os.ReadFile(filepath.Join(e.Root, ".gitignore"))
+	if len(envFiles) > 0 {
+		covered := len(gi) > 0 && strings.Contains(string(gi), ".env")
+		if !covered {
+			sug = append(sug, ".env files exist but .gitignore does not cover them — add .env* before committing")
+		}
+	}
+	return step, sug
+}
+
+// maskSecret shows just enough of a leaked credential to identify it without
+// echoing the full value back into the transcript.
+func maskSecret(s string) string {
+	if len(s) <= 8 {
+		return s[:1] + "…"
+	}
+	return s[:4] + "…" + s[len(s)-2:]
+}
+
 // containerResourceCaps bounds every `run` container the agent starts:
 // default 1 CPU and 1GB of memory keep a runaway container from starving the
 // host. Commands that already set their own --memory/--cpus/--cpuset flags

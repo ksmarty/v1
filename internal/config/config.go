@@ -10,34 +10,34 @@ import (
 
 // Config holds all process configuration, read once from the environment.
 type Config struct {
-	Port                    int
-	DataDir                 string
-	AuthDisabled            bool
-	Password                string
-	AllowSignup             bool
-	OpenAIKey               string
-	OpenAIBase              string
-	Model                   string
-	GitHubToken             string
-	GitHubOAuthClientID     string
-	GitHubOAuthClientSecret string
-	VercelToken             string
-	VercelClientID          string
-	VercelClientSecret      string
-	VercelRedirectURI       string
-	AuthOIDCEnabled         bool
-	OIDCIssuer              string
-	OIDCClientID            string
-	OIDCClientSecret        string
-	OIDCRedirectURI         string
-	OIDCAllowedEmails       []string
-	OIDCAdminEmails         []string
-	MaxPreviews             int
-	ContextBudget           int
-	ContextThreshold        float64
-	SystemPrompt            string
-	Version                 string
-	Commit                  string
+	Port                     int
+	DataDir                  string
+	AuthDisabled             bool
+	Password                 string
+	AllowSignup              bool
+	OpenAIKey                string
+	OpenAIBase               string
+	Model                    string
+	GitHubToken              string
+	GitHubOAuthClientID      string
+	GitHubOAuthClientSecret  string
+	VercelToken              string
+	VercelClientID           string
+	VercelClientSecret       string
+	VercelRedirectURI        string
+	AuthOIDCEnabled          bool
+	OIDCIssuer               string
+	OIDCClientID             string
+	OIDCClientSecret         string
+	OIDCRedirectURI          string
+	OIDCAllowedEmails        []string
+	OIDCAdminEmails          []string
+	MaxPreviews              int
+	ContextBudget            int
+	ContextThreshold         float64
+	SystemPrompt             string
+	Version                  string
+	Commit                   string
 	MaxConcurrentRunsPerUser int
 	TurnSoftTimeout          time.Duration
 	TurnHardTimeout          time.Duration
@@ -46,15 +46,15 @@ type Config struct {
 // Load reads configuration from environment variables.
 func Load(version, commit string) Config {
 	c := Config{
-		Port:             8080,
-		DataDir:          "./data",
-		OpenAIBase:       "https://api.openai.com/v1",
-		Model:            "gpt-4o",
-		MaxPreviews:      3,
-		ContextBudget:    12000,
-		ContextThreshold: 0.80,
-		Version:          version,
-		Commit:           commit,
+		Port:                     8080,
+		DataDir:                  "./data",
+		OpenAIBase:               "https://api.openai.com/v1",
+		Model:                    "gpt-4o",
+		MaxPreviews:              3,
+		ContextBudget:            12000,
+		ContextThreshold:         0.80,
+		Version:                  version,
+		Commit:                   commit,
 		MaxConcurrentRunsPerUser: 2,
 		TurnSoftTimeout:          5 * time.Minute,
 		TurnHardTimeout:          10 * time.Minute,

@@ -407,18 +407,18 @@ func (s *Server) handleChatRetry(w http.ResponseWriter, r *http.Request) {
 		params.ContinueFromID = partialID
 	}
 	q, started, _, qerr := s.turns.beginOrQueue(p.ID, sessionID, "", userID, s.cfg.MaxConcurrentRunsPerUser)
-		if qerr != nil {
-			if errors.Is(qerr, errTooManyRuns) {
-				writeError(w, http.StatusTooManyRequests, "too_many_runs")
-				return
-			}
-			writeError(w, http.StatusInternalServerError, qerr.Error())
+	if qerr != nil {
+		if errors.Is(qerr, errTooManyRuns) {
+			writeError(w, http.StatusTooManyRequests, "too_many_runs")
 			return
 		}
-		if !started {
-			writeError(w, http.StatusConflict, "run_active")
-			return
-		}
+		writeError(w, http.StatusInternalServerError, qerr.Error())
+		return
+	}
+	if !started {
+		writeError(w, http.StatusConflict, "run_active")
+		return
+	}
 	s.streamChatTurn(w, r, p, userID, params, q)
 }
 
@@ -546,11 +546,17 @@ func (s *Server) streamChatTurn(w http.ResponseWriter, r *http.Request, p *store
 		ProjectID:      p.ID,
 		PreviewCommand: p.PreviewCommand,
 		Previews:       s.previews,
-		Store:          s.st,
-		MCP:            s.mcp,
-		GithubToken:    s.githubToken(userID),
-		Perm:           &turnPerm{s: s, emit: emit, userID: userID},
-		DisabledTools:  params.DisabledTools,
+		PreviewURL: func() string {
+			if pv := s.previews.Get(p.ID); pv != nil {
+				return pv.URL
+			}
+			return ""
+		},
+		Store:         s.st,
+		MCP:           s.mcp,
+		GithubToken:   s.githubToken(userID),
+		Perm:          &turnPerm{s: s, emit: emit, userID: userID},
+		DisabledTools: params.DisabledTools,
 		OnTodos: func(t []store.Todo) {
 			emit(agent.ChatEvent{Type: "todos", Todos: t})
 		},
