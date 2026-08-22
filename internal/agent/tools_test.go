@@ -341,6 +341,7 @@ func TestFetchURLSkipsRenderForStaticText(t *testing.T) {
 	calls := 0
 	e := newTestExecutor(t)
 	e.FetchGuard = func(string) error { return nil } // httptest binds 127.0.0.1
+	e.DialContext = plainDial
 	e.RenderPage = func(ctx context.Context, url string) (string, error) {
 		calls++
 		return "", nil
@@ -364,6 +365,7 @@ func TestFetchURLRendersOnHTTPError(t *testing.T) {
 	defer srv.Close()
 	e := newTestExecutor(t)
 	e.FetchGuard = func(string) error { return nil } // httptest binds 127.0.0.1
+	e.DialContext = plainDial
 	e.RenderPage = func(ctx context.Context, url string) (string, error) {
 		return `<html><body><h1>Rendered Despite 403</h1></body></html>`, nil
 	}

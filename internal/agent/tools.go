@@ -63,6 +63,12 @@ type Executor struct {
 	// OnAsk asks the user one or more questions and waits for the answers
 	// (the ask_user tool); nil when the turn cannot prompt.
 	OnAsk func(ctx context.Context, questions []AskQuestion) ([]AskAnswer, error)
+	// AskTimeout bounds ask_user's wait for an answer; 0 uses the default of
+	// 5 minutes. The user can always answer sooner.
+	AskTimeout time.Duration
+	// askCache remembers answered questions during the turn so the agent
+	// can't pester the user with the same question twice.
+	askCache map[string]string
 	// Screenshot captures the app preview as a PNG (nil when the model cannot
 	// read images). PendingImage carries the PNG from a screenshot_app call to
 	// the agent loop, which attaches it to the conversation.
@@ -77,6 +83,10 @@ type Executor struct {
 	// addresses rejected (the fetch runs server-side, so a project must not
 	// reach the v1 instance or other previews through it).
 	FetchGuard func(rawURL string) error
+	// DialContext, when set, is used for fetch_url connections (tests, custom
+	// proxies). Nil uses the hardened dialer that re-resolves and validates
+	// the host at connect time.
+	DialContext func(ctx context.Context, network, addr string) (net.Conn, error)
 }
 
 // planBlockedTools: state-changing tools that are refused in plan mode.
@@ -299,6 +309,25 @@ func (e *Executor) emitMemories() {
 	}
 }
 
+// ToolError carries a structured, model-readable error contract. Every tool
+// failure reaches the LLM as {success:false, error:{type, message,
+// recoverable, suggestion}} so the model can decide whether to retry, adjust
+// its approach, or ask the user — instead of guessing from a bare message.
+type ToolError struct {
+	Type        string
+	Message     string
+	Recoverable bool
+	Suggestion  string
+}
+
+func (e *ToolError) Error() string { return e.Message }
+
+// toolFail builds a ToolError; recoverable=true tells the model "fix the
+// cause and retry", recoverable=false means "ask the user or change course".
+func toolFail(t, msg string, recoverable bool, suggestion string) error {
+	return &ToolError{Type: t, Message: msg, Recoverable: recoverable, Suggestion: suggestion}
+}
+
 // AskQuestion is one question for the ask_user tool; AskAnswer pairs it with
 // the user's response.
 type AskQuestion struct {
@@ -314,7 +343,10 @@ type AskAnswer struct {
 // askUser blocks the turn until the user answers through the ask endpoint. A
 // single question can be passed as "question" (with optional "options"); pass
 // "questions" as an array to ask several in sequence — the user steps through
-// them and confirms all answers at once.
+// them and confirms all answers at once. Questions are bounded by AskTimeout
+// (default 5 minutes) and remembered for the rest of the turn: asking the
+// same question again returns the earlier answer instead of pestering the
+// user.
 func (e *Executor) askUser(ctx context.Context, argsJSON string) (string, error) {
 	var args struct {
 		Question  string        `json:"question"`
@@ -345,13 +377,40 @@ func (e *Executor) askUser(ctx context.Context, argsJSON string) (string, error)
 		}
 	}
 	if e.OnAsk == nil {
-		return "", fmt.Errorf("asking the user is unavailable in this context")
+		return "", toolFail("ASK_UNAVAILABLE", "asking the user is unavailable in this context", false, "proceed with your best judgment")
 	}
-	answers, err := e.OnAsk(ctx, qs)
+	// Repeat guard: the same question was already answered this turn — reuse
+	// the answer instead of blocking on the user again.
+	if e.askCache == nil {
+		e.askCache = map[string]string{}
+	}
+	parts := make([]string, len(qs))
+	for i, q := range qs {
+		parts[i] = strings.ToLower(q.Question)
+	}
+	key := strings.Join(parts, "|")
+	if prev, ok := e.askCache[key]; ok && len(qs) == 1 {
+		return toolResult(map[string]any{"answer": prev, "note": "this question was already answered earlier in the turn; reusing that answer"}), nil
+	}
+	timeout := e.AskTimeout
+	if timeout <= 0 {
+		timeout = 5 * time.Minute
+	}
+	askCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	answers, err := e.OnAsk(askCtx, qs)
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || askCtx.Err() == context.DeadlineExceeded {
+			label := timeout.Round(time.Second)
+			if label < time.Second {
+				label = time.Second
+			}
+			return "", toolFail("ASK_TIMEOUT", fmt.Sprintf("the user did not answer within %s; stop waiting and continue with your best judgment or a reasonable default", label), false, "stop asking and proceed with your best guess")
+		}
 		return "", err
 	}
 	if len(answers) == 1 {
+		e.askCache[key] = answers[0].Answer
 		return toolResult(map[string]any{"answer": answers[0].Answer}), nil
 	}
 	return toolResult(map[string]any{"answers": answers}), nil
@@ -371,6 +430,9 @@ func (e *Executor) runCommandBackground(ctx context.Context, argsJSON string) (s
 	}
 	if args.Command == "" {
 		return "", fmt.Errorf("command is required")
+	}
+	if fields := strings.Fields(args.Command); len(fields) > 0 && fields[0] == "sudo" {
+		return "", toolFail("PRIVILEGE_ESCALATION", "sudo (and other privilege escalation) is not allowed", false, "run the command without sudo; the workspace already has your permissions")
 	}
 	if e.Perm != nil {
 		ok, err := e.Perm.Request(ctx, "run_command_background", args.Command)
@@ -503,7 +565,7 @@ func (e *Executor) resolve(rel string) (string, error) {
 	clean := filepath.Clean("/" + rel)
 	full := filepath.Join(root, clean)
 	if full != root && !strings.HasPrefix(full, root+string(filepath.Separator)) {
-		return "", fmt.Errorf("path %q escapes the workspace", rel)
+		return "", toolFail("PATH_ESCAPE", fmt.Sprintf("path %q escapes the workspace", rel), true, "use a relative path inside the project directory")
 	}
 	// The lexical check misses symlinks: a link inside the workspace can
 	// point anywhere. Walk up to the deepest existing ancestor, resolve it,
@@ -529,7 +591,7 @@ func (e *Executor) resolve(rel string) (string, error) {
 	}
 	resolved = filepath.Join(resolved, strings.TrimPrefix(full, anc))
 	if resolved != resolvedRoot && !strings.HasPrefix(resolved, resolvedRoot+string(filepath.Separator)) {
-		return "", fmt.Errorf("path %q escapes the workspace", rel)
+		return "", toolFail("PATH_ESCAPE", fmt.Sprintf("path %q escapes the workspace (symlink resolves outside)", rel), true, "use a relative path inside the project directory")
 	}
 	// Return the original spelling so relative paths and displays stay stable.
 	return full, nil
@@ -812,6 +874,14 @@ func (e *Executor) writeFile(argsJSON string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	// writeFile's contract: text files only, capped at 500KB, so a runaway
+	// write can neither fill the disk nor slip a binary blob into the tree.
+	if len(args.Content) > 500*1024 {
+		return "", toolFail("TOO_LARGE", fmt.Sprintf("file content is %d bytes; the write cap is 500KB", len(args.Content)), true, "write the file in smaller pieces or use run_command to generate it")
+	}
+	if strings.IndexByte(args.Content, 0) >= 0 {
+		return "", toolFail("BINARY_REJECTED", "refusing to write a binary file (contains NUL bytes)", true, "write text content only")
+	}
 	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
 		return "", err
 	}
@@ -983,11 +1053,40 @@ func validateFetchURL(rawURL string) error {
 		return nil
 	}
 	for _, ip := range ips {
-		if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() || ip.IsMulticast() {
-			return fmt.Errorf("refusing to fetch non-routable address %s (%s)", ip, host)
+		if bannedIP(ip) {
+			return toolFail("BLOCKED_HOST", fmt.Sprintf("host %q resolves to blocked address %s", host, ip), false, "fetch a public URL instead of an internal one")
 		}
 	}
 	return nil
+}
+
+// bannedIP implements the fetch_url address blocklist: loopback, link-local
+// (both unicast and multicast), multicast, and unspecified (0.0.0.0/::)
+// addresses are never reachable from fetch_url — the fetch runs server-side,
+// so these would otherwise reach the v1 instance itself or other tenants.
+func bannedIP(ip net.IP) bool {
+	return ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
+		ip.IsMulticast() || ip.IsUnspecified()
+}
+
+// allowedContentType implements the fetch_url content-type allow-list:
+// text/* and common text-ish application types pass; anything else (PDFs,
+// images, archives, binaries) is refused because it can't be meaningfully fed
+// to the model. A missing header is allowed — the body is then sniffed.
+func allowedContentType(ct string) bool {
+	ct = strings.ToLower(strings.TrimSpace(strings.Split(ct, ";")[0]))
+	if ct == "" {
+		return true
+	}
+	if strings.HasPrefix(ct, "text/") {
+		return true
+	}
+	switch ct {
+	case "application/json", "application/xml", "application/javascript",
+		"application/x-javascript", "application/xhtml+xml", "application/markdown":
+		return true
+	}
+	return false
 }
 
 // fetchPageText fetches the page and extracts readable text. When the static
@@ -995,7 +1094,7 @@ func validateFetchURL(rawURL string) error {
 // headless Chrome (via RenderPage) and the text is extracted from the
 // rendered DOM — JS frameworks produce no static content.
 func (e *Executor) fetchPageText(ctx context.Context, rawURL string) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	guard := e.FetchGuard
 	if guard == nil {
@@ -1009,11 +1108,55 @@ func (e *Executor) fetchPageText(ctx context.Context, rawURL string) (string, er
 		return "", err
 	}
 	req.Header.Set("User-Agent", "v1-agent/1.0")
+	// The default dialer re-resolves the host at connect time and validates
+	// every IP, which closes the DNS-rebinding window: a hostname that
+	// resolves to a public address for the pre-check but to a private one at
+	// dial time is refused before a connection is made. A custom DialContext
+	// (tests, custom proxies) replaces it wholesale.
+	transport := &http.Transport{Proxy: http.ProxyFromEnvironment}
+	if e.DialContext != nil {
+		transport.DialContext = e.DialContext
+	} else {
+		var dialer net.Dialer
+		transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+			host, port, err := net.SplitHostPort(addr)
+			if err != nil {
+				return nil, err
+			}
+			ips, err := net.LookupIP(host)
+			if err != nil {
+				return nil, err
+			}
+			for _, ip := range ips {
+				if bannedIP(ip) {
+					return nil, toolFail("BLOCKED_HOST", fmt.Sprintf("host %q resolves to blocked address %s", host, ip), false, "fetch a public URL instead of an internal one")
+				}
+			}
+			var lastErr error
+			for _, ip := range ips {
+				if conn, err := dialer.DialContext(ctx, network, net.JoinHostPort(ip.String(), port)); err == nil {
+					return conn, nil
+				} else {
+					lastErr = err
+				}
+			}
+			if lastErr == nil {
+				lastErr = fmt.Errorf("no usable addresses for %s", host)
+			}
+			return nil, lastErr
+		}
+	}
+	client := &http.Client{Transport: transport}
 	text := ""
 	var fetchErr error
-	if resp, err := http.DefaultClient.Do(req); err == nil {
+	if resp, err := client.Do(req); err == nil {
 		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-			body, rerr := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
+			if !allowedContentType(resp.Header.Get("Content-Type")) {
+				ct := resp.Header.Get("Content-Type")
+				_ = resp.Body.Close()
+				return "", toolFail("NOT_ALLOWED", fmt.Sprintf("content type %q is not allowed for fetch_url (text and JSON only)", ct), false, "fetch a plain-text, HTML or JSON URL instead")
+			}
+			body, rerr := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 			resp.Body.Close()
 			if rerr == nil {
 				src := string(body)
@@ -1232,6 +1375,9 @@ func (e *Executor) runCommand(ctx context.Context, argsJSON string) (string, err
 	if args.Command == "" {
 		return "", fmt.Errorf("command is required")
 	}
+	if fields := strings.Fields(args.Command); len(fields) > 0 && fields[0] == "sudo" {
+		return "", toolFail("PRIVILEGE_ESCALATION", "sudo (and other privilege escalation) is not allowed", false, "run the command without sudo; the workspace already has your permissions")
+	}
 	if e.Perm != nil {
 		ok, err := e.Perm.Request(ctx, "run_command", args.Command)
 		if err != nil {
@@ -1404,6 +1550,24 @@ func isGitRemoteOp(sub string) bool {
 // runtime) and falls back to docker. Container image repo tests can go through
 // whatever is installed — e.g. `run_container` with "images", "ps", or build
 // & run commands.
+// containerResourceCaps bounds every `run` container the agent starts:
+// default 1 CPU and 1GB of memory keep a runaway container from starving the
+// host. Commands that already set their own --memory/--cpus/--cpuset flags
+// keep them untouched.
+func containerResourceCaps(fields []string) []string {
+	if len(fields) == 0 || fields[0] != "run" {
+		return fields
+	}
+	for _, f := range fields[1:] {
+		if strings.HasPrefix(f, "--memory") || strings.HasPrefix(f, "--cpus") || f == "-m" {
+			return fields
+		}
+	}
+	out := make([]string, 0, len(fields)+3)
+	out = append(out, fields[0], "--cpus", "1", "--memory", "1g")
+	return append(out, fields[1:]...)
+}
+
 func (e *Executor) runContainer(ctx context.Context, argsJSON string) (string, error) {
 	var args struct {
 		Command string `json:"command"`
@@ -1438,6 +1602,7 @@ func (e *Executor) runContainer(ctx context.Context, argsJSON string) (string, e
 	if fields[0] == cli {
 		fields = fields[1:]
 	}
+	fields = containerResourceCaps(fields)
 	execCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 	cmd := exec.CommandContext(execCtx, cli, fields...)

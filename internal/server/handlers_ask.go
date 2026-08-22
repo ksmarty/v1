@@ -70,7 +70,7 @@ func (s *Server) turnAsk(projectID, sessionID string, emit func(agent.ChatEvent)
 		case answer := <-ar.ch:
 			_ = s.st.ClearPendingAsk(projectID, sessionID)
 			return parseAskAnswers(answer, questions), nil
-		case <-time.After(10 * time.Minute):
+		case <-time.After(5 * time.Minute):
 			_ = s.st.ClearPendingAsk(projectID, sessionID)
 			return nil, fmt.Errorf("question timed out")
 		case <-ctx.Done():

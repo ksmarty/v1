@@ -551,7 +551,7 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 			result, execErr := p.Exec.Execute(turnCtx, tc.Function.Name, tc.Function.Arguments)
 			ok := execErr == nil
 			if !ok {
-				result = "error: " + execErr.Error()
+				result = formatToolError(execErr)
 			}
 			summary := result
 			if len(summary) > 300 {
@@ -1064,6 +1064,33 @@ func waitResumeBackoff(attempt int) {
 	}
 	delay += time.Duration(rand.Intn(500)) * time.Millisecond
 	time.Sleep(delay)
+}
+
+// formatToolError renders an executor failure as the structured error
+// contract the model sees. Errors already carrying a ToolError keep their
+// type, recoverability and suggestion; anything else gets a generic envelope.
+func formatToolError(err error) string {
+	var te *ToolError
+	if errors.As(err, &te) {
+		return toolResult(map[string]any{
+			"success": false,
+			"error": map[string]any{
+				"type":        te.Type,
+				"message":     te.Message,
+				"recoverable": te.Recoverable,
+				"suggestion":  te.Suggestion,
+			},
+		})
+	}
+	return toolResult(map[string]any{
+		"success": false,
+		"error": map[string]any{
+			"type":        "TOOL_ERROR",
+			"message":     err.Error(),
+			"recoverable": true,
+			"suggestion":  "read the error, fix the cause, and retry",
+		},
+	})
 }
 
 // toolResult marshals a tool result map to the JSON string fed back to the LLM.
