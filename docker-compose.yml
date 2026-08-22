@@ -13,6 +13,12 @@ services:
       - "8080:8080"
     volumes:
       - v1-data:/data
+    # The image bundles rootless podman so the v1 agent can run containers
+    # for the user. Docker-in-docker needs the outer container to allow
+    # nested containers: run it privileged (simplest), or give it
+    # CAP_SYS_ADMIN + user namespaces + seccomp=unconfined and drop the
+    # privileged flag. Host kernel must allow unprivileged user namespaces.
+    privileged: true
     restart: unless-stopped
     # Uncomment and fill in as needed:
     # environment:

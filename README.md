@@ -14,11 +14,19 @@ A self-hosted [v0](https://v0.dev) clone: chat with an AI and it builds real web
 
 ## Quickstart
 
+> The image bundles **rootless podman** so v1 can build and run containers
+> for you (the `run_container` skill). That means the outer container needs
+> to allow nested containers — run it with `--privileged`. If you'd rather
+> not use `--privileged`, grant `CAP_SYS_ADMIN`, keep user namespaces
+> enabled (`kernel.unprivileged_userns_clone=1`) and add
+> `--security-opt seccomp=unconfined` instead.
+
 ```bash
 docker run -d \
   --name v1 \
   -p 8080:8080 \
   -v v1-data:/data \
+  --privileged \
   -e OPENAI_API_KEY=sk-... \
   ghcr.io/<owner>/v1:latest
 ```
@@ -40,7 +48,7 @@ docker compose up -d
 
 ```bash
 docker build -t v1:local .
-docker run -d -p 8080:8080 -v v1-data:/data v1:local
+docker run -d -p 8080:8080 -v v1-data:/data --privileged v1:local
 ```
 
 ## Configuration

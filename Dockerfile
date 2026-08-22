@@ -35,11 +35,30 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 # The container runs generated user apps, so it needs node + npm + pnpm,
 # plus git and bash. Only these apk/corepack steps run under QEMU when
 # cross-building; both build stages above run natively on $BUILDPLATFORM.
+#
+# Rootless podman is installed so the v1 agent's run_container tool can
+# build and run containers for the user. Rootless podman needs:
+#   slirp4netns    -> rootless networking
+#   fuse-overlayfs -> rootless storage driver (with fuse3 for fusermount3)
+#   shadow         -> newuidmap/newgidmap for user-namespace mapping
+# plus a subuid/subgid range for the `node` user (see /etc/subuid below).
+#
+# Docker-in-docker: the OUTER container that runs v1 must allow nested
+# containers, e.g. start it privileged (or with CAP_SYS_ADMIN, seccomp
+# unconfined and user namespaces enabled on the host kernel). See
+# docker-compose.yml.
 FROM node:22-alpine AS final
 
 RUN apk add --no-cache git bash ca-certificates chromium ripgrep fd \
+        podman slirp4netns fuse-overlayfs shadow \
     && corepack enable \
-    && corepack prepare pnpm@latest --activate
+    && corepack prepare pnpm@latest --activate \
+    && echo "node:100000:65536" > /etc/subuid \
+    && echo "node:100000:65536" > /etc/subgid
+
+# The `node` user (uid/gid 1000) gets a subordinate id range so rootless
+# podman can map container uids; without /etc/subuid + /etc/subgid entries
+# podman refuses to start containers.
 
 # Run as the non-root `node` user (uid 1000, shipped with the base image).
 RUN mkdir -p /data && chown node:node /data
