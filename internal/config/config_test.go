@@ -22,3 +22,18 @@ func TestLoadOIDCAdminEmails(t *testing.T) {
 		t.Fatalf("OIDCAdminEmails = %v, want %v", c.OIDCAdminEmails, want)
 	}
 }
+
+func TestLoadDefaultSystemPrompt(t *testing.T) {
+	// No V1_SYSTEM_PROMPT -> built-in default present.
+	t.Setenv("V1_SYSTEM_PROMPT", "")
+	c := Load("v", "c")
+	if c.SystemPrompt == "" {
+		t.Fatal("built-in default system prompt should not be empty")
+	}
+	// Explicit env overrides the built-in.
+	t.Setenv("V1_SYSTEM_PROMPT", "custom prompt")
+	c = Load("v", "c")
+	if c.SystemPrompt != "custom prompt" {
+		t.Fatalf("SystemPrompt = %q, want custom prompt", c.SystemPrompt)
+	}
+}
