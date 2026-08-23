@@ -49,7 +49,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 # docker-compose.yml.
 FROM node:22-alpine AS final
 
-RUN apk add --no-cache git bash ca-certificates chromium ripgrep fd \
+RUN apk add --no-cache git bash ca-certificates chromium ripgrep fd python3 py3-pip \
         podman slirp4netns fuse-overlayfs shadow \
     && corepack enable \
     && corepack prepare pnpm@latest --activate \
