@@ -52,7 +52,7 @@ FROM node:22-slim AS final
 # Debian (glibc) base: semble's binary wheels (semble-grammars .so) are
 # built for glibc only — Alpine/musl cannot run it.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        git bash ca-certificates chromium ripgrep fd-find \
+        git bash ca-certificates chromium ripgrep fd-find wget \
         podman slirp4netns fuse-overlayfs \
         python3 python3-pip \
     && ln -s "$(command -v fdfind)" /usr/local/bin/fd \
