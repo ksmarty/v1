@@ -198,6 +198,7 @@ func (s *Server) routes(m *http.ServeMux) {
 	m.HandleFunc("POST /api/projects/{id}/git/branch", s.handleGitBranch)
 	m.HandleFunc("POST /api/projects/{id}/git/checkout", s.handleGitCheckout)
 	m.HandleFunc("POST /api/projects/{id}/git/revert", s.handleGitRevert)
+	m.HandleFunc("POST /api/projects/{id}/revert", s.handleGitRevert)
 	m.HandleFunc("POST /api/projects/{id}/git/commit", s.handleGitCommit)
 	m.HandleFunc("GET /api/projects/{id}/git/changes", s.handleGitChanges)
 	m.HandleFunc("POST /api/projects/{id}/git/fetch", s.handleGitFetch)

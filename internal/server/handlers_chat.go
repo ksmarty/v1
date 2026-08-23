@@ -604,9 +604,17 @@ func (s *Server) streamChatTurn(w http.ResponseWriter, r *http.Request, p *store
 			}
 		}
 		// Snapshot each finished turn as a git commit when the project is
-		// repo-backed, so time-travel always has a checkpoint to return to.
+		// repo-backed, so time-travel always has a checkpoint to return to,
+		// and stamp that hash onto the turn's user message so the chat
+		// history links to the exact revision it produced.
 		if !params.SkipSnapshot {
-			_, _ = gitops.CommitIfRepo(root, params.Message, "")
+			if committed, _ := gitops.CommitIfRepo(root, params.Message, ""); committed {
+				if hash, err := gitops.HeadCommit(root); err == nil && hash != "" {
+					if msgID, lerr := s.st.LatestUserMessageID(p.ID, params.SessionID); lerr == nil && msgID > 0 {
+						_ = s.st.SetMessageCheckpoint(msgID, hash)
+					}
+				}
+			}
 			// Auto-push: per-project toggle, defaults to the user's global
 			// "auto_push_default" at creation. Pushing is async so it never
 			// delays the done event; the local commit already happened.

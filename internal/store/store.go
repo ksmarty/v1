@@ -151,6 +151,7 @@ CREATE TABLE IF NOT EXISTS pending_asks (
 		"usage":       "ALTER TABLE messages ADD COLUMN usage TEXT",
 		"attachments": "ALTER TABLE messages ADD COLUMN attachments TEXT",
 		"session_id":  "ALTER TABLE messages ADD COLUMN session_id TEXT",
+		"checkpoint":  "ALTER TABLE messages ADD COLUMN checkpoint TEXT",
 	}); err != nil {
 		return err
 	}
@@ -867,6 +868,28 @@ func (s *Store) AddMessage(projectID, sessionID, role, content, toolJSON, model,
 		return 0, err
 	}
 	return res.LastInsertId()
+}
+
+// SetMessageCheckpoint stamps a turn's user message with the git checkpoint
+// hash (the post-turn snapshot commit), linking chat history to a specific
+// revision the user can revert to.
+func (s *Store) SetMessageCheckpoint(id int64, hash string) error {
+	if hash == "" {
+		return nil
+	}
+	_, err := s.db.Exec(`UPDATE messages SET checkpoint = ? WHERE id = ?`, hash, id)
+	return err
+}
+
+// LatestUserMessageID returns the newest user message in a session, used to
+// attach the checkpoint hash after a turn completes.
+func (s *Store) LatestUserMessageID(projectID, sessionID string) (int64, error) {
+	var id int64
+	err := s.db.QueryRow(`SELECT id FROM messages WHERE project_id = ? AND session_id = ? AND role = 'user' ORDER BY id DESC LIMIT 1`, projectID, sessionID).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, nil
+	}
+	return id, err
 }
 
 // CompactionSnapshot is a non-visible summary covering messages through an ID.

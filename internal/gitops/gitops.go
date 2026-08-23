@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -714,6 +715,27 @@ func Branches(path string) (current string, branches []string, err error) {
 // projectIgnore is written on git init so node_modules and other generated
 // output never get committed.
 const projectIgnore = "node_modules/\ndist/\nbuild/\n*.log\n.env\n.v1/\n"
+
+// HeadCommit returns the current HEAD's short hash, or "" when the repo has
+// no commits yet (unborn HEAD). Used to stamp checkpoints onto chat turns.
+func HeadCommit(path string) (string, error) {
+	repo, err := git.PlainOpen(path)
+	if err != nil {
+		return "", err
+	}
+	head, err := repo.Head()
+	if err != nil {
+		if errors.Is(err, plumbing.ErrReferenceNotFound) {
+			return "", nil
+		}
+		return "", err
+	}
+	h := head.Hash().String()
+	if len(h) > 12 {
+		h = h[:12]
+	}
+	return h, nil
+}
 
 // InitRepo turns path into a git repository if it is not already one. An
 // existing repository is left untouched. A brand-new repository gets an

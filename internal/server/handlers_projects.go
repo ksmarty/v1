@@ -283,6 +283,12 @@ func (s *Server) handleImportProject(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	// Time-travel needs a repository: initialize one (with an initial commit)
+	// right away — the git-activate endpoint is then only needed for repos
+	// that want a GitHub remote or explicit control.
+	go func() {
+		_ = gitops.InitRepo(dir, s.githubLogin(s.currentUser(r).ID))
+	}()
 	writeJSON(w, http.StatusCreated, toProjectJSON(p))
 }
 
