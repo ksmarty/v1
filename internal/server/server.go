@@ -84,6 +84,7 @@ func New(cfg config.Config, st *store.Store) *Server {
 	}
 	s.mcp = mcp.NewManager(s.mcpServers)
 	s.auth.BootstrapAdmin()
+	s.seedGlobalSystemPrompt()
 	s.rebuildOIDC()
 	s.pruneOIDCFlows()
 	s.pruneVercelFlows()
@@ -493,6 +494,16 @@ func (s *Server) globalSystemPrompt(userID string) string {
 		return v
 	}
 	return s.cfg.SystemPrompt
+}
+
+// seedGlobalSystemPrompt rolls the environment default (V1_SYSTEM_PROMPT)
+// into every existing account that never set their own, so accounts created
+// before it don't miss it. No-op when the default is empty.
+func (s *Server) seedGlobalSystemPrompt() {
+	if s.cfg.SystemPrompt == "" {
+		return
+	}
+	_, _ = s.st.SeedUserSetting(keySystemPrompt, s.cfg.SystemPrompt)
 }
 
 // rewindApproval reports whether rewinding chat history requires approval.
