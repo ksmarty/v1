@@ -335,10 +335,11 @@ body {
    outside standalone mode. */
 .v1-safe-top {
   /* Keep app chrome clear of the notch / Dynamic Island, but pull the
-     content closer: half the safe-area inset still clears the island
-     while roughly halving the distance from it. Apple's inset is 0 in
-     regular browsers, so this is a no-op outside standalone mode. */
-  padding-top: calc(env(safe-area-inset-top) / 2);
+     content closer: 3/4 of the safe-area inset keeps a little breathing
+     room below the island while staying closer than full padding.
+     Apple's inset is 0 in regular browsers, so this is a no-op outside
+     standalone mode. */
+  padding-top: calc(env(safe-area-inset-top) * 3 / 4);
 }
 
 /* Scrollable but no visible bar (horizontally scrolling tab bars). */
