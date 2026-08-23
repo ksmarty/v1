@@ -660,7 +660,7 @@ function TerminalSettingsControl() {
       }}
       className="flex flex-col gap-3"
     >
-      <div className="flex flex-wrap items-end gap-4">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
         <label className="flex flex-col gap-1">
           <span className="text-sm text-text">Font size</span>
           <input
@@ -675,7 +675,7 @@ function TerminalSettingsControl() {
           />
           <span className="text-[11px] text-faint">px (8–28)</span>
         </label>
-        <label className="flex flex-col gap-1">
+        <div className="flex flex-col gap-1">
           <span className="text-sm text-text">Wrap output</span>
           <div className="grid w-full max-w-[120px] grid-cols-2 gap-1 rounded-lg border border-border bg-surface p-1">
             {([true, false] as const).map((v) => (
@@ -692,7 +692,7 @@ function TerminalSettingsControl() {
               </button>
             ))}
           </div>
-        </label>
+        </div>
       </div>
       {error && <p className="text-xs text-red-400">{error}</p>}
       <SaveRow saving={busy} saved={saved} error={null} pulse={dirty && loaded} />
