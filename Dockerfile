@@ -47,14 +47,23 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 # containers, e.g. start it privileged (or with CAP_SYS_ADMIN, seccomp
 # unconfined and user namespaces enabled on the host kernel). See
 # docker-compose.yml.
-FROM node:22-alpine AS final
+FROM node:22-slim AS final
 
-RUN apk add --no-cache git bash ca-certificates chromium ripgrep fd python3 py3-pip \
-        podman slirp4netns fuse-overlayfs shadow \
+# Debian (glibc) base: semble's binary wheels (semble-grammars .so) are
+# built for glibc only — Alpine/musl cannot run it.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        git bash ca-certificates chromium ripgrep fd-find \
+        podman slirp4netns fuse-overlayfs \
+        python3 python3-pip \
+    && ln -s "$(command -v fdfind)" /usr/local/bin/fd \
+    && rm -rf /var/lib/apt/lists/* \
     && corepack enable \
     && corepack prepare pnpm@latest --activate \
     && echo "node:100000:65536" > /etc/subuid \
     && echo "node:100000:65536" > /etc/subgid
+
+# semble: semantic code search over the workspace.
+RUN python3 -m pip install --no-cache-dir --break-system-packages semble==0.5.5
 
 # The `node` user (uid/gid 1000) gets a subordinate id range so rootless
 # podman can map container uids; without /etc/subuid + /etc/subgid entries
