@@ -402,7 +402,8 @@ type MsgItem = {
   /** When the message was sent (ms epoch; live items use the send time). */
   sentAt?: number;
   streaming?: boolean;
-  /** Collapsed when a newer thinking block started (live rounds only). */
+  /** True when this user row landed via an explicit steer (visual badge). */
+  steered?: boolean;
   reasoningCollapsed?: boolean;
   stale?: boolean;
   editing?: boolean;
@@ -865,6 +866,36 @@ function RunCommandOutput({ command, detail }: { command: string; detail: string
   );
 }
 
+// A search_files call and its result merged into one card: the header shows
+// the query, expanding shows the search results — one entry instead of a
+// call chip plus a separate "result" block.
+function SearchFilesBlock({ query, result }: { query: string; result: ToolCall }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="overflow-hidden rounded-md border border-border bg-surface/50 text-[10px]">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex min-h-[26px] w-full items-center gap-1.5 px-2 py-1 text-left text-dim transition-colors hover:text-text"
+      >
+        {open ? (
+          <IconChevronDown className="h-3 w-3 shrink-0" />
+        ) : (
+          <IconChevronRight className="h-3 w-3 shrink-0" />
+        )}
+        <IconSearch className="h-3 w-3 shrink-0 text-faint" />
+        <span className="shrink-0 text-text">{toolLabel('search_files')}</span>
+        <span className="min-w-0 flex-1 truncate text-faint">{query}</span>
+      </button>
+      {open && (
+        <div className="border-t border-border/80">
+          <ToolBody detail={result.detail} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Renders an assistant message's tool calls and results as one column, pairing
 // each run_command call with its result (both lists are in chronological
 // order) so they show as a single block.
@@ -1097,22 +1128,29 @@ function ToolBlocks({ calls, results }: { calls: ToolCall[]; results: ToolCall[]
   const out: ReactNode[] = [];
   let next = 0;
   calls.forEach((tc, j) => {
-    if (tc.name === 'run_command') {
+    // Merge call + its result into one card for these tools.
+    if (tc.name === 'run_command' || tc.name === 'search_files') {
       let k = next;
-      while (k < results.length && results[k].name !== 'run_command') k++;
+      while (k < results.length && results[k].name !== tc.name) k++;
       if (k < results.length) {
         next = k + 1;
-        out.push(
-          <RunCommandBlock key={`c${j}`} command={chipLabel(tc.detail)} result={results[k]} />,
-        );
+        if (tc.name === 'run_command') {
+          out.push(
+            <RunCommandBlock key={`c${j}`} command={chipLabel(tc.detail)} result={results[k]} />,
+          );
+        } else {
+          out.push(
+            <SearchFilesBlock key={`c${j}`} query={chipLabel(tc.detail)} result={results[k]} />,
+          );
+        }
         return;
       }
     }
     out.push(<ToolChip key={`c${j}`} {...tc} />);
   });
   results.forEach((tr, j) => {
-    // results already merged into a RunCommandBlock are skipped
-    if (j < next && tr.name === 'run_command') return;
+    // results already merged into a RunCommandBlock/SearchFilesBlock are skipped
+    if (j < next && (tr.name === 'run_command' || tr.name === 'search_files')) return;
     out.push(<ToolResultBlock key={`r${j}`} {...tr} />);
   });
   return <div className="flex flex-col gap-1.5">{out}</div>;
@@ -1480,6 +1518,11 @@ const MessageRow = memo(function MessageRow({
     }
     return (
       <div className="ml-auto flex max-w-[85%] flex-col items-end gap-1">
+        {item.steered && (
+          <span className="inline-flex items-center gap-1 rounded-full border border-accent/50 bg-accent/10 px-2 py-0.5 text-[10px] font-medium text-accent">
+            <IconSend className="h-2.5 w-2.5" /> steered
+          </span>
+        )}
         <div className="w-full rounded-2xl bg-border px-3.5 py-2 text-sm text-text">
           <div className="whitespace-pre-wrap break-words"><TaggedText text={item.content} valid={validTag} /></div>
           {item.attachments && item.attachments.length > 0 && (
@@ -1730,6 +1773,10 @@ export default function ChatPane({
   // Messages steered into the current run, waiting to be injected at the next
   // round boundary.
   const [steering, setSteering] = useState<{ id: string; text: string }[]>([]);
+  const steeringRef = useRef<{ id: string; text: string }[]>([]);
+  useEffect(() => {
+    steeringRef.current = steering;
+  }, [steering]);
   const [queueEditId, setQueueEditId] = useState<string | null>(null);
   const [queueEditText, setQueueEditText] = useState('');
   const queueEditIdRef = useRef<string | null>(null);
@@ -2795,8 +2842,10 @@ export default function ChatPane({
         case 'injected_message': {
           // The agent added a user message mid-turn (a screenshot from the
           // screenshot_app tool) — render it like any other user turn. If the
-          // text matches a pending steer, that steer has landed.
+          // text matches a pending steer, that steer has landed and the row
+          // gets a "steered" badge.
           const id = ev.messageId ?? 0;
+          const steered = ev.text ? steeringRef.current.some((s) => s.text === ev.text) : false;
           if (ev.text) setSteering((prev) => prev.filter((s) => s.text !== ev.text));
           update((prev) => [
             ...prev,
@@ -2805,6 +2854,7 @@ export default function ChatPane({
               key: id > 0 ? String(id) : `i${++counterRef.current}`,
               role: 'user',
               content: ev.text ?? '',
+              steered,
               sentAt: Date.now(),
               attachments: ev.attachments?.map((a, i) => ({
                 ...a,

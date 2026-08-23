@@ -207,6 +207,9 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 		"toonEnabled":      s.toonEnabled(userID),
 		"disabledTools":    s.disabledTools(userID),
 		"caveman":          s.cavemanEnabled(userID),
+		"turnTimeouts":     s.turnTimeoutMinutesForUI(userID),
+		"terminalFontSize": s.terminalFontSize(userID),
+		"terminalWrap":     s.terminalWrap(userID),
 		"autoPushDefault":  s.autoPushDefault(userID),
 		"contextThreshold": int(s.contextThreshold(userID) * 100),
 		"systemPrompt":     s.globalSystemPrompt(userID),
@@ -226,23 +229,26 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 			Providers    *[]llmProviderRecord `json:"providers"`
 			Currency     *string              `json:"currency"`
 		} `json:"llm"`
-		GitHubToken             *string             `json:"githubToken"`
-		GitHubOAuthClientID     *string             `json:"githubOAuthClientId"`
-		GitHubOAuthClientSecret *string             `json:"githubOAuthClientSecret"`
-		VercelToken             *string             `json:"vercelToken"`
-		VercelOAuthClientID     *string             `json:"vercelOAuthClientId"`
-		VercelClientSecret      *string             `json:"vercelOAuthClientSecret"`
-		Password                *string             `json:"password"`
-		MCP                     *[]mcp.ServerConfig `json:"mcp"`
-		PermissionMode          *string             `json:"permissionMode"`
-		RewindApproval          *bool               `json:"rewindApproval"`
-		DefaultThinking         *string             `json:"defaultThinking"`
-		ToonEnabled             *bool               `json:"toonEnabled"`
-		DisabledTools           *[]string           `json:"disabledTools"`
-		Caveman                 *bool               `json:"caveman"`
-		AutoPushDefault         *bool               `json:"autoPushDefault"`
-		ContextThreshold        *float64            `json:"contextThreshold"`
-		SystemPrompt            *string             `json:"systemPrompt"`
+		GitHubToken             *string                   `json:"githubToken"`
+		GitHubOAuthClientID     *string                   `json:"githubOAuthClientId"`
+		GitHubOAuthClientSecret *string                   `json:"githubOAuthClientSecret"`
+		VercelToken             *string                   `json:"vercelToken"`
+		VercelOAuthClientID     *string                   `json:"vercelOAuthClientId"`
+		VercelClientSecret      *string                   `json:"vercelOAuthClientSecret"`
+		Password                *string                   `json:"password"`
+		MCP                     *[]mcp.ServerConfig       `json:"mcp"`
+		PermissionMode          *string                   `json:"permissionMode"`
+		RewindApproval          *bool                     `json:"rewindApproval"`
+		DefaultThinking         *string                   `json:"defaultThinking"`
+		ToonEnabled             *bool                     `json:"toonEnabled"`
+		DisabledTools           *[]string                 `json:"disabledTools"`
+		Caveman                 *bool                     `json:"caveman"`
+		TurnTimeouts            *struct{ Soft, Hard int } `json:"turnTimeouts"`
+		TerminalFontSize        *int                `json:"terminalFontSize"`
+		TerminalWrap            *bool               `json:"terminalWrap"`
+		AutoPushDefault         *bool                     `json:"autoPushDefault"`
+		ContextThreshold        *float64                  `json:"contextThreshold"`
+		SystemPrompt            *string                   `json:"systemPrompt"`
 	}
 	if !decodeJSON(w, r, &body) {
 		return
@@ -422,6 +428,13 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
+		// Roll the new default out to users who never set their own prompt.
+		if *body.SystemPrompt != "" {
+			if _, err := s.st.SeedUserSetting(keySystemPrompt, *body.SystemPrompt); err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+		}
 	}
 	if body.RewindApproval != nil {
 		val := "0"
@@ -468,6 +481,42 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 			val = "1"
 		}
 		if err := s.st.SetUserSetting(userID, keyCaveman, val); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+	if body.TurnTimeouts != nil {
+		set := func(key string, min int) error {
+			if min <= 0 {
+				return s.st.DeleteUserSetting(userID, key)
+			}
+			return s.st.SetUserSetting(userID, key, strconv.Itoa(min))
+		}
+		if err := set(keySoftTimeout, body.TurnTimeouts.Soft); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if err := set(keyHardTimeout, body.TurnTimeouts.Hard); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+	if body.TerminalFontSize != nil {
+		n := *body.TerminalFontSize
+		if n < 8 || n > 28 {
+			n = 13
+		}
+		if err := s.st.SetUserSetting(userID, keyTerminalFontSize, strconv.Itoa(n)); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+	if body.TerminalWrap != nil {
+		val := "0"
+		if *body.TerminalWrap {
+			val = "1"
+		}
+		if err := s.st.SetUserSetting(userID, keyTerminalWrap, val); err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}

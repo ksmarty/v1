@@ -72,6 +72,12 @@ export interface Settings {
   disabledTools?: string[];
   /** Terse "caveman" reply style. */
   caveman?: boolean;
+  /** Per-user turn timeouts in minutes (0 = disabled). */
+  turnTimeouts?: { soft: number; hard: number };
+  /** Terminal font size in px. */
+  terminalFontSize?: number;
+  /** Terminal output wrapping on/off. */
+  terminalWrap?: boolean;
   autoPushDefault?: boolean;
   /** Compaction threshold in percent of the context window (e.g. 80). */
   contextThreshold: number;

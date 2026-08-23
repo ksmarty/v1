@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
+import { api } from '../api';
 import { Button } from './ui';
 
 export default function TerminalPane({
@@ -19,6 +20,20 @@ export default function TerminalPane({
   const retriesRef = useRef(0);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [connected, setConnected] = useState(false);
+  const [fontSize, setFontSize] = useState(13);
+  const [wrap, setWrap] = useState(true);
+  const propsRef = useRef({ fontSize: 13, wrap: true });
+  propsRef.current = { fontSize, wrap };
+
+  useEffect(() => {
+    api
+      .getSettings()
+      .then((s) => {
+        setFontSize(s.terminalFontSize ?? 13);
+        setWrap(s.terminalWrap ?? true);
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -26,7 +41,7 @@ export default function TerminalPane({
 
     const term = new Terminal({
       cursorBlink: true,
-      fontSize: 13,
+      fontSize: propsRef.current.fontSize,
       fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
       theme: {
         background: '#0a0a0a',
@@ -168,6 +183,20 @@ export default function TerminalPane({
     }
     termRef.current?.focus();
   }, [active]);
+
+  // Apply font size + wrap to the live terminal whenever the settings resolve.
+  useEffect(() => {
+    const term = termRef.current;
+    if (!term) return;
+    term.options.fontSize = fontSize;
+    try {
+      fitRef.current?.fit();
+    } catch {
+      // ignore
+    }
+    // Auto-wrap mode (DECAWM): off disables wrapping, on re-enables it.
+    term.write(wrap ? '\x1b[?7h' : '\x1b[?7l');
+  }, [fontSize, wrap]);
 
   return (
     <div className="relative h-full min-h-0 bg-[#0a0a0a] p-1">

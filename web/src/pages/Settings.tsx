@@ -120,6 +120,7 @@ const SETTINGS_SEARCH: {
   { id: 'sec-caveman', page: 'llm', label: 'Caveman mode', hint: 'Terse caveman-style replies', keywords: 'caveman terse style reply grunt fun mode brief short' },
   { id: 'sec-auto-push', page: 'llm', label: 'Auto-push new projects', hint: 'Default for newly created projects only', keywords: 'auto push commits github default new projects git remote' },
   { id: 'sec-context-threshold', page: 'llm', label: 'Context compaction', hint: 'Percent of context before auto compaction', keywords: 'context compaction threshold percent auto compact tokens' },
+  { id: 'sec-turn-timeouts', page: 'llm', label: 'Turn timeouts', hint: 'Soft/hard run time limits in minutes', keywords: 'turn timeout soft hard deadline minutes abort warn run length' },
   { id: 'sec-github', page: 'github', label: 'GitHub', hint: 'Personal access token', keywords: 'github token pat repo import push auth' },
   { id: 'sec-github', page: 'github', label: 'GitHub OAuth', hint: 'OAuth App client ID', keywords: 'github oauth client id connect login' },
   { id: 'sec-vercel', page: 'vercel', label: 'Vercel', hint: 'Deploy token', keywords: 'vercel deploy token push hosting deploy' },
@@ -131,6 +132,7 @@ const SETTINGS_SEARCH: {
   { id: 'sec-chat-tabs', page: 'appearance', label: 'Chat tabs', hint: 'Reorder and hide project tabs', keywords: 'tabs chat files terminal git memories project order hide drag' },
   { id: 'sec-tool-calls', page: 'appearance', label: 'Tool calls', hint: 'Pretty-print JSON', keywords: 'tool calls json pretty print format result arguments' },
   { id: 'sec-thinking-collapsed', page: 'appearance', label: 'Thinking blocks', hint: 'Collapse reasoning blocks by default', keywords: 'thinking reasoning collapse blocks default stream hide' },
+  { id: 'sec-terminal', page: 'appearance', label: 'Terminal', hint: 'Font size and wrapping', keywords: 'terminal font size wrap prompt output appearance' },
   { id: 'sec-clear-cache', page: 'llm', label: 'Cached data', hint: 'Clear the provider catalog cache', keywords: 'cache clear providers catalog thinking metadata refetch reset' },
   { id: 'sec-auth', page: 'auth', label: 'Auth', hint: 'Change the password', keywords: 'password auth login security change password' },
   { id: 'sec-oidc', page: 'auth', label: 'OIDC login', hint: 'Single sign-on (admin)', keywords: 'oidc sso single sign on authentik keycloak google issuer client id secret callback redirect allowed emails login' },
@@ -532,6 +534,169 @@ function CavemanControl() {
       </div>
       {error && <p className="text-xs text-red-400">{error}</p>}
     </div>
+  );
+}
+
+// TurnTimeoutControl sets the per-user soft/hard turn timeouts in minutes
+// (0 disables that side; leaving both 0 disables timeouts entirely).
+function TurnTimeoutControl() {
+  const [soft, setSoft] = useState(5);
+  const [hard, setHard] = useState(10);
+  const [loaded, setLoaded] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const loadedRef = useRef<{ soft: number; hard: number }>({ soft: 5, hard: 10 });
+
+  useEffect(() => {
+    api
+      .getSettings()
+      .then((s) => {
+        const t = s.turnTimeouts ?? { soft: 5, hard: 10 };
+        setSoft(t.soft);
+        setHard(t.hard);
+        loadedRef.current = t;
+        setLoaded(true);
+      })
+      .catch(() => setLoaded(true));
+  }, []);
+
+  const save = async () => {
+    setBusy(true);
+    setSaved(false);
+    setError(null);
+    try {
+      await api.updateSettings({ turnTimeouts: { soft, hard } });
+      loadedRef.current = { soft, hard };
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (e) {
+      setError(errMsg(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const dirty = soft !== loadedRef.current.soft || hard !== loadedRef.current.hard;
+  const num = (label: string, hint: string, val: number, set: (n: number) => void) => (
+    <label className="flex flex-col gap-1">
+      <span className="text-sm text-text">{label}</span>
+      <input
+        type="number"
+        min={0}
+        step={1}
+        value={val}
+        disabled={!loaded || busy}
+        onChange={(e) => set(Math.max(0, Number(e.target.value) || 0))}
+        className="w-24 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text outline-none transition-colors focus:border-subtle disabled:opacity-60"
+      />
+      <span className="text-[11px] text-faint">{hint}</span>
+    </label>
+  );
+
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        void save();
+      }}
+      className="flex flex-col gap-3"
+    >
+      <div className="flex flex-wrap gap-4">
+        {num('Soft timeout (min)', 'Warns the model it is working too long. 0 = off', soft, setSoft)}
+        {num('Hard timeout (min)', 'Aborts the turn at this deadline. 0 = off', hard, setHard)}
+      </div>
+      {error && <p className="text-xs text-red-400">{error}</p>}
+      <SaveRow saving={busy} saved={saved} error={null} pulse={dirty && loaded} />
+    </form>
+  );
+}
+
+// TerminalSettingsControl sets the terminal font size and wrapping.
+function TerminalSettingsControl() {
+  const [fontSize, setFontSize] = useState(13);
+  const [wrap, setWrap] = useState(true);
+  const [loaded, setLoaded] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const loadedRef = useRef({ fontSize: 13, wrap: true });
+
+  useEffect(() => {
+    api
+      .getSettings()
+      .then((s) => {
+        setFontSize(s.terminalFontSize ?? 13);
+        setWrap(s.terminalWrap ?? true);
+        loadedRef.current = { fontSize: s.terminalFontSize ?? 13, wrap: s.terminalWrap ?? true };
+        setLoaded(true);
+      })
+      .catch(() => setLoaded(true));
+  }, []);
+
+  const save = async () => {
+    setBusy(true);
+    setSaved(false);
+    setError(null);
+    try {
+      await api.updateSettings({ terminalFontSize: fontSize, terminalWrap: wrap });
+      loadedRef.current = { fontSize, wrap };
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (e) {
+      setError(errMsg(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const dirty = fontSize !== loadedRef.current.fontSize || wrap !== loadedRef.current.wrap;
+
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        void save();
+      }}
+      className="flex flex-col gap-3"
+    >
+      <div className="flex flex-wrap items-end gap-4">
+        <label className="flex flex-col gap-1">
+          <span className="text-sm text-text">Font size</span>
+          <input
+            type="number"
+            min={8}
+            max={28}
+            step={1}
+            value={fontSize}
+            disabled={!loaded || busy}
+            onChange={(e) => setFontSize(Math.min(28, Math.max(8, Number(e.target.value) || 13)))}
+            className="w-24 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text outline-none transition-colors focus:border-subtle disabled:opacity-60"
+          />
+          <span className="text-[11px] text-faint">px (8–28)</span>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-sm text-text">Wrap output</span>
+          <div className="grid w-full max-w-[120px] grid-cols-2 gap-1 rounded-lg border border-border bg-surface p-1">
+            {([true, false] as const).map((v) => (
+              <button
+                key={String(v)}
+                type="button"
+                disabled={!loaded || busy}
+                onClick={() => setWrap(v)}
+                className={`min-h-[30px] rounded-md text-sm transition-colors disabled:opacity-50 ${
+                  wrap === v ? 'bg-border text-text' : 'text-dim hover:text-text'
+                }`}
+              >
+                {v ? 'On' : 'Off'}
+              </button>
+            ))}
+          </div>
+        </label>
+      </div>
+      {error && <p className="text-xs text-red-400">{error}</p>}
+      <SaveRow saving={busy} saved={saved} error={null} pulse={dirty && loaded} />
+    </form>
   );
 }
 
@@ -2472,7 +2637,10 @@ export default function Settings() {
               onProviderChange={(id) => refreshDefaultModelModels(id)}
               models={dmModels}
               model={defaultModel}
-              onModelChange={(id) => void saveDefaultModel(id)}
+              onModelChange={(id) => {
+              void saveDefaultModel(id);
+              setDmPickerOpen(false);
+            }}
             />
           </Field>
         </Section>
@@ -2542,6 +2710,13 @@ export default function Settings() {
           description="Make the model reply in a terse, caveman-style way: few words, short chunky sentences, no fluff. The work still gets done — it just talks like a caveman."
         >
           <CavemanControl />
+        </Section>
+        <Section
+          id="sec-turn-timeouts"
+          title="Turn timeouts"
+          description="How long a chat turn may run before it is warned (soft) or aborted (hard). Set either to 0 to disable it that side."
+        >
+          <TurnTimeoutControl />
         </Section>
         <Section
           id="sec-auto-push"
@@ -2949,6 +3124,13 @@ export default function Settings() {
             <span className="mb-1 block text-xs text-subtle">Start thinking blocks collapsed</span>
             <ThinkingCollapsedControl />
           </div>
+        </Section>
+        <Section
+          id="sec-terminal"
+          title="Terminal"
+          description="Font size and wrapping for the project terminal."
+        >
+          <TerminalSettingsControl />
         </Section>
             </div>
 

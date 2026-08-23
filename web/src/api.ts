@@ -200,6 +200,9 @@ export interface SettingsUpdate {
   toonEnabled?: boolean;
   disabledTools?: string[];
   caveman?: boolean;
+  turnTimeouts?: { soft: number; hard: number };
+  terminalFontSize?: number;
+  terminalWrap?: boolean;
   autoPushDefault?: boolean;
   contextThreshold?: number;
   systemPrompt?: string;

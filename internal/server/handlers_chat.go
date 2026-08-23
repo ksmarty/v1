@@ -517,6 +517,7 @@ func (s *Server) streamChatTurn(w http.ResponseWriter, r *http.Request, p *store
 	params.ToonEnabled = s.toonEnabled(userID)
 	params.DisabledTools = s.disabledTools(userID)
 	params.Caveman = s.cavemanEnabled(userID)
+	params.SoftTimeout, params.HardTimeout = s.turnTimeouts(userID)
 	params.MemoriesPrompt = s.memoryPrompt(p.ID, params.Message)
 	params.PlanPrompt = s.planPrompt(p.ID)
 	params.ContextBudget = s.cfg.ContextBudget

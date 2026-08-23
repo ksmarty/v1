@@ -541,6 +541,20 @@ func (s *Store) SetUserSetting(userID, key, value string) error {
 	return err
 }
 
+// SeedUserSetting sets value for key on every user that has no value for it
+// yet. Used to roll a global default out to existing accounts without
+// clobbering their own choices.
+func (s *Store) SeedUserSetting(key, value string) (int64, error) {
+	res, err := s.db.Exec(`INSERT INTO user_settings (user_id, key, value)
+		SELECT id, ?, ? FROM users
+		WHERE NOT EXISTS (SELECT 1 FROM user_settings WHERE user_id = users.id AND key = ?)`,
+		key, value, key)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
 // DeleteUserSetting removes a user's settings key.
 func (s *Store) DeleteUserSetting(userID, key string) error {
 	_, err := s.db.Exec(`DELETE FROM user_settings WHERE user_id = ? AND key = ?`, userID, key)

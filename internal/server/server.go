@@ -318,6 +318,10 @@ const (
 	keyToonEnabled             = "toon_enabled"
 	keyDisabledTools           = "disabled_tools"
 	keyCaveman                 = "caveman"
+	keySoftTimeout             = "turn_soft_timeout" // minutes; 0 = disabled
+	keyHardTimeout             = "turn_hard_timeout" // minutes; 0 = disabled
+	keyTerminalFontSize        = "terminal_font_size" // px
+	keyTerminalWrap            = "terminal_wrap"      // "1" = wrap, "0" = off
 	keyAutoPushDefault         = "auto_push_default"
 	keySystemPrompt            = "system_prompt"
 	keyContextThreshold        = "context_threshold"
@@ -538,6 +542,57 @@ func (s *Server) disabledTools(userID string) map[string]bool {
 func (s *Server) cavemanEnabled(userID string) bool {
 	v, ok := s.userSetting(userID, keyCaveman)
 	return ok && v == "1"
+}
+
+// turnTimeouts resolves the user's soft/hard turn timeouts in minutes. Both
+// default to the classic 5/10 when unset; 0 disables that side entirely.
+func (s *Server) turnTimeouts(userID string) (soft, hard time.Duration) {
+	softMin := s.turnTimeoutMinutes(userID, keySoftTimeout, 5)
+	hardMin := s.turnTimeoutMinutes(userID, keyHardTimeout, 10)
+	return time.Duration(softMin) * time.Minute, time.Duration(hardMin) * time.Minute
+}
+
+func (s *Server) turnTimeoutMinutes(userID, key string, def int) int {
+	v, ok := s.userSetting(userID, key)
+	if !ok || v == "" {
+		return def
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 0 {
+		return def
+	}
+	return n
+}
+
+// turnTimeoutMinutesForUI reports the effective soft/hard timeouts in minutes
+// for the settings UI (defaults 5/10, 0 = disabled).
+func (s *Server) turnTimeoutMinutesForUI(userID string) map[string]int {
+	return map[string]int{
+		"soft": s.turnTimeoutMinutes(userID, keySoftTimeout, 5),
+		"hard": s.turnTimeoutMinutes(userID, keyHardTimeout, 10),
+	}
+}
+
+// terminalFontSize returns the user's terminal font size in px (default 13).
+func (s *Server) terminalFontSize(userID string) int {
+	v, ok := s.userSetting(userID, keyTerminalFontSize)
+	if !ok || v == "" {
+		return 13
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 8 || n > 28 {
+		return 13
+	}
+	return n
+}
+
+// terminalWrap reports whether terminal output wraps (default on).
+func (s *Server) terminalWrap(userID string) bool {
+	v, ok := s.userSetting(userID, keyTerminalWrap)
+	if !ok || v == "" {
+		return true
+	}
+	return v == "1"
 }
 
 // autoPushDefault resolves the global default for new projects' auto-push

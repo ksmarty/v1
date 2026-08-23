@@ -86,7 +86,13 @@ func (m *Manager) ServeWS(w http.ResponseWriter, r *http.Request, projectID, dir
 	}
 	cmd := exec.Command(shell)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
+	// A minimal prompt: the terminal is a work surface, the host/user/path
+	// prefix just eats space. Only runtime vars change between sessions.
+	cmd.Env = append(os.Environ(),
+		"TERM=xterm-256color",
+		"PS1=\\$ ",
+		"HOME="+os.Getenv("HOME"),
+	)
 	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{Rows: 24, Cols: 80})
 	if err != nil {
 		// Tell the client WHY the PTY failed — otherwise the connection just

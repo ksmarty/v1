@@ -288,21 +288,16 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 	// Turn timeouts: a hard deadline bounds the whole turn (streaming and tool
 	// calls alike), and a soft deadline injects a single "are you still
 	// working?" warning so the model gets a chance to stop and ask the user
-	// before the hard cutoff hits.
+	// before the hard cutoff hits. Both are in minutes (0 = disabled).
 	soft, hard := p.SoftTimeout, p.HardTimeout
-	if hard <= 0 {
-		hard = 10 * time.Minute
+	turnCtx := ctx
+	var turnCancel context.CancelFunc = func() {}
+	if hard > 0 {
+		turnCtx, turnCancel = context.WithTimeout(ctx, hard)
+		defer turnCancel()
 	}
-	if soft <= 0 {
-		soft = 5 * time.Minute
-	}
-	if soft >= hard {
-		soft = hard / 2
-	}
-	turnCtx, turnCancel := context.WithTimeout(ctx, hard)
-	defer turnCancel()
-	startedAt := time.Now()
 	softWarned := false
+	startedAt := time.Now()
 
 	var usage *Usage
 	// When the provider's output window runs out mid-reply (finish_reason
@@ -359,7 +354,7 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 	for {
 		// Soft timeout: warn the model once it has been working past the soft
 		// mark so it can stop and ask the user instead of grinding on.
-		if !softWarned && time.Since(startedAt) >= soft {
+		if soft > 0 && !softWarned && time.Since(startedAt) >= soft {
 			softWarned = true
 			warn := fmt.Sprintf("You have been working for %s (the soft time limit). If you are stuck, stop and ask the user instead of continuing to loop.", soft.Round(time.Minute))
 			history = append(history, llm.Message{Role: "system", Content: warn})
@@ -425,7 +420,7 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 				if res != nil && (res.Text != "" || res.Reasoning != "") {
 					_, _ = p.Store.AddMessage(p.Project.ID, p.SessionID, "assistant", res.Text, "", p.Client.Model, res.Reasoning, "", "")
 				}
-				return nil, fmt.Errorf("turn exceeded the hard timeout of %s and was aborted", hard)
+				return nil, fmt.Errorf("turn exceeded the hard timeout and was aborted")
 			}
 			// Auto-resume a mid-reply drop: the streamed partial is valid, so
 			// persist it, hand it back to the model with a continue instruction,
