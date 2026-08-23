@@ -53,18 +53,16 @@ FROM node:22-slim AS final
 # built for glibc only — Alpine/musl cannot run it.
 # Split into small, rarely-changing layers so a tweak to one package (or the
 # healthcheck needing wget) doesn't invalidate the heavy podman/chromium
-# layers, and cache apt/pip downloads across rebuilds.
-RUN --mount=type=cache,target=/var/cache/apt \
-    --mount=type=cache,target=/var/lib/apt/lists \
-    apt-get update && apt-get install -y --no-install-recommends \
+# layers. Do NOT cache-mount apt's dirs here: /var/lib/apt/lists holds apt's
+# lockfile, and the two platform builds (amd64 + arm64) run concurrently and
+# fight over it. The gha layer cache already reuses unchanged layers.
+RUN apt-get update && apt-get install -y --no-install-recommends \
         git bash ca-certificates wget ripgrep fd-find \
     && rm -rf /var/lib/apt/lists/* \
     && ln -s "$(command -v fdfind)" /usr/local/bin/fd
 
 # Chromium for the screenshot tool (large, changes rarely).
-RUN --mount=type=cache,target=/var/cache/apt \
-    --mount=type=cache,target=/var/lib/apt/lists \
-    apt-get update && apt-get install -y --no-install-recommends chromium \
+RUN apt-get update && apt-get install -y --no-install-recommends chromium \
     && rm -rf /var/lib/apt/lists/*
 
 # Rootless podman so the v1 agent's run_container tool can build and run
@@ -76,10 +74,8 @@ RUN --mount=type=cache,target=/var/cache/apt \
 # containers, e.g. start it privileged (or with CAP_SYS_ADMIN, seccomp
 # unconfined and user namespaces enabled on the host kernel). See
 # docker-compose.yml.
-RUN --mount=type=cache,target=/var/cache/apt \
-    --mount=type=cache,target=/var/lib/apt/lists \
-    apt-get update && apt-get install -y --no-install-recommends \
-        podman slirp4netns fuse-overlayfs python3 python3-pip \
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    podman slirp4netns fuse-overlayfs python3 python3-pip \
     && rm -rf /var/lib/apt/lists/* \
     && echo "node:100000:65536" > /etc/subuid \
     && echo "node:100000:65536" > /etc/subgid
