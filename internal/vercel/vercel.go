@@ -241,7 +241,11 @@ type deployResponse struct {
 
 // Deploy uploads the given files and waits (polling every 2s, up to 10
 // minutes) for the deployment to reach a terminal state.
-func (c *Client) Deploy(ctx context.Context, name string, files []DeployFile, target string) (*Deployment, error) {
+// Deploy uploads the project files and starts a deployment. framework is the
+// Vercel preset (nextjs, vite, ...) detected from the project; empty means
+// "let Vercel auto-detect". Setting it explicitly is what makes modern
+// frameworks build correctly instead of being guessed wrong.
+func (c *Client) Deploy(ctx context.Context, name string, files []DeployFile, target, framework string) (*Deployment, error) {
 	payload := make([]map[string]string, 0, len(files))
 	for _, f := range files {
 		payload = append(payload, map[string]string{
@@ -249,17 +253,21 @@ func (c *Client) Deploy(ctx context.Context, name string, files []DeployFile, ta
 			"data": base64.StdEncoding.EncodeToString(f.Data),
 		})
 	}
+	settings := map[string]any{
+		// Explicitly nil means Vercel keeps its defaults.
+		"buildCommand":                nil,
+		"installCommand":              nil,
+		"devCommand":                  nil,
+		"outputDirectory":             nil,
+		"commandForIgnoringBuildStep": nil,
+	}
+	if framework != "" {
+		settings["framework"] = framework
+	}
 	body := map[string]any{
-		"name":  name,
-		"files": payload,
-		"projectSettings": map[string]any{
-			"framework":                   nil,
-			"buildCommand":                nil,
-			"installCommand":              nil,
-			"devCommand":                  nil,
-			"outputDirectory":             nil,
-			"commandForIgnoringBuildStep": nil,
-		},
+		"name":            name,
+		"files":           payload,
+		"projectSettings": settings,
 	}
 	if target != "" {
 		body["target"] = target

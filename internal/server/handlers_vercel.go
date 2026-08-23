@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"v1/internal/auth"
+	"v1/internal/store"
 	"v1/internal/vercel"
 )
 
@@ -23,6 +24,7 @@ import (
 // keyed by the random state value (same pattern as the OIDC flow).
 
 type vercelFlow struct {
+	userID    string // the v1 user who started the flow; the callback must match
 	expiresAt time.Time
 }
 
@@ -69,8 +71,16 @@ func (s *Server) handleVercelOAuthStart(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	s.pruneVercelFlows()
+	// Bind the flow to the logged-in user: the callback must arrive in the
+	// same session, so a flow started in one browser can't be completed by
+	// another account (which would store the token under the wrong user).
+	u, ok := s.auth.User(r)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "not authenticated")
+		return
+	}
 	s.vercelMu.Lock()
-	s.vercelFlows[state] = &vercelFlow{expiresAt: time.Now().Add(vercelFlowTTL)}
+	s.vercelFlows[state] = &vercelFlow{userID: u.ID, expiresAt: time.Now().Add(vercelFlowTTL)}
 	s.vercelMu.Unlock()
 	http.Redirect(w, r, vercel.AuthorizeURL(clientID, s.vercelRedirectURI(r), state), http.StatusFound)
 }
@@ -94,6 +104,23 @@ func (s *Server) handleVercelOAuthCallback(w http.ResponseWriter, r *http.Reques
 		delete(s.vercelFlows, state)
 		ok = false
 	}
+	// Verify the *session* before consuming the flow: the token must land on
+	// the account that started the flow, not whoever happens to complete it.
+	u, authed := s.auth.User(r)
+	if !authed {
+		s.vercelMu.Unlock()
+		log.Printf("vercel: OAuth callback without a session")
+		fail("session_mismatch")
+		return
+	}
+	if !ok || u.ID != flow.userID {
+		if ok {
+			delete(s.vercelFlows, state)
+		}
+		s.vercelMu.Unlock()
+		fail("session_mismatch")
+		return
+	}
 	if ok {
 		delete(s.vercelFlows, state)
 	}
@@ -116,7 +143,7 @@ func (s *Server) handleVercelOAuthCallback(w http.ResponseWriter, r *http.Reques
 		fail(reason)
 		return
 	}
-	u, ok := s.auth.User(r)
+	u, ok = s.auth.User(r)
 	if !ok {
 		log.Printf("vercel: no session for OAuth callback")
 		fail("error")
@@ -156,6 +183,7 @@ func (s *Server) handleVercelUser(w http.ResponseWriter, r *http.Request) {
 
 // deployState tracks one in-flight (or finished) deploy per project.
 type deployState struct {
+	id         string // vercel_deploys row id (persists across restarts)
 	mu         sync.Mutex
 	startedAt  time.Time
 	done       bool
@@ -215,6 +243,70 @@ func collectProjectFiles(root string) ([]vercel.DeployFile, error) {
 
 var deployNameRe = regexp.MustCompile(`[^a-z0-9._-]+`)
 
+// detectFramework tells Vercel which preset to build with, so it stops
+// guessing (and often mis-configuring) modern projects. Signal files win;
+// package.json dependencies are the fallback.
+func detectFramework(root string) string {
+	exact := []struct{ file, fw string }{
+		{"next.config.js", "nextjs"},
+		{"next.config.mjs", "nextjs"},
+		{"next.config.ts", "nextjs"},
+		{"nuxt.config.ts", "nuxtjs"},
+		{"vite.config.ts", "vite"},
+		{"vite.config.js", "vite"},
+		{"svelte.config.js", "svelte"},
+		{"gatsby-config.js", "gatsby"},
+		{"astro.config.mjs", "astro"},
+		{"angular.json", "angular"},
+		{"remix.config.js", "remix"},
+		{"docusaurus.config.js", "docusaurus"},
+	}
+	for _, e := range exact {
+		if _, err := os.Stat(filepath.Join(root, e.file)); err == nil {
+			return e.fw
+		}
+	}
+	data, err := os.ReadFile(filepath.Join(root, "package.json"))
+	if err != nil {
+		return ""
+	}
+	var pkg struct {
+		Dependencies    map[string]string `json:"dependencies"`
+		DevDependencies map[string]string `json:"devDependencies"`
+	}
+	if err := json.Unmarshal(data, &pkg); err != nil {
+		return ""
+	}
+	dep := func(name string) bool {
+		if _, ok := pkg.Dependencies[name]; ok {
+			return true
+		}
+		_, ok := pkg.DevDependencies[name]
+		return ok
+	}
+	switch {
+	case dep("next"):
+		return "nextjs"
+	case dep("@angular/core"):
+		return "angular"
+	case dep("svelte"):
+		return "svelte"
+	case dep("@sveltejs/kit"):
+		return "sveltekit"
+	case dep("astro"):
+		return "astro"
+	case dep("gatsby"):
+		return "gatsby"
+	case dep("vue"):
+		return "vuejs"
+	case dep("react"):
+		return "create-react-app"
+	case dep("vite"):
+		return "vite"
+	}
+	return "" // let Vercel auto-detect
+}
+
 // slugify turns a project name into a valid Vercel project name.
 func slugify(name string) string {
 	s := strings.ToLower(strings.TrimSpace(name))
@@ -257,16 +349,25 @@ func (s *Server) handleVercelDeploy(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "reading project files: "+err.Error())
 		return
 	}
-
-	state := &deployState{startedAt: time.Now()}
+	// Persist the active deploy before the async work: the row survives
+	// restarts, so an in-flight deploy is never silently lost from the UI.
+	deployID := store.NewID()
+	if err := s.st.CreateVercelDeploy(deployID, p.ID, userID, body.Target); err != nil {
+		log.Printf("vercel: persisting deploy: %v", err)
+	}
+	state := &deployState{id: deployID, startedAt: time.Now()}
+	// One deploy slot per (project, user): concurrent deploys from different
+	// accounts no longer clobber each other's state.
+	deployKey := p.ID + ":" + userID
 	s.vercelMu.Lock()
-	s.vercelDeploys[p.ID] = state
+	s.vercelDeploys[deployKey] = state
 	s.vercelMu.Unlock()
 
+	framework := detectFramework(p.Path)
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 12*time.Minute)
 		defer cancel()
-		dep, derr := s.vercelClient(userID).Deploy(ctx, slugify(p.Name), files, body.Target)
+		dep, derr := s.vercelClient(userID).Deploy(ctx, slugify(p.Name), files, body.Target, framework)
 		state.mu.Lock()
 		state.done = true
 		if derr != nil {
@@ -275,6 +376,16 @@ func (s *Server) handleVercelDeploy(w http.ResponseWriter, r *http.Request) {
 			state.deployment = dep
 		}
 		state.mu.Unlock()
+		// Settle the persisted row to its terminal state.
+		finalState, errText, depID, url := store.VercelDeployError, "deploy failed", "", ""
+		if derr == nil && dep != nil {
+			finalState, errText, depID, url = store.VercelDeployReady, "", dep.ID, dep.URL
+		} else if derr != nil {
+			errText = derr.Error()
+		}
+		if uerr := s.st.UpdateVercelDeploy(deployID, finalState, errText, depID, url); uerr != nil {
+			log.Printf("vercel: updating deploy row: %v", uerr)
+		}
 	}()
 
 	writeJSON(w, http.StatusAccepted, map[string]any{"started": true})
@@ -289,7 +400,7 @@ func (s *Server) handleVercelDeployments(w http.ResponseWriter, r *http.Request)
 	}
 	userID := s.currentUser(r).ID
 	s.vercelMu.Lock()
-	st := s.vercelDeploys[p.ID]
+	st := s.vercelDeploys[p.ID+":"+userID]
 	s.vercelMu.Unlock()
 
 	var active any
@@ -304,6 +415,26 @@ func (s *Server) handleVercelDeployments(w http.ResponseWriter, r *http.Request)
 			active = st.deployment
 		}
 		st.mu.Unlock()
+	}
+	if active == nil {
+		// Fresh process (or nothing in memory): resurrect the last persisted
+		// attempt so an interrupted deploy shows as ERROR instead of
+		// vanishing; terminal rows are surfaced too.
+		if row, err := s.st.LatestVercelDeploy(p.ID, userID); err == nil && row != nil {
+			switch row.State {
+			case store.VercelDeployBuilding:
+				active = map[string]any{"state": "BUILDING", "startedAt": time.Unix(row.CreatedAt, 0)}
+			case store.VercelDeployError:
+				active = map[string]any{"state": "ERROR", "error": row.Error}
+			case store.VercelDeployReady:
+				active = map[string]any{
+					"id":        row.DeploymentID,
+					"state":     "READY",
+					"url":       row.URL,
+					"createdAt": row.CreatedAt,
+				}
+			}
+		}
 	}
 
 	recent := []vercel.Deployment{}

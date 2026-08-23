@@ -98,6 +98,9 @@ export default function VercelMenu({
       .then((d) => {
         setData(d);
         setErr(null);
+        // Keep the poller truthful immediately: reflect the loaded state
+        // instead of waiting for the next data change.
+        buildingRef.current = !!d.active && !isTerminal(d.active.state);
       })
       .catch((e) => setErr(errMsg(e)));
   }, [projectId]);
@@ -106,20 +109,25 @@ export default function VercelMenu({
     buildingRef.current = !!data?.active && !isTerminal(data.active.state);
   }, [data]);
 
+  // Poll as long as a deploy is building — regardless of whether the menu is
+  // open. Closing the menu mid-deploy must not freeze the status shown when
+  // it is reopened (and the active row updates while the user is away).
   useEffect(() => {
-    if (!open) return;
     load();
     const t = setInterval(() => {
       if (buildingRef.current) void load();
     }, 2500);
+    return () => clearInterval(t);
+  }, [load]);
+
+  useEffect(() => {
+    if (!open) return;
+    load();
     const onDoc = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpen(false);
     };
     document.addEventListener('mousedown', onDoc);
-    return () => {
-      clearInterval(t);
-      document.removeEventListener('mousedown', onDoc);
-    };
+    return () => document.removeEventListener('mousedown', onDoc);
   }, [open, load]);
 
   const deploy = async (target: 'preview' | 'production') => {
@@ -130,6 +138,9 @@ export default function VercelMenu({
       await load();
     } catch (e) {
       setErr(errMsg(e));
+      // A synchronous failure means the deploy never started: drop any stale
+      // active row so the panel doesn't keep showing an in-flight deploy.
+      setData((d) => (d ? { ...d, active: null } : d));
     } finally {
       setBusy(null);
     }

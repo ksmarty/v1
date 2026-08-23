@@ -24,6 +24,7 @@ type Config struct {
 	VercelToken              string
 	VercelClientID           string
 	VercelClientSecret       string
+	VercelRefreshToken       string
 	VercelRedirectURI        string
 	AuthOIDCEnabled          bool
 	OIDCIssuer               string
@@ -95,6 +96,7 @@ func Load(version, commit string) Config {
 	c.VercelToken = os.Getenv("V1_VERCEL_TOKEN")
 	c.VercelClientID = os.Getenv("V1_VERCEL_CLIENT_ID")
 	c.VercelClientSecret = os.Getenv("V1_VERCEL_CLIENT_SECRET")
+	c.VercelRefreshToken = os.Getenv("V1_VERCEL_REFRESH_TOKEN")
 	c.VercelRedirectURI = os.Getenv("V1_VERCEL_REDIRECT_URI")
 	if v := os.Getenv("V1_AUTH_OIDC_ENABLED"); v == "true" || v == "1" || v == "yes" {
 		c.AuthOIDCEnabled = true

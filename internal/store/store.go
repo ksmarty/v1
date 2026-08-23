@@ -140,6 +140,18 @@ CREATE TABLE IF NOT EXISTS pending_asks (
   created_at INTEGER NOT NULL,
   PRIMARY KEY (project_id, session_id)
 );
+CREATE TABLE IF NOT EXISTS vercel_deploys (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  state TEXT NOT NULL,
+  error TEXT,
+  deployment_id TEXT,
+  url TEXT,
+  target TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
 `)
 	if err != nil {
 		return err
@@ -890,6 +902,70 @@ func (s *Store) LatestUserMessageID(projectID, sessionID string) (int64, error) 
 		return 0, nil
 	}
 	return id, err
+}
+
+const (
+	VercelDeployBuilding = "BUILDING"
+	VercelDeployReady    = "READY"
+	VercelDeployError    = "ERROR"
+	VercelDeployCanceled = "CANCELED"
+)
+
+// VercelDeploy is one persisted deployment attempt. Deployments start as
+// BUILDING, then settle into a terminal state; rows survive server restarts
+// so the UI never loses an in-flight (or interrupted) deploy.
+type VercelDeploy struct {
+	ID           string
+	ProjectID    string
+	UserID       string
+	State        string
+	Error        string
+	DeploymentID string
+	URL          string
+	Target       string
+	CreatedAt    int64
+	UpdatedAt    int64
+}
+
+// CreateVercelDeploy records a deploy attempt as BUILDING.
+func (s *Store) CreateVercelDeploy(id, projectID, userID, target string) error {
+	now := time.Now().Unix()
+	_, err := s.db.Exec(`INSERT INTO vercel_deploys (id, project_id, user_id, state, target, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		id, projectID, userID, VercelDeployBuilding, target, now, now)
+	return err
+}
+
+// UpdateVercelDeploy settles a deploy into its terminal state with whatever
+// the Vercel API reported (deployment id/url or the error text).
+func (s *Store) UpdateVercelDeploy(id, state, errText, deploymentID, url string) error {
+	_, err := s.db.Exec(`UPDATE vercel_deploys SET state = ?, error = ?, deployment_id = ?, url = ?, updated_at = ? WHERE id = ?`,
+		state, errText, deploymentID, url, time.Now().Unix(), id)
+	return err
+}
+
+// LatestVercelDeploy returns the most recent deploy row for a project+user,
+// or nil when there is none. Used to resurrect deploy status after a restart.
+func (s *Store) LatestVercelDeploy(projectID, userID string) (*VercelDeploy, error) {
+	row := s.db.QueryRow(`SELECT id, project_id, user_id, state, COALESCE(error,''), COALESCE(deployment_id,''), COALESCE(url,''), COALESCE(target,''), created_at, updated_at
+		FROM vercel_deploys WHERE project_id = ? AND user_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1`, projectID, userID)
+	var d VercelDeploy
+	err := row.Scan(&d.ID, &d.ProjectID, &d.UserID, &d.State, &d.Error, &d.DeploymentID, &d.URL, &d.Target, &d.CreatedAt, &d.UpdatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &d, nil
+}
+
+// FailInterruptedVercelDeploys marks every still-building deploy as ERROR
+// with the given reason — called once at startup, since a process that died
+// mid-deploy can never finish its in-flight uploads.
+func (s *Store) FailInterruptedVercelDeploys(reason string) error {
+	_, err := s.db.Exec(`UPDATE vercel_deploys SET state = ?, error = ?, updated_at = ? WHERE state = ?`,
+		VercelDeployError, reason, time.Now().Unix(), VercelDeployBuilding)
+	return err
 }
 
 // CompactionSnapshot is a non-visible summary covering messages through an ID.

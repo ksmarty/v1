@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"io/fs"
+	"log"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -86,6 +87,7 @@ func New(cfg config.Config, st *store.Store) *Server {
 	s.rebuildOIDC()
 	s.pruneOIDCFlows()
 	s.pruneVercelFlows()
+	s.failInterruptedVercelDeploys()
 	mux := http.NewServeMux()
 	s.routes(mux)
 	s.handler = s.auth.Middleware(mux)
@@ -619,6 +621,15 @@ func (s *Server) vercelToken(userID string) string {
 	return s.cfg.VercelToken
 }
 
+// failInterruptedVercelDeploys marks deployments that were in flight when the
+// process went down as ERROR, so after a restart the UI shows what happened
+// instead of pretending the deploy never existed.
+func (s *Server) failInterruptedVercelDeploys() {
+	if err := s.st.FailInterruptedVercelDeploys("deploy interrupted by a server restart"); err != nil {
+		log.Printf("vercel: marking interrupted deploys: %v", err)
+	}
+}
+
 // vercelTokenSource reports how the current token got configured:
 // "oauth"/"pat" for a settings-stored token, "env" for an env-only token,
 // or nil when no token exists.
@@ -638,11 +649,10 @@ func (s *Server) vercelTokenSource(userID string) *string {
 }
 
 func (s *Server) vercelRefreshToken(userID string) string {
-	v, ok := s.userSetting(userID, keyVercelRefreshToken)
-	if !ok {
-		return ""
+	if v, ok := s.userSetting(userID, keyVercelRefreshToken); ok && v != "" {
+		return v
 	}
-	return v
+	return s.cfg.VercelRefreshToken
 }
 
 // vercelOAuthClientID resolves the OAuth app client id (sqlite overrides env).

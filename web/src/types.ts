@@ -102,7 +102,7 @@ export type VercelActiveDeploy =
 
 export interface VercelDeploymentsResponse {
   connected: boolean;
-  active: VercelActiveDeploy;
+  active: VercelActiveDeploy | null;
   recent: VercelDeployment[];
   error?: string;
 }
