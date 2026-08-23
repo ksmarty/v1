@@ -95,7 +95,7 @@ func TestVerifyProjectFailsOnBuildError(t *testing.T) {
 func TestVerifyProjectSecretScan(t *testing.T) {
 	e := newTestExecutor(t)
 	scaffoldNodeProject(t, e.Root, map[string]string{"build": "echo build-ok"})
-	if err := os.WriteFile(filepath.Join(e.Root, "api.ts"), []byte("const key = 'sk-1234567890abcdef1234567890abcdef';\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(e.Root, "api.ts"), []byte("const key = 'sk-"+"1234567890abcdef1234567890abcdef"+"';\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	res := executeContract(t, e, context.Background(), "verify_project", `{}`)
@@ -113,7 +113,7 @@ func TestVerifyProjectSecretScan(t *testing.T) {
 	if !strings.Contains(scanOut, "OpenAI API key") {
 		t.Fatalf("scan output = %q, want the OpenAI key finding", scanOut)
 	}
-	if strings.Contains(scanOut, "sk-1234567890abcdef1234567890abcdef") {
+	if strings.Contains(scanOut, "sk-"+"1234567890abcdef1234567890abcdef") {
 		t.Fatalf("scan leaked the full secret instead of masking: %q", scanOut)
 	}
 	// .env not gitignored -> suggestion.

@@ -181,6 +181,23 @@ const TOOL_ICONS: Record<string, typeof IconWrench> = {
   ask_user: IconUser,
 };
 
+// The most recent finished assistant reply or persisted error in a loaded
+// message list, if any. Used after load() to notify for runs that finished
+// while the app was away (the SSE event was lost, so the notification can
+// only be discovered here).
+function findLastFinishedAssistant(items: Item[]): { key: string; content: string; error: boolean } | null {
+  for (let i = items.length - 1; i >= 0; i--) {
+    const it = items[i];
+    if (it.kind === 'msg' && it.role === 'assistant' && !it.streaming) {
+      return { key: it.key, content: it.content, error: false };
+    }
+    if (it.kind === 'msg' && it.role === 'error') {
+      return { key: it.key, content: it.content, error: true };
+    }
+  }
+  return null;
+}
+
 // True when the last user turn already has a finished assistant reply — the
 // run completed (typically while the app was away), so there is nothing to
 // resume. Tool rows don't count: an aborted run leaves only those.
@@ -1765,6 +1782,15 @@ export default function ChatPane({
   const itemsRef = useRef<Item[]>([]);
   const counterRef = useRef(0);
   const assistantKeyRef = useRef<string | null>(null);
+  // Key of the last turn we notified about (persisted per project+session so
+  // a reload does not re-notify for runs already seen).
+  const notifiedKey = `v1.notified.${projectId}.${sessionId}`;
+  const lastNotifiedRef = useRef<string | null>(null);
+  useEffect(() => {
+    try {
+      lastNotifiedRef.current = localStorage.getItem(notifiedKey);
+    } catch {}
+  }, [notifiedKey]);
   const toolStackRef = useRef<Record<string, string[]>>({});
   const abortRef = useRef<AbortController | null>(null);
   // When the current turn started — for the elapsed time shown with usage.
@@ -2180,6 +2206,27 @@ export default function ChatPane({
       }
       itemsRef.current = mapped;
       setItems(mapped);
+
+      // Runs that finished while the app was away are discovered here (the
+      // live SSE event was lost). Notify for the newest one, unless it was
+      // already notified live or on a previous load.
+      const finished = findLastFinishedAssistant(mapped);
+      if (finished) {
+        if (lastNotifiedRef.current === null) {
+          // First time opening this session — seed the marker without
+          // notifying for pre-existing history.
+          lastNotifiedRef.current = finished.key;
+          try { localStorage.setItem(notifiedKey, finished.key); } catch {}
+        } else if (finished.key !== lastNotifiedRef.current) {
+          if (finished.error) {
+            void notifyTurnError(projectId, sessionId, projectName, finished.content);
+          } else {
+            void notifyTurnDone(projectId, sessionId, projectName, finished.content);
+          }
+          lastNotifiedRef.current = finished.key;
+          try { localStorage.setItem(notifiedKey, finished.key); } catch {}
+        }
+      }
     } catch (e) {
       setLoadError(errMsg(e));
     } finally {
@@ -2188,7 +2235,7 @@ export default function ChatPane({
       // card must survive reloads and reconnects, not just live streams.
       void refreshPendingAsk();
     }
-  }, [projectId, sessionId, refreshPendingAsk]);
+  }, [projectId, sessionId, projectName, notifiedKey, refreshPendingAsk]);
 
   useEffect(() => {
     void load();
@@ -2714,6 +2761,13 @@ export default function ChatPane({
             }
           }
           void notifyTurnDone(projectId, sessionId, projectName, snippet);
+          // The live event notified — mark it so the reconnect load() path
+          // does not notify a second time for the same turn.
+          const doneKey = assistantKeyRef.current;
+          if (doneKey) {
+            lastNotifiedRef.current = doneKey;
+            try { localStorage.setItem(notifiedKey, doneKey); } catch {}
+          }
           void loadContext(true); // bypass the cache: usage changed this turn
           setAskPrompt(null); // the turn ended — no question can be pending
           setSteering([]); // the turn ended — nothing is pending injection
@@ -2728,6 +2782,9 @@ export default function ChatPane({
             { kind: 'msg', key: `e${++counterRef.current}`, role: 'error', content: ev.error },
           ]);
           void notifyTurnError(projectId, sessionId, projectName, ev.error ?? '');
+          const errorKey = `e${counterRef.current}`;
+          lastNotifiedRef.current = errorKey;
+          try { localStorage.setItem(notifiedKey, errorKey); } catch {}
           setAskPrompt(null);
           setSteering([]);
           setLocalStatus(null);
@@ -2901,7 +2958,7 @@ export default function ChatPane({
         finish();
       }
     },
-    [streaming, finish, update, resumeTurn, load, sessionId],
+    [streaming, finish, update, resumeTurn, load, sessionId, projectName, notifiedKey],
   );
 
   const sendText = useCallback(
@@ -3026,6 +3083,9 @@ export default function ChatPane({
         }
         try {
           await api.truncateMessages(projectId, sessionId, 0);
+          // History is gone — nothing left to notify about.
+          try { localStorage.removeItem(notifiedKey); } catch {}
+          lastNotifiedRef.current = null;
           await load();
           setLocalStatus('Chat cleared.');
         } catch (e) {

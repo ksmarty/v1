@@ -35,7 +35,7 @@ async function showNotification(
 // category toggle, and (by default) only when the window is not focused.
 async function shouldNotify(category: boolean, projectId: string, title: string, body: string, url: string) {
   if (!getNotifyEnabled() || !category) return;
-  if (getNotifyOnlyBackground() && document.hasFocus()) return;
+  if (getNotifyOnlyBackground() && document.visibilityState === 'visible') return;
   await showNotification(title, body, `v1-turn-${projectId}`, url);
 }
 
