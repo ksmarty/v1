@@ -51,19 +51,47 @@ FROM node:22-slim AS final
 
 # Debian (glibc) base: semble's binary wheels (semble-grammars .so) are
 # built for glibc only — Alpine/musl cannot run it.
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        git bash ca-certificates chromium ripgrep fd-find wget \
-        podman slirp4netns fuse-overlayfs \
-        python3 python3-pip \
-    && ln -s "$(command -v fdfind)" /usr/local/bin/fd \
+# Split into small, rarely-changing layers so a tweak to one package (or the
+# healthcheck needing wget) doesn't invalidate the heavy podman/chromium
+# layers, and cache apt/pip downloads across rebuilds.
+RUN --mount=type=cache,target=/var/cache/apt \
+    --mount=type=cache,target=/var/lib/apt/lists \
+    apt-get update && apt-get install -y --no-install-recommends \
+        git bash ca-certificates wget ripgrep fd-find \
     && rm -rf /var/lib/apt/lists/* \
-    && corepack enable \
-    && corepack prepare pnpm@latest --activate \
+    && ln -s "$(command -v fdfind)" /usr/local/bin/fd
+
+# Chromium for the screenshot tool (large, changes rarely).
+RUN --mount=type=cache,target=/var/cache/apt \
+    --mount=type=cache,target=/var/lib/apt/lists \
+    apt-get update && apt-get install -y --no-install-recommends chromium \
+    && rm -rf /var/lib/apt/lists/*
+
+# Rootless podman so the v1 agent's run_container tool can build and run
+# containers. Rootless podman needs: slirp4netns (rootless networking),
+# fuse-overlayfs (rootless storage driver), and a subuid/subgid range for
+# the `node` user (see /etc/subuid below).
+#
+# Docker-in-docker: the OUTER container that runs v1 must allow nested
+# containers, e.g. start it privileged (or with CAP_SYS_ADMIN, seccomp
+# unconfined and user namespaces enabled on the host kernel). See
+# docker-compose.yml.
+RUN --mount=type=cache,target=/var/cache/apt \
+    --mount=type=cache,target=/var/lib/apt/lists \
+    apt-get update && apt-get install -y --no-install-recommends \
+        podman slirp4netns fuse-overlayfs python3 python3-pip \
+    && rm -rf /var/lib/apt/lists/* \
     && echo "node:100000:65536" > /etc/subuid \
     && echo "node:100000:65536" > /etc/subgid
 
-# semble: semantic code search over the workspace.
-RUN python3 -m pip install --no-cache-dir --break-system-packages semble==0.5.5
+# pnpm for generated apps; pinned major so corepack doesn't re-resolve
+# @latest and churn this layer. The npm cache mount keeps the tarball.
+RUN --mount=type=cache,target=/root/.npm \
+    corepack enable && corepack prepare pnpm@9 --activate
+
+# semble: semantic code search over the workspace (cached pip downloads).
+RUN --mount=type=cache,target=/root/.cache/pip \
+    python3 -m pip install --no-cache-dir --break-system-packages semble==0.5.5
 
 # The `node` user (uid/gid 1000) gets a subordinate id range so rootless
 # podman can map container uids; without /etc/subuid + /etc/subgid entries
