@@ -198,6 +198,10 @@ func (e *Executor) Execute(ctx context.Context, name, argsJSON string) (string, 
 		return e.askUser(ctx, argsJSON)
 	case "verify_project":
 		return e.verifyProject(ctx, argsJSON)
+	case "make_plan":
+		return e.makePlan(argsJSON)
+	case "update_plan":
+		return e.updatePlan(argsJSON)
 	default:
 		if strings.HasPrefix(name, "mcp_") {
 			return e.mcpCall(ctx, name, argsJSON)
@@ -272,7 +276,9 @@ func (e *Executor) mcpCall(ctx context.Context, name, argsJSON string) (string, 
 // stays small (it is re-sent with every request of every round).
 func (e *Executor) remember(argsJSON string) (string, error) {
 	var args struct {
-		Content string `json:"content"`
+		Content    string   `json:"content"`
+		Category   string   `json:"category"`
+		Importance *float64 `json:"importance"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 		return "", fmt.Errorf("invalid arguments: %w", err)
@@ -280,6 +286,17 @@ func (e *Executor) remember(argsJSON string) (string, error) {
 	args.Content = strings.TrimSpace(args.Content)
 	if args.Content == "" {
 		return "", fmt.Errorf("content is required")
+	}
+	args.Category = strings.ToLower(strings.TrimSpace(args.Category))
+	if args.Category != "" && args.Category != "preference" && args.Category != "episodic" && args.Category != "fact" && args.Category != "plan" {
+		return "", toolFail("BAD_ARGUMENT", fmt.Sprintf("category %q is not allowed — use preference, episodic, fact or plan", args.Category), true, "use one of preference, episodic, fact or plan")
+	}
+	importance := 1.0
+	if args.Importance != nil {
+		importance = *args.Importance
+	}
+	if importance < 0 || importance > 3 {
+		return "", fmt.Errorf("importance must be between 0 and 3")
 	}
 	if e.Store == nil {
 		return "", fmt.Errorf("memory store unavailable")
@@ -300,12 +317,12 @@ func (e *Executor) remember(argsJSON string) (string, error) {
 	if len(mems) >= 200 {
 		return "", fmt.Errorf("memory is full (200 entries) — use the forget tool to delete one first")
 	}
-	id, err := e.Store.AddMemory(e.ProjectID, args.Content)
+	id, err := e.Store.AddMemory(e.ProjectID, args.Content, args.Category, importance)
 	if err != nil {
 		return "", err
 	}
 	e.emitMemories()
-	return toolResult(map[string]any{"ok": true, "id": id}), nil
+	return toolResult(map[string]any{"ok": true, "id": id, "category": args.Category, "importance": importance}), nil
 }
 
 func (e *Executor) forget(argsJSON string) (string, error) {
@@ -1839,6 +1856,103 @@ func maskSecret(s string) string {
 		return s[:1] + "…"
 	}
 	return s[:4] + "…" + s[len(s)-2:]
+}
+
+// planDocument is the schema a plan must satisfy before it is stored. The
+// model produces this JSON on the first turn of a multi-step task and updates
+// it (make_plan/update_plan) as work progresses.
+type planDocument struct {
+	Goal           string      `json:"goal"`
+	Features       []planFeat  `json:"features"`
+	Invariants     []string    `json:"invariants"`
+	Checkpoints    []planCheck `json:"checkpoints"`
+	EstimatedTurns int         `json:"estimated_turns"`
+}
+
+type planFeat struct {
+	ID          string   `json:"id"`
+	Description string   `json:"description"`
+	DependsOn   []string `json:"depends_on"`
+}
+
+type planCheck struct {
+	Step         int    `json:"step"`
+	Action       string `json:"action"`
+	Verification string `json:"verification"`
+}
+
+// validatePlan checks a plan against its schema and returns a structured
+// error the model can fix on the next call.
+func validatePlan(raw string) error {
+	if strings.TrimSpace(raw) == "" {
+		return toolFail("PLAN_INVALID", "plan is empty", true, "pass a valid plan JSON: {goal, features, invariants, checkpoints, estimated_turns}")
+	}
+	var doc planDocument
+	if err := json.Unmarshal([]byte(raw), &doc); err != nil {
+		return toolFail("PLAN_INVALID", fmt.Sprintf("plan is not valid JSON: %v", err), true, "fix the JSON and try again")
+	}
+	if strings.TrimSpace(doc.Goal) == "" {
+		return toolFail("PLAN_INVALID", "plan.goal must be a non-empty sentence describing the task", true, "add a goal string")
+	}
+	if doc.EstimatedTurns <= 0 {
+		return toolFail("PLAN_INVALID", "plan.estimated_turns must be a positive integer", true, "set an estimated_turns count")
+	}
+	if len(doc.Features) == 0 {
+		return toolFail("PLAN_INVALID", "plan.features must list at least one feature", true, "break the task into features with ids")
+	}
+	ids := map[string]bool{}
+	for _, f := range doc.Features {
+		if strings.TrimSpace(f.ID) == "" || strings.TrimSpace(f.Description) == "" {
+			return toolFail("PLAN_INVALID", "every feature needs an id and a description", true, "give each feature an id and a description")
+		}
+		ids[f.ID] = true
+	}
+	for _, f := range doc.Features {
+		for _, dep := range f.DependsOn {
+			if !ids[dep] {
+				return toolFail("PLAN_INVALID", fmt.Sprintf("feature %q depends on unknown feature %q", f.ID, dep), true, "only reference feature ids you listed")
+			}
+		}
+	}
+	for _, c := range doc.Checkpoints {
+		if c.Step <= 0 || strings.TrimSpace(c.Action) == "" || strings.TrimSpace(c.Verification) == "" {
+			return toolFail("PLAN_INVALID", "every checkpoint needs a positive step number, an action and a verification", true, "fix the checkpoint with step/action/verification")
+		}
+	}
+	return nil
+}
+
+// setPlan is the shared core of make_plan and update_plan.
+func (e *Executor) setPlan(argsJSON string) (string, error) {
+	var args struct {
+		Plan string `json:"plan"`
+	}
+	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
+		return "", fmt.Errorf("invalid arguments: %w", err)
+	}
+	if err := validatePlan(args.Plan); err != nil {
+		return "", err
+	}
+	if e.Store == nil {
+		return "", fmt.Errorf("memory store unavailable")
+	}
+	if err := e.Store.SetPlan(e.ProjectID, args.Plan); err != nil {
+		return "", err
+	}
+	return toolResult(map[string]any{"ok": true, "note": "plan stored — it is injected into the system prompt of subsequent turns"}), nil
+}
+
+// makePlan starts (or replaces) the project's active plan. The plan JSON is
+// validated before storage so malformed plans never reach the prompt.
+func (e *Executor) makePlan(argsJSON string) (string, error) {
+	return e.setPlan(argsJSON)
+}
+
+// updatePlan replaces the active plan — the model should send the full,
+// updated document with progress notes reflected (features marked done,
+// checkpoints checked off), not a diff.
+func (e *Executor) updatePlan(argsJSON string) (string, error) {
+	return e.setPlan(argsJSON)
 }
 
 // containerResourceCaps bounds every `run` container the agent starts:

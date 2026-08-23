@@ -286,6 +286,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		PlanMode:        isPlan,
 		SoftTimeout:     s.cfg.TurnSoftTimeout,
 		HardTimeout:     s.cfg.TurnHardTimeout,
+		AutoPlan:        s.cfg.AutoPlan,
 	}
 	// Editing an existing user message rewinds the thread to it and re-runs
 	// from the edited text: update its content, then run with LastUserID set so
@@ -515,9 +516,8 @@ func (s *Server) streamChatTurn(w http.ResponseWriter, r *http.Request, p *store
 	params.ToonEnabled = s.toonEnabled(userID)
 	params.DisabledTools = s.disabledTools(userID)
 	params.Caveman = s.cavemanEnabled(userID)
-	if mems, err := s.st.ListMemories(p.ID); err == nil {
-		params.MemoriesPrompt = memoryPrompt(mems)
-	}
+	params.MemoriesPrompt = s.memoryPrompt(p.ID, params.Message)
+	params.PlanPrompt = s.planPrompt(p.ID)
 	params.ContextBudget = s.cfg.ContextBudget
 	params.ContextThreshold = s.contextThreshold(userID)
 	params.Emit = emit

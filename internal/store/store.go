@@ -118,9 +118,18 @@ CREATE TABLE IF NOT EXISTS memories (
   project_id TEXT NOT NULL,
   content TEXT NOT NULL,
   enabled INTEGER NOT NULL DEFAULT 1,
-  created_at INTEGER NOT NULL
+  created_at INTEGER NOT NULL,
+  category TEXT NOT NULL DEFAULT 'fact',
+  importance REAL NOT NULL DEFAULT 1,
+  last_accessed INTEGER NOT NULL DEFAULT 0,
+  access_count INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_memories_project ON memories(project_id, id);
+CREATE TABLE IF NOT EXISTS plans (
+  project_id TEXT PRIMARY KEY,
+  plan_json TEXT NOT NULL,
+  updated_at INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS pending_asks (
   id TEXT NOT NULL,
   project_id TEXT NOT NULL,
@@ -200,6 +209,14 @@ CREATE TABLE pending_asks_v2 (
 	}
 	if err := migrateAddColumns(db, "memories", map[string]string{
 		"enabled": "ALTER TABLE memories ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1",
+	}); err != nil {
+		return err
+	}
+	if err := migrateAddColumns(db, "memories", map[string]string{
+		"category":      "ALTER TABLE memories ADD COLUMN category TEXT NOT NULL DEFAULT 'fact'",
+		"importance":    "ALTER TABLE memories ADD COLUMN importance REAL NOT NULL DEFAULT 1",
+		"last_accessed": "ALTER TABLE memories ADD COLUMN last_accessed INTEGER NOT NULL DEFAULT 0",
+		"access_count":  "ALTER TABLE memories ADD COLUMN access_count INTEGER NOT NULL DEFAULT 0",
 	}); err != nil {
 		return err
 	}
@@ -1020,40 +1037,125 @@ func (s *Store) EnsureDefaultSession(projectID string) (ChatSession, error) {
 	return cs, nil
 }
 
-// Memory is one fact the agent saved for a project.
+// Memory is one fact the agent saved for a project. Category is one of
+// preference|episodic|fact|plan. Importance >= 2 pins the memory (never
+// decays); lower importance fades 0.1 per day since last access, and a faded,
+// long-unused memory is deleted lazily on the next read.
 type Memory struct {
-	ID        int64  `json:"id"`
-	Content   string `json:"content"`
-	Enabled   bool   `json:"enabled"`
-	CreatedAt int64  `json:"createdAt"`
+	ID           int64   `json:"id"`
+	Content      string  `json:"content"`
+	Enabled      bool    `json:"enabled"`
+	CreatedAt    int64   `json:"createdAt"`
+	Category     string  `json:"category"`
+	Importance   float64 `json:"importance"`
+	LastAccessed int64   `json:"lastAccessed"`
+	AccessCount  int     `json:"accessCount"`
 }
 
 // AddMemory stores a memory for a project and returns its id.
-func (s *Store) AddMemory(projectID, content string) (int64, error) {
-	res, err := s.db.Exec(`INSERT INTO memories (project_id, content, created_at) VALUES (?, ?, ?)`,
-		projectID, content, now())
+func (s *Store) AddMemory(projectID, content, category string, importance float64) (int64, error) {
+	if category == "" {
+		category = "fact"
+	}
+	if importance <= 0 {
+		importance = 1
+	}
+	res, err := s.db.Exec(`INSERT INTO memories (project_id, content, category, importance, created_at) VALUES (?, ?, ?, ?, ?)`,
+		projectID, content, category, importance, now())
 	if err != nil {
 		return 0, err
 	}
 	return res.LastInsertId()
 }
 
-// ListMemories returns a project's memories oldest first.
+// EffectiveImportance computes a memory's current weight: pinned memories
+// (importance >= 2) never decay; everything else fades 0.1 per day since its
+// last access (creation date when never accessed), floored at 0.
+func EffectiveImportance(m Memory, at time.Time) float64 {
+	if m.Importance >= 2 {
+		return m.Importance
+	}
+	ref := time.Unix(m.LastAccessed, 0)
+	if m.LastAccessed == 0 {
+		ref = time.Unix(m.CreatedAt, 0)
+	}
+	days := at.Sub(ref).Hours() / 24
+	eff := m.Importance - 0.1*days
+	if eff < 0 {
+		eff = 0
+	}
+	return eff
+}
+
+// ListMemories returns a project's memories oldest first, with decay applied:
+// faded (effective importance < 0.2) memories unused for over 30 days are
+// dropped lazily, and all returned entries carry their effective importance
+// so ranking can use it without mutating.
 func (s *Store) ListMemories(projectID string) ([]Memory, error) {
-	rows, err := s.db.Query(`SELECT id, content, enabled, created_at FROM memories WHERE project_id = ? ORDER BY id`, projectID)
+	rows, err := s.db.Query(`SELECT id, content, enabled, category, importance, last_accessed, access_count, created_at FROM memories WHERE project_id = ? ORDER BY id`, projectID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
+	now := time.Now()
 	var out []Memory
+	var stale []int64
 	for rows.Next() {
 		var m Memory
-		if err := rows.Scan(&m.ID, &m.Content, &m.Enabled, &m.CreatedAt); err != nil {
+		var enabled int
+		if err := rows.Scan(&m.ID, &m.Content, &enabled, &m.Category, &m.Importance, &m.LastAccessed, &m.AccessCount, &m.CreatedAt); err != nil {
 			return nil, err
+		}
+		m.Enabled = enabled != 0
+		m.Importance = EffectiveImportance(m, now)
+		if m.Importance < 0.2 && m.LastAccessed > 0 && now.Sub(time.Unix(m.LastAccessed, 0)) > 30*24*time.Hour {
+			stale = append(stale, m.ID)
+			continue
 		}
 		out = append(out, m)
 	}
+	if len(stale) > 0 {
+		s.db.Exec(`DELETE FROM memories WHERE id = ?`, stale[0])
+		for _, id := range stale[1:] {
+			s.db.Exec(`DELETE FROM memories WHERE id = ?`, id)
+		}
+	}
 	return out, rows.Err()
+}
+
+// TouchMemory records a retrieval: bumps last_access and the access count so
+// frequently-used memories rank higher over time.
+func (s *Store) TouchMemory(id int64) error {
+	_, err := s.db.Exec(`UPDATE memories SET last_accessed = ?, access_count = access_count + 1 WHERE id = ?`, now(), id)
+	return err
+}
+
+// SetLastAccessed rewrites a memory's last_accessed timestamp (used by the
+// decay tests to simulate disuse).
+func (s *Store) SetLastAccessed(id int64, unix int64) error {
+	_, err := s.db.Exec(`UPDATE memories SET last_accessed = ? WHERE id = ?`, unix, id)
+	return err
+}
+
+// GetPlan returns the project's active plan JSON and whether one exists.
+func (s *Store) GetPlan(projectID string) (string, bool, error) {
+	var plan string
+	err := s.db.QueryRow(`SELECT plan_json FROM plans WHERE project_id = ?`, projectID).Scan(&plan)
+	if err == sql.ErrNoRows {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	return plan, true, nil
+}
+
+// SetPlan upserts the project's active plan.
+func (s *Store) SetPlan(projectID, planJSON string) error {
+	_, err := s.db.Exec(`INSERT INTO plans (project_id, plan_json, updated_at) VALUES (?, ?, ?)
+		ON CONFLICT(project_id) DO UPDATE SET plan_json = excluded.plan_json, updated_at = excluded.updated_at`,
+		projectID, planJSON, now())
+	return err
 }
 
 // SetMemoryEnabled toggles a memory without deleting it, or ErrNotFound.

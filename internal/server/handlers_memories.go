@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -14,11 +15,18 @@ import (
 // prompt (re-sent with every request of every round, so it stays small).
 const memoryBudgetChars = 4000
 
-// memoryPrompt renders the memories section for the system prompt. Disabled
-// memories are excluded entirely. When the total exceeds the budget, the
-// newest memories win and the count of hidden older ones is noted so the
-// model knows they exist.
-func memoryPrompt(mems []store.Memory) string {
+// memoryPrompt ranks the project's memories against the incoming user
+// message and renders the top entries for the system prompt. Ranking score:
+// effective importance (2x), retrieval frequency, and keyword overlap with
+// the current message — so what the user is asking about now shows up first.
+// Injected memories get touched (last_accessed/access_count bumped) so
+// frequently-used entries outrank stale ones over time. Returns "" when no
+// memory is worth injecting.
+func (s *Server) memoryPrompt(projectID, userMessage string) string {
+	mems, err := s.st.ListMemories(projectID)
+	if err != nil {
+		return ""
+	}
 	active := make([]store.Memory, 0, len(mems))
 	for _, m := range mems {
 		if m.Enabled {
@@ -28,25 +36,58 @@ func memoryPrompt(mems []store.Memory) string {
 	if len(active) == 0 {
 		return ""
 	}
-	kept := make([]store.Memory, 0, len(active))
-	total := 0
-	for i := len(active) - 1; i >= 0; i-- {
-		line := len(active[i].Content) + 8 // id, dash and newline
-		if total+line > memoryBudgetChars && len(kept) > 0 {
-			break
+	userWords := map[string]bool{}
+	for _, w := range strings.Fields(strings.ToLower(userMessage)) {
+		if len(w) > 3 {
+			userWords[w] = true
 		}
-		total += line
-		kept = append([]store.Memory{active[i]}, kept...)
 	}
-	var b strings.Builder
-	b.WriteString("Project memories (facts you saved in earlier turns; use the forget tool with an id to delete one):")
-	if hidden := len(active) - len(kept); hidden > 0 {
-		fmt.Fprintf(&b, "\n(%d older memories omitted — they still exist.)", hidden)
+	type scored struct {
+		m     store.Memory
+		score float64
 	}
-	for _, m := range kept {
-		fmt.Fprintf(&b, "\n- [%d] %s", m.ID, m.Content)
+	scoreds := make([]scored, 0, len(active))
+	for _, m := range active {
+		score := 2*m.Importance + 0.5*float64(m.AccessCount)
+		content := strings.ToLower(m.Content)
+		for w := range userWords {
+			if strings.Contains(content, w) {
+				score += 2
+			}
+		}
+		scoreds = append(scoreds, scored{m, score})
 	}
-	return b.String()
+	sort.SliceStable(scoreds, func(i, j int) bool { return scoreds[i].score > scoreds[j].score })
+	// Inject at most the top 5, within the character budget.
+	var sb strings.Builder
+	sb.WriteString("Project memories (facts you saved in earlier turns; use the forget tool with an id to delete one):")
+	total := sb.Len()
+	kept := 0
+	hidden := 0
+	for _, sc := range scoreds {
+		line := fmt.Sprintf("\n- [%d] %s: %s", sc.m.ID, sc.m.Category, sc.m.Content)
+		if kept >= 5 || total+len(line) > memoryBudgetChars {
+			hidden++
+			continue
+		}
+		sb.WriteString(line)
+		total += len(line)
+		kept++
+		_ = s.st.TouchMemory(sc.m.ID)
+	}
+	if kept == 0 {
+		return ""
+	}
+	return sb.String()
+}
+
+// planPrompt renders the active plan section for the system prompt.
+func (s *Server) planPrompt(projectID string) string {
+	plan, ok, err := s.st.GetPlan(projectID)
+	if err != nil || !ok {
+		return ""
+	}
+	return "## Active Plan\n" + plan
 }
 
 // memoryContent trims and caps memory writes the same way the remember tool
@@ -98,7 +139,7 @@ func (s *Server) handleCreateMemory(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "memory is full (200 entries)")
 			return
 		}
-		if _, err := s.st.AddMemory(p.ID, content); err != nil {
+		if _, err := s.st.AddMemory(p.ID, content, "fact", 1); err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}

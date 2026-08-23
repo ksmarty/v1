@@ -25,6 +25,8 @@ Rules:
 - The app preview runs inside an iframe on an insecure (http) proxied origin: crypto.randomUUID() is unavailable there and throws. Never use it in generated apps — generate ids with Math.random()/Date.now() or a counter instead.
 - After writing or changing code, call restart_preview so the user can see the result.
 - Verify before declaring success: after a batch of code changes, run the verify_project tool — it installs stale deps, runs lint/typecheck/build/test, scans for leaked secrets, and health-checks the preview. Fix every failed step and re-verify (max 3 attempts); if it still fails, stop and tell the user the blocker. Never report a feature as done while verification fails.
+- Plan multi-step work: when the request is a task with several features, call make_plan before executing — {goal, features[{id, description, depends_on}], invariants, checkpoints[{step, action, verification}], estimated_turns}. Keep the plan current with update_plan as you progress (check off features and checkpoints); if you deviate from the plan, explain why in your reply; if the user changes scope, regenerate the plan from scratch with make_plan.
+- Use remember with a category (preference/episodic/fact/plan) and importance (2+ pins the memory so it never decays) for durable project facts.
 - Keep a visible todo list of your work using set_todos; add items up front and mark them done as they complete.
 - Save durable facts, decisions and user preferences with the remember tool; delete stale ones with forget.
 - If something important is unclear or you need a decision, use ask_user instead of guessing.
@@ -85,6 +87,7 @@ type ChatParams struct {
 	ExtraTools      []llm.Tool   // dynamically added tools (e.g. MCP), namespaced
 	SkillsPrompt    string       // enabled skills' SKILL.md content for the system prompt
 	MemoriesPrompt  string       // project memories section for the system prompt
+	PlanPrompt      string       // active plan section for the system prompt
 	GlobalPrompt    string       // user's global system prompt (all projects)
 	Vision          bool         // the model reads images — enables screenshot_app
 	ReasoningEffort string       // thinking level; sent as reasoning_effort when set
@@ -112,6 +115,9 @@ type ChatParams struct {
 	SoftTimeout time.Duration
 	// HardTimeout aborts the turn outright; 0 uses the default of 10 minutes.
 	HardTimeout time.Duration
+	// AutoPlan runs the lightweight planner on the first message of a task
+	// (when no active plan exists) and stores + injects the plan it returns.
+	AutoPlan bool
 }
 
 // maxHistoricalToolResult is the largest a replayed (pre-turn) tool result may
@@ -178,6 +184,11 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 	}
 	_ = p.Store.TouchProject(p.Project.ID)
 
+	// Auto-planning: when the session has no active plan yet, ask the
+	// lightweight planner before assembling the system prompt so the plan is
+	// injected into the very first round of the task.
+	p.PlanPrompt = runAutoPlan(ctx, &p)
+
 	stored, err := p.Store.ListMessages(p.Project.ID, p.SessionID)
 	if err != nil {
 		return nil, err
@@ -191,6 +202,9 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 	}
 	if p.MemoriesPrompt != "" {
 		system += "\n\n" + p.MemoriesPrompt
+	}
+	if p.PlanPrompt != "" {
+		system += "\n\n" + p.PlanPrompt
 	}
 	if freshProject(p.Project.Path) {
 		system += "\n\n" + freshProjectNote
@@ -371,7 +385,7 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 				p.Emit(ChatEvent{Type: "injected_message", MessageID: r.MessageID, Text: r.Text})
 			}
 		}
-		allTools := append(append(append([]llm.Tool{}, tools...), gitTool, containerTool), verifyProjectTool)
+		allTools := append(append(append(append([]llm.Tool{}, tools...), gitTool, containerTool), verifyProjectTool), makePlanTool, updatePlanTool)
 		if p.Vision {
 			allTools = append(allTools, screenshotAppTool)
 		}
@@ -692,6 +706,42 @@ var verifyProjectTool = llm.Tool{
 	},
 }
 
+var makePlanTool = llm.Tool{
+	Type: "function",
+	Function: llm.ToolFunction{
+		Name:        "make_plan",
+		Description: "Start (or replace) the active plan for a multi-step task. Pass the plan as a JSON string: {goal, features[{id, description, depends_on}], invariants[...], checkpoints[{step, action, verification}], estimated_turns}. The plan is validated, stored, and injected into the system prompt of subsequent turns. Call it before executing when the user's request has several features; on scope changes, regenerate with a fresh make_plan call. Follow-up updates use update_plan.",
+		Parameters: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"plan": map[string]any{
+					"type":        "string",
+					"description": "Full plan document as strict JSON (see the tool description for the schema).",
+				},
+			},
+			"required": []string{"plan"},
+		},
+	},
+}
+
+var updatePlanTool = llm.Tool{
+	Type: "function",
+	Function: llm.ToolFunction{
+		Name:        "update_plan",
+		Description: "Update the active plan after progress: pass the FULL updated plan JSON (features checked off with their done markers, checkpoints verified, progress notes added) — not a diff. Deviating from the plan? Explain why in your response. The updated document replaces the previous one in the system prompt.",
+		Parameters: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"plan": map[string]any{
+					"type":        "string",
+					"description": "The full, updated plan document as strict JSON.",
+				},
+			},
+			"required": []string{"plan"},
+		},
+	},
+}
+
 var gitTool = llm.Tool{
 	Type: "function",
 	Function: llm.ToolFunction{
@@ -999,13 +1049,22 @@ var tools = []llm.Tool{
 		Type: "function",
 		Function: llm.ToolFunction{
 			Name:        "remember",
-			Description: "Save a fact, decision or user preference to this project's long-term memory. It will be shown back to you in future turns. Keep it to one short sentence.",
+			Description: "Save a durable fact about this project (framework, styling rules, API endpoints, user preferences) to long-term memory. It will be injected into future turns, ranked by relevance. Categories: preference (user choices), episodic (what worked/failed before), fact (stable project knowledge), plan (working plan notes). Importance 0-3: 2+ pins the memory so it never decays; lower importance fades with disuse. Keep entries short (300 chars max); dedupe happens automatically.",
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
 					"content": map[string]any{
 						"type":        "string",
-						"description": "The fact to remember.",
+						"description": "The fact to remember, one short sentence.",
+					},
+					"category": map[string]any{
+						"type":        "string",
+						"enum":        []string{"preference", "episodic", "fact", "plan"},
+						"description": "Kind of memory; defaults to fact.",
+					},
+					"importance": map[string]any{
+						"type":        "number",
+						"description": "0-3; 2+ pins the memory permanently, 1 is the default, lower fades faster.",
 					},
 				},
 				"required": []string{"content"},

@@ -41,6 +41,8 @@ type Config struct {
 	MaxConcurrentRunsPerUser int
 	TurnSoftTimeout          time.Duration
 	TurnHardTimeout          time.Duration
+	VerifyEnabled            bool
+	AutoPlan                 bool
 }
 
 // Load reads configuration from environment variables.
@@ -58,6 +60,8 @@ func Load(version, commit string) Config {
 		MaxConcurrentRunsPerUser: 2,
 		TurnSoftTimeout:          5 * time.Minute,
 		TurnHardTimeout:          10 * time.Minute,
+		VerifyEnabled:            true,
+		AutoPlan:                 true,
 	}
 	if v := os.Getenv("V1_PORT"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 && n < 65536 {
@@ -142,6 +146,9 @@ func Load(version, commit string) Config {
 		if d, err := time.ParseDuration(v); err == nil && d > 0 {
 			c.TurnHardTimeout = d
 		}
+	}
+	if v := os.Getenv("V1_AUTO_PLAN"); v != "" {
+		c.AutoPlan = v == "1" || strings.EqualFold(v, "true")
 	}
 	c.SystemPrompt = os.Getenv("V1_SYSTEM_PROMPT")
 	return c
