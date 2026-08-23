@@ -92,7 +92,7 @@ type ChatParams struct {
 	SkillsPrompt    string       // enabled skills' SKILL.md content for the system prompt
 	MemoriesPrompt  string       // project memories section for the system prompt
 	PlanPrompt      string       // active plan section for the system prompt
-	GlobalPrompt    string       // user's global system prompt (all projects)
+	SystemPrompt    string       // user system-prompt override; empty uses the built-in base
 	Vision          bool         // the model reads images — enables screenshot_app
 	ReasoningEffort string       // thinking level; sent as reasoning_effort when set
 	ToonEnabled     bool         // tool results are TOON-encoded for the model
@@ -197,7 +197,10 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	system := systemPrompt
+	system := p.SystemPrompt
+	if system == "" {
+		system = systemPrompt
+	}
 	if snapshot, snapshotErr := p.Store.GetCompactionSnapshot(p.Project.ID, p.SessionID); snapshotErr == nil {
 		system += "\n\nConversation summary (historical, not user-visible; covers messages through ID " + fmt.Sprint(snapshot.CoveredMessageID) + "):\n" + snapshot.Summary
 	}
@@ -221,9 +224,6 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 	}
 	if p.Project.Instructions != "" {
 		system += "\n\nProject instructions from the user:\n" + p.Project.Instructions
-	}
-	if p.GlobalPrompt != "" {
-		system += "\n\nGlobal instructions from the user (apply to all projects):\n" + p.GlobalPrompt
 	}
 	if p.ToonEnabled {
 		system += "\n- Tool results are encoded in TOON, a compact indentation format: headers like key[N]{fields}: declare array length and column names, and rows are comma-separated. Read them as structured data, not prose."

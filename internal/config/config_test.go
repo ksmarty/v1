@@ -23,12 +23,12 @@ func TestLoadOIDCAdminEmails(t *testing.T) {
 	}
 }
 
-func TestLoadDefaultSystemPrompt(t *testing.T) {
-	// No V1_SYSTEM_PROMPT -> built-in default present.
+func TestLoadSystemPrompt(t *testing.T) {
+	// No V1_SYSTEM_PROMPT -> empty; the agent falls back to its built-in base.
 	t.Setenv("V1_SYSTEM_PROMPT", "")
 	c := Load("v", "c")
-	if c.SystemPrompt == "" {
-		t.Fatal("built-in default system prompt should not be empty")
+	if c.SystemPrompt != "" {
+		t.Fatalf("SystemPrompt = %q, want empty when env is unset", c.SystemPrompt)
 	}
 	// Explicit env overrides the built-in.
 	t.Setenv("V1_SYSTEM_PROMPT", "custom prompt")

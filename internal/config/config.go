@@ -153,10 +153,5 @@ func Load(version, commit string) Config {
 		c.AutoPlan = v == "1" || strings.EqualFold(v, "true")
 	}
 	c.SystemPrompt = os.Getenv("V1_SYSTEM_PROMPT")
-	if c.SystemPrompt == "" {
-		// Built-in default so the Global system prompt field is never blank and
-		// new/existing accounts get a useful starting instruction.
-		c.SystemPrompt = "You are v1, an AI full-stack engineer. Build clean, working software and prefer the existing project's structure and conventions."
-	}
 	return c
 }

@@ -660,7 +660,7 @@ function TerminalSettingsControl() {
       }}
       className="flex flex-col gap-3"
     >
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+      <div className="flex flex-col gap-3">
         <label className="flex flex-col gap-1">
           <span className="text-sm text-text">Font size</span>
           <input
@@ -1683,45 +1683,6 @@ function ChatTabsControl() {
   );
 }
 
-function HardcodedPrompt() {
-  const [open, setOpen] = useState(false);
-  const [prompt, setPrompt] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  const toggle = async () => {
-    if (open) {
-      setOpen(false);
-      return;
-    }
-    if (!prompt) {
-      try {
-        const data = await api.systemPrompt();
-        setPrompt(data.prompt);
-      } catch (e) {
-        setError(errMsg(e));
-        return;
-      }
-    }
-    setOpen(true);
-  };
-
-  return (
-    <div className="flex flex-col gap-2">
-      <div className="flex flex-col gap-2">
-        <Button variant="outline" onClick={() => void toggle()}>
-          {open ? 'Hide system prompt' : 'Show system prompt'}
-        </Button>
-        {error && <p className="text-xs text-red-400">{error}</p>}
-        {open && prompt && (
-          <pre className="max-h-96 overflow-y-auto overscroll-contain rounded-lg border border-border bg-bg p-4 text-xs leading-relaxed whitespace-pre-wrap">
-            {prompt}
-          </pre>
-        )}
-      </div>
-    </div>
-  );
-}
-
 export default function Settings() {
   const [settings, setSettings] = useState<SettingsType | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -1808,6 +1769,14 @@ export default function Settings() {
   const [dtSaving, setDtSaving] = useState(false);
   const [dtSaved, setDtSaved] = useState(false);
   const [dtError, setDtError] = useState<string | null>(null);
+
+  // Editable system prompt — pre-filled with the effective prompt (server GET
+  // returns the override, else the built-in base).
+  const [sysPrompt, setSysPrompt] = useState('');
+  const [sysLoading, setSysLoading] = useState(true);
+  const [sysSaving, setSysSaving] = useState(false);
+  const [sysSaved, setSysSaved] = useState(false);
+  const [sysError, setSysError] = useState<string | null>(null);
 
   // Default model for new sessions (auto-populated from the first provider).
   const [defaultModel, setDefaultModel] = useState('');
@@ -1963,8 +1932,15 @@ export default function Settings() {
         setProviders(s.llm.providers ?? []);
         setCurrency(s.llm?.currency ?? 'USD');
         setDefThinking(s.defaultThinking ?? '');
+        // The GET value is the effective prompt (override, or the built-in
+        // base), so the editor starts pre-filled with what the agent runs.
+        setSysPrompt(s.systemPrompt ?? '');
+        setSysLoading(false);
       })
-      .catch((e) => setLoadError(errMsg(e)));
+      .catch((e) => {
+        setLoadError(errMsg(e));
+        setSysLoading(false);
+      });
   };
 
   const loadVercelUser = useCallback(() => {
@@ -2275,6 +2251,22 @@ export default function Settings() {
       setPwError(errMsg(err));
     } finally {
       setPwSaving(false);
+    }
+  };
+
+  const saveSystemPrompt = async (e: FormEvent) => {
+    e.preventDefault();
+    setSysSaving(true);
+    setSysSaved(false);
+    setSysError(null);
+    try {
+      await api.updateSettings({ systemPrompt: sysPrompt.trim() });
+      setSysSaved(true);
+      setSettings((prev) => (prev ? { ...prev, systemPrompt: sysPrompt.trim() } : prev));
+    } catch (err) {
+      setSysError(errMsg(err));
+    } finally {
+      setSysSaving(false);
     }
   };
 
@@ -2667,10 +2659,31 @@ export default function Settings() {
 
         <Section
           id="sec-system-prompt"
-          title="System prompt"
-          description="The base system prompt v1 runs every chat with. It is built into the app and cannot be edited here."
+          title="Global system prompt"
+          description="Replaces the built-in system prompt v1 runs every chat with. Pre-filled with the built-in base; empty clears your override and restores the built-in."
         >
-          <HardcodedPrompt />
+          <form onSubmit={(e) => void saveSystemPrompt(e)} className="flex flex-col gap-3">
+            {sysLoading && <p className="text-xs text-subtle">Loading…</p>}
+            <textarea
+              value={sysPrompt}
+              onChange={(e) => setSysPrompt(e.target.value)}
+              rows={7}
+              disabled={sysLoading || sysSaving}
+              placeholder="Loading the built-in system prompt…"
+              spellCheck={false}
+              className="w-full resize-y rounded-lg border border-border-strong bg-surface px-3 py-2 font-mono text-xs leading-relaxed text-text outline-none transition-colors focus:border-subtle disabled:opacity-70"
+            />
+            <p className="text-[11px] text-subtle">
+              This is the full prompt sent to the model. Save normally to keep it;
+              clear it and save to fall back to the built-in base.
+            </p>
+            <SaveRow
+              saving={sysSaving}
+              saved={sysSaved}
+              error={sysError}
+              pulse={settings ? sysPrompt !== settings.systemPrompt : false}
+            />
+          </form>
         </Section>
 
         <Section

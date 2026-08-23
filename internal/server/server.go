@@ -84,7 +84,6 @@ func New(cfg config.Config, st *store.Store) *Server {
 	}
 	s.mcp = mcp.NewManager(s.mcpServers)
 	s.auth.BootstrapAdmin()
-	s.seedGlobalSystemPrompt()
 	s.rebuildOIDC()
 	s.pruneOIDCFlows()
 	s.pruneVercelFlows()
@@ -129,7 +128,6 @@ func (s *Server) routes(m *http.ServeMux) {
 
 	m.HandleFunc("GET /api/settings", s.handleGetSettings)
 	m.HandleFunc("PUT /api/settings", s.handlePutSettings)
-	m.HandleFunc("GET /api/system-prompt", s.handleSystemPrompt)
 	m.HandleFunc("POST /api/settings/test-llm", s.handleTestLLM)
 
 	m.HandleFunc("GET /api/providers", s.handleListProviders)
@@ -488,23 +486,25 @@ func (s *Server) githubToken(userID string) string {
 	return s.cfg.GitHubToken
 }
 
-// globalSystemPrompt resolves the user's global system prompt (user settings
-// override env).
-func (s *Server) globalSystemPrompt(userID string) string {
+// systemPromptFor resolves the system prompt override a user has set (their
+// own override wins, then V1_SYSTEM_PROMPT); empty means "use the built-in
+// base".
+func (s *Server) systemPromptFor(userID string) string {
 	if v, ok := s.userSetting(userID, keySystemPrompt); ok && v != "" {
 		return v
 	}
 	return s.cfg.SystemPrompt
 }
 
-// seedGlobalSystemPrompt rolls the environment default (V1_SYSTEM_PROMPT)
-// into every existing account that never set their own, so accounts created
-// before it don't miss it. No-op when the default is empty.
-func (s *Server) seedGlobalSystemPrompt() {
-	if s.cfg.SystemPrompt == "" {
-		return
+// effectiveSystemPrompt is the system prompt the agent will actually run for a
+// user: their override, else the env value, else the built-in base. Settings
+// uses this so the editor starts pre-filled with what runs today.
+func (s *Server) effectiveSystemPrompt(userID string) string {
+	v := s.systemPromptFor(userID)
+	if v == "" {
+		v = agent.SystemPrompt()
 	}
-	_, _ = s.st.SeedUserSetting(keySystemPrompt, s.cfg.SystemPrompt)
+	return v
 }
 
 // rewindApproval reports whether rewinding chat history requires approval.

@@ -8,7 +8,6 @@ import (
 	"strconv"
 	"strings"
 
-	"v1/internal/agent"
 	"v1/internal/llm"
 	"v1/internal/mcp"
 	"v1/internal/store"
@@ -213,15 +212,10 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 		"terminalWrap":     s.terminalWrap(userID),
 		"autoPushDefault":  s.autoPushDefault(userID),
 		"contextThreshold": int(s.contextThreshold(userID) * 100),
+		"systemPrompt":     s.effectiveSystemPrompt(userID),
 		"version":          s.cfg.Version,
 		"commit":           s.cfg.Commit,
 	})
-}
-
-// handleSystemPrompt exposes the built-in base system prompt as read-only
-// reference; it is compiled into the agent and cannot be edited via Settings.
-func (s *Server) handleSystemPrompt(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"prompt": agent.SystemPrompt()})
 }
 
 func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
@@ -254,6 +248,7 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		TerminalWrap            *bool               `json:"terminalWrap"`
 		AutoPushDefault         *bool                     `json:"autoPushDefault"`
 		ContextThreshold        *float64                  `json:"contextThreshold"`
+		SystemPrompt            *string                   `json:"systemPrompt"`
 	}
 	if !decodeJSON(w, r, &body) {
 		return
@@ -424,6 +419,12 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.PermissionMode != nil {
 		if err := set(keyPermissionMode, body.PermissionMode); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+	if body.SystemPrompt != nil {
+		if err := set(keySystemPrompt, body.SystemPrompt); err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}

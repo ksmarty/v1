@@ -513,7 +513,7 @@ func (s *Server) streamChatTurn(w http.ResponseWriter, r *http.Request, p *store
 	mcpTools, _ := s.mcp.Sync(ctx)
 	params.ExtraTools = mcpTools
 	params.SkillsPrompt = s.skillsSystemPrompt()
-	params.GlobalPrompt = s.globalSystemPrompt(userID)
+	params.SystemPrompt = s.systemPromptFor(userID)
 	params.ToonEnabled = s.toonEnabled(userID)
 	params.DisabledTools = s.disabledTools(userID)
 	params.Caveman = s.cavemanEnabled(userID)
