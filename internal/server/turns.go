@@ -213,44 +213,54 @@ type runHub struct {
 	mu        sync.Mutex
 	subs      map[chan agent.ChatEvent]struct{}
 	closed    bool
-	text      string // latest reply text so far (current round), for reattach
-	reasoning string // latest thinking text so far (current round)
+	history   []agent.ChatEvent // ring buffer of recent events for replay
+	histHead  int
+	histSize  int
+	text      string // accumulated reply text so far (never reset on tool calls)
+	reasoning string // accumulated thinking text so far
 }
 
 func newRunHub() *runHub {
-	return &runHub{subs: map[chan agent.ChatEvent]struct{}{}}
+	return &runHub{subs: map[chan agent.ChatEvent]struct{}{}, histSize: 512}
 }
 
-// record accumulates the in-flight reply so a watch client that attaches
-// mid-turn can catch up and continue streaming instead of starting blank.
-// A new round (tool_start) clears the buffer.
+// record accumulates the in-flight reply so the history replay can seed a
+// reconnecting client with everything produced so far. A new round (tool
+// call) does NOT clear the buffer: the assistant message keeps its pre-tool
+// content, and the model may keep appending after the tool result.
 func (h *runHub) record(ev agent.ChatEvent) {
 	switch ev.Type {
 	case "delta":
 		h.text += ev.Text
 	case "reasoning":
 		h.reasoning += ev.Text
-	case "tool_start":
-		h.text, h.reasoning = "", ""
 	}
 }
 
-// snapshot returns the accumulated partial reply (text + reasoning).
-func (h *runHub) snapshot() (text, reasoning string) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	return h.text, h.reasoning
-}
-
-// subscribe returns a buffered channel that receives the run's events from
-// now on, and a release func. Slow listeners drop events rather than block
-// the run.
+// subscribe returns a buffered channel that receives the run's events. The
+// ring buffer of recent events is replayed first, in order, so an attaching
+// client sees exactly what a client that stayed on the page saw: streamed
+// deltas/reasoning, tool starts/ends, side effects, the final done — not a
+// lossy text-only snapshot. Subsequent events are live. The channel closes
+// when the run ends.
 func (h *runHub) subscribe() (chan agent.ChatEvent, func()) {
-	ch := make(chan agent.ChatEvent, 128)
+	// Larger than the ring so the synchronous replay never drops events on a
+	// normal-speed reader; slow consumers still degrade gracefully on live
+	// events (publish uses non-blocking sends).
+	ch := make(chan agent.ChatEvent, 1024)
 	h.mu.Lock()
 	if h.closed {
 		close(ch)
 	} else {
+		if len(h.history) > 0 {
+			start := 0
+			if len(h.history) == h.histSize {
+				start = h.histHead
+			}
+			for i := 0; i < len(h.history); i++ {
+				ch <- h.history[(start+i)%len(h.history)]
+			}
+		}
 		h.subs[ch] = struct{}{}
 	}
 	h.mu.Unlock()
@@ -268,6 +278,12 @@ func (h *runHub) publish(ev agent.ChatEvent) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.record(ev)
+	if len(h.history) < h.histSize {
+		h.history = append(h.history, ev)
+	} else {
+		h.history[h.histHead] = ev
+		h.histHead = (h.histHead + 1) % h.histSize
+	}
 	for ch := range h.subs {
 		select {
 		case ch <- ev:

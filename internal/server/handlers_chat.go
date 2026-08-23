@@ -475,7 +475,15 @@ func (s *Server) streamChatTurn(w http.ResponseWriter, r *http.Request, p *store
 	w.Header().Set("X-Accel-Buffering", "no")
 	w.WriteHeader(http.StatusOK)
 
+	// The run is intentionally detached from the client connection: leaving
+	// mid-generation (navigating away, backgrounding the app, closing the
+	// tab) must not kill it, and it has no timeout — long generations run to
+	// completion. The transcript is persisted either way; SSE writes to a
+	// gone client simply fail and are ignored. The cancel function is
+	// registered so the stop endpoint can still abort it explicitly.
+	runID := store.NewID()
 	emit := func(ev agent.ChatEvent) {
+		ev.TurnID = runID
 		if hub != nil {
 			hub.publish(ev)
 		}
@@ -486,13 +494,6 @@ func (s *Server) streamChatTurn(w http.ResponseWriter, r *http.Request, p *store
 		fmt.Fprintf(w, "data: %s\n\n", b)
 		flusher.Flush()
 	}
-
-	// The run is intentionally detached from the client connection: leaving
-	// mid-generation (navigating away, backgrounding the app, closing the
-	// tab) must not kill it, and it has no timeout — long generations run to
-	// completion. The transcript is persisted either way; SSE writes to a
-	// gone client simply fail and are ignored. The cancel function is
-	// registered so the stop endpoint can still abort it explicitly.
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	s.turns.register(p.ID, params.SessionID, cancel)
@@ -666,9 +667,10 @@ func (s *Server) streamChatTurn(w http.ResponseWriter, r *http.Request, p *store
 	}
 }
 
-// handleChatWatch attaches the caller to a running turn's live SSE stream:
-// events from now on are relayed until the run finishes, so a client that
-// returns to a chat mid-generation sees it exactly as if it had never left.
+// handleChatWatch attaches the caller to a running turn's live SSE stream.
+// The hub replays its event history first (same events a client that stayed
+// on the page received — deltas, reasoning, tool calls, side effects), then
+// streams live events until the run ends.
 func (s *Server) handleChatWatch(w http.ResponseWriter, r *http.Request) {
 	p := s.projectOr404(w, r)
 	if p == nil {
@@ -693,17 +695,6 @@ func (s *Server) handleChatWatch(w http.ResponseWriter, r *http.Request) {
 
 	ch, release := hub.subscribe()
 	defer release()
-	// First send the partial reply accumulated so far so the attaching client
-	// can seed it and continue streaming — otherwise they'd see an empty
-	// message that starts halfway through the answer. (A tool boundary resets
-	// the buffer, so nothing is sent mid-tool; the live events follow instead.)
-	if text, reasoning := hub.snapshot(); text != "" || reasoning != "" {
-		snap := agent.ChatEvent{Type: "snapshot", Text: text, Reasoning: reasoning}
-		if b, err := json.Marshal(snap); err == nil {
-			_, _ = fmt.Fprintf(w, "data: %s\n\n", b)
-			flusher.Flush()
-		}
-	}
 	for ev := range ch {
 		b, err := json.Marshal(ev)
 		if err != nil {

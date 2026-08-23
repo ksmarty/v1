@@ -55,6 +55,7 @@ type TurnResult struct {
 // ChatEvent is one SSE event sent to the chat client.
 type ChatEvent struct {
 	Type        string           `json:"type"`
+	TurnID      string           `json:"turn_id,omitempty"` // run-scoped id, same for every event of one turn
 	Text        string           `json:"text,omitempty"`
 	Reasoning   string           `json:"reasoning,omitempty"`
 	Name        string           `json:"name,omitempty"`

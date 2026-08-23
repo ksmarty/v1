@@ -2586,43 +2586,10 @@ export default function ChatPane({
           );
           break;
         }
-        // A watch connection first sends the partial reply accumulated so far,
-        // so leaving mid-stream and returning continues the same message.
-        case 'snapshot': {
-          const text = ev.text ?? '';
-          const reasoning = ev.reasoning ?? '';
-          if (text === '' && reasoning === '') break;
-          let k = assistantKeyRef.current;
-          if (!k) {
-            k = `s${++counterRef.current}`;
-            assistantKeyRef.current = k;
-            const nk = k;
-            update((prev) => [
-              ...prev.map((it) =>
-                it.kind === 'msg' && it.role === 'assistant' ? { ...it, streaming: false } : it,
-              ),
-              {
-                kind: 'msg',
-                key: nk,
-                role: 'assistant',
-                content: text,
-                reasoning,
-                sentAt: Date.now(),
-                streaming: true,
-              },
-            ]);
-          } else {
-            const ck = k;
-            update((prev) =>
-              prev.map((it) =>
-                it.kind === 'msg' && it.key === ck
-                  ? { ...it, content: it.content + text, reasoning: (it.reasoning ?? '') + reasoning }
-                  : it,
-              ),
-            );
-          }
-          break;
-        }
+        // The watch connection replays the run's event history (deltas,
+        // reasoning, tool calls, side effects) then live events — the same
+        // stream a client that stayed on the page receives, so there is no
+        // separate snapshot path.
         case 'tool_start': {
           assistantKeyRef.current = null;
           const key = `t${++counterRef.current}`;
@@ -2799,9 +2766,9 @@ export default function ChatPane({
     handleEventRef.current = handleEvent;
   }, [handleEvent]);
 
-  // Returning to a running chat: subscribe to the run's live stream. The
-  // snapshot loads instantly; this picks up the events from now on and ends
-  // when the run does. The effect deliberately does not depend on `streaming`
+  // Returning to a running chat: subscribe to the run's live stream. The hub
+  // replays its event history so the attach continues the stream exactly
+  // where it was; the stream ends when the run does. The effect deliberately does not depend on `streaming`
   // or `handleEvent` — the watch sets streaming itself and must not abort its
   // own stream when that state flips (refs keep both current). The run is
   // re-checked at attach time so a turn we just streamed ourselves (whose
