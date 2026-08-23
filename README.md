@@ -110,7 +110,7 @@ All configuration is via environment variables:
 | `V1_VERCEL_REDIRECT_URI` | auto-derived | Pins the Vercel OAuth callback URI. |
 | `V1_CONTEXT_BUDGET` | `12000` | Token budget the context indicator and auto-compaction are computed against. |
 | `V1_CONTEXT_THRESHOLD` | `0.80` | Fraction of the context budget that triggers auto-compaction. |
-| `V1_SYSTEM_PROMPT` | — | Extra global system-prompt text (fallback for the Settings value). |
+| `V1_SYSTEM_PROMPT` | built-in | Extra global system-prompt text appended to the built-in agent system prompt. |
 | `V1_CHROME_PATH` | auto-detect | Chrome/Chromium binary for the `screenshot_app` tool. |
 
 ### LLM providers
@@ -147,10 +147,11 @@ v1 is multi-user: each person gets their own account, settings and projects.
   Projects, chat history, memories and todos are per-owner; previews,
   terminals and agent runs are scoped to the project.
 - **Settings are per-user** — LLM providers and keys, GitHub/Vercel tokens,
-  the global system prompt, thinking defaults and permission modes are
+  thinking defaults and permission modes are
   personal. Anything a user hasn't set falls back to the shared/global value
   (or the environment). Instance-level configuration (OAuth app credentials,
-  MCP servers, skills) is shared.
+  MCP servers, skills) is shared. The base system prompt is built into the app
+  and shown read-only in Settings.
 - **OIDC sign-in** auto-provisions an account on first login (keyed by the
   verified email).
 

@@ -129,6 +129,7 @@ func (s *Server) routes(m *http.ServeMux) {
 
 	m.HandleFunc("GET /api/settings", s.handleGetSettings)
 	m.HandleFunc("PUT /api/settings", s.handlePutSettings)
+	m.HandleFunc("GET /api/system-prompt", s.handleSystemPrompt)
 	m.HandleFunc("POST /api/settings/test-llm", s.handleTestLLM)
 
 	m.HandleFunc("GET /api/providers", s.handleListProviders)

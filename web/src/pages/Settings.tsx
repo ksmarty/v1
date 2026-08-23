@@ -3,7 +3,7 @@ import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { SiVercel } from 'react-icons/si';
 import { api, clearClientCaches, type SettingsUpdate } from '../api';
 import { testNotification } from '../notify';
-import type { Settings as SettingsType, UserInfo } from '../types';
+import type { Settings as SettingsType, UserInfo, Provider, ProviderModel } from '../types';
 import {
   errMsg,
   getChatSide,
@@ -81,6 +81,7 @@ import {
   IconPlus,
 } from '../components/icons';
 import ProviderSelector from '../components/ProviderSelector';
+import ModelPicker from '../components/ModelPicker';
 import GitHubConnect from '../components/GitHubConnect';
 import ToolSettings, { type ToolsTab } from '../components/ToolSettings';
 
@@ -1682,6 +1683,45 @@ function ChatTabsControl() {
   );
 }
 
+function HardcodedPrompt() {
+  const [open, setOpen] = useState(false);
+  const [prompt, setPrompt] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const toggle = async () => {
+    if (open) {
+      setOpen(false);
+      return;
+    }
+    if (!prompt) {
+      try {
+        const data = await api.systemPrompt();
+        setPrompt(data.prompt);
+      } catch (e) {
+        setError(errMsg(e));
+        return;
+      }
+    }
+    setOpen(true);
+  };
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-2">
+        <Button variant="outline" onClick={() => void toggle()}>
+          {open ? 'Hide system prompt' : 'Show system prompt'}
+        </Button>
+        {error && <p className="text-xs text-red-400">{error}</p>}
+        {open && prompt && (
+          <pre className="max-h-96 overflow-y-auto overscroll-contain rounded-lg border border-border bg-bg p-4 text-xs leading-relaxed whitespace-pre-wrap">
+            {prompt}
+          </pre>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function Settings() {
   const [settings, setSettings] = useState<SettingsType | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -1763,12 +1803,6 @@ export default function Settings() {
       .catch(() => {});
   }, []);
 
-  // Global system prompt
-  const [sysPrompt, setSysPrompt] = useState('');
-  const [sysSaving, setSysSaving] = useState(false);
-  const [sysSaved, setSysSaved] = useState(false);
-  const [sysError, setSysError] = useState<string | null>(null);
-
   // Default thinking level ('' = the model's lowest level)
   const [defThinking, setDefThinking] = useState('');
   const [dtSaving, setDtSaving] = useState(false);
@@ -1777,18 +1811,52 @@ export default function Settings() {
 
   // Default model for new sessions (auto-populated from the first provider).
   const [defaultModel, setDefaultModel] = useState('');
-  // The set of model ids the user can pick as a default, from their providers.
-  const defaultModelOptions = useMemo(() => {
-    const out: { provider: string; models: { id: string; name: string; m: string }[] }[] = [];
-    const seen = new Set<string>();
-    for (const p of providers) {
-      const m = p.model.trim();
-      if (!m || seen.has(m)) continue;
-      seen.add(m);
-      out.push({ provider: p.name || 'Provider', models: [{ id: m, name: m, m }] });
+  // models.dev catalog, so the default model picker offers the real model lists.
+  const [catalog, setCatalog] = useState<Provider[]>([]);
+  // Provider selected in the fullscreen default model picker (out-of-form state;
+  // only the model id is persisted).
+  const [defProvId, setDefProvId] = useState('');
+  const [defPicking, setDefPicking] = useState(false);
+  useEffect(() => {
+    api
+      .getProviders()
+      .then((r) => setCatalog(r.providers))
+      .catch(() => {
+        // catalog unavailable — the free-text path still works in the picker
+      });
+  }, []);
+  // Model list for the picked provider, unioned across catalog entries that
+  // share its base URL, matching the chat picker.
+  const defSelectedProvider = providers.find((p) => p.id === defProvId) ?? null;
+  const defCatalogModels = useMemo((): ProviderModel[] => {
+    if (!defSelectedProvider) return [];
+    const byId = new Map<string, ProviderModel>();
+    for (const p of catalog) {
+      if (p.baseURL !== defSelectedProvider.baseURL) continue;
+      for (const m of p.models) if (!byId.has(m.id)) byId.set(m.id, m);
     }
-    return out;
-  }, [providers]);
+    return [...byId.values()];
+  }, [catalog, defSelectedProvider]);
+  const defModelLabel = useMemo(() => {
+    if (!defaultModel) return 'Select a model…';
+    for (const p of catalog) {
+      const m = p.models.find((x) => x.id === defaultModel);
+      if (m) return m.name || m.id;
+    }
+    return defaultModel;
+  }, [defaultModel, catalog]);
+  const openDefaultModelPicker = () => {
+    if (providers.length > 0) {
+      const hit =
+        providers.find((p) =>
+          catalog.some((c) => c.baseURL === p.baseURL && c.models.some((m) => m.id === defaultModel)),
+        ) ?? providers[0];
+      setDefProvId(hit.id);
+    } else {
+      setDefProvId('');
+    }
+    setDefPicking(true);
+  };
   const [dmSaved, setDmSaved] = useState(false);
   const [dmError, setDmError] = useState<string | null>(null);
 
@@ -1894,7 +1962,6 @@ export default function Settings() {
         setVercelClientId(s.vercel.oauthClientId);
         setProviders(s.llm.providers ?? []);
         setCurrency(s.llm?.currency ?? 'USD');
-        setSysPrompt(s.systemPrompt ?? '');
         setDefThinking(s.defaultThinking ?? '');
       })
       .catch((e) => setLoadError(errMsg(e)));
@@ -2208,22 +2275,6 @@ export default function Settings() {
       setPwError(errMsg(err));
     } finally {
       setPwSaving(false);
-    }
-  };
-
-  const saveSystemPrompt = async (e: FormEvent) => {
-    e.preventDefault();
-    setSysSaving(true);
-    setSysSaved(false);
-    setSysError(null);
-    try {
-      await api.updateSettings({ systemPrompt: sysPrompt.trim() });
-      setSysSaved(true);
-      setSettings((prev) => (prev ? { ...prev, systemPrompt: sysPrompt.trim() } : prev));
-    } catch (err) {
-      setSysError(errMsg(err));
-    } finally {
-      setSysSaving(false);
     }
   };
 
@@ -2574,24 +2625,15 @@ export default function Settings() {
 
           <Field label="Default model">
             <div className="relative">
-              <select
-                value={defaultModel}
-                onChange={(e) => void saveDefaultModel(e.target.value)}
-                className="w-full max-w-xs appearance-none rounded-lg border border-border-strong bg-surface px-3 py-2 pl-9 pr-9 text-sm text-text outline-none transition-colors focus:border-subtle"
+              <button
+                type="button"
+                onClick={openDefaultModelPicker}
+                className="inline-flex w-full max-w-xs items-center gap-2 rounded-lg border border-border-strong bg-surface px-3 py-2 text-sm text-text transition-colors hover:border-accent"
               >
-                {defaultModel === '' && <option value="">Select a model…</option>}
-                {defaultModelOptions.map((g) => (
-                  <optgroup key={g.provider} label={g.provider}>
-                    {g.models.map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.name || m.id}
-                      </option>
-                    ))}
-                  </optgroup>
-                ))}
-              </select>
-              <IconModel className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-subtle" />
-              <IconChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-subtle" />
+                <IconModel className="shrink-0 h-4 w-4 text-subtle" />
+                <span className="min-w-0 flex-1 truncate text-left">{defModelLabel}</span>
+                <IconChevronDown className="shrink-0 h-4 w-4 text-subtle" />
+              </button>
             </div>
             <p className="mt-1 text-[11px] text-subtle">
               Model used by new sessions when nothing is selected yet. Populated
@@ -2609,26 +2651,26 @@ export default function Settings() {
           </Field>
         </Section>
 
+        <ModelPicker
+          open={defPicking}
+          onClose={() => setDefPicking(false)}
+          providers={providers}
+          providerId={defProvId}
+          model={defaultModel}
+          models={defCatalogModels}
+          onProviderChange={setDefProvId}
+          onModelChange={(m) => {
+            void saveDefaultModel(m);
+            setDefPicking(false);
+          }}
+        />
+
         <Section
           id="sec-system-prompt"
-          title="Global system prompt"
-          description="Extra instructions appended to the system prompt of every chat, across all projects."
+          title="System prompt"
+          description="The base system prompt v1 runs every chat with. It is built into the app and cannot be edited here."
         >
-          <form onSubmit={(e) => void saveSystemPrompt(e)} className="flex flex-col gap-3">
-            <textarea
-              value={sysPrompt}
-              onChange={(e) => setSysPrompt(e.target.value)}
-              rows={7}
-              placeholder="e.g. Always use TypeScript. Never use crypto.randomUUID() — it throws on insecure origins like the preview iframe."
-              className="w-full resize-y rounded-lg border border-border-strong bg-surface px-3 py-2 text-sm text-text outline-none transition-colors focus:border-subtle"
-            />
-            <SaveRow
-              saving={sysSaving}
-              saved={sysSaved}
-              error={sysError}
-              pulse={settings ? sysPrompt !== settings.systemPrompt : false}
-            />
-          </form>
+          <HardcodedPrompt />
         </Section>
 
         <Section

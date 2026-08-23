@@ -32,6 +32,9 @@ Rules:
 - If something important is unclear or you need a decision, use ask_user instead of guessing.
 - Keep your responses concise.`
 
+// SystemPrompt returns the built-in base system prompt, read-only in the UI.
+func SystemPrompt() string { return systemPrompt }
+
 // Usage is the token accounting attached to a finished turn.
 type Usage struct {
 	Input  int64    `json:"input"`

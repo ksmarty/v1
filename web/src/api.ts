@@ -205,7 +205,6 @@ export interface SettingsUpdate {
   terminalWrap?: boolean;
   autoPushDefault?: boolean;
   contextThreshold?: number;
-  systemPrompt?: string;
 }
 
 export const api = {
@@ -231,6 +230,8 @@ export const api = {
 
   // Settings
   getSettings: () => request<Settings>('/api/settings'),
+  systemPrompt: () =>
+    request<{ prompt: string }>('/api/system-prompt'),
   updateSettings: (body: SettingsUpdate) => {
     if (body && 'llm' in body) expireProvidersCache(); // provider config changed
     return put<void>('/api/settings', body);

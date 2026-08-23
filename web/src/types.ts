@@ -81,7 +81,6 @@ export interface Settings {
   autoPushDefault?: boolean;
   /** Compaction threshold in percent of the context window (e.g. 80). */
   contextThreshold: number;
-  systemPrompt: string;
   version: string;
   commit: string;
 }
