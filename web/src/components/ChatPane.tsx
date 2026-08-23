@@ -3710,10 +3710,13 @@ export default function ChatPane({
               const line = before.slice(lineStart);
               const m = line.match(/^([ \t]*)([-*+]|\d+[.)])\s+(.*)$/);
               if (m && m[2].trim() !== '') {
+                // Insert the real newline plus the continued marker — the
+                // default Enter handling is suppressed, so the line break
+                // must be added here or the marker lands glued to the text.
                 const marker = m[1] + m[2] + ' ';
-                const pos = selStart + marker.length;
+                const pos = selStart + 1 + marker.length;
                 e.preventDefault();
-                setInput(input.slice(0, selStart) + marker + input.slice(ta.selectionEnd));
+                setInput(input.slice(0, selStart) + '\n' + marker + input.slice(ta.selectionEnd));
                 requestAnimationFrame(() => {
                   ta.selectionStart = pos;
                   ta.selectionEnd = pos;

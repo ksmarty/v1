@@ -120,15 +120,19 @@ export default function ChatPanel({
               type="button"
               onClick={() => setSessionsOpen(true)}
               title="Switch session"
-              className="flex w-full flex-col items-stretch text-left"
+              className="flex w-full min-w-0 flex-col items-stretch pb-0.5 text-left md:flex-row md:items-center md:gap-2 md:pb-0"
             >
-              <span className="flex items-center gap-1">
+              <span className="flex min-w-0 items-center gap-1">
                 <span className="truncate text-sm font-medium text-text">{project.name}</span>
               </span>
               {/* Session subtitle — separated from the project title by a
-                  divider; clicking it (or the title) opens the switcher. */}
-              <span className="mt-2 block w-full border-t border-subtle" />
-              <span className="mt-1.5 flex w-full items-center gap-1.5 px-0.5 text-[11px] font-medium text-accent">
+                  divider; clicking it (or the title) opens the switcher.
+                  Mobile: horizontal divider, dark like the tab bar border,
+                  tucked close under the title. Desktop: vertical divider
+                  with name and session side-by-side. */}
+              <span className="mt-1 block w-full border-t border-border md:hidden" aria-hidden="true" />
+              <span className="hidden h-4 w-px shrink-0 bg-border md:block" aria-hidden="true" />
+              <span className="mt-1 flex min-w-0 items-center gap-1.5 px-0.5 text-[11px] font-medium text-accent md:mt-0 md:px-0">
                 <IconLayers className="h-3 w-3 shrink-0" />
                 <span className="truncate">{sessionName || 'Session'}</span>
               </span>
