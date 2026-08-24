@@ -109,15 +109,34 @@ export default function SessionsModal({
           >
             <IconUndo className="h-4 w-4" />
           </button>
-          <button
-            type="button"
-            aria-label={`Delete ${s.name}`}
-            title="Delete permanently"
-            onClick={() => onDelete(s.id)}
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-faint transition-colors hover:bg-border hover:text-red-400"
-          >
-            <IconTrash className="h-4 w-4" />
-          </button>
+          {confirmDeleteId === s.id ? (
+            <>
+              <button
+                type="button"
+                onClick={() => onDelete(s.id)}
+                className="flex h-8 shrink-0 items-center justify-center rounded-md px-2 text-xs font-semibold text-red-300 transition-colors hover:bg-red-500/20"
+              >
+                Delete
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmDeleteId(null)}
+                className="flex h-8 shrink-0 items-center justify-center rounded-md px-2 text-xs text-faint transition-colors hover:bg-border hover:text-text"
+              >
+                Cancel
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              aria-label={`Delete ${s.name}`}
+              title="Delete permanently"
+              onClick={() => setConfirmDeleteId(s.id)}
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-faint transition-colors hover:bg-border hover:text-red-400"
+            >
+              <IconTrash className="h-4 w-4" />
+            </button>
+          )}
         </>
       ) : (
         <>

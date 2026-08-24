@@ -1114,14 +1114,35 @@ func (s *Store) ListSessions(projectID string) ([]ChatSession, error) {
 }
 
 // CreateChatSession adds a chat session. Empty names are auto-numbered
-// ("Session 1", "Session 2", …).
+// ("Session 1", "Session 2", …) — picking the first free number so deleted or
+// archived sessions don't leave gaps that would name a new one the same as an
+// existing one.
 func (s *Store) CreateChatSession(projectID, name string) (ChatSession, error) {
 	if strings.TrimSpace(name) == "" {
-		var n int
-		if err := s.db.QueryRow(`SELECT COUNT(*) FROM chat_sessions WHERE project_id = ?`, projectID).Scan(&n); err != nil {
+		rows, err := s.db.Query(`SELECT name FROM chat_sessions WHERE project_id = ?`, projectID)
+		if err != nil {
 			return ChatSession{}, err
 		}
-		name = fmt.Sprintf("Session %d", n+1)
+		names := map[string]bool{}
+		for rows.Next() {
+			var n string
+			if err := rows.Scan(&n); err != nil {
+				rows.Close()
+				return ChatSession{}, err
+			}
+			names[n] = true
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return ChatSession{}, err
+		}
+		for i := 1; ; i++ {
+			candidate := fmt.Sprintf("Session %d", i)
+			if !names[candidate] {
+				name = candidate
+				break
+			}
+		}
 	}
 	cs := ChatSession{ID: NewID(), Name: name, CreatedAt: now()}
 	if _, err := s.db.Exec(`INSERT INTO chat_sessions (id, project_id, name, created_at) VALUES (?, ?, ?, ?)`,
