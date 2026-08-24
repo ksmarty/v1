@@ -1109,7 +1109,7 @@ function CollapsedToolsGroup({
         <div className="flex flex-col gap-1.5 px-1 pb-1">
           {members.map((m, j) => (
             <div key={j} className="flex flex-col gap-1.5">
-              {m.content && (
+              {m.content && m.content.trim() && (
                 <div className="whitespace-pre-wrap break-words px-0.5 text-sm text-text">
                   {m.content}
                 </div>
@@ -3675,7 +3675,9 @@ export default function ChatPane({
   );
 
   // Keys of the assistant messages that closed their turn — the usage line
-  // (per-turn token counts) only shows on these.
+  // (per-turn token counts) only shows on these. Tool-carrying rounds are never
+  // turn-final: a message with tool calls always continues the turn, and the
+  // usage-only markers on older history must not split collapsed-tool groups.
   const turnEndKeys = useMemo(() => {
     const keys = new Set<string>();
     let pending = true;
@@ -3689,7 +3691,8 @@ export default function ChatPane({
         // While a run is active, the newest message is mid-turn (its text
         // isn't persisted until the round ends, so the last row looks final
         // on a return/reload) — its totals must not print yet.
-        if (pending && !(lastMsg && (streaming || runActive))) keys.add(it.key);
+        const toolRound = (it.toolCalls?.length ?? 0) > 0;
+        if (pending && !toolRound && !(lastMsg && (streaming || runActive))) keys.add(it.key);
         pending = false;
       }
       lastMsg = false;
