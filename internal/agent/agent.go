@@ -238,6 +238,9 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 	p.Exec.PlanMode = p.PlanMode
 	p.Exec.Background = p.Background
 	p.Exec.BackgroundNotify = p.BackgroundNotify
+	p.Exec.OnBackgroundStarted = func(id string) {
+		p.Emit(ChatEvent{Type: "background_started", Text: id})
+	}
 	p.Exec.SessionID = p.SessionID
 	var coveredID int64
 	if snapshot, snapshotErr := p.Store.GetCompactionSnapshot(p.Project.ID, p.SessionID); snapshotErr == nil {

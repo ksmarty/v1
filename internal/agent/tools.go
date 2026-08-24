@@ -67,10 +67,14 @@ type Executor struct {
 	// verify_project health check. Nil skips the preview step.
 	PreviewURL func() string
 	Store      *store.Store
-	Background *BackgroundManager // detached commands (run_command_background)
-	// BackgroundNotify persists a finished background command's result into
-	// the chat transcript (wired by the server).
-	BackgroundNotify func(*BackgroundJob)
+	Background    *BackgroundManager // detached commands (run_command_background)
+		// BackgroundNotify persists a finished background command's result into
+		// the chat transcript (wired by the server).
+		BackgroundNotify func(*BackgroundJob)
+		// OnBackgroundStarted notifies the UI when a background command has been
+		// dispatched (single arg: the job's short id), so it can show a live
+		// "running" indicator until the result lands.
+		OnBackgroundStarted func(string)
 	OnTodos          func([]store.Todo)
 	OnMemories       func([]store.Memory)
 	OnFileChange     func()
@@ -502,6 +506,9 @@ func (e *Executor) runCommandBackground(ctx context.Context, argsJSON string) (s
 	id, err := e.Background.Start(e.Root, args.Command, timeout, e.SessionID, e.BackgroundNotify)
 	if err != nil {
 		return "", err
+	}
+	if e.OnBackgroundStarted != nil {
+		e.OnBackgroundStarted(id[:8])
 	}
 	return toolResult(map[string]any{"id": id[:8], "status": "running", "note": "the result arrives in the chat when the command finishes; continue with other work meanwhile"}), nil
 }

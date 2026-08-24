@@ -395,6 +395,8 @@ type MsgItem = {
   reasoning?: string;
   toolCalls?: ToolCall[];
   toolResults?: ToolCall[];
+  /** True for a finished background command's result row (not the user). */
+  background?: boolean;
   /** Token usage for the turn this message closed (turn-final messages only). */
   usage?: ChatUsage;
   /** Duration of the turn this message closed, in milliseconds. */
@@ -1511,6 +1513,23 @@ const MessageRow = memo(function MessageRow({
     );
   }
   if (item.role === 'user') {
+    // Background job results are not the user speaking — render them on the
+    // left with a branded "Recived bg task" header instead of a user bubble.
+    if (item.background) {
+      return (
+        <div className="mr-auto flex w-full max-w-[85%] flex-col gap-1">
+          <span className="inline-flex items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-amber-300/80">
+            <IconTerminal className="h-3 w-3" />
+            Background task finished
+          </span>
+          <div className="w-full rounded-xl border border-amber-300/20 bg-amber-300/5 px-3.5 py-2 text-sm text-text">
+            <div className="whitespace-pre-wrap break-words font-mono text-[12px] leading-relaxed text-amber-100/90">
+              {item.content}
+            </div>
+          </div>
+        </div>
+      );
+    }
     if (item.editing) {
       return (
         <EditUserBubble
@@ -2256,17 +2275,20 @@ export default function ChatPane({
           mapped.push(item);
         } else if (m.role === 'user') {
           lastUserAt = Number(m.createdAt);
+          const background = m.tool === 'background';
           mapped.push({
             kind: 'msg',
             key: m.id,
             role: 'user',
             content: m.content,
+            background,
             sentAt: Number(m.createdAt) * 1000,
             attachments: m.attachments?.map((a, i) => ({
               ...a,
               url: a.kind === 'image' ? messageAttachmentUrl(projectId, m.id, i) : undefined,
             })),
           });
+          if (!background) lastUserAt = Number(m.createdAt);
         } else {
           mapped.push({ kind: 'msg', key: m.id, role: 'error', content: m.content });
         }
@@ -2323,6 +2345,7 @@ export default function ChatPane({
         // Switching away aborts the old session's live stream so its events
         // can't land on the new session's transcript.
         abortRef.current?.abort();
+        setBgRunning([]);
         setSessionId((prev) => {
           if (prev) return prev;
           // Deep link from a notification → open that exact chat.
@@ -2424,6 +2447,15 @@ export default function ChatPane({
       document.removeEventListener('visibilitychange', onVisible);
     };
   }, [projectId, sessionId, load, refreshQueue, streaming]);
+
+  const [bgRunning, setBgRunning] = useState<string[]>([]);
+  // Background result rows carry "[Background #<shortid>:" — matches a running
+  // entry started earlier in this session.
+  const clearFinishedBg = (text: string | undefined) => {
+    if (!text) return;
+    const m = text.match(/\[Background #([0-9a-z]+):/);
+    if (m) setBgRunning((prev) => prev.filter((id) => id !== m[1]));
+  };
 
   // Load the agent-maintained todo list for this project.
   useEffect(() => {
@@ -2829,6 +2861,13 @@ export default function ChatPane({
           );
           break;
         }
+        case 'background_started': {
+          // A detached command was dispatched — show it in the running pill
+          // until its result row lands.
+          const id = ev.text;
+          if (id) setBgRunning((prev) => (prev.includes(id) ? prev : [...prev, id]));
+          break;
+        }
         case 'info': {
           setLocalStatus(ev.text);
           break;
@@ -2897,6 +2936,7 @@ export default function ChatPane({
           // text matches a pending steer, that steer has landed and the row
           // gets a "steered" badge.
           const id = ev.messageId ?? 0;
+          clearFinishedBg(ev.text);
           const steered = ev.text ? steeringRef.current.some((s) => s.text === ev.text) : false;
           if (ev.text) setSteering((prev) => prev.filter((s) => s.text !== ev.text));
           update((prev) => [
@@ -2913,6 +2953,7 @@ export default function ChatPane({
               role: 'user',
               content: ev.text ?? '',
               steered,
+              background: ev.tool === 'background',
               sentAt: Date.now(),
               attachments: ev.attachments?.map((a, i) => ({
                 ...a,
@@ -4330,6 +4371,14 @@ export default function ChatPane({
           }
         >
           <div className={`relative flex flex-col gap-2 ${expanded ? 'min-h-0 flex-1' : ''}`}>
+            {bgRunning.length > 0 && (
+              <div className="flex shrink-0 items-center gap-1.5 rounded-md border border-amber-300/25 bg-amber-300/5 px-2.5 py-1 text-[11px] font-medium text-amber-300/90">
+                <IconTerminal className="h-3 w-3 shrink-0 animate-pulse" />
+                {bgRunning.length === 1
+                  ? '1 background task running…'
+                  : `${bgRunning.length} background tasks running…`}
+              </div>
+            )}
             {suggestions.length > 0 && (
               <div
                 className={`absolute z-20 max-h-64 overflow-y-auto overscroll-contain rounded-lg border border-border bg-surface shadow-lg ${

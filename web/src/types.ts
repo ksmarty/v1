@@ -276,7 +276,10 @@ export type ChatEvent =
       messageId?: number;
       text?: string;
       attachments?: ChatAttachmentMeta[];
-    };
+      /** 'background' when the injected message is a finished background job. */
+      tool?: string;
+    }
+  | { type: 'background_started'; text?: string };
 
 export interface MCPServer {
   id: string;

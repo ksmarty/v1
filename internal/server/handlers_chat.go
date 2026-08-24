@@ -530,7 +530,10 @@ func (s *Server) streamChatTurn(w http.ResponseWriter, r *http.Request, p *store
 	params.Background = s.background
 	params.BackgroundNotify = func(job *agent.BackgroundJob) {
 		text := agent.BackgroundResultText(job)
-		msgID, err := s.st.AddMessage(p.ID, params.SessionID, "user", text, "", params.Client.Model, "", "", "")
+		// Stored as a user row with tool_json='background' so the frontend can
+		// tell finished background commands apart from real user messages and
+		// render them distinctively (they are not the user speaking).
+		msgID, err := s.st.AddMessage(p.ID, params.SessionID, "user", text, "background", params.Client.Model, "", "", "")
 		if err == nil {
 			job.Text = text
 			job.MsgID = msgID
