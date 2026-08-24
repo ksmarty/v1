@@ -6,6 +6,7 @@ import {
   type SelectHTMLAttributes,
   type TextareaHTMLAttributes,
 } from 'react';
+import { createPortal } from 'react-dom';
 import { IconCheck, IconX } from './icons';
 
 export function Spinner({ className = 'h-4 w-4' }: { className?: string }) {
@@ -127,7 +128,10 @@ export function Dialog({
       : 'px-4 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))]';
   const desktopPad = translucent ? 'sm:px-6 sm:pb-8 sm:pt-6' : 'sm:px-5 sm:pt-5 sm:pb-5';
 
-  return (
+  // Portaled to document.body so the fixed overlay always uses the viewport as
+  // its containing block — no ancestor (scroll container, stacking context) can
+  // clip it or render it behind other content.
+  const overlay = (
     <div
       className={`fixed inset-0 z-50 flex items-end justify-center bg-bg/70 sm:p-4 ${
         align === 'top' ? 'sm:items-start sm:pt-8' : 'sm:items-center'
@@ -163,6 +167,9 @@ export function Dialog({
       </div>
     </div>
   );
+
+  // Render into document.body so the overlay escapes every ancestor container.
+  return createPortal(overlay, document.body);
 }
 
 export function Section({
