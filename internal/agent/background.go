@@ -130,6 +130,31 @@ func (m *BackgroundManager) CancelSession(sessionID string) {
 		}
 	}
 	m.mu.Unlock()
+	killProcessGroups(procs)
+}
+
+// KillAll terminates every still-running job across all sessions — used on
+// server shutdown so detached commands can't outlive the process.
+func (m *BackgroundManager) KillAll() {
+	m.mu.Lock()
+	var procs []*os.Process
+	for _, j := range m.jobs {
+		select {
+		case <-j.done:
+			continue
+		default:
+		}
+		if j.cmd != nil && j.cmd.Process != nil {
+			procs = append(procs, j.cmd.Process)
+		}
+	}
+	m.mu.Unlock()
+	killProcessGroups(procs)
+}
+
+// killProcessGroups SIGTERMs the given process groups and SIGKILLs whatever
+// survives after a 5-second grace.
+func killProcessGroups(procs []*os.Process) {
 	if len(procs) == 0 {
 		return
 	}

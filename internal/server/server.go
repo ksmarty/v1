@@ -97,10 +97,13 @@ func New(cfg config.Config, st *store.Store) *Server {
 // Handler returns the root HTTP handler (with auth middleware applied).
 func (s *Server) Handler() http.Handler { return s.handler }
 
-// Shutdown stops all previews, terminals and MCP servers.
+// Shutdown stops all previews, terminals, background jobs and MCP servers.
 func (s *Server) Shutdown() {
 	s.previews.StopAll()
 	s.terminals.KillAll()
+	if s.background != nil {
+		s.background.KillAll()
+	}
 	s.mcp.Shutdown()
 }
 

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { ChatSession } from '../types';
 import { Dialog, Input } from './ui';
 import { IconArchive, IconCheck, IconPencil, IconPlus, IconTrash, IconUndo } from './icons';
@@ -39,6 +39,15 @@ export default function SessionsModal({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState('');
   const [tab, setTab] = useState<'active' | 'archived'>('active');
+  // Archived rows ask once before deleting: clicking the trash arms this, and
+  // the row shows Delete/Cancel until confirmed or dismissed.
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!open) setConfirmDeleteId(null);
+  }, [open]);
+  useEffect(() => {
+    setConfirmDeleteId(null);
+  }, [tab]);
 
   const save = (id: string) => {
     if (editingId === id && editText.trim()) {
@@ -54,7 +63,11 @@ export default function SessionsModal({
     <div
       key={s.id}
       className={`flex min-h-[48px] items-center gap-2 rounded-lg border px-3 py-2 transition-colors ${
-        s.id === activeId ? 'border-accent bg-surface' : 'border-border'
+        confirmDeleteId === s.id
+          ? 'border-red-500/50 bg-red-500/5'
+          : s.id === activeId
+            ? 'border-accent bg-surface'
+            : 'border-border'
       }`}
     >
       {s.archived && tab === 'archived' && (

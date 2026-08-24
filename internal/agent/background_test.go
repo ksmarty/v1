@@ -71,6 +71,34 @@ func TestBackgroundCancelSession(t *testing.T) {
 	}
 }
 
+// TestBackgroundKillAll verifies that shutting the manager down terminates
+// every running detached command regardless of session.
+func TestBackgroundKillAll(t *testing.T) {
+	m := NewBackgroundManager()
+	var n1, n2 *BackgroundJob
+	if _, err := m.Start(t.TempDir(), "sleep 30", 60*time.Second, "sessA", func(j *BackgroundJob) { n1 = j }); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.Start(t.TempDir(), "sleep 30", 60*time.Second, "sessB", func(j *BackgroundJob) { n2 = j }); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	m.KillAll()
+	deadline := time.Now().Add(10 * time.Second)
+	for (n1 == nil || n2 == nil) && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if n1 == nil || n2 == nil {
+		t.Fatal("KillAll did not terminate both sessions' jobs")
+	}
+	if time.Since(start) > 10*time.Second {
+		t.Fatal("KillAll did not kill jobs promptly")
+	}
+	if n1.ExitCode == 0 || n2.ExitCode == 0 {
+		t.Fatalf("expected killed (non-zero) exit codes, got %d/%d", n1.ExitCode, n2.ExitCode)
+	}
+}
+
 func TestBackgroundManagerTimeout(t *testing.T) {
 	m := NewBackgroundManager()
 	var notified *BackgroundJob
