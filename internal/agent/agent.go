@@ -554,7 +554,16 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 			partialText, partialReasoning = "", ""
 			partialStart = -1 // a later truncation must not slice past this round's messages
 		}
-		if _, err := p.Store.AddMessage(p.Project.ID, p.SessionID, "assistant", persistText, toolJSON, p.Client.Model, persistReasoning, usageJSON, ""); err != nil {
+		// Persist the round's assistant message. Only the FINAL round of the
+		// turn carries usage — intermediate tool-call rounds would otherwise
+		// each show a per-round usage line in the UI, which is noise and (via
+		// turnEndKeys) would break consecutive collapsed-tool merging.
+		finalRound := len(res.ToolCalls) == 0
+		persistedUsage := ""
+		if finalRound {
+			persistedUsage = usageJSON
+		}
+		if _, err := p.Store.AddMessage(p.Project.ID, p.SessionID, "assistant", persistText, toolJSON, p.Client.Model, persistReasoning, persistedUsage, ""); err != nil {
 			return nil, err
 		}
 		assistantSaved = true

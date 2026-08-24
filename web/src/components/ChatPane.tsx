@@ -925,23 +925,8 @@ function summarizeTools(calls: ToolCall[], results: ToolCall[]): string {
   const files = n('write_file') + n('edit_file') + n('delete_file') + n('move_file');
   if (files > 0) parts.push(`Made ${plural(files, 'edit')}`);
   if (n('run_command') + n('run_command_background') > 0) {
-    // Name the commands so the summary shows what actually ran.
-    const cmds: string[] = [];
-    for (const c of calls) {
-      if (c.name !== 'run_command' && c.name !== 'run_command_background') continue;
-      try {
-        const a = JSON.parse(c.detail) as { command?: unknown };
-        if (typeof a.command === 'string' && a.command.trim()) cmds.push(a.command.trim());
-      } catch {
-        // not JSON — skip
-      }
-    }
-    let summary = `Ran ${plural(n('run_command') + n('run_command_background'), 'command')}`;
-    if (cmds.length > 0) {
-      const joined = cmds.join(', ');
-      summary += `: ${joined.length > 80 ? joined.slice(0, 80) + '…' : joined}`;
-    }
-    parts.push(summary);
+    // Just the count — naming commands makes the summary noisy.
+    parts.push(`Ran ${plural(n('run_command') + n('run_command_background'), 'command')}`);
   }
   if (n('fetch_url') > 0) parts.push(`Fetched ${plural(n('fetch_url'), 'page')}`);
   if (n('screenshot_app') > 0) parts.push(`Took ${plural(n('screenshot_app'), 'screenshot')}`);
