@@ -243,6 +243,16 @@ CREATE TABLE pending_asks_v2 (
 	}); err != nil {
 		return err
 	}
+	if err := migrateAddColumns(db, "projects", map[string]string{
+		"session_seq": "ALTER TABLE projects ADD COLUMN session_seq INTEGER NOT NULL DEFAULT 0",
+	}); err != nil {
+		return err
+	}
+	// Seed the auto-naming counter so existing projects don't start below their
+	// current session count (new names never collide with existing "Session N").
+	if _, err := db.Exec(`UPDATE projects SET session_seq = (SELECT COUNT(*) FROM chat_sessions WHERE chat_sessions.project_id = projects.id) WHERE session_seq = 0`); err != nil {
+		return err
+	}
 	return migrateAddColumns(db, "projects", map[string]string{
 		"preview_disabled": "ALTER TABLE projects ADD COLUMN preview_disabled INTEGER NOT NULL DEFAULT 0",
 	})
@@ -1113,36 +1123,17 @@ func (s *Store) ListSessions(projectID string) ([]ChatSession, error) {
 	return out, rows.Err()
 }
 
-// CreateChatSession adds a chat session. Empty names are auto-numbered
-// ("Session 1", "Session 2", …) — picking the first free number so deleted or
-// archived sessions don't leave gaps that would name a new one the same as an
-// existing one.
+// CreateChatSession adds a chat session. Empty names are auto-numbered with a
+// strictly increasing per-project counter ("Session 1", "Session 2", …) that
+// never reuses numbers — deleting or archiving sessions does not make a new
+// session pick an old name.
 func (s *Store) CreateChatSession(projectID, name string) (ChatSession, error) {
 	if strings.TrimSpace(name) == "" {
-		rows, err := s.db.Query(`SELECT name FROM chat_sessions WHERE project_id = ?`, projectID)
-		if err != nil {
+		var n int
+		if err := s.db.QueryRow(`UPDATE projects SET session_seq = session_seq + 1 WHERE id = ? RETURNING session_seq`, projectID).Scan(&n); err != nil {
 			return ChatSession{}, err
 		}
-		names := map[string]bool{}
-		for rows.Next() {
-			var n string
-			if err := rows.Scan(&n); err != nil {
-				rows.Close()
-				return ChatSession{}, err
-			}
-			names[n] = true
-		}
-		rows.Close()
-		if err := rows.Err(); err != nil {
-			return ChatSession{}, err
-		}
-		for i := 1; ; i++ {
-			candidate := fmt.Sprintf("Session %d", i)
-			if !names[candidate] {
-				name = candidate
-				break
-			}
-		}
+		name = fmt.Sprintf("Session %d", n)
 	}
 	cs := ChatSession{ID: NewID(), Name: name, CreatedAt: now()}
 	if _, err := s.db.Exec(`INSERT INTO chat_sessions (id, project_id, name, created_at) VALUES (?, ?, ?, ?)`,

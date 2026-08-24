@@ -266,3 +266,38 @@ func TestMergeContinuedTurn(t *testing.T) {
 	}
 	_ = userID
 }
+
+func TestCreateChatSessionCounterStrictlyIncreases(t *testing.T) {
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	p := &Project{ID: NewID(), Name: "t", Path: t.TempDir()}
+	if err := s.CreateProject(p); err != nil {
+		t.Fatal(err)
+	}
+	first, err := s.CreateChatSession(p.ID, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Name != "Session 1" {
+		t.Fatalf("first = %q", first.Name)
+	}
+	second, err := s.CreateChatSession(p.ID, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Delete the first session: the counter must NOT reuse "Session 1".
+	if err := s.DeleteChatSession(p.ID, first.ID); err != nil {
+		t.Fatal(err)
+	}
+	third, err := s.CreateChatSession(p.ID, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if third.Name != "Session 3" {
+		t.Fatalf("after delete, want Session 3, got %q", third.Name)
+	}
+	_ = second
+}
