@@ -4112,10 +4112,10 @@ export default function ChatPane({
         {!loading && !loadError && items.length > 0 && (
           <div className="mx-auto flex max-w-2xl flex-col gap-3">
             {(() => {
-              // Consecutive collapsed-tool rows (with or without a short text
-              // announcement) merge into one grouped collapse with a combined
-              // summary instead of a stack of near-identical summary rows;
-              // each member's text shows inside the group when expanded.
+              // Consecutive bare collapsed-tool rows (no text, no usage line)
+              // merge into one grouped collapse with a combined summary
+              // instead of a stack of near-identical summary rows; a row with
+              // actual words is a natural break point and stays its own row.
               const rows: ReactNode[] = [];
               let run: { it: MsgItem; i: number }[] = [];
               const flush = () => {
@@ -4157,6 +4157,7 @@ export default function ChatPane({
                 if (
                   it.kind === 'msg' &&
                   isCollapsedToolsRow(it) &&
+                  !it.content?.trim() &&
                   !(it.usage && turnEndKeys.has(it.key))
                 ) {
                   run.push({ it, i });
