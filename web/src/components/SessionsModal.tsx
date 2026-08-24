@@ -1,15 +1,15 @@
 import { useState } from 'react';
 import type { ChatSession } from '../types';
-import { Dialog, IconButton, Input } from './ui';
-import { IconArchive, IconCheck, IconPencil, IconPlus, IconTrash, IconUndo, IconX } from './icons';
+import { Dialog, Input } from './ui';
+import { IconArchive, IconCheck, IconPencil, IconPlus, IconTrash, IconUndo } from './icons';
 
 /**
  * Chat session switcher — same layout as the model picker: a "New session"
  * action on top, the switchable session list below. Switching reloads the
  * chat with that session's thread; a new session starts an empty thread.
  * The pencil on a row renames that session inline; the archive icon hides it
- * (restorable from the Archived tab). The header and close button share one
- * inline row.
+ * (restorable from the Archived tab). Only the session list scrolls; the
+ * header, tabs and New action stay fixed.
  */
 export default function SessionsModal({
   open,
@@ -50,7 +50,7 @@ export default function SessionsModal({
   const archived = sessions.filter((s) => s.archived);
   const active = sessions.filter((s) => !s.archived);
 
-  const renderRow = (s: ChatSession) => (
+  const renderRow = (s: ChatSession, tab: 'active' | 'archived') => (
     <div
       key={s.id}
       className={`flex min-h-[48px] items-center gap-2 rounded-lg border px-3 py-2 transition-colors ${
@@ -136,35 +136,47 @@ export default function SessionsModal({
   );
 
   return (
-    <Dialog open={open} onClose={onClose} title="" wide fullScreen fixedBody align="top">
-      {/* Header and close button share one inline row (the Dialog supplies
-          the close; this just left-aligns the title with it). */}
-      <div className="flex shrink-0 items-center justify-between gap-2">
-        <h2 className="text-lg font-semibold text-text">Sessions</h2>
-        <IconButton onClick={onClose} aria-label="Close" className="-mr-1 h-8 w-8 md:h-8 md:w-8">
-          <IconX className="h-4 w-4" />
-        </IconButton>
-      </div>
-
-      <div className="flex h-full min-h-0 flex-col gap-4 pt-3">
-        <section className="shrink-0">
-          {tab === 'active' ? (
-            <button
-              type="button"
-              onClick={onNew}
-              disabled={creating}
-              className="flex min-h-[48px] w-full items-center gap-2 rounded-lg border border-dashed border-border-strong px-3 py-2 text-left text-sm text-dim transition-colors hover:border-accent hover:text-text disabled:opacity-60"
-            >
-              <IconPlus className="h-4 w-4 shrink-0 text-accent" />
-              New session
-            </button>
-          ) : (
-            <p className="px-1 text-[11px] text-faint">
-              Archived sessions are hidden from the list above. Restore one to
-              bring it back, or delete it permanently.
-            </p>
-          )}
-        </section>
+    <Dialog open={open} onClose={onClose} title="Sessions" wide fullScreen fixedBody align="top">
+      <div className="flex h-full min-h-0 flex-col gap-3">
+        {/* Active/Archived toggle sits under the header, with the New action
+            for the active list; only the session list below scrolls. */}
+        <div className="flex shrink-0 gap-1 rounded-lg border border-border bg-surface p-1">
+          <button
+            type="button"
+            onClick={() => setTab('active')}
+            className={`min-h-[34px] flex-1 rounded-md text-sm transition-colors ${
+              tab === 'active' ? 'bg-border text-text' : 'text-dim hover:text-text'
+            }`}
+          >
+            Active ({active.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab('archived')}
+            className={`flex min-h-[34px] flex-1 items-center justify-center gap-1.5 rounded-md text-sm transition-colors ${
+              tab === 'archived' ? 'bg-border text-text' : 'text-dim hover:text-text'
+            }`}
+          >
+            <IconArchive className="h-3.5 w-3.5" />
+            Archived ({archived.length})
+          </button>
+        </div>
+        {tab === 'active' ? (
+          <button
+            type="button"
+            onClick={onNew}
+            disabled={creating}
+            className="flex min-h-[48px] w-full shrink-0 items-center gap-2 rounded-lg border border-dashed border-border-strong px-3 py-2 text-left text-sm text-dim transition-colors hover:border-accent hover:text-text disabled:opacity-60"
+          >
+            <IconPlus className="h-4 w-4 shrink-0 text-accent" />
+            New session
+          </button>
+        ) : (
+          <p className="shrink-0 px-1 text-[11px] text-faint">
+            Archived sessions are hidden from the list above. Restore one to
+            bring it back, or delete it permanently.
+          </p>
+        )}
         <div className="fade-y min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain">
           <div className="flex flex-col gap-1">
             {(tab === 'active' ? active : archived).length === 0 && (
@@ -172,30 +184,9 @@ export default function SessionsModal({
                 {tab === 'active' ? 'No sessions yet.' : 'Nothing archived yet.'}
               </p>
             )}
-            {(tab === 'active' ? active : archived).map(renderRow)}
+            {(tab === 'active' ? active : archived).map((s) => renderRow(s, tab))}
           </div>
         </div>
-      </div>
-      <div className="mt-4 flex shrink-0 gap-1 rounded-lg border border-border bg-surface p-1">
-        <button
-          type="button"
-          onClick={() => setTab('active')}
-          className={`min-h-[34px] flex-1 rounded-md text-sm transition-colors ${
-            tab === 'active' ? 'bg-border text-text' : 'text-dim hover:text-text'
-          }`}
-        >
-          Active ({active.length})
-        </button>
-        <button
-          type="button"
-          onClick={() => setTab('archived')}
-          className={`flex min-h-[34px] flex-1 items-center justify-center gap-1.5 rounded-md text-sm transition-colors ${
-            tab === 'archived' ? 'bg-border text-text' : 'text-dim hover:text-text'
-          }`}
-        >
-          <IconArchive className="h-3.5 w-3.5" />
-          Archived ({archived.length})
-        </button>
       </div>
     </Dialog>
   );

@@ -1479,6 +1479,7 @@ const MessageRow = memo(function MessageRow({
   onEdit,
   onRewind,
   onRegenerate,
+  onRetrySend,
   onEditStart,
   onImageClick,
   onAskAnswered,
@@ -1492,6 +1493,7 @@ const MessageRow = memo(function MessageRow({
   onEdit: (key: string, text: string) => void;
   onRewind: (key: string, text: string) => void;
   onRegenerate: () => void;
+  onRetrySend: (text: string) => void;
   onEditStart: (key: string, editing: boolean) => void;
   onImageClick: (url: string, name: string) => void;
   onAskAnswered: (answers: AskAnswerView[]) => void;
@@ -1599,6 +1601,14 @@ const MessageRow = memo(function MessageRow({
               className="text-xs font-medium text-red-300 underline-offset-2 transition-colors hover:text-red-200 hover:underline"
             >
               Try again
+            </button>
+            <button
+              type="button"
+              onClick={() => onRetrySend(item.content)}
+              className="ml-3 text-xs font-medium text-red-300 underline-offset-2 transition-colors hover:text-red-200 hover:underline"
+              title="Send this message again"
+            >
+              Send this message again
             </button>
           </div>
         )}
@@ -4071,6 +4081,7 @@ export default function ChatPane({
                         onEdit={editUserMessage}
                         onRewind={requestRewind}
                         onRegenerate={regenerate}
+                        onRetrySend={sendText}
                         onEditStart={setItemEditing}
                         onImageClick={openLightbox}
                         onAskAnswered={(answer) => void answerAsk(answer)}
@@ -4112,6 +4123,7 @@ export default function ChatPane({
                       onEdit={editUserMessage}
                       onRewind={requestRewind}
                       onRegenerate={regenerate}
+                      onRetrySend={sendText}
                       onEditStart={setItemEditing}
                       onImageClick={openLightbox}
                       onAskAnswered={(answer) => void answerAsk(answer)}
