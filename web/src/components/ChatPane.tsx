@@ -964,6 +964,8 @@ function summarizeTools(calls: ToolCall[], results: ToolCall[]): string {
 // The pieces one assistant message contributes to the tool collapse: its
 // reasoning, its tool calls/results (ask_user split out), and the ask itself.
 type CollapseData = {
+  /** Assistant text that accompanied the tool calls (shown in group expands). */
+  content?: string;
   reasoning?: string;
   calls: ToolCall[];
   results: ToolCall[];
@@ -981,6 +983,7 @@ function collapseData(item: MsgItem): CollapseData {
       }
     : null;
   return {
+    content: item.content,
     reasoning: item.reasoning,
     calls: (item.toolCalls ?? []).filter((c) => c.name !== 'ask_user'),
     results: (item.toolResults ?? []).filter((r) => r.name !== 'ask_user'),
@@ -1120,7 +1123,14 @@ function CollapsedToolsGroup({
       {open && (
         <div className="flex flex-col gap-1.5 px-1 pb-1">
           {members.map((m, j) => (
-            <CollapsedToolBlocks key={j} d={m} onAskAnswered={onAskAnswered} />
+            <div key={j} className="flex flex-col gap-1.5">
+              {m.content && (
+                <div className="whitespace-pre-wrap break-words px-0.5 text-sm text-text">
+                  {m.content}
+                </div>
+              )}
+              <CollapsedToolBlocks d={m} onAskAnswered={onAskAnswered} />
+            </div>
           ))}
         </div>
       )}
@@ -4102,9 +4112,10 @@ export default function ChatPane({
         {!loading && !loadError && items.length > 0 && (
           <div className="mx-auto flex max-w-2xl flex-col gap-3">
             {(() => {
-              // Consecutive bare collapsed-tool rows (no text, no usage line)
-              // merge into one grouped collapse with a combined summary
-              // instead of a stack of near-identical summary rows.
+              // Consecutive collapsed-tool rows (with or without a short text
+              // announcement) merge into one grouped collapse with a combined
+              // summary instead of a stack of near-identical summary rows;
+              // each member's text shows inside the group when expanded.
               const rows: ReactNode[] = [];
               let run: { it: MsgItem; i: number }[] = [];
               const flush = () => {
@@ -4146,7 +4157,6 @@ export default function ChatPane({
                 if (
                   it.kind === 'msg' &&
                   isCollapsedToolsRow(it) &&
-                  !it.content &&
                   !(it.usage && turnEndKeys.has(it.key))
                 ) {
                   run.push({ it, i });
