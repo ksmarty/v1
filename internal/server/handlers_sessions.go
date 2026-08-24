@@ -68,3 +68,43 @@ func (s *Server) handleRenameSession(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
+
+// handleArchiveSession hides a chat session from the switcher (its history is
+// kept and it can be restored).
+func (s *Server) handleArchiveSession(w http.ResponseWriter, r *http.Request) {
+	p := s.projectOr404(w, r)
+	if p == nil {
+		return
+	}
+	if err := s.st.ArchiveChatSession(p.ID, r.PathValue("sessionId")); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// handleUnarchiveSession restores an archived chat session to the active list.
+func (s *Server) handleUnarchiveSession(w http.ResponseWriter, r *http.Request) {
+	p := s.projectOr404(w, r)
+	if p == nil {
+		return
+	}
+	if err := s.st.UnarchiveChatSession(p.ID, r.PathValue("sessionId")); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// handleDeleteSession deletes a chat session and its messages.
+func (s *Server) handleDeleteSession(w http.ResponseWriter, r *http.Request) {
+	p := s.projectOr404(w, r)
+	if p == nil {
+		return
+	}
+	if err := s.st.DeleteChatSession(p.ID, r.PathValue("sessionId")); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}

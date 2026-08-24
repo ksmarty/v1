@@ -238,6 +238,11 @@ CREATE TABLE pending_asks_v2 (
 	}); err != nil {
 		return err
 	}
+	if err := migrateAddColumns(db, "chat_sessions", map[string]string{
+		"archived": "ALTER TABLE chat_sessions ADD COLUMN archived INTEGER NOT NULL DEFAULT 0",
+	}); err != nil {
+		return err
+	}
 	return migrateAddColumns(db, "projects", map[string]string{
 		"preview_disabled": "ALTER TABLE projects ADD COLUMN preview_disabled INTEGER NOT NULL DEFAULT 0",
 	})
@@ -1085,11 +1090,12 @@ type ChatSession struct {
 	ID        string `json:"id"`
 	Name      string `json:"name"`
 	CreatedAt int64  `json:"createdAt"`
+	Archived  bool   `json:"archived"`
 }
 
 // ListSessions returns a project's chat sessions, oldest first.
 func (s *Store) ListSessions(projectID string) ([]ChatSession, error) {
-	rows, err := s.db.Query(`SELECT id, name, created_at FROM chat_sessions WHERE project_id = ? ORDER BY created_at, id`, projectID)
+	rows, err := s.db.Query(`SELECT id, name, created_at, archived FROM chat_sessions WHERE project_id = ? ORDER BY created_at, id`, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -1097,9 +1103,11 @@ func (s *Store) ListSessions(projectID string) ([]ChatSession, error) {
 	out := []ChatSession{}
 	for rows.Next() {
 		var cs ChatSession
-		if err := rows.Scan(&cs.ID, &cs.Name, &cs.CreatedAt); err != nil {
+		var arch int
+		if err := rows.Scan(&cs.ID, &cs.Name, &cs.CreatedAt, &arch); err != nil {
 			return nil, err
 		}
+		cs.Archived = arch != 0
 		out = append(out, cs)
 	}
 	return out, rows.Err()
@@ -1126,6 +1134,28 @@ func (s *Store) CreateChatSession(projectID, name string) (ChatSession, error) {
 // RenameChatSession renames one of the project's chat sessions.
 func (s *Store) RenameChatSession(projectID, sessionID, name string) error {
 	_, err := s.db.Exec(`UPDATE chat_sessions SET name = ? WHERE id = ? AND project_id = ?`, name, sessionID, projectID)
+	return err
+}
+
+// ArchiveChatSession marks a chat session archived (hidden from the switcher
+// but still present with its history).
+func (s *Store) ArchiveChatSession(projectID, sessionID string) error {
+	_, err := s.db.Exec(`UPDATE chat_sessions SET archived = 1 WHERE id = ? AND project_id = ?`, sessionID, projectID)
+	return err
+}
+
+// UnarchiveChatSession restores an archived chat session to the active list.
+func (s *Store) UnarchiveChatSession(projectID, sessionID string) error {
+	_, err := s.db.Exec(`UPDATE chat_sessions SET archived = 0 WHERE id = ? AND project_id = ?`, sessionID, projectID)
+	return err
+}
+
+// DeleteChatSession deletes a chat session and its messages from a project.
+func (s *Store) DeleteChatSession(projectID, sessionID string) error {
+	if _, err := s.db.Exec(`DELETE FROM messages WHERE project_id = ? AND session_id = ?`, projectID, sessionID); err != nil {
+		return err
+	}
+	_, err := s.db.Exec(`DELETE FROM chat_sessions WHERE id = ? AND project_id = ?`, sessionID, projectID)
 	return err
 }
 

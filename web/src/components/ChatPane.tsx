@@ -571,14 +571,16 @@ function StickToBottom({
   );
 }
 
-function ReasoningBlock({ text, autoOpen }: { text: string; autoOpen: boolean }) {
+function ReasoningBlock({ text, autoOpen, skipAutoCollapse = false }: { text: string; autoOpen: boolean; skipAutoCollapse?: boolean }) {
   // When the "collapse thinking by default" setting is on, blocks start
-  // closed — even while streaming — until the user opens one.
+  // closed — even while streaming — until the user opens one. Otherwise a
+  // block auto-collapses as soon as ANY block appears after it (another
+  // thinking block, the final text, or a tool call).
   const collapseDefault = getThinkingCollapsed();
-  const [open, setOpen] = useState(autoOpen && !collapseDefault);
+  const [open, setOpen] = useState(autoOpen && !collapseDefault && !skipAutoCollapse);
   useEffect(() => {
-    setOpen(autoOpen && !collapseDefault);
-  }, [autoOpen, collapseDefault]);
+    setOpen(autoOpen && !collapseDefault && !skipAutoCollapse);
+  }, [autoOpen, collapseDefault, skipAutoCollapse]);
   return (
     <div className="rounded-md border border-accent/25 bg-surface/50 text-[10px]">
       <button
@@ -1625,6 +1627,7 @@ const MessageRow = memo(function MessageRow({
             <ReasoningBlock
               text={item.reasoning}
               autoOpen={(item.streaming ?? false) && !item.reasoningCollapsed}
+              skipAutoCollapse={item.reasoningCollapsed === true}
             />
           )}
           {hasTools && (
@@ -1829,6 +1832,9 @@ export default function ChatPane({
   const itemsRef = useRef<Item[]>([]);
   const counterRef = useRef(0);
   const assistantKeyRef = useRef<string | null>(null);
+  // Monotonic guard so a slow load() for an older session can't overwrite the
+  // transcript after a switch; every load bumps it and stale results are dropped.
+  const loadSeqRef = useRef(0);
   // Key of the last turn we notified about (persisted per project+session so
   // a reload does not re-notify for runs already seen).
   const notifiedKey = `v1.notified.${projectId}.${sessionId}`;
@@ -2166,6 +2172,10 @@ export default function ChatPane({
 
   const load = useCallback(async () => {
     if (!sessionId) return;
+    // A session switch while this fetch is in flight must not let the old
+    // session's messages overwrite the new one's transcript.
+    const loadSession = sessionId;
+    const loadSeq = ++loadSeqRef.current;
     setLoading(true);
     setLoadError(null);
     try {
@@ -2251,6 +2261,9 @@ export default function ChatPane({
           mapped.push({ kind: 'msg', key: m.id, role: 'error', content: m.content });
         }
       }
+      // Drop the result if a newer load started or the session changed while
+      // the fetch was in flight (switching mid-load shows the old transcript).
+      if (loadSeqRef.current !== loadSeq || sessionIdRef.current !== loadSession) return;
       itemsRef.current = mapped;
       setItems(mapped);
 
@@ -2297,14 +2310,17 @@ export default function ChatPane({
       .then((res) => {
         const list = res.sessions ?? [];
         setSessions(list);
+        // Switching away aborts the old session's live stream so its events
+        // can't land on the new session's transcript.
+        abortRef.current?.abort();
         setSessionId((prev) => {
           if (prev) return prev;
           // Deep link from a notification → open that exact chat.
           const deep = new URLSearchParams(window.location.search).get('session');
           if (deep && list.some((s) => s.id === deep)) return deep;
           const stored = localStorage.getItem(sessionStorageKey(projectId));
-          if (stored && list.some((s) => s.id === stored)) return stored;
-          const def = list[0]?.id || '';
+          if (stored && list.some((s) => s.id === stored && !s.archived)) return stored;
+          const def = list.find((s) => !s.archived)?.id || '';
           if (def) localStorage.setItem(sessionStorageKey(projectId), def);
           return def;
         });
@@ -2611,6 +2627,10 @@ export default function ChatPane({
 
   const handleEvent = useCallback(
     (ev: ChatEvent) => {
+      // A late event from a previous session (the stream outlived a switch
+      // or a queued follow-up fired after we moved on) must not touch the
+      // current session's transcript.
+      if (sessionIdRef.current !== sessionId) return;
       switch (ev.type) {
         case 'reasoning': {
           let k = assistantKeyRef.current;
@@ -2666,8 +2686,12 @@ export default function ChatPane({
             assistantKeyRef.current = k;
             const nk = k;
             update((prev) => [
+              // The final text starts a new round — close any thinking block
+              // that's still open from the previous one.
               ...prev.map((it) =>
-                it.kind === 'msg' && it.role === 'assistant' ? { ...it, streaming: false } : it,
+                it.kind === 'msg' && it.role === 'assistant'
+                  ? { ...it, reasoningCollapsed: it.key === nk ? it.reasoningCollapsed : true, streaming: false }
+                  : it,
               ),
               { kind: 'msg', key: nk, role: 'assistant', content: '', sentAt: Date.now(), streaming: true },
             ]);
@@ -2686,6 +2710,15 @@ export default function ChatPane({
         // separate snapshot path.
         case 'tool_start': {
           assistantKeyRef.current = null;
+          // A tool call begins after the previous round — close any thinking
+          // block still open from it.
+          update((prev) =>
+            prev.map((it) =>
+              it.kind === 'msg' && it.role === 'assistant' && !it.streaming
+                ? { ...it, reasoningCollapsed: true }
+                : it,
+            ),
+          );
           const key = `t${++counterRef.current}`;
           (toolStackRef.current[ev.name] ||= []).push(key);
           update((prev) => [
@@ -2775,6 +2808,15 @@ export default function ChatPane({
               return next;
             });
           }
+          // A user question lands after the previous round — close any
+          // thinking block still open from it.
+          update((prev) =>
+            prev.map((it) =>
+              it.kind === 'msg' && it.role === 'assistant' && !it.streaming
+                ? { ...it, reasoningCollapsed: true }
+                : it,
+            ),
+          );
           break;
         }
         case 'info': {
@@ -2848,7 +2890,13 @@ export default function ChatPane({
           const steered = ev.text ? steeringRef.current.some((s) => s.text === ev.text) : false;
           if (ev.text) setSteering((prev) => prev.filter((s) => s.text !== ev.text));
           update((prev) => [
-            ...prev,
+            // A screenshot/injected message closes any thinking block that was
+            // still open from the previous round.
+            ...prev.map((it) =>
+              it.kind === 'msg' && it.role === 'assistant' && !it.streaming
+                ? { ...it, reasoningCollapsed: true }
+                : it,
+            ),
             {
               kind: 'msg',
               key: id > 0 ? String(id) : `i${++counterRef.current}`,
@@ -2866,7 +2914,7 @@ export default function ChatPane({
         }
       }
     },
-    [update, finish, projectId, projectName, loadContext, refreshQueue, onProjectRename],
+    [update, finish, projectId, sessionId, projectName, loadContext, refreshQueue, onProjectRename],
   );
 
   useEffect(() => {
@@ -4710,6 +4758,18 @@ export default function ChatPane({
         onRename={(id, name) => {
           setSessions((prev) => prev.map((s) => (s.id === id ? { ...s, name } : s)));
           void api.renameSession(projectId, id, name).catch(() => {});
+        }}
+        onArchive={(id) => {
+          setSessions((prev) => prev.map((s) => (s.id === id ? { ...s, archived: true } : s)));
+          void api.archiveSession(projectId, id).catch(() => {});
+        }}
+        onUnarchive={(id) => {
+          setSessions((prev) => prev.map((s) => (s.id === id ? { ...s, archived: false } : s)));
+          void api.unarchiveSession(projectId, id).catch(() => {});
+        }}
+        onDelete={(id) => {
+          setSessions((prev) => prev.filter((s) => s.id !== id));
+          void api.deleteSession(projectId, id).catch(() => {});
         }}
         creating={creatingSession}
       />

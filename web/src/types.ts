@@ -21,6 +21,7 @@ export interface ChatSession {
   id: string;
   name: string;
   createdAt: number;
+  archived?: boolean;
 }
 
 export interface SavedProvider {

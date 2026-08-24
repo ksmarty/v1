@@ -325,6 +325,12 @@ export const api = {
     post<{ session: ChatSession }>(`/api/projects/${id}/sessions`, { name }),
   renameSession: (id: string, sessionId: string, name: string) =>
     post<void>(`/api/projects/${id}/sessions/${sessionId}/rename`, { name }),
+  archiveSession: (id: string, sessionId: string) =>
+    post<void>(`/api/projects/${id}/sessions/${sessionId}/archive`),
+  unarchiveSession: (id: string, sessionId: string) =>
+    post<void>(`/api/projects/${id}/sessions/${sessionId}/unarchive`),
+  deleteSession: (id: string, sessionId: string) =>
+    request<void>(`/api/projects/${id}/sessions/${sessionId}`, { method: 'DELETE' }),
   // Context usage refreshes after every turn, but the value is stable for a
   // few seconds — cache it briefly so popup opens and re-renders don't
   // refetch it. force skips the cache (used right after a turn completes).
@@ -529,7 +535,16 @@ async function streamChatEvents(
   };
 
   for (;;) {
-    const { done, value } = await reader.read();
+    let chunk: ReadableStreamReadResult<Uint8Array>;
+    try {
+      chunk = await reader.read();
+    } catch (e) {
+      // A dead/incomplete stream (e.g. the connection dropped mid-run) must
+      // not leave a zombie reader that keeps the tab spinning forever.
+      if (signal.aborted) throw e;
+      return;
+    }
+    const { done, value } = chunk;
     if (done) break;
     buf += decoder.decode(value, { stream: true });
     let match: RegExpMatchArray | null;

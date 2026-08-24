@@ -434,6 +434,21 @@ export const IconBookmarkOff = (p: SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
+export const IconArchive = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}>
+    <rect width="18" height="4" x="3" y="4" rx="1" ry="1" />
+    <path d="M5 10v9a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-9" />
+    <path d="m10 14 2 2 2-2" />
+  </svg>
+);
+
+export const IconUndo = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}>
+    <path d="M7 9l-4 4 4 4" />
+    <path d="M3 13h12a5 5 0 0 0 0-10h-2" />
+  </svg>
+);
+
 export const IconMoveRight = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}>
     <path d="M18 8 22 12 18 16" />
