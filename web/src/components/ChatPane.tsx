@@ -3660,13 +3660,6 @@ export default function ChatPane({
     [askPrompt, projectId, sessionId, update],
   );
 
-  const lastMsgIdx = useMemo(() => {
-    for (let i = items.length - 1; i >= 0; i--) {
-      if (items[i].kind === 'msg') return i;
-    }
-    return -1;
-  }, [items]);
-
   // Keys of the user's messages, in order — the minimap shows one dot each.
   const userKeys = useMemo(
     () =>
@@ -4100,11 +4093,35 @@ export default function ChatPane({
         {!loading && !loadError && items.length > 0 && (
           <div className="mx-auto flex max-w-2xl flex-col gap-3">
             {(() => {
-              // Consecutive collapsed-tool rounds that are PURELY tool calls (no text)
-              // merge into one grouped collapse with a combined summary. A
-              // round that says something is a real message — its words render
-              // as its own row (the tool calls collapse beneath it) and it
-              // also breaks the silent run, so messages are never swallowed.
+              // Silent collapsed-tool rounds (no text) fold into the work note
+              // that precedes them, so bookkeeping like a lone "made 1 edit"
+              // extends the note above's collapse summary instead of cluttering
+              // the transcript. A round that says something is a real message —
+              // its words render as its own row and the run of silent rounds
+              // following it folds onto that note.
+              const displayItems: Item[] = [];
+              let note: MsgItem | null = null; // the current text-bearing work note
+              for (const it of items) {
+                const isSilent = it.kind === 'msg' && isCollapsedToolsRow(it) && !it.content?.trim();
+                if (isSilent && note && note.content?.trim() && isCollapsedToolsRow(note)) {
+                  const folded: MsgItem = {
+                    ...note,
+                    toolCalls: [...(note.toolCalls ?? []), ...(it.toolCalls ?? [])],
+                    toolResults: [...(note.toolResults ?? []), ...(it.toolResults ?? [])],
+                  };
+                  displayItems[displayItems.length - 1] = folded;
+                  note = folded;
+                } else {
+                  displayItems.push(it);
+                  note = it.kind === 'msg' && !it.streaming ? it : null;
+                }
+              }
+              const lastMsgIdx = (() => {
+                for (let i = displayItems.length - 1; i >= 0; i--) {
+                  if (displayItems[i].kind === 'msg') return i;
+                }
+                return -1;
+              })();
               const rows: ReactNode[] = [];
               let run: { it: MsgItem; i: number }[] = [];
               const flush = () => {
@@ -4142,7 +4159,7 @@ export default function ChatPane({
                 }
                 run = [];
               };
-              items.forEach((it, i) => {
+              displayItems.forEach((it, i) => {
                 // Merge consecutive silent collapsed-tool rounds; a round with
                 // actual words is a message — render it alone (its text shows)
                 // and break the run.
