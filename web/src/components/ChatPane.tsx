@@ -173,6 +173,7 @@ const TOOL_ICONS: Record<string, typeof IconWrench> = {
   fetch_url: IconGlobe,
   run_command: IconTerminal,
   run_command_background: IconTerminal,
+  git: IconTerminal,
   restart_preview: IconRefresh,
   screenshot_app: IconCamera,
   set_todos: IconCheckSquare,
@@ -668,6 +669,8 @@ function chipLabel(detail: string): string {
     if (Array.isArray(a.todos)) {
       return `${a.todos.length} todo${a.todos.length === 1 ? '' : 's'}`;
     }
+    // remember: show the remembered text (truncated) instead of the JSON.
+    if (typeof a.content === 'string' && a.content.trim()) return a.content;
     return meaningfulDetail(detail) ? detail : '';
   } catch {
     return meaningfulDetail(detail) ? detail : '';
@@ -690,9 +693,17 @@ function ToolChip({ name, detail }: ToolCall) {
     }
   }, [name, detail]);
   const label = diff ? diff.path : chipLabel(detail);
+  // set_todos / remember / write_file expand to a readable preview of their
+  // arguments instead of the JSON envelope.
+  const preview =
+    name === 'set_todos' ? (
+      <TodoListBlock detail={detail} />
+    ) : name === 'remember' ? (
+      <MemoryBlock detail={detail} />
+    ) : null;
   // Nothing worth expanding (e.g. restart_preview with empty args) renders as
   // a static row — no chevron, no dropdown.
-  const expandable = diff !== null || writeContent !== null || meaningfulDetail(detail);
+  const expandable = diff !== null || writeContent !== null || preview !== null || meaningfulDetail(detail);
   const header = (
     <>
       {expandable ? (
@@ -757,6 +768,8 @@ function ToolChip({ name, detail }: ToolCall) {
           <StickToBottom className="max-h-60 overflow-auto whitespace-pre-wrap break-words border-t border-border/80 px-3 py-2 font-mono text-[11px] leading-relaxed text-subtle">
             {writeContent}
           </StickToBottom>
+        ) : preview !== null ? (
+          <>{preview}</>
         ) : (
           meaningfulDetail(detail) && <ToolBody detail={detail} />
         ))}
@@ -814,12 +827,22 @@ function ToolBody({ detail }: { detail: string }) {
   );
 }
 
-// A run_command call and its result merged into one card: the header carries
-// the command with a plain ✓/✗ status; expanding shows a code block with the
-// command line followed by the raw output — not the JSON envelope.
-function RunCommandBlock({ command, result }: { command: string; result: ToolCall }) {
+// A command tool call (run_command, git) and its result merged into one card:
+// the header carries the command with a plain ✓/✗ status; expanding shows a
+// code block with the command line followed by the raw output — not the JSON
+// envelope.
+function RunCommandBlock({
+  name,
+  command,
+  result,
+}: {
+  name: string;
+  command: string;
+  result: ToolCall;
+}) {
   const [open, setOpen] = useState(false);
   const exitCode = runExitCode(result.detail);
+  const Icon = toolIcon(name);
   return (
     <div className="w-full overflow-hidden rounded-md border border-border bg-surface/50 font-mono text-[10px]">
       <button
@@ -832,8 +855,8 @@ function RunCommandBlock({ command, result }: { command: string; result: ToolCal
         ) : (
           <IconChevronRight className="h-3 w-3 shrink-0" />
         )}
-        <IconTerminal className="h-3 w-3 shrink-0 text-faint" />
-        <span className="shrink-0 text-text">{toolLabel('run_command')}</span>
+        <Icon className="h-3 w-3 shrink-0 text-faint" />
+        <span className="shrink-0 text-text">{toolLabel(name)}</span>
         <span className="min-w-0 flex-1 truncate text-faint">{command}</span>
         {exitCode === 0 && <IconCheck className="h-3 w-3 shrink-0 text-emerald-500" />}
         {exitCode !== null && exitCode !== 0 && <IconX className="h-3 w-3 shrink-0 text-red-500" />}
@@ -894,6 +917,192 @@ function SearchFilesBlock({ query, result }: { query: string; result: ToolCall }
       {open && (
         <div className="border-t border-border/80">
           <ToolBody detail={result.detail} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Parses a tool result's JSON error payload into a readable message, or null
+// when the result isn't an error shape (a success, raw output, a bare string).
+function toolError(detail: string): { message: string; suggestion?: string } | null {
+  try {
+    const d = JSON.parse(detail) as { success?: unknown; error?: unknown } | null;
+    if (!d || typeof d !== 'object') return null;
+    if (typeof d.error === 'string') return { message: d.error };
+    if (d.success === false && d.error && typeof d.error === 'object' && d.error !== null) {
+      const e = d.error as { message?: unknown; suggestion?: unknown };
+      return {
+        message: typeof e.message === 'string' && e.message ? e.message : detail,
+        suggestion: typeof e.suggestion === 'string' && e.suggestion ? e.suggestion : undefined,
+      };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+// A read_file call and its result merged into one card: the header shows the
+// path with a ✓, expanding shows the file's content directly — not the JSON
+// envelope. A failed read shows the error like a failed command.
+function ReadFileBlock({ path, result }: { path: string; result: ToolCall }) {
+  const [open, setOpen] = useState(false);
+  const err = result ? toolError(result.detail) : null;
+  const content = useMemo(() => {
+    if (err || !result) return null;
+    try {
+      const d = JSON.parse(result.detail) as { content?: unknown };
+      return typeof d.content === 'string' ? d.content : null;
+    } catch {
+      return null;
+    }
+  }, [err, result]);
+  return (
+    <div className="w-full overflow-hidden rounded-md border border-border bg-surface/50 font-mono text-[10px]">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex min-h-[26px] w-full items-center gap-1.5 px-2 py-1 text-left text-dim transition-colors hover:text-text"
+      >
+        {open ? (
+          <IconChevronDown className="h-3 w-3 shrink-0" />
+        ) : (
+          <IconChevronRight className="h-3 w-3 shrink-0" />
+        )}
+        <IconFile className="h-3 w-3 shrink-0 text-faint" />
+        <span className="shrink-0 text-text">{toolLabel('read_file')}</span>
+        <span className="min-w-0 flex-1 truncate text-faint">{path}</span>
+        {err ? <IconX className="h-3 w-3 shrink-0 text-red-500" /> : <IconCheck className="h-3 w-3 shrink-0 text-emerald-500" />}
+      </button>
+      {open && (
+        err ? (
+          <div className="border-t border-red-500/30 px-3 py-2 text-[11px] leading-relaxed text-red-400">
+            {err.message}
+          </div>
+        ) : content !== null ? (
+          <StickToBottom className="max-h-60 overflow-auto whitespace-pre-wrap break-words border-t border-border/80 px-3 py-2 text-[11px] leading-relaxed text-subtle">
+            {content}
+          </StickToBottom>
+        ) : result ? (
+          <ToolBody detail={result.detail} />
+        ) : null
+      )}
+    </div>
+  );
+}
+
+// A failed edit_file shown like a failed command: a red ✗ row that expands to
+// the error message, rather than a JSON blob.
+function EditFileError({ detail }: { detail: string }) {
+  const [open, setOpen] = useState(false);
+  const err = toolError(detail);
+  if (!err) return <ToolResultBlock name="edit_file" detail={detail} />;
+  return (
+    <div className="w-full overflow-hidden rounded-md border border-red-500/30 bg-surface/50 font-mono text-[10px]">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex min-h-[26px] w-full items-center gap-1.5 px-2 py-1 text-left text-dim transition-colors hover:text-text"
+      >
+        {open ? (
+          <IconChevronDown className="h-3 w-3 shrink-0" />
+        ) : (
+          <IconChevronRight className="h-3 w-3 shrink-0" />
+        )}
+        <IconCode className="h-3 w-3 shrink-0 text-faint" />
+        <span className="shrink-0 text-text">{toolLabel('edit_file')}</span>
+        <IconX className="h-3 w-3 shrink-0 text-red-500" />
+      </button>
+      {open && (
+        <div className="border-t border-red-500/30 px-3 py-2 text-[11px] leading-relaxed text-red-400">
+          {err.message}
+          {err.suggestion && (
+            <div className="mt-1 text-red-300/70">{err.suggestion}</div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// A set_todos call rendered as a preview of the todo list, not the JSON.
+function TodoListBlock({ detail }: { detail: string }) {
+  const [open, setOpen] = useState(false);
+  const todos = useMemo(() => {
+    try {
+      const a = JSON.parse(detail) as { todos?: { title?: string; done?: boolean }[] };
+      return Array.isArray(a.todos)
+        ? a.todos.map((t) => ({ title: typeof t.title === 'string' ? t.title : '', done: t.done === true }))
+        : [];
+    } catch {
+      return [];
+    }
+  }, [detail]);
+  return (
+    <div className="w-full overflow-hidden rounded-md border border-border bg-surface/50 font-mono text-[10px]">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex min-h-[26px] w-full items-center gap-1.5 px-2 py-1 text-left text-dim transition-colors hover:text-text"
+      >
+        {open ? (
+          <IconChevronDown className="h-3 w-3 shrink-0" />
+        ) : (
+          <IconChevronRight className="h-3 w-3 shrink-0" />
+        )}
+        <IconCheckSquare className="h-3 w-3 shrink-0 text-faint" />
+        <span className="shrink-0 text-text">{toolLabel('set_todos')}</span>
+        <span className="min-w-0 flex-1 truncate text-faint">{todos.length} todo{todos.length === 1 ? '' : 's'}</span>
+      </button>
+      {open && (
+        <div className="flex flex-col border-t border-border/80 px-2 py-1.5">
+          {todos.map((t, i) => (
+            <div key={i} className="flex items-start gap-1.5 px-1 py-0.5">
+              {t.done ? (
+                <IconCheck className="mt-0.5 h-3 w-3 shrink-0 text-emerald-500" />
+              ) : (
+                <span className="mt-0.5 h-3 w-3 shrink-0 rounded-sm border border-border" />
+              )}
+              <span className="whitespace-pre-wrap break-words text-subtle">{t.title}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// A remember call rendered as the remembered text instead of the JSON envelope.
+function MemoryBlock({ detail }: { detail: string }) {
+  const [open, setOpen] = useState(false);
+  const content = useMemo(() => {
+    try {
+      const a = JSON.parse(detail) as { content?: unknown };
+      return typeof a.content === 'string' ? a.content : null;
+    } catch {
+      return null;
+    }
+  }, [detail]);
+  return (
+    <div className="w-full overflow-hidden rounded-md border border-border bg-surface/50 font-mono text-[10px]">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex min-h-[26px] w-full items-center gap-1.5 px-2 py-1 text-left text-dim transition-colors hover:text-text"
+      >
+        {open ? (
+          <IconChevronDown className="h-3 w-3 shrink-0" />
+        ) : (
+          <IconChevronRight className="h-3 w-3 shrink-0" />
+        )}
+        <IconBookmark className="h-3 w-3 shrink-0 text-faint" />
+        <span className="shrink-0 text-text">{toolLabel('remember')}</span>
+        <span className="min-w-0 flex-1 truncate text-faint">{content ?? '…'}</span>
+      </button>
+      {open && content !== null && (
+        <div className="whitespace-pre-wrap break-words border-t border-border/80 px-3 py-2 text-[11px] leading-relaxed text-subtle">
+          {content}
         </div>
       )}
     </div>
@@ -1128,14 +1337,23 @@ function ToolBlocks({ calls, results }: { calls: ToolCall[]; results: ToolCall[]
   let next = 0;
   calls.forEach((tc, j) => {
     // Merge call + its result into one card for these tools.
-    if (tc.name === 'run_command' || tc.name === 'search_files') {
+    if (tc.name === 'run_command' || tc.name === 'search_files' || tc.name === 'git' || tc.name === 'read_file') {
       let k = next;
       while (k < results.length && results[k].name !== tc.name) k++;
       if (k < results.length) {
         next = k + 1;
-        if (tc.name === 'run_command') {
+        if (tc.name === 'run_command' || tc.name === 'git') {
           out.push(
-            <RunCommandBlock key={`c${j}`} command={chipLabel(tc.detail)} result={results[k]} />,
+            <RunCommandBlock
+              key={`c${j}`}
+              name={tc.name}
+              command={chipLabel(tc.detail)}
+              result={results[k]}
+            />,
+          );
+        } else if (tc.name === 'read_file') {
+          out.push(
+            <ReadFileBlock key={`c${j}`} path={chipLabel(tc.detail)} result={results[k]} />,
           );
         } else {
           out.push(
@@ -1148,9 +1366,14 @@ function ToolBlocks({ calls, results }: { calls: ToolCall[]; results: ToolCall[]
     out.push(<ToolChip key={`c${j}`} {...tc} />);
   });
   results.forEach((tr, j) => {
-    // results already merged into a RunCommandBlock/SearchFilesBlock are skipped
-    if (j < next && (tr.name === 'run_command' || tr.name === 'search_files')) return;
-    out.push(<ToolResultBlock key={`r${j}`} {...tr} />);
+    // results already merged into a merged block above are skipped
+    if (j < next && (tr.name === 'run_command' || tr.name === 'search_files' || tr.name === 'git' || tr.name === 'read_file')) return;
+    // A failed edit_file renders as a red ✗ row like a failed command.
+    if (tr.name === 'edit_file' && toolError(tr.detail)) {
+      out.push(<EditFileError key={`r${j}`} detail={tr.detail} />);
+    } else {
+      out.push(<ToolResultBlock key={`r${j}`} {...tr} />);
+    }
   });
   return <div className="flex flex-col gap-1.5">{out}</div>;
 }
