@@ -64,6 +64,7 @@ import {
   IconExpand,
   IconFile,
   IconGlobe,
+  IconGitBranch,
   IconList,
   IconLock,
   IconMap,
@@ -173,7 +174,7 @@ const TOOL_ICONS: Record<string, typeof IconWrench> = {
   fetch_url: IconGlobe,
   run_command: IconTerminal,
   run_command_background: IconTerminal,
-  git: IconTerminal,
+  git: IconGitBranch,
   restart_preview: IconRefresh,
   screenshot_app: IconCamera,
   set_todos: IconCheckSquare,
@@ -924,22 +925,29 @@ function SearchFilesBlock({ query, result }: { query: string; result: ToolCall }
 }
 
 // Parses a tool result's JSON error payload into a readable message, or null
-// when the result isn't an error shape (a success, raw output, a bare string).
-function toolError(detail: string): { message: string; suggestion?: string } | null {
+// when the result isn't an error. Handles the JSON error shapes
+// {"success":false,"error":{...}} / {"error":"..."} and, for tools whose
+// success is always JSON with "ok":true, a bare non-JSON error string.
+function toolErrorMessage(detail: string): string | null {
+  const t = detail.trim();
+  if (!t) return null;
   try {
-    const d = JSON.parse(detail) as { success?: unknown; error?: unknown } | null;
-    if (!d || typeof d !== 'object') return null;
-    if (typeof d.error === 'string') return { message: d.error };
-    if (d.success === false && d.error && typeof d.error === 'object' && d.error !== null) {
-      const e = d.error as { message?: unknown; suggestion?: unknown };
-      return {
-        message: typeof e.message === 'string' && e.message ? e.message : detail,
-        suggestion: typeof e.suggestion === 'string' && e.suggestion ? e.suggestion : undefined,
-      };
+    const d = JSON.parse(t) as Record<string, unknown>;
+    if (d && typeof d === 'object') {
+      if (d.ok === true) return null;
+      const e = d.error;
+      if (typeof e === 'string' && e) return e;
+      if (e && typeof e === 'object') {
+        const msg = (e as { message?: unknown }).message;
+        if (typeof msg === 'string' && msg) return msg;
+      }
+      if (d.success === false || 'error' in d) return t;
+      return null;
     }
     return null;
   } catch {
-    return null;
+    // Not JSON — a bare error string (e.g. "error: old_string not found …").
+    return t;
   }
 }
 
@@ -948,7 +956,7 @@ function toolError(detail: string): { message: string; suggestion?: string } | n
 // envelope. A failed read shows the error like a failed command.
 function ReadFileBlock({ path, result }: { path: string; result: ToolCall }) {
   const [open, setOpen] = useState(false);
-  const err = result ? toolError(result.detail) : null;
+  const err = result ? toolErrorMessage(result.detail) : null;
   const content = useMemo(() => {
     if (err || !result) return null;
     try {
@@ -978,7 +986,7 @@ function ReadFileBlock({ path, result }: { path: string; result: ToolCall }) {
       {open && (
         err ? (
           <div className="border-t border-red-500/30 px-3 py-2 text-[11px] leading-relaxed text-red-400">
-            {err.message}
+            {err}
           </div>
         ) : content !== null ? (
           <StickToBottom className="max-h-60 overflow-auto whitespace-pre-wrap break-words border-t border-border/80 px-3 py-2 text-[11px] leading-relaxed text-subtle">
@@ -996,8 +1004,8 @@ function ReadFileBlock({ path, result }: { path: string; result: ToolCall }) {
 // the error message, rather than a JSON blob.
 function EditFileError({ detail }: { detail: string }) {
   const [open, setOpen] = useState(false);
-  const err = toolError(detail);
-  if (!err) return <ToolResultBlock name="edit_file" detail={detail} />;
+  const err = toolErrorMessage(detail);
+  if (err === null) return <ToolResultBlock name="edit_file" detail={detail} />;
   return (
     <div className="w-full overflow-hidden rounded-md border border-red-500/30 bg-surface/50 font-mono text-[10px]">
       <button
@@ -1016,19 +1024,17 @@ function EditFileError({ detail }: { detail: string }) {
       </button>
       {open && (
         <div className="border-t border-red-500/30 px-3 py-2 text-[11px] leading-relaxed text-red-400">
-          {err.message}
-          {err.suggestion && (
-            <div className="mt-1 text-red-300/70">{err.suggestion}</div>
-          )}
+          {err}
         </div>
       )}
     </div>
   );
 }
 
-// A set_todos call rendered as a preview of the todo list, not the JSON.
+// A set_todos call rendered as a static preview of the todo list (header +
+// always-visible items), not the JSON envelope. No collapse — it lives inside
+// an already-collapsible tool chip.
 function TodoListBlock({ detail }: { detail: string }) {
-  const [open, setOpen] = useState(false);
   const todos = useMemo(() => {
     try {
       const a = JSON.parse(detail) as { todos?: { title?: string; done?: boolean }[] };
@@ -1039,43 +1045,36 @@ function TodoListBlock({ detail }: { detail: string }) {
       return [];
     }
   }, [detail]);
+  const pending = todos.filter((t) => !t.done).length;
   return (
     <div className="w-full overflow-hidden rounded-md border border-border bg-surface/50 font-mono text-[10px]">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="flex min-h-[26px] w-full items-center gap-1.5 px-2 py-1 text-left text-dim transition-colors hover:text-text"
-      >
-        {open ? (
-          <IconChevronDown className="h-3 w-3 shrink-0" />
-        ) : (
-          <IconChevronRight className="h-3 w-3 shrink-0" />
-        )}
+      <div className="flex min-h-[26px] w-full items-center gap-1.5 px-2 py-1 text-left text-dim">
+        <span className="w-3 shrink-0" />
         <IconCheckSquare className="h-3 w-3 shrink-0 text-faint" />
         <span className="shrink-0 text-text">{toolLabel('set_todos')}</span>
-        <span className="min-w-0 flex-1 truncate text-faint">{todos.length} todo{todos.length === 1 ? '' : 's'}</span>
-      </button>
-      {open && (
-        <div className="flex flex-col border-t border-border/80 px-2 py-1.5">
-          {todos.map((t, i) => (
-            <div key={i} className="flex items-start gap-1.5 px-1 py-0.5">
-              {t.done ? (
-                <IconCheck className="mt-0.5 h-3 w-3 shrink-0 text-emerald-500" />
-              ) : (
-                <span className="mt-0.5 h-3 w-3 shrink-0 rounded-sm border border-border" />
-              )}
-              <span className="whitespace-pre-wrap break-words text-subtle">{t.title}</span>
-            </div>
-          ))}
-        </div>
-      )}
+        <span className="min-w-0 flex-1 truncate text-faint">
+          {todos.length} todo{todos.length === 1 ? '' : 's'}
+          {pending > 0 ? ` · ${pending} pending` : ''}
+        </span>
+      </div>
+      <div className="flex flex-col border-t border-border/80 px-2 py-1.5">
+        {todos.map((t, i) => (
+          <div key={i} className="flex items-start gap-1.5 px-1 py-0.5">
+            {t.done ? (
+              <IconCheck className="mt-0.5 h-3 w-3 shrink-0 text-emerald-500" />
+            ) : (
+              <span className="mt-0.5 h-3 w-3 shrink-0 rounded-sm border border-border" />
+            )}
+            <span className="whitespace-pre-wrap break-words text-subtle">{t.title}</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
 
 // A remember call rendered as the remembered text instead of the JSON envelope.
 function MemoryBlock({ detail }: { detail: string }) {
-  const [open, setOpen] = useState(false);
   const content = useMemo(() => {
     try {
       const a = JSON.parse(detail) as { content?: unknown };
@@ -1086,21 +1085,13 @@ function MemoryBlock({ detail }: { detail: string }) {
   }, [detail]);
   return (
     <div className="w-full overflow-hidden rounded-md border border-border bg-surface/50 font-mono text-[10px]">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="flex min-h-[26px] w-full items-center gap-1.5 px-2 py-1 text-left text-dim transition-colors hover:text-text"
-      >
-        {open ? (
-          <IconChevronDown className="h-3 w-3 shrink-0" />
-        ) : (
-          <IconChevronRight className="h-3 w-3 shrink-0" />
-        )}
+      <div className="flex min-h-[26px] w-full items-center gap-1.5 px-2 py-1 text-left text-dim">
+        <span className="w-3 shrink-0" />
         <IconBookmark className="h-3 w-3 shrink-0 text-faint" />
         <span className="shrink-0 text-text">{toolLabel('remember')}</span>
         <span className="min-w-0 flex-1 truncate text-faint">{content ?? '…'}</span>
-      </button>
-      {open && content !== null && (
+      </div>
+      {content !== null && (
         <div className="whitespace-pre-wrap break-words border-t border-border/80 px-3 py-2 text-[11px] leading-relaxed text-subtle">
           {content}
         </div>
@@ -1369,7 +1360,7 @@ function ToolBlocks({ calls, results }: { calls: ToolCall[]; results: ToolCall[]
     // results already merged into a merged block above are skipped
     if (j < next && (tr.name === 'run_command' || tr.name === 'search_files' || tr.name === 'git' || tr.name === 'read_file')) return;
     // A failed edit_file renders as a red ✗ row like a failed command.
-    if (tr.name === 'edit_file' && toolError(tr.detail)) {
+    if (tr.name === 'edit_file' && toolErrorMessage(tr.detail) !== null) {
       out.push(<EditFileError key={`r${j}`} detail={tr.detail} />);
     } else {
       out.push(<ToolResultBlock key={`r${j}`} {...tr} />);
