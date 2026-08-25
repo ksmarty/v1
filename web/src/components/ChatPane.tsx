@@ -4100,10 +4100,12 @@ export default function ChatPane({
         {!loading && !loadError && items.length > 0 && (
           <div className="mx-auto flex max-w-2xl flex-col gap-3">
             {(() => {
-              // Consecutive bare collapsed-tool rows (no text, no usage line)
-              // merge into one grouped collapse with a combined summary
-              // instead of a stack of near-identical summary rows; a row with
-              // actual words is a natural break point and stays its own row.
+              // Consecutive collapsed-tool rows merge into one grouped collapse with a
+              // combined summary instead of a stack of near-identical summary
+              // rows. Any assistant message that made a tool call — even one
+              // carrying a brief work note — belongs to the group (its text
+              // shows inside when expanded); a genuine turn-final reply (no
+              // tools, real text) is not a collapsed row and breaks the run.
               const rows: ReactNode[] = [];
               let run: { it: MsgItem; i: number }[] = [];
               const flush = () => {
@@ -4142,12 +4144,9 @@ export default function ChatPane({
                 run = [];
               };
               items.forEach((it, i) => {
-                if (
-                  it.kind === 'msg' &&
-                  isCollapsedToolsRow(it) &&
-                  !it.content?.trim() &&
-                  !(it.usage && turnEndKeys.has(it.key))
-                ) {
+                // Any collapsed-tool row merges; non-tool replies aren't
+                // collapsed rows and flush the pending run.
+                if (it.kind === 'msg' && isCollapsedToolsRow(it)) {
                   run.push({ it, i });
                   return;
                 }
