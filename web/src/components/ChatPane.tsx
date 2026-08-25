@@ -1031,9 +1031,9 @@ function EditFileError({ detail }: { detail: string }) {
   );
 }
 
-// A set_todos call rendered as a static preview of the todo list (header +
-// always-visible items), not the JSON envelope. No collapse — it lives inside
-// an already-collapsible tool chip.
+// Renders the inside of a set_todos tool chip when expanded: just the todo
+// list. The chip's header already shows the tool name and count, so this is
+// body-only — no repeating "Update todos N todos".
 function TodoListBlock({ detail }: { detail: string }) {
   const todos = useMemo(() => {
     try {
@@ -1045,35 +1045,25 @@ function TodoListBlock({ detail }: { detail: string }) {
       return [];
     }
   }, [detail]);
-  const pending = todos.filter((t) => !t.done).length;
+  if (todos.length === 0) return null;
   return (
-    <div className="w-full overflow-hidden rounded-md border border-border bg-surface/50 font-mono text-[10px]">
-      <div className="flex min-h-[26px] w-full items-center gap-1.5 px-2 py-1 text-left text-dim">
-        <span className="w-3 shrink-0" />
-        <IconCheckSquare className="h-3 w-3 shrink-0 text-faint" />
-        <span className="shrink-0 text-text">{toolLabel('set_todos')}</span>
-        <span className="min-w-0 flex-1 truncate text-faint">
-          {todos.length} todo{todos.length === 1 ? '' : 's'}
-          {pending > 0 ? ` · ${pending} pending` : ''}
-        </span>
-      </div>
-      <div className="flex flex-col border-t border-border/80 px-2 py-1.5">
-        {todos.map((t, i) => (
-          <div key={i} className="flex items-start gap-1.5 px-1 py-0.5">
-            {t.done ? (
-              <IconCheck className="mt-0.5 h-3 w-3 shrink-0 text-emerald-500" />
-            ) : (
-              <span className="mt-0.5 h-3 w-3 shrink-0 rounded-sm border border-border" />
-            )}
-            <span className="whitespace-pre-wrap break-words text-subtle">{t.title}</span>
-          </div>
-        ))}
-      </div>
+    <div className="flex max-h-60 flex-col overflow-auto border-t border-border/80 px-2 py-1.5">
+      {todos.map((t, i) => (
+        <div key={i} className="flex items-start gap-1.5 px-1 py-0.5">
+          {t.done ? (
+            <IconCheck className="mt-0.5 h-3 w-3 shrink-0 text-emerald-500" />
+          ) : (
+            <span className="mt-0.5 h-3 w-3 shrink-0 rounded-sm border border-border" />
+          )}
+          <span className="whitespace-pre-wrap break-words text-subtle">{t.title}</span>
+        </div>
+      ))}
     </div>
   );
 }
 
-// A remember call rendered as the remembered text instead of the JSON envelope.
+// The inside of a remember tool chip: the remembered text. Body only — the
+// chip's header already labels it and shows the content.
 function MemoryBlock({ detail }: { detail: string }) {
   const content = useMemo(() => {
     try {
@@ -1083,19 +1073,10 @@ function MemoryBlock({ detail }: { detail: string }) {
       return null;
     }
   }, [detail]);
+  if (content === null) return null;
   return (
-    <div className="w-full overflow-hidden rounded-md border border-border bg-surface/50 font-mono text-[10px]">
-      <div className="flex min-h-[26px] w-full items-center gap-1.5 px-2 py-1 text-left text-dim">
-        <span className="w-3 shrink-0" />
-        <IconBookmark className="h-3 w-3 shrink-0 text-faint" />
-        <span className="shrink-0 text-text">{toolLabel('remember')}</span>
-        <span className="min-w-0 flex-1 truncate text-faint">{content ?? '…'}</span>
-      </div>
-      {content !== null && (
-        <div className="whitespace-pre-wrap break-words border-t border-border/80 px-3 py-2 text-[11px] leading-relaxed text-subtle">
-          {content}
-        </div>
-      )}
+    <div className="whitespace-pre-wrap break-words border-t border-border/80 px-3 py-2 text-[11px] leading-relaxed text-subtle">
+      {content}
     </div>
   );
 }
