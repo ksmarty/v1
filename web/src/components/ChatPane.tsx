@@ -4100,12 +4100,11 @@ export default function ChatPane({
         {!loading && !loadError && items.length > 0 && (
           <div className="mx-auto flex max-w-2xl flex-col gap-3">
             {(() => {
-              // Consecutive collapsed-tool rows merge into one grouped collapse with a
-              // combined summary instead of a stack of near-identical summary
-              // rows. Any assistant message that made a tool call — even one
-              // carrying a brief work note — belongs to the group (its text
-              // shows inside when expanded); a genuine turn-final reply (no
-              // tools, real text) is not a collapsed row and breaks the run.
+              // Consecutive collapsed-tool rounds that are PURELY tool calls (no text)
+              // merge into one grouped collapse with a combined summary. A
+              // round that says something is a real message — its words render
+              // as its own row (the tool calls collapse beneath it) and it
+              // also breaks the silent run, so messages are never swallowed.
               const rows: ReactNode[] = [];
               let run: { it: MsgItem; i: number }[] = [];
               const flush = () => {
@@ -4144,9 +4143,10 @@ export default function ChatPane({
                 run = [];
               };
               items.forEach((it, i) => {
-                // Any collapsed-tool row merges; non-tool replies aren't
-                // collapsed rows and flush the pending run.
-                if (it.kind === 'msg' && isCollapsedToolsRow(it)) {
+                // Merge consecutive silent collapsed-tool rounds; a round with
+                // actual words is a message — render it alone (its text shows)
+                // and break the run.
+                if (it.kind === 'msg' && isCollapsedToolsRow(it) && !it.content?.trim()) {
                   run.push({ it, i });
                   return;
                 }
