@@ -149,3 +149,30 @@ func TestRunCommandBackgroundTool(t *testing.T) {
 		t.Fatalf("background without a manager should fail: %v", err)
 	}
 }
+
+func TestSanitizeBackgroundText(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"plain output", "plain output"},
+		{"\x1b[31mred\x1b[0m text", "red text"},
+		{"\x1b]0;title\x07osc", "osc"},
+		{"line1\r\nline2", "line1\nline2"},
+		{"tab\there", "tab\there"},
+		{"bell\x07gone", "bellgone"},
+		{"nul\x00byte", "nulbyte"},
+		// DEL + C1 control bytes
+		{"del\x7fgone", "delgone"},
+	}
+	for _, tc := range cases {
+		if got := sanitizeBackgroundText(tc.in); got != tc.want {
+			t.Errorf("sanitizeBackgroundText(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+	// CR alone (old Mac line endings) is stripped, not kept.
+	if got := sanitizeBackgroundText("a\rb"); got != "ab" {
+		t.Errorf("CR not stripped: %q", got)
+	}
+	// Invalid UTF-8 is replaced.
+	if got := sanitizeBackgroundText("bad\xff\xfebytes"); got != "bad\uFFFD\uFFFDbytes" {
+		t.Errorf("invalid utf8 not replaced: %q", got)
+	}
+}

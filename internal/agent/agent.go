@@ -252,10 +252,17 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 		}
 		switch m.Role {
 		case "user":
+			// Background results were persisted with raw command output;
+			// sanitize them on rebuild so providers never see control bytes
+			// even for transcripts stored before the sanitizer existed.
+			content := m.Content
+			if m.ToolJSON == "background" {
+				content = sanitizeBackgroundText(content)
+			}
 			if m.Attachments != "" {
-				history = append(history, userMessage(m.Content, ParseAttachments(m.Attachments)))
+				history = append(history, userMessage(content, ParseAttachments(m.Attachments)))
 			} else {
-				history = append(history, llm.Message{Role: "user", Content: m.Content})
+				history = append(history, llm.Message{Role: "user", Content: content})
 			}
 		case "assistant":
 			msg := llm.Message{Role: "assistant", Content: m.Content, ReasoningContent: m.Reasoning}

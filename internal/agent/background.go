@@ -4,13 +4,49 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
+	"unicode/utf8"
 
 	"v1/internal/store"
 )
+
+// ANSI escape sequences (CSI ... and OSC ...) that commonly appear in raw
+// terminal output. They must not reach provider-bound chat messages.
+var (
+	ansiCSIRe = regexp.MustCompile(`\x1b\[[0-9;:?]*[ -/]*[@-~]`)
+	ansiOSCRe = regexp.MustCompile(`\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)`)
+)
+
+// sanitizeBackgroundText makes raw command output safe for chat messages and
+// LLM requests. ANSI escapes and other control characters are removed — the
+// OpenAI-compatible providers reject strings that fail their character
+// pattern ("The string did not match the expected pattern") — and invalid
+// UTF-8 is replaced so the text survives JSON/SSE transport intact.
+func sanitizeBackgroundText(s string) string {
+	s = ansiOSCRe.ReplaceAllString(s, "")
+	s = ansiCSIRe.ReplaceAllString(s, "")
+	if !utf8.ValidString(s) {
+		s = strings.ToValidUTF8(s, "\uFFFD")
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		switch r {
+		case '\n', '\t':
+			b.WriteRune(r)
+		default:
+			if r < 0x20 || r == 0x7f {
+				continue
+			}
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
 
 // BackgroundResult is a finished background command handed to the agent loop
 // for injection into the running turn.
@@ -193,7 +229,9 @@ func (m *BackgroundManager) Completed(sessionID string) []*BackgroundJob {
 }
 
 // BackgroundResultText formats a finished job the way it is injected into the
-// conversation: a bracketed notice followed by the (capped) output.
+// conversation: a bracketed notice followed by the (capped) output. Output
+// and command are sanitized so raw terminal bytes (ANSI escapes, control
+// characters) can never leak into provider-bound messages.
 func BackgroundResultText(j *BackgroundJob) string {
 	status := fmt.Sprintf("exit %d", j.ExitCode)
 	if j.TimedOut {
@@ -201,9 +239,9 @@ func BackgroundResultText(j *BackgroundJob) string {
 	} else if j.Err != nil {
 		status = "failed to start"
 	}
-	out := strings.TrimSpace(j.Output)
+	out := strings.TrimSpace(sanitizeBackgroundText(j.Output))
 	if len(out) > backgroundOutputCap {
 		out = out[:backgroundOutputCap] + "\n…truncated"
 	}
-	return fmt.Sprintf("[Background #%s: %s] finished (%s):\n\n%s", j.ID[:8], j.Command, status, out)
+	return fmt.Sprintf("[Background #%s: %s] finished (%s):\n\n%s", j.ID[:8], sanitizeBackgroundText(j.Command), status, out)
 }
