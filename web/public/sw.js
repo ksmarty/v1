@@ -1,7 +1,32 @@
 // v1 service worker: installable + offline app shell.
-// API, preview, and WebSocket traffic is never cached.
-const VERSION = 'v1-cache-v3';
+// API, preview, and WebSocket traffic is never cached or intercepted.
+//
+// INVARIANT: every respondWith() must settle with a real Response — never
+// undefined and never a rejected promise. A rejected respondWith surfaces as
+// "FetchEvent ... resulted in a network error response: the promise was
+// rejected" / "Failed to convert value to 'Response'" and kills the load.
+const VERSION = 'v1-cache-v4';
+const SHELL_KEY = '/index.html';
 const APP_SHELL = ['/', '/index.html', '/manifest.json?v=3', '/icon-192.png?v=3', '/icon-512.png?v=3'];
+
+function offlineResponse() {
+  return new Response(
+    '<!doctype html><meta charset="utf-8"><title>Offline</title>' +
+      '<body style="font-family:sans-serif;text-align:center;padding-top:20vh">' +
+      'Offline — check your connection and reload.</body>',
+    { status: 503, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } },
+  );
+}
+
+// Best-effort cache write. Never throws, never leaves an unhandled rejection
+// (caches.put rejects on streaming/opaque/206 responses).
+function cachePut(cacheName, req, res) {
+  if (!res || !res.ok) return;
+  caches
+    .open(cacheName)
+    .then((c) => c.put(req, res.clone()))
+    .catch(() => {});
+}
 
 // Turn-finished notifications: open/focus the app and navigate to the exact
 // chat the notification is about (from the notification's data.url).
@@ -30,7 +55,9 @@ self.addEventListener('install', (e) => {
   e.waitUntil(
     caches
       .open(VERSION)
-      .then((c) => c.addAll(APP_SHELL))
+      // Pre-cache is best-effort: a single failing asset must not kill the
+      // install (which would leave no cache and no skipWaiting).
+      .then((c) => c.addAll(APP_SHELL).catch(() => {}))
       .then(() => self.skipWaiting()),
   );
 });
@@ -47,36 +74,52 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   const req = e.request;
   if (req.method !== 'GET' || req.headers.get('upgrade')) return;
-  const url = new URL(req.url);
+  if (!req.url.startsWith('http')) return;
+  let url;
+  try {
+    url = new URL(req.url);
+  } catch {
+    return;
+  }
   if (url.origin !== self.location.origin) return;
   if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/preview/')) return;
 
-  // Navigations: network-first, fall back to the cached shell when offline.
+  // Navigations: serve the cached app shell immediately (the SPA routes
+  // client-side) and refresh the shell in the background. The page load can
+  // never be sunk by a flaky network leg, and the shell is always present
+  // after the first successful load.
   if (req.mode === 'navigate') {
     e.respondWith(
-      fetch(req)
-        .then((res) => {
-          const copy = res.clone();
-          caches.open(VERSION).then((c) => c.put('/index.html', copy));
-          return res;
-        })
-        .catch(() => caches.match('/index.html')),
+      caches.match(SHELL_KEY).then((cached) => {
+        if (cached) {
+          fetch(req)
+            .then((res) => cachePut(VERSION, SHELL_KEY, res))
+            .catch(() => {});
+          return cached;
+        }
+        // First visit (nothing cached yet): network, then cache the shell.
+        // On failure return a real Response instead of letting respondWith
+        // reject with an undefined value.
+        return fetch(req)
+          .then((res) => {
+            cachePut(VERSION, SHELL_KEY, res);
+            return res;
+          })
+          .catch(() => offlineResponse());
+      }),
     );
     return;
   }
 
-  // Static assets: stale-while-revalidate (hashed bundles update in the background).
+  // Static assets: stale-while-revalidate.
   e.respondWith(
     caches.match(req).then((cached) => {
       const refresh = fetch(req)
         .then((res) => {
-          if (res.ok) {
-            const copy = res.clone();
-            caches.open(VERSION).then((c) => c.put(req, copy));
-          }
+          cachePut(VERSION, req, res);
           return res;
         })
-        .catch(() => cached);
+        .catch(() => cached || offlineResponse());
       return cached || refresh;
     }),
   );
