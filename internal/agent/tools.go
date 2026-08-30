@@ -1980,6 +1980,51 @@ func containerResourceCaps(fields []string) []string {
 	return append(out, fields[1:]...)
 }
 
+// stripTTYFlags removes interactive/tty flags from a `run` command. The agent
+// executes podman/docker with no TTY attached, so `-it`/`--tty` fail with
+// "the input device is not a TTY" and the container never starts. Dropping
+// them runs the container detached against /dev/null stdin, which is what
+// headless runs want anyway. `-i` (keep stdin open) is also dropped since
+// there is never anything on stdin.
+func stripTTYFlags(fields []string) []string {
+	if len(fields) == 0 || fields[0] != "run" {
+		return fields
+	}
+	out := fields[:1]
+	for _, f := range fields[1:] {
+		switch f {
+		case "-it", "-ti", "-t", "--tty", "-i", "--interactive":
+			continue
+		default:
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+// diagnoseContainerFailure maps common container-runtime failures to what the
+// operator actually has to change. The raw tool output is returned alongside,
+// but the actionable hint goes first so it is not lost in the noise.
+func diagnoseContainerFailure(cli string, output string) string {
+	switch {
+	case cli == "podman" && strings.Contains(output, "newuidmap"):
+		return "rootless podman cannot map the subordinate uid/gid ranges: the `uidmap` package " +
+			"(newuidmap/newgidmap, setuid-root binaries) is missing from the image. " +
+			"Fix: rebuild the v1 image from the current Dockerfile (install=uidmap), or on a " +
+			"running container as root: docker exec -u 0 <container> sh -c 'apt-get update && apt-get install -y uidmap'"
+	case strings.Contains(output, "operation not permitted") || strings.Contains(output, "permission denied") ||
+		(cli == "docker" && strings.Contains(output, "Is the docker daemon running")):
+		return "the container runtime could not create namespaces: the outer container that runs " +
+			"v1 must allow nested containers. Fix: start it with --privileged (or CAP_SYS_ADMIN + " +
+			"seccomp unconfined + user namespaces enabled on the host kernel)."
+	case cli == "podman" && strings.Contains(output, "not a shared mount"):
+		return "rootless podman storage may fail because \"/\" is not a shared mount; " +
+			"start the outer container with --privileged or remount: mount --make-rshared /"
+	default:
+		return ""
+	}
+}
+
 func (e *Executor) runContainer(ctx context.Context, argsJSON string) (string, error) {
 	var args struct {
 		Command string `json:"command"`
@@ -2015,6 +2060,7 @@ func (e *Executor) runContainer(ctx context.Context, argsJSON string) (string, e
 		fields = fields[1:]
 	}
 	fields = containerResourceCaps(fields)
+	fields = stripTTYFlags(fields)
 	execCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 	cmd := exec.CommandContext(execCtx, cli, fields...)
@@ -2026,10 +2072,20 @@ func (e *Executor) runContainer(ctx context.Context, argsJSON string) (string, e
 		if execCtx.Err() != nil {
 			return "", fmt.Errorf("run_container: timed out")
 		}
+		outText := out.String()
+		hint := diagnoseContainerFailure(cli, outText)
+		if hint != "" {
+			return toolResult(map[string]any{
+				"runtime":  cli,
+				"exitCode": 1,
+				"output":   trimHeadTail(outText, 5*1024),
+				"error":    cli + " command failed: " + err.Error() + "\nHINT: " + hint,
+			}), nil
+		}
 		return toolResult(map[string]any{
 			"runtime":  cli,
 			"exitCode": 1,
-			"output":   trimHeadTail(out.String(), 5*1024),
+			"output":   trimHeadTail(outText, 5*1024),
 			"error":    cli + " command failed: " + err.Error(),
 		}), nil
 	}

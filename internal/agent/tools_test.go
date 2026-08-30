@@ -463,3 +463,61 @@ func TestGitOpEndToEnd(t *testing.T) {
 		t.Fatal("status must not be treated as a remote op")
 	}
 }
+
+func TestContainerResourceCaps(t *testing.T) {
+	if got := containerResourceCaps([]string{"images"}); len(got) != 1 {
+		t.Fatalf("non-run commands unchanged, got %v", got)
+	}
+	got := containerResourceCaps([]string{"run", "--rm", "alpine", "sh", "-c", "x"})
+	want := []string{"run", "--cpus", "1", "--memory", "1g", "--rm", "alpine", "sh", "-c", "x"}
+	if len(got) != len(want) {
+		t.Fatalf("caps: got %v want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("caps: got %v want %v", got, want)
+		}
+	}
+	// User-set limits are respected.
+	got = containerResourceCaps([]string{"run", "--memory", "512m", "alpine"})
+	for _, f := range got {
+		if f == "--cpus" || strings.HasPrefix(f, "--cpus") {
+			t.Fatalf("should not inject cpus when memory set: %v", got)
+		}
+	}
+}
+
+func TestStripTTYFlags(t *testing.T) {
+	got := stripTTYFlags([]string{"run", "-it", "--rm", "-t", "--tty", "alpine", "-i", "echo"})
+	for _, f := range got {
+		switch f {
+		case "-it", "-ti", "-t", "--tty", "-i", "--interactive":
+			t.Fatalf("tty flag survived: %v", got)
+		}
+	}
+	if len(got) < 3 || got[0] != "run" || got[1] != "--rm" {
+		t.Fatalf("unexpected: %v", got)
+	}
+	// Non-run commands are untouched.
+	if got := stripTTYFlags([]string{"images"}); got[0] != "images" || len(got) != 1 {
+		t.Fatalf("non-run touched: %v", got)
+	}
+}
+
+func TestDiagnoseContainerFailure(t *testing.T) {
+	msg := diagnoseContainerFailure("podman", "Error: command required for rootless mode with multiple IDs: exec: \"newuidmap\": executable file not found in $PATH")
+	if !strings.Contains(msg, "uidmap") || !strings.Contains(msg, "apt-get install -y uidmap") {
+		t.Fatalf("newuidmap hint missing: %q", msg)
+	}
+	msg = diagnoseContainerFailure("podman", "Error: mount /: operation not permitted")
+	if !strings.Contains(msg, "privileged") {
+		t.Fatalf("privileged hint missing: %q", msg)
+	}
+	msg = diagnoseContainerFailure("docker", "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?")
+	if !strings.Contains(msg, "privileged") {
+		t.Fatalf("docker daemon hint missing: %q", msg)
+	}
+	if diagnoseContainerFailure("podman", "unrelated failure") != "" {
+		t.Fatal("unknown failures should return empty hint")
+	}
+}

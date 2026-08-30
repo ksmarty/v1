@@ -40,7 +40,10 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 # build and run containers for the user. Rootless podman needs:
 #   slirp4netns    -> rootless networking
 #   fuse-overlayfs -> rootless storage driver (with fuse3 for fusermount3)
-#   shadow         -> newuidmap/newgidmap for user-namespace mapping
+#   uidmap         -> newuidmap/newgidmap setuid helpers for user-namespace
+#                     mapping of the subuid/subgid ranges (a setuid-root
+#                     binary cannot be installed later by an unprivileged
+#                     user, so it must ship in the image)
 # plus a subuid/subgid range for the `node` user (see /etc/subuid below).
 #
 # Docker-in-docker: the OUTER container that runs v1 must allow nested
@@ -75,7 +78,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends chromium \
 # unconfined and user namespaces enabled on the host kernel). See
 # docker-compose.yml.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    podman slirp4netns fuse-overlayfs python3 python3-pip \
+    podman slirp4netns fuse-overlayfs uidmap python3 python3-pip \
     && rm -rf /var/lib/apt/lists/* \
     && echo "node:100000:65536" > /etc/subuid \
     && echo "node:100000:65536" > /etc/subgid
