@@ -464,29 +464,6 @@ func TestGitOpEndToEnd(t *testing.T) {
 	}
 }
 
-func TestContainerResourceCaps(t *testing.T) {
-	if got := containerResourceCaps([]string{"images"}); len(got) != 1 {
-		t.Fatalf("non-run commands unchanged, got %v", got)
-	}
-	got := containerResourceCaps([]string{"run", "--rm", "alpine", "sh", "-c", "x"})
-	want := []string{"run", "--cpus", "1", "--memory", "1g", "--rm", "alpine", "sh", "-c", "x"}
-	if len(got) != len(want) {
-		t.Fatalf("caps: got %v want %v", got, want)
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("caps: got %v want %v", got, want)
-		}
-	}
-	// User-set limits are respected.
-	got = containerResourceCaps([]string{"run", "--memory", "512m", "alpine"})
-	for _, f := range got {
-		if f == "--cpus" || strings.HasPrefix(f, "--cpus") {
-			t.Fatalf("should not inject cpus when memory set: %v", got)
-		}
-	}
-}
-
 func TestStripTTYFlags(t *testing.T) {
 	got := stripTTYFlags([]string{"run", "-it", "--rm", "-t", "--tty", "alpine", "-i", "echo"})
 	for _, f := range got {

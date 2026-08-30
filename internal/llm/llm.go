@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"v1/internal/sanitize"
 )
 
 // Message is a chat message in the OpenAI schema. Content is either a plain
@@ -163,8 +165,85 @@ func sanitizeToolCallArgs(messages []Message) []Message {
 	return cp
 }
 
+// sanitizeMessagesForAPI scrubs content that could make a provider reject the
+// payload ("The string did not match the expected pattern"). It runs on every
+// request at the API boundary, so it also retroactively repairs chats whose
+// stored history already contains raw control bytes: whatever loaded the
+// messages — a fresh session, a client retry replaying its own copy, or a
+// pre-fix transcript in the database — they all pass through here before the
+// JSON body is marshaled.
+func sanitizeMessagesForAPI(messages []Message) []Message {
+	changed := false
+	cp := make([]Message, len(messages))
+	copy(cp, messages)
+	for i, m := range cp {
+		mc, cChanged := scrubContent(m.Content)
+		rc := sanitize.Text(m.ReasoningContent)
+		tid := sanitize.Text(m.ToolCallID)
+		n := sanitize.Text(m.Name)
+		if cChanged || rc != m.ReasoningContent || tid != m.ToolCallID || n != m.Name {
+			changed = true
+		}
+		m.Content = mc
+		m.ReasoningContent = rc
+		m.ToolCallID = tid
+		m.Name = n
+		cp[i] = m
+	}
+	if !changed {
+		return messages
+	}
+	return cp
+}
+
+func scrubContent(c any) (any, bool) {
+	switch v := c.(type) {
+	case string:
+		clean := sanitize.Text(v)
+		return clean, clean != v
+	case []any:
+		out := make([]any, len(v))
+		anyChanged := false
+		for i, part := range v {
+			pm, ok := part.(map[string]any)
+			if !ok {
+				out[i] = part
+				continue
+			}
+			txt, has := pm["text"].(string)
+			if !has {
+				out[i] = part
+				continue
+			}
+			if clean := sanitize.Text(txt); clean != txt {
+				nm := cloneMap(pm)
+				nm["text"] = clean
+				out[i] = nm
+				anyChanged = true
+			} else {
+				out[i] = part
+			}
+		}
+		if anyChanged {
+			return out, true
+		}
+		return c, false
+	default:
+		return c, false
+	}
+}
+
+func cloneMap(m map[string]any) map[string]any {
+	out := make(map[string]any, len(m))
+	for k, v := range m {
+		out[k] = v
+	}
+	return out
+}
+
 func (c *Client) Complete(ctx context.Context, messages []Message) (string, error) {
 	messages = sanitizeToolCallArgs(messages)
+	messages = sanitizeMessagesForAPI(messages)
 	body := map[string]any{"model": c.Model, "messages": messages}
 	payload, err := json.Marshal(body)
 	if err != nil {
@@ -205,6 +284,7 @@ func (c *Client) Complete(ctx context.Context, messages []Message) (string, erro
 
 func (c *Client) ChatStream(ctx context.Context, messages []Message, tools []Tool, onDelta func(string), onReasoning func(string)) (*StreamResult, error) {
 	messages = sanitizeToolCallArgs(messages)
+	messages = sanitizeMessagesForAPI(messages)
 	res := &StreamResult{}
 	streamOptions := true
 	maxTokens := true

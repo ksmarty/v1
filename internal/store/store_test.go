@@ -301,3 +301,37 @@ func TestCreateChatSessionCounterStrictlyIncreases(t *testing.T) {
 	}
 	_ = second
 }
+
+func TestScrubStoredMessages(t *testing.T) {
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	db := s.db
+	if _, err := db.Exec(`INSERT INTO messages (project_id, session_id, role, content, attachments) VALUES (?, ?, ?, ?, ?)`,
+		"p1", "s1", "user", "clean", `{"a":"b"}`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO messages (project_id, session_id, role, content, attachments) VALUES (?, ?, ?, ?, ?)`,
+		"p1", "s1", "tool", "dirty\x1b[31m\x00", "{\"exitCode\":0,\"output\":\"\x1b[1mline\"}"); err != nil {
+		t.Fatal(err)
+	}
+	if err := scrubStoredMessages(db); err != nil {
+		t.Fatal(err)
+	}
+	// Re-running on clean data must be a no-op, not an error.
+	if err := scrubStoredMessages(db); err != nil {
+		t.Fatal(err)
+	}
+	var content, attachments string
+	if err := db.QueryRow(`SELECT content, attachments FROM messages WHERE role = 'tool'`).Scan(&content, &attachments); err != nil {
+		t.Fatal(err)
+	}
+	if content != "dirty" {
+		t.Fatalf("content not scrubbed: %q", content)
+	}
+	if attachments != `{"exitCode":0,"output":"line"}` {
+		t.Fatalf("attachments not scrubbed: %q", attachments)
+	}
+}

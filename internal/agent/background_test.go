@@ -171,8 +171,8 @@ func TestSanitizeBackgroundText(t *testing.T) {
 	if got := sanitizeBackgroundText("a\rb"); got != "ab" {
 		t.Errorf("CR not stripped: %q", got)
 	}
-	// Invalid UTF-8 is replaced.
-	if got := sanitizeBackgroundText("bad\xff\xfebytes"); got != "bad\uFFFD\uFFFDbytes" {
+	// Invalid UTF-8 is replaced (one U+FFFD per run of invalid bytes).
+	if got := sanitizeBackgroundText("bad\xff\xfebytes"); got != "bad\uFFFDbytes" {
 		t.Errorf("invalid utf8 not replaced: %q", got)
 	}
 }

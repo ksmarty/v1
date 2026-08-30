@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"v1/internal/sanitize"
+
 	_ "modernc.org/sqlite"
 )
 
@@ -253,9 +255,54 @@ CREATE TABLE pending_asks_v2 (
 	if _, err := db.Exec(`UPDATE projects SET session_seq = (SELECT COUNT(*) FROM chat_sessions WHERE chat_sessions.project_id = projects.id) WHERE session_seq = 0`); err != nil {
 		return err
 	}
+	if err := scrubStoredMessages(db); err != nil {
+		return err
+	}
 	return migrateAddColumns(db, "projects", map[string]string{
 		"preview_disabled": "ALTER TABLE projects ADD COLUMN preview_disabled INTEGER NOT NULL DEFAULT 0",
 	})
+}
+
+// scrubStoredMessages sanitizes message text that was stored before the
+// sanitizer existed (raw command output with ANSI escapes, control bytes or
+// invalid UTF-8). It runs once at startup and is idempotent: already-clean
+// text passes through unchanged, so re-runs are cheap. This is what makes
+// chats broken before the sanitizer recoverable — without it, a retry would
+// rebuild the request from the same poisoned rows. (Live requests are also
+// scrubbed at the LLM API boundary, but cleaning the source keeps UI dumps
+// and future rebuilds clean too.)
+func scrubStoredMessages(db *sql.DB) error {
+	rows, err := db.Query(`SELECT id, content, attachments FROM messages`)
+	if err != nil {
+		return err
+	}
+	type fix struct {
+		id          int64
+		content     string
+		attachments string
+	}
+	var fixes []fix
+	for rows.Next() {
+		var id int64
+		var content string
+		var attachments sql.NullString
+		if err := rows.Scan(&id, &content, &attachments); err != nil {
+			rows.Close()
+			return err
+		}
+		c2, cChanged := sanitize.Scrub(content)
+		a2, aChanged := sanitize.Scrub(attachments.String)
+		if cChanged || aChanged {
+			fixes = append(fixes, fix{id: id, content: c2, attachments: a2})
+		}
+	}
+	rows.Close()
+	for _, f := range fixes {
+		if _, err := db.Exec(`UPDATE messages SET content = ?, attachments = ? WHERE id = ?`, f.content, f.attachments, f.id); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // rebuildTableForSessions moves a pre-session table to the per-session shape

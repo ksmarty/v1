@@ -248,3 +248,48 @@ func TestSanitizeToolCallArgs(t *testing.T) {
 		})
 	}
 }
+
+func TestSanitizeMessagesForAPI(t *testing.T) {
+	// Provider-hostile bytes in a plain string.
+	msgs := []Message{
+		{Role: "user", Content: "out\x1b[31mput\x07\x00"},
+		{Role: "assistant", Content: "ok", ReasoningContent: "think\x1b[0m"},
+		{Role: "tool", ToolCallID: "call_1\u0000", Name: "run\u0001", Content: "{\"output\":\"\x1b[1mx\"}"},
+		{Role: "user", Content: []any{
+			map[string]any{"type": "text", "text": "part\x1b[0m"},
+			map[string]any{"type": "image_url", "image_url": map[string]any{"url": "data:x"}},
+		}},
+	}
+	got := sanitizeMessagesForAPI(msgs)
+	if g := got[0].Content.(string); g != "output" {
+		t.Fatalf("plain content not scrubbed: %q", g)
+	}
+	if g := got[1].ReasoningContent; g != "think" {
+		t.Fatalf("reasoning not scrubbed: %q", g)
+	}
+	if g := got[2].ToolCallID; g != "call_1" {
+		t.Fatalf("tool_call_id not scrubbed: %q", g)
+	}
+	if g := got[2].Name; g != "run" {
+		t.Fatalf("name not scrubbed: %q", g)
+	}
+	if g := got[2].Content.(string); g != "{\"output\":\"x\"}" {
+		t.Fatalf("tool content not scrubbed: %q", g)
+	}
+	parts := got[3].Content.([]any)
+	textPart := parts[0].(map[string]any)
+	if g := textPart["text"].(string); g != "part" {
+		t.Fatalf("content-part text not scrubbed: %q", g)
+	}
+	// The image part must be untouched.
+	imgPart := parts[1].(map[string]any)
+	if imgPart["type"] != "image_url" {
+		t.Fatalf("image part mangled: %#v", imgPart)
+	}
+	// Clean input returns the same slice (no copy). Safe to assert because the
+	// implementation returns the input when nothing changed.
+	clean := []Message{{Role: "user", Content: "fine"}}
+	if got := sanitizeMessagesForAPI(clean); &got[0] != &clean[0] {
+		t.Fatalf("clean input should be returned unchanged, got a copy")
+	}
+}
