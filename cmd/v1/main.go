@@ -9,11 +9,13 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime/debug"
 	"syscall"
 	"time"
 
 	"v1/internal/config"
+	"v1/internal/harness"
 	"v1/internal/server"
 	"v1/internal/store"
 )
@@ -59,6 +61,16 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	// The pi-durable sidecar replaces the built-in Go agent loop when
+	// V1_HARNESS=pi. It starts before the server accepts traffic so a sidecar
+	// that cannot start, handshake or agree on the protocol fails startup
+	// loudly instead of failing the user's first chat turn.
+	sup, err := startHarness(ctx, cfg)
+	if err != nil {
+		st.Close()
+		log.Fatalf("harness: %v", err)
+	}
+
 	go func() {
 		log.Printf("v1 %s (%s) listening on :%d (data dir: %s)", version, commit, cfg.Port, cfg.DataDir)
 		if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -76,7 +88,52 @@ func main() {
 	if err := httpSrv.Shutdown(shCtx); err != nil {
 		log.Printf("http shutdown: %v", err)
 	}
+	// The sidecar holds the durable transcript open, so it stops before the
+	// store closes.
+	if sup != nil {
+		if err := sup.Close(); err != nil {
+			log.Printf("harness shutdown: %v", err)
+		}
+	}
 	if err := st.Close(); err != nil {
 		log.Printf("store close: %v", err)
 	}
+}
+
+// startHarness launches the pi-durable sidecar when V1_HARNESS=pi and returns
+// nil otherwise, so the default configuration keeps running the Go agent loop.
+func startHarness(ctx context.Context, cfg config.Config) (*harness.Supervisor, error) {
+	if !cfg.HarnessEnabled() {
+		log.Printf("harness: built-in Go agent loop (set V1_HARNESS=pi to use the pi-durable sidecar)")
+		return nil, nil
+	}
+	sup := harness.New(harness.Options{
+		Command:       cfg.SidecarCmd,
+		Script:        sidecarScript(cfg),
+		Socket:        cfg.SidecarSocket,
+		DBPath:        cfg.HarnessDB,
+		ClientVersion: fmt.Sprintf("v1/%s", version),
+		MaxRestarts:   cfg.MaxSidecarRestarts,
+		Logf:          log.Printf,
+	})
+	if err := sup.Start(ctx); err != nil {
+		return nil, err
+	}
+	return sup, nil
+}
+
+// sidecarScript resolves the sidecar entrypoint: an explicit
+// V1_SIDECAR_SCRIPT wins, then the copy shipped next to the v1 binary, then
+// the repo checkout (for `make dev-backend`).
+func sidecarScript(cfg config.Config) string {
+	if cfg.SidecarScript != "" {
+		return cfg.SidecarScript
+	}
+	if exe, err := os.Executable(); err == nil {
+		next := filepath.Join(filepath.Dir(exe), "sidecar", "dist", "host.js")
+		if _, err := os.Stat(next); err == nil {
+			return next
+		}
+	}
+	return "sidecar/dist/host.js"
 }

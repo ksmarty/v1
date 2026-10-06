@@ -16,6 +16,11 @@ React SPA (Vite + TypeScript), both built into a single binary.
 - `internal/auth/` — multi-user auth: per-user accounts (bcrypt), sessions bound to a user, admin role, auth middleware (attaches the `*store.User` to the request context). The auth middleware protects `/api/*` and `/preview/*` (401 JSON) but serves the SPA shell + static assets publicly so unauthenticated browsers reach `/login` (password or OIDC); it still attaches the user to the context when a session exists. OIDC users carry an `oidc` flag on the `users` row (auto-set on OIDC sign-in) and can be granted admin via `V1_OIDC_ADMIN_EMAILS`; the Settings Auth page hides the password form for OIDC users (admins keep the OIDC config section). Settings are per-user (`user_settings` table) with a shared/global fallback — the server's `userSetting` helper layers them; instance-level keys (MCP, skills, providers cache, OAuth app credentials) stay global. Projects are strictly owner-scoped (`projects.owner_id`, 404 for non-owners); auth-disabled dev mode skips the ownership gate.
 - `internal/llm/` — OpenAI-compatible client + models.dev provider catalog.
 - `internal/agent/` — the chat agent loop (SSE) and its file/preview tools.
+- `internal/harness/` — supervises the optional pi-durable sidecar (newline-delimited
+  JSON-RPC over a Unix socket) that replaces the Go agent loop when
+  `V1_HARNESS=pi`: spawn, socket discovery, handshake, crash restarts, graceful
+  shutdown. Go keeps the HTTP API, auth, store and tools; the sidecar calls back
+  into Go (`host.call`) for every tool and approval. Default is the Go loop.
 - `internal/store/` — SQLite (settings, sessions, projects, messages).
 - `internal/preview/`, `internal/terminal/`, `internal/gitops/` — previews, terminals, GitHub.
 - `internal/scaffold/` — project templates.

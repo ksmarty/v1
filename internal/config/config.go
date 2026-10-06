@@ -3,6 +3,7 @@ package config
 
 import (
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -44,6 +45,21 @@ type Config struct {
 	TurnHardTimeout          time.Duration
 	VerifyEnabled            bool
 	AutoPlan                 bool
+
+	// Harness selects the chat harness: "go" (the built-in agent loop) or
+	// "pi" (the pi-durable sidecar). Unknown values fall back to "go".
+	HarnessMode string
+	// SidecarCmd is the runtime executable for the sidecar (V1_SIDECAR_CMD).
+	SidecarCmd string
+	// SidecarScript is the sidecar entrypoint (V1_SIDECAR_SCRIPT); empty
+	// means "<dir of the v1 binary>/sidecar/dist/host.js".
+	SidecarScript string
+	// SidecarSocket is the Unix socket the sidecar listens on.
+	SidecarSocket string
+	// HarnessDB is the pi-durable store path.
+	HarnessDB string
+	// MaxSidecarRestarts bounds restarts of a crashing sidecar.
+	MaxSidecarRestarts int
 }
 
 // Load reads configuration from environment variables.
@@ -63,6 +79,9 @@ func Load(version, commit string) Config {
 		TurnHardTimeout:          10 * time.Minute,
 		VerifyEnabled:            true,
 		AutoPlan:                 true,
+		HarnessMode:              HarnessGo,
+		SidecarCmd:               "node",
+		MaxSidecarRestarts:       3,
 	}
 	if v := os.Getenv("V1_PORT"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 && n < 65536 {
@@ -153,5 +172,39 @@ func Load(version, commit string) Config {
 		c.AutoPlan = v == "1" || strings.EqualFold(v, "true")
 	}
 	c.SystemPrompt = os.Getenv("V1_SYSTEM_PROMPT")
+
+	if v := strings.ToLower(strings.TrimSpace(os.Getenv("V1_HARNESS"))); v == HarnessPi || v == HarnessGo {
+		c.HarnessMode = v
+	}
+	if v := os.Getenv("V1_SIDECAR_CMD"); v != "" {
+		c.SidecarCmd = v
+	}
+	c.SidecarScript = os.Getenv("V1_SIDECAR_SCRIPT")
+	if v := os.Getenv("V1_SIDECAR_SOCKET"); v != "" {
+		c.SidecarSocket = v
+	} else {
+		c.SidecarSocket = filepath.Join(c.DataDir, "harness.sock")
+	}
+	if v := os.Getenv("V1_HARNESS_DB"); v != "" {
+		c.HarnessDB = v
+	} else {
+		c.HarnessDB = filepath.Join(c.DataDir, "harness.sqlite")
+	}
+	if v := os.Getenv("V1_SIDECAR_MAX_RESTARTS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			c.MaxSidecarRestarts = n
+		}
+	}
 	return c
 }
+
+// Harness modes.
+const (
+	// HarnessGo is v1's built-in agent loop.
+	HarnessGo = "go"
+	// HarnessPi is the pi-durable sidecar.
+	HarnessPi = "pi"
+)
+
+// HarnessEnabled reports whether the pi-durable sidecar should be started.
+func (c Config) HarnessEnabled() bool { return c.HarnessMode == HarnessPi }
