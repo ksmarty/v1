@@ -215,6 +215,26 @@ func (s *Server) handleCompact(w http.ResponseWriter, r *http.Request) {
 	sessionID := s.chatSessionID(p, r.URL.Query().Get("sessionId"))
 	ctx, cancel := context.WithTimeout(r.Context(), compactTimeout)
 	defer cancel()
+	// On the pi path the durable transcript is the model's context, so the
+	// summary has to be produced there. Compacting v1's store instead would
+	// leave the sidecar's own view — the thing the model actually reads —
+	// untouched. The UI ignores the response body, so the shape is free.
+	if bridge := s.harnessBridge(); bridge != nil {
+		// pi-durable mints the conversation id, so the session's stored id is the
+		// only way to address it. No id means no turn has run on this session yet,
+		// so there is nothing to summarise.
+		conversationID, err := s.st.HarnessConversationID(p.ID, sessionID)
+		if err != nil || conversationID == "" {
+			writeJSON(w, http.StatusOK, map[string]any{"compacted": false})
+			return
+		}
+		if err := bridge.Compact(ctx, conversationID); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"compacted": true})
+		return
+	}
 	id, err := agent.CompactProject(ctx, s.st, p.ID, sessionID, s.llmClient(userID))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())

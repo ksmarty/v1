@@ -37,6 +37,10 @@ type Event struct {
 	// Message is whatever the event type puts under "message": a message
 	// object on "message_start", a plain string on "task_failed".
 	Message json.RawMessage `json:"message,omitempty"`
+	// Compaction fields on "compaction_start" / "compaction_end": "manual",
+	// "threshold" or "overflow", and whether the compaction blocks the turn.
+	Reason   string `json:"reason,omitempty"`
+	Blocking bool   `json:"blocking,omitempty"`
 }
 
 // ErrorMessage is the failure text on "task_failed" (a faulted or orphaned
@@ -362,6 +366,13 @@ func (b *Bridge) Steer(ctx context.Context, conversationID, requestID, text stri
 // pass a detached one.
 func (b *Bridge) Abort(ctx context.Context, conversationID string) error {
 	return b.sup.Call(ctx, "turn.abort", map[string]any{"conversationId": conversationID}, nil)
+}
+
+// Compact asks the sidecar to summarise the conversation. pi-durable places the
+// summary through a write submission, so this returns once the task is queued
+// rather than when the summary lands.
+func (b *Bridge) Compact(ctx context.Context, conversationID string) error {
+	return b.sup.Call(ctx, "turn.compact", map[string]any{"conversationId": conversationID}, nil)
 }
 
 // Shutdown asks the sidecar to close its store and exit.

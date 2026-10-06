@@ -5,6 +5,47 @@ import (
 	"time"
 )
 
+// The pi-durable conversation id has to survive a restart: the sidecar's own
+// v1SessionId map is in memory, so a restarted sidecar that is not told the id
+// mints a fresh conversation and the model silently loses the history.
+func TestHarnessConversationIDRoundTrip(t *testing.T) {
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	p := &Project{ID: NewID(), Name: "test", Path: t.TempDir()}
+	if err := s.CreateProject(p); err != nil {
+		t.Fatal(err)
+	}
+	cs, err := s.EnsureDefaultSession(p.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got, err := s.HarnessConversationID(p.ID, cs.ID); err != nil || got != "" {
+		t.Fatalf("unset id = %q, %v; want empty", got, err)
+	}
+	if err := s.SetHarnessConversationID(p.ID, cs.ID, "2"); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.HarnessConversationID(p.ID, cs.ID); err != nil || got != "2" {
+		t.Fatalf("id = %q, %v; want 2", got, err)
+	}
+	// The id is per session, not per project.
+	other := &Project{ID: NewID(), Name: "other", Path: t.TempDir()}
+	if err := s.CreateProject(other); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetHarnessConversationID(other.ID, cs.ID, "9"); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.HarnessConversationID(p.ID, cs.ID); err != nil || got != "2" {
+		t.Fatalf("id after writing another project = %q, %v; want 2", got, err)
+	}
+}
+
 func TestCompactionSnapshotRoundTrip(t *testing.T) {
 	s, err := Open(t.TempDir())
 	if err != nil {

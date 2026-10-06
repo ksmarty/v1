@@ -126,6 +126,11 @@ type ChatParams struct {
 	Vision          bool         // the model reads images — enables screenshot_app
 	ReasoningEffort string       // thinking level; sent as reasoning_effort when set
 	ToonEnabled     bool         // tool results are TOON-encoded for the model
+	// SkipCompactionSnapshot drops v1's stored summary from the system prompt.
+	// Set by the pi-durable harness, which compacts its own durable transcript:
+	// injecting v1's snapshot as well would hand the model the same history
+	// verbatim and summarised.
+	SkipCompactionSnapshot bool
 	// DisabledTools are builtin tool names the user turned off in Settings;
 	// they are neither advertised to the model nor executable.
 	DisabledTools map[string]bool
@@ -202,8 +207,10 @@ func BuildSystemPrompt(p *ChatParams) string {
 	if system == "" {
 		system = systemPrompt
 	}
-	if snapshot, snapshotErr := p.Store.GetCompactionSnapshot(p.Project.ID, p.SessionID); snapshotErr == nil {
-		system += "\n\nConversation summary (historical, not user-visible; covers messages through ID " + fmt.Sprint(snapshot.CoveredMessageID) + "):\n" + snapshot.Summary
+	if !p.SkipCompactionSnapshot {
+		if snapshot, snapshotErr := p.Store.GetCompactionSnapshot(p.Project.ID, p.SessionID); snapshotErr == nil {
+			system += "\n\nConversation summary (historical, not user-visible; covers messages through ID " + fmt.Sprint(snapshot.CoveredMessageID) + "):\n" + snapshot.Summary
+		}
 	}
 	if p.SkillsPrompt != "" {
 		system += "\n\n" + p.SkillsPrompt

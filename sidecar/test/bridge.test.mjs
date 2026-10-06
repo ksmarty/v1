@@ -229,6 +229,36 @@ async function main() {
 		check("conversation.ensure echoes the modelId", ensured?.modelId === MODEL_ID, ensured?.modelId);
 		const conversationId = ensured.conversationId;
 
+		// Go remembers the id pi-durable minted and sends it back on every later
+		// turn, so ensure must rejoin that conversation rather than mint another
+		// one — otherwise a restarted sidecar forks the session and the model
+		// silently loses its history.
+		const rejoined = await peer.call(
+			"conversation.ensure",
+			{
+				v1SessionId: "test-session-1",
+				conversationId,
+				provider,
+				model: { provider: PROVIDER_ID, modelId: MODEL_ID },
+			},
+			{ timeoutMs: 30_000 },
+		);
+		check("conversation.ensure rejoins the remembered conversation", rejoined?.conversationId === conversationId, JSON.stringify(rejoined));
+
+		// A stale id (wiped store, different database) must not fail every turn:
+		// the sidecar mints a fresh conversation and Go overwrites its record.
+		const recovered = await peer.call(
+			"conversation.ensure",
+			{
+				v1SessionId: "test-session-stale",
+				conversationId: "999999",
+				provider,
+				model: { provider: PROVIDER_ID, modelId: MODEL_ID },
+			},
+			{ timeoutMs: 30_000 },
+		);
+		check("conversation.ensure recovers from a stale conversationId", typeof recovered?.conversationId === "string" && recovered.conversationId.length > 0 && recovered.conversationId !== "999999", JSON.stringify(recovered));
+
 		await peer.call("watch.start", { subscriptionId: "sub-1", conversationId }, { timeoutMs: 30_000 });
 		check("watch.start delivers an initial snapshot", events.some((event) => event.type === "snapshot"));
 

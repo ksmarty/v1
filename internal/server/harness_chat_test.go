@@ -438,6 +438,25 @@ func TestHarnessToolRunnerCarriesScreenshotImage(t *testing.T) {
 // Attachments must reach the model on the pi path too: a turn with no
 // attachments stays a plain string, and one with them becomes content parts in
 // the shape pi-durable hands the model.
+// v1's stored summary must not reach the model on the pi path: the sidecar
+// compacts its own durable transcript, so injecting v1's snapshot as well would
+// hand the model the same history verbatim and summarised.
+func TestHarnessPromptOmitsCompactionSnapshot(t *testing.T) {
+	s, p, sessionID := newHarnessTestServer(t)
+	if err := s.st.SaveCompactionSnapshot(p.ID, sessionID, "SUMMARY-MARKER", 7); err != nil {
+		t.Fatal(err)
+	}
+
+	params := agent.ChatParams{Project: p, SessionID: sessionID, Store: s.st}
+	if got := agent.BuildSystemPrompt(&params); !strings.Contains(got, "SUMMARY-MARKER") {
+		t.Fatal("the built-in prompt must still carry the snapshot")
+	}
+	params.SkipCompactionSnapshot = true
+	if got := agent.BuildSystemPrompt(&params); strings.Contains(got, "SUMMARY-MARKER") {
+		t.Fatal("the pi path must not inject v1's snapshot")
+	}
+}
+
 // A round that called tools must persist the calls on the assistant row and
 // the results as "tool" rows, exactly as the built-in loop does: v1's store is
 // what the UI reloads from, and it renders tool cards from these rows. Without

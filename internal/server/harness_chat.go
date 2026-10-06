@@ -270,6 +270,10 @@ func (s *Server) runHarnessTurn(ctx context.Context, p *store.Project, params ag
 	// The same executor wiring RunChat does, so a tool that depends on per-turn
 	// state (plan mode, the background manager, the session id) cannot work on
 	// one harness and fail on the other.
+	// The pi path owns compaction in the durable transcript, so v1's own snapshot
+	// is not injected: the sidecar would otherwise carry the same history
+	// verbatim *and* as a summary.
+	params.SkipCompactionSnapshot = true
 	params.PrepareExecutor()
 	// The same transcript bookkeeping RunChat does: a retry re-runs an existing
 	// user message, a continue resumes a partial one, a fresh turn appends.
@@ -287,7 +291,15 @@ func (s *Server) runHarnessTurn(ctx context.Context, p *store.Project, params ag
 	}
 
 	convID := harnessConversationID(p.ID, params.SessionID)
-	ens, err := bridge.Ensure(ctx, harnessEnsureRequest(params, model))
+	req := harnessEnsureRequest(params, model)
+	// Rejoin the conversation this session already has, if any. pi-durable mints
+	// the id, so it has to be remembered across turns — and across a sidecar
+	// restart, where the sidecar's own v1SessionId map is gone and a fresh
+	// conversation would silently lose the history.
+	if stored, err := params.Store.HarnessConversationID(p.ID, params.SessionID); err == nil && stored != "" {
+		req.ConversationID = stored
+	}
+	ens, err := bridge.Ensure(ctx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -298,6 +310,11 @@ func (s *Server) runHarnessTurn(ctx context.Context, p *store.Project, params ag
 	sidecarID := ens.ConversationID
 	if sidecarID == "" {
 		sidecarID = convID
+	}
+	if sidecarID != req.ConversationID {
+		if err := params.Store.SetHarnessConversationID(p.ID, params.SessionID, sidecarID); err != nil {
+			log.Printf("harness: persisting conversation id failed: %v", err)
+		}
 	}
 	subID := fmt.Sprintf("%s:%d", convID, time.Now().UnixNano())
 	q, stop, err := bridge.Watch(ctx, subID, sidecarID)
@@ -722,6 +739,17 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge,
 				// a tool that ran and failed is reported by its own runner.
 				res := runner.result(ev.ToolCallID)
 				emit(agent.ChatEvent{Type: "tool_end", Name: ev.ToolName, OK: ev.Entry != nil && !res.IsError, Detail: toolSummary(res.Text)})
+			case "compaction_start":
+				// pi-durable compacts its own transcript (threshold, overflow, or a
+				// manual request). The built-in loop compacts in memory without a
+				// word; surfacing it matters here because the durable transcript is
+				// what the model's context is built from, so the context meter is
+				// about to drop and the user deserves to know why.
+				if ev.Blocking {
+					emit(agent.ChatEvent{Type: "info", Text: "Compacting the conversation to stay within the model's context window."})
+				}
+			case "compaction_end":
+				emit(agent.ChatEvent{Type: "info", Text: "Compacted the conversation; older turns are now a summary."})
 			case "auto_retry_start":
 				// The sidecar retries a failed model call on its own; say so, the
 				// way the built-in loop announces a mid-reply resume.

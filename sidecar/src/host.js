@@ -192,15 +192,23 @@ class Sidecar {
 			cwd,
 			instructions,
 			thinkingLevel: thinkingLevelOf(thinkingLevel),
-			tools: this.resolveTools((toolDefs ?? []).map((def) => def.name)),
+			// Only an explicit tool list rebinds the conversation's tools: a partial
+			// ensure (a rejoin that rebinds the model) must not empty them.
+			...(Array.isArray(toolDefs) ? { tools: this.resolveTools(toolDefs.map((def) => def.name)) } : {}),
 		});
 
 		let conversation =
 			(conversationId ? this.conversations.get(String(conversationId)) : undefined) ??
 			(v1SessionId ? this.sessions.get(v1SessionId)?.conversation : undefined);
 		if (!conversation && conversationId) {
+			// Go remembers the conversation id across restarts, so this normally
+			// hits. A miss means the durable store no longer has it (wiped, or a
+			// different database): mint a fresh conversation and let the returned
+			// id overwrite the stale one, rather than failing every turn.
 			conversation = await this.harness.conversation(conversationId, this.ctx);
-			if (!conversation) throw new RpcError(-32602, `unknown conversation ${conversationId}`);
+			if (!conversation) {
+				log.warn("unknown conversation; creating a new one", { conversationId });
+			}
 		}
 
 		if (conversation) {
@@ -223,7 +231,11 @@ class Sidecar {
 	 * so the schemas cannot drift from v1's Go definitions.
 	 */
 	installHostTools(defs) {
-		const tools = Array.isArray(defs) ? buildHostTools(this.bridge, defs) : [];
+		// A partial ensure (a rejoin that only rebinds the model, or a configure)
+		// carries no toolDefs. Treating that as "no tools" would silently strip
+		// every tool the conversation had, so only an explicit list installs.
+		if (!Array.isArray(defs)) return;
+		const tools = buildHostTools(this.bridge, defs);
 		this.registry.install(
 			defineExtension({
 				name: "v1-host-tools",
@@ -251,18 +263,23 @@ class Sidecar {
 		return names.map((name) => available.get(name));
 	}
 
-	async conversationFor(params) {		const { conversationId, v1SessionId } = params ?? {};
+	async conversationFor(params) {
+		const { conversationId, v1SessionId } = params ?? {};
 		if (conversationId) {
 			const cached = this.conversations.get(String(conversationId));
 			if (cached) return cached;
 			const conversation = await this.harness.conversation(conversationId, this.ctx);
-			if (!conversation) throw new RpcError(-32602, `unknown conversation ${conversationId}`);
-			this.conversations.set(String(conversation.id), conversation);
-			return conversation;
+			if (conversation) {
+				this.conversations.set(String(conversation.id), conversation);
+				return conversation;
+			}
 		}
+		// Fall back to the v1 session the turn registered: Go only learns the id
+		// pi-durable minted after an ensure, so a session-scoped call that arrives
+		// without one still resolves.
 		const session = v1SessionId ? this.sessions.get(v1SessionId) : undefined;
-		if (!session) throw new RpcError(-32602, `unknown session ${v1SessionId}`);
-		return session.conversation;
+		if (session) return session.conversation;
+		throw new RpcError(-32602, conversationId ? `unknown conversation ${conversationId}` : `unknown session ${v1SessionId}`);
 	}
 
 	async submit(params, whenBusy) {

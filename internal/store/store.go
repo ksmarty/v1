@@ -242,6 +242,11 @@ CREATE TABLE pending_asks_v2 (
 	}
 	if err := migrateAddColumns(db, "chat_sessions", map[string]string{
 		"archived": "ALTER TABLE chat_sessions ADD COLUMN archived INTEGER NOT NULL DEFAULT 0",
+		// The pi-durable conversation backing this chat session. It has to be
+		// durable: the sidecar's own v1SessionId map is in memory, so a
+		// restarted sidecar would otherwise mint a fresh conversation for an
+		// existing session and the model would silently lose the history.
+		"harness_conversation_id": "ALTER TABLE chat_sessions ADD COLUMN harness_conversation_id TEXT",
 	}); err != nil {
 		return err
 	}
@@ -1188,6 +1193,25 @@ func (s *Store) CreateChatSession(projectID, name string) (ChatSession, error) {
 		return ChatSession{}, err
 	}
 	return cs, nil
+}
+
+// HarnessConversationID is the pi-durable conversation backing a chat session,
+// empty when the session has never run a turn on the pi harness.
+func (s *Store) HarnessConversationID(projectID, sessionID string) (string, error) {
+	var id sql.NullString
+	err := s.db.QueryRow(`SELECT harness_conversation_id FROM chat_sessions WHERE id = ? AND project_id = ?`, sessionID, projectID).Scan(&id)
+	if err != nil {
+		return "", err
+	}
+	return id.String, nil
+}
+
+// SetHarnessConversationID records which pi-durable conversation backs a chat
+// session, so a later turn (or a restarted sidecar) rejoins it instead of
+// minting a new one.
+func (s *Store) SetHarnessConversationID(projectID, sessionID, conversationID string) error {
+	_, err := s.db.Exec(`UPDATE chat_sessions SET harness_conversation_id = ? WHERE id = ? AND project_id = ?`, conversationID, sessionID, projectID)
+	return err
 }
 
 // RenameChatSession renames one of the project's chat sessions.
