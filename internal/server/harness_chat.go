@@ -214,6 +214,10 @@ func (s *Server) runHarnessTurn(ctx context.Context, p *store.Project, params ag
 	if model == "" {
 		model = params.Client.Model
 	}
+	// The same executor wiring RunChat does, so a tool that depends on per-turn
+	// state (plan mode, the background manager, the session id) cannot work on
+	// one harness and fail on the other.
+	params.PrepareExecutor()
 	// The same transcript bookkeeping RunChat does: a retry re-runs an existing
 	// user message, a continue resumes a partial one, a fresh turn appends.
 	if params.LastUserID > 0 {
@@ -470,6 +474,27 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge,
 		}
 	}
 
+	// Finished background commands are the other thing the built-in loop folds
+	// into the conversation mid-turn (agent.go:431): their output is already
+	// persisted by the completion callback, so this only has to reach the model,
+	// which a steer does. Without it the model would never learn how a background
+	// command it started ended.
+	pollBackground := func() {
+		if params.PollBackground == nil || bridge == nil {
+			return
+		}
+		for _, r := range params.PollBackground() {
+			if r.Text == "" {
+				continue
+			}
+			if err := bridge.Steer(ctx, sidecarID, fmt.Sprintf("v1-background-%d", time.Now().UnixNano()), r.Text); err != nil {
+				log.Printf("harness: background result injection failed: %v", err)
+				continue
+			}
+			emit(agent.ChatEvent{Type: "injected_message", MessageID: r.MessageID, Text: r.Text})
+		}
+	}
+
 	// Aborted is set when the turn was cancelled, so a second cancellation is
 	// not mistaken for a new stop request.
 	var aborted bool
@@ -479,6 +504,7 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge,
 		// streams continuously would otherwise never notice a steer. The drain is
 		// only there to guarantee the poll happens when events stop arriving.
 		pollSteer()
+		pollBackground()
 		// A short drain timeout is what lets steering be polled mid-turn: Drain
 		// blocks until an event arrives, so a bounded wait keeps the loop
 		// responsive to the queue without spinning.

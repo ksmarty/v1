@@ -244,6 +244,26 @@ func BuildSystemPrompt(p *ChatParams) string {
 // transcript (including the model, reasoning and usage) and returns the
 // turn's final usage. The done event is emitted by the caller after RunChat
 // returns.
+// PrepareExecutor wires the per-turn state the tools read off the executor:
+// plan mode, the background manager and its event hooks, and the session id.
+//
+// Both harnesses call it. It used to be inline in RunChat, which meant the
+// pi-durable path silently lost it — run_command_background failed with
+// "background commands are unavailable in this context" because only the
+// built-in loop ever assigned Exec.Background.
+func (p ChatParams) PrepareExecutor() {
+	if p.Exec == nil {
+		return
+	}
+	p.Exec.PlanMode = p.PlanMode
+	p.Exec.Background = p.Background
+	p.Exec.BackgroundNotify = p.BackgroundNotify
+	p.Exec.OnBackgroundStarted = func(id string) {
+		p.Emit(ChatEvent{Type: "background_started", Text: id})
+	}
+	p.Exec.SessionID = p.SessionID
+}
+
 func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 	if p.Model != "" {
 		p.Client.Model = p.Model
@@ -275,13 +295,7 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 	}
 	system := BuildSystemPrompt(&p)
 	history := []llm.Message{{Role: "system", Content: system}}
-	p.Exec.PlanMode = p.PlanMode
-	p.Exec.Background = p.Background
-	p.Exec.BackgroundNotify = p.BackgroundNotify
-	p.Exec.OnBackgroundStarted = func(id string) {
-		p.Emit(ChatEvent{Type: "background_started", Text: id})
-	}
-	p.Exec.SessionID = p.SessionID
+	p.PrepareExecutor()
 	var coveredID int64
 	if snapshot, snapshotErr := p.Store.GetCompactionSnapshot(p.Project.ID, p.SessionID); snapshotErr == nil {
 		coveredID = snapshot.CoveredMessageID
