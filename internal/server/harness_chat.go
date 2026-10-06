@@ -257,6 +257,71 @@ func toolSummary(result string) string {
 	return result
 }
 
+// reconcile brings the client's view in line with the text pi-durable actually
+// committed, and adopts the committed value for persistence. Deltas are the
+// live view of a throttled stream, so the committed text is usually a strict
+// extension of what streamed; only the missing tail is sent.
+func reconcile(streamed *strings.Builder, committed, typ string, emit func(agent.ChatEvent)) {
+	if committed == "" {
+		return
+	}
+	prefix := streamed.String()
+	switch {
+	case committed == prefix:
+		// The stream already showed all of it.
+	case strings.HasPrefix(committed, prefix):
+		emit(agent.ChatEvent{Type: typ, Text: committed[len(prefix):]})
+	default:
+		// The committed text is not an extension of what streamed: the round was
+		// rewritten (a retry or an abort). Send it in full so the answer is
+		// visible; the live view may show a stale prefix until the next reload.
+		emit(agent.ChatEvent{Type: typ, Text: committed})
+	}
+	streamed.Reset()
+	streamed.WriteString(committed)
+}
+
+// entryText extracts the assistant text and reasoning pi-durable committed on
+// an entry. Reasoning lives under "thinking" (pi-ai's ThinkingContent), not
+// "text".
+func entryText(entry json.RawMessage) (text, reasoning string) {
+	if len(entry) == 0 {
+		return "", ""
+	}
+	var rec struct {
+		Model []struct {
+			Role    string          `json:"role"`
+			Content json.RawMessage `json:"content"`
+		} `json:"model"`
+	}
+	if err := json.Unmarshal(entry, &rec); err != nil {
+		return "", ""
+	}
+	var t, r strings.Builder
+	for _, m := range rec.Model {
+		if m.Role != "assistant" {
+			continue
+		}
+		var parts []struct {
+			Type     string `json:"type"`
+			Text     string `json:"text"`
+			Thinking string `json:"thinking"`
+		}
+		if err := json.Unmarshal(m.Content, &parts); err != nil {
+			continue
+		}
+		for _, p := range parts {
+			switch p.Type {
+			case "text":
+				t.WriteString(p.Text)
+			case "thinking":
+				r.WriteString(p.Thinking)
+			}
+		}
+	}
+	return t.String(), r.String()
+}
+
 // entryUsage extracts the token usage the sidecar committed on an entry. This
 // is the reliable per-round source: pi-durable throttles the in-flight partial
 // (progress.partialIntervalMs, 100 ms by default), so a fast round may never
@@ -372,15 +437,21 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, q *harness.EventQueue, 
 					partial = ev.Usage
 				}
 			case "message_end":
-				// Fires for tool-result entries too; persist is a no-op then.
+				// Fires for tool-result entries too. The committed entry is the
+				// authority for both text and usage: pi-durable throttles the live
+				// partial (progress.partialIntervalMs, 100 ms), so a fast round may
+				// stream no deltas at all and only this event carries the answer.
+				if t, r := entryText(ev.Entry); t != "" || r != "" {
+					reconcile(&text, t, "delta", emit)
+					reconcile(&reasoning, r, "reasoning", emit)
+				}
 				if err := persist(); err != nil {
 					return turn, err
 				}
-				// The committed entry is the reliable usage source; the partial is
-				// only a fallback for a round that never committed (aborted or
-				// faulted after streaming).
 				u := entryUsage(ev.Entry)
 				if u == nil {
+					// The partial is a fallback for a round that never committed
+					// (aborted or faulted after streaming).
 					u = partial
 				}
 				addUsage(u)

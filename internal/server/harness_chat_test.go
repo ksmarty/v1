@@ -146,24 +146,50 @@ func TestConsumeHarnessTurnTranslatesEvents(t *testing.T) {
 	}
 }
 
-func TestConsumeHarnessTurnReadsUsageFromCommittedEntry(t *testing.T) {
+func TestConsumeHarnessTurnReadsTextAndUsageFromCommittedEntry(t *testing.T) {
 	s, p, sessionID := newHarnessTestServer(t)
 	q := harness.NewEventQueue()
 	runner := &harnessToolRunner{results: map[string]harness.ToolResult{}}
-	// A fast round never emits a message_update carrying usage: pi-durable
-	// throttles the live partial, so the committed entry is the only source.
+	// A fast round never emits a message_update carrying usage or text:
+	// pi-durable throttles the live partial, so the committed entry is the only
+	// source for both.
 	q.Push([]harness.Event{
-		{Type: "message_update", Changes: []harness.Change{delta("text_delta", "hi")}},
+		{Type: "message_start"},
 		{Type: "message_end", Entry: json.RawMessage(`{"id":1,"kind":"assistant","model":[{"role":"assistant",` +
+			`"content":[{"type":"thinking","thinking":"pondering"},{"type":"text","text":"the answer"}],` +
 			`"usage":{"input":8000,"output":50,"cacheRead":100,"totalTokens":8050,"cost":{"total":0.002}}}]}`)},
 	})
 	q.Push([]harness.Event{{Type: "run_end"}})
 
+	var events []agent.ChatEvent
 	turn, err := s.consumeHarnessTurn(context.Background(), q, runner,
-		agent.ChatParams{Project: p, SessionID: sessionID}, "test-model", func(agent.ChatEvent) {})
+		agent.ChatParams{Project: p, SessionID: sessionID}, "test-model", func(ev agent.ChatEvent) { events = append(events, ev) })
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	// The answer still reaches the client, as the missing tail of the stream.
+	var streamed, thought string
+	for _, ev := range events {
+		switch ev.Type {
+		case "delta":
+			streamed += ev.Text
+		case "reasoning":
+			thought += ev.Text
+		}
+	}
+	if streamed != "the answer" || thought != "pondering" {
+		t.Fatalf("streamed text = %q / reasoning = %q", streamed, thought)
+	}
+
+	msgs, err := s.st.ListMessages(p.ID, sessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 1 || msgs[0].Content != "the answer" || msgs[0].Reasoning != "pondering" {
+		t.Fatalf("persisted rows = %+v", msgs)
+	}
+
 	if turn.Usage == nil {
 		t.Fatal("no usage reported")
 	}
@@ -171,7 +197,42 @@ func TestConsumeHarnessTurnReadsUsageFromCommittedEntry(t *testing.T) {
 		t.Fatalf("usage = %+v", turn.Usage)
 	}
 	if turn.Usage.Cost == nil || *turn.Usage.Cost != 0.002 {
-		t.Fatalf("cost = %+v", turn.Usage.Cost)
+		t.Fatalf("cost = %v", turn.Usage.Cost)
+	}
+}
+
+// A round that streamed part of its text must not have the committed text
+// appended twice.
+func TestConsumeHarnessTurnDoesNotDuplicateStreamedText(t *testing.T) {
+	s, p, sessionID := newHarnessTestServer(t)
+	q := harness.NewEventQueue()
+	runner := &harnessToolRunner{results: map[string]harness.ToolResult{}}
+	q.Push([]harness.Event{
+		{Type: "message_update", Changes: []harness.Change{delta("text_delta", "Hel"), delta("text_delta", "lo")}},
+		{Type: "message_end", Entry: json.RawMessage(`{"id":1,"kind":"assistant","model":[{"role":"assistant",` +
+			`"content":[{"type":"text","text":"Hello there"}]}]}`)},
+	})
+	q.Push([]harness.Event{{Type: "run_end"}})
+
+	var streamed string
+	_, err := s.consumeHarnessTurn(context.Background(), q, runner,
+		agent.ChatParams{Project: p, SessionID: sessionID}, "test-model", func(ev agent.ChatEvent) {
+			if ev.Type == "delta" {
+				streamed += ev.Text
+			}
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if streamed != "Hello there" {
+		t.Fatalf("streamed text = %q, want %q", streamed, "Hello there")
+	}
+	msgs, err := s.st.ListMessages(p.ID, sessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 1 || msgs[0].Content != "Hello there" {
+		t.Fatalf("persisted rows = %+v", msgs)
 	}
 }
 
