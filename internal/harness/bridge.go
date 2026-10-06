@@ -298,7 +298,11 @@ func (b *Bridge) Watch(ctx context.Context, subscriptionID, conversationID strin
 	return q, stop, nil
 }
 
-// Submit queues one user turn on a conversation.
+// Submit queues one user turn on a conversation. whenBusy decides what happens
+// if the sidecar is already running one: pi-durable's modes are "followUp",
+// "steer" and "reject". v1 runs at most one turn per session, so a second
+// submit means something is wrong and "reject" fails loudly instead of
+// silently queueing.
 func (b *Bridge) Submit(ctx context.Context, conversationID, requestID, text, whenBusy string) (SubmitResult, error) {
 	var out SubmitResult
 	err := b.sup.Call(ctx, "turn.submit", map[string]any{
@@ -308,6 +312,24 @@ func (b *Bridge) Submit(ctx context.Context, conversationID, requestID, text, wh
 		"whenBusy":       whenBusy,
 	}, &out)
 	return out, err
+}
+
+// Steer hands the sidecar a message to place after the current tool round,
+// joining the running turn — the pi-durable equivalent of the built-in loop's
+// mid-run injection.
+func (b *Bridge) Steer(ctx context.Context, conversationID, requestID, text string) error {
+	return b.sup.Call(ctx, "turn.steer", map[string]any{
+		"conversationId": conversationID,
+		"requestId":      requestID,
+		"text":           text,
+	}, nil)
+}
+
+// Abort withdraws queued inputs and stops the conversation's live work. The
+// caller's own context is usually already cancelled by the time this runs, so
+// pass a detached one.
+func (b *Bridge) Abort(ctx context.Context, conversationID string) error {
+	return b.sup.Call(ctx, "turn.abort", map[string]any{"conversationId": conversationID}, nil)
 }
 
 // Shutdown asks the sidecar to close its store and exit.

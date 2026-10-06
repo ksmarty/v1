@@ -245,7 +245,7 @@ func (s *Server) runHarnessTurn(ctx context.Context, p *store.Project, params ag
 	if _, err := bridge.Submit(ctx, sidecarID, requestID, params.Message, "queue"); err != nil {
 		return nil, err
 	}
-	return s.consumeHarnessTurn(ctx, q, runner, params, model, emit)
+	return s.consumeHarnessTurn(ctx, bridge, sidecarID, q, runner, params, model, emit)
 }
 
 // toolSummary is the one-line tool result shown in the transcript, matching
@@ -279,6 +279,37 @@ func reconcile(streamed *strings.Builder, committed, typ string, emit func(agent
 	}
 	streamed.Reset()
 	streamed.WriteString(committed)
+}
+
+// entryFailure reports why a committed assistant entry is a failure. A model
+// call that ends in an error (bad request, exhausted retries) still commits an
+// entry, with stopReason "error" and the reason in errorMessage; a call the
+// client aborted commits one with stopReason "aborted".
+func entryFailure(entry json.RawMessage) (msg string, aborted bool) {
+	if len(entry) == 0 {
+		return "", false
+	}
+	var rec struct {
+		Model []struct {
+			StopReason   string `json:"stopReason"`
+			ErrorMessage string `json:"errorMessage"`
+		} `json:"model"`
+	}
+	if err := json.Unmarshal(entry, &rec); err != nil {
+		return "", false
+	}
+	for _, m := range rec.Model {
+		switch m.StopReason {
+		case "error":
+			if m.ErrorMessage != "" {
+				return m.ErrorMessage, false
+			}
+			return "the model call failed", false
+		case "aborted":
+			return "", true
+		}
+	}
+	return "", false
 }
 
 // entryText extracts the assistant text and reasoning pi-durable committed on
@@ -367,7 +398,7 @@ func entryUsage(entry json.RawMessage) *harness.Usage {
 
 // consumeHarnessTurn translates the sidecar's agent events into v1's SSE
 // events until the run ends.
-func (s *Server) consumeHarnessTurn(ctx context.Context, q *harness.EventQueue, runner *harnessToolRunner, params agent.ChatParams, model string, emit func(agent.ChatEvent)) (*agent.TurnResult, error) {
+func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge, sidecarID string, q *harness.EventQueue, runner *harnessToolRunner, params agent.ChatParams, model string, emit func(agent.ChatEvent)) (*agent.TurnResult, error) {
 	turn := &agent.TurnResult{Model: model}
 	var text, reasoning strings.Builder
 	var in, out int64
@@ -404,11 +435,67 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, q *harness.EventQueue, 
 	// round never produces a message_update at all.
 	var partial *harness.Usage
 
+	// Mid-run steering: the built-in loop drains params.Steer between rounds, so
+	// the pi path polls it here and hands each message to the sidecar as a
+	// steer, which joins the running turn after the current tool round.
+	pollSteer := func() {
+		if params.Steer == nil || bridge == nil {
+			return
+		}
+		for _, msg := range params.Steer() {
+			if msg == "" {
+				continue
+			}
+			if err := bridge.Steer(ctx, sidecarID, fmt.Sprintf("v1-steer-%d", time.Now().UnixNano()), msg); err != nil {
+				log.Printf("harness: steer failed: %v", err)
+				continue
+			}
+			// The client shows it as a user message, exactly as the built-in
+			// loop's injected_message does.
+			emit(agent.ChatEvent{Type: "injected_message", Text: msg})
+		}
+	}
+
+	// Aborted is set when the turn was cancelled, so a second cancellation is
+	// not mistaken for a new stop request.
+	var aborted bool
+
 	for {
-		events, err := q.Drain(ctx)
+		// Polled on every batch, not only when the stream idles: a turn that
+		// streams continuously would otherwise never notice a steer. The drain is
+		// only there to guarantee the poll happens when events stop arriving.
+		pollSteer()
+		// A short drain timeout is what lets steering be polled mid-turn: Drain
+		// blocks until an event arrives, so a bounded wait keeps the loop
+		// responsive to the queue without spinning.
+		drainCtx, cancelDrain := context.WithTimeout(ctx, 250*time.Millisecond)
+		events, err := q.Drain(drainCtx)
+		cancelDrain()
 		if err != nil {
-			// The stream ended — the sidecar died or the turn was cancelled.
-			// Keep whatever the model already produced.
+			if ctx.Err() != nil && !aborted {
+				// The user stopped the turn. Tell the sidecar, or it keeps
+				// generating into a transcript nobody is watching — burning tokens
+				// and durable entries. The abort needs its own context, since this
+				// one is already cancelled.
+				aborted = true
+				abortCtx, cancelAbort := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+				if bridge != nil {
+					if err := bridge.Abort(abortCtx, sidecarID); err != nil {
+						log.Printf("harness: abort failed: %v", err)
+					}
+				}
+				cancelAbort()
+				// Keep what the model already produced; the rest is abandoned with
+				// the generation, exactly as the built-in loop drops its in-flight
+				// partial on a stop.
+				_ = persist()
+				return turn, context.Canceled
+			}
+			if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
+				continue
+			}
+			// The stream ended — the sidecar died, or the aborted turn finished
+			// winding down. Keep whatever the model already produced.
 			_ = persist()
 			return turn, err
 		}
@@ -456,6 +543,16 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, q *harness.EventQueue, 
 				}
 				addUsage(u)
 				partial = nil
+				// A model call that failed is still committed as an entry, with
+				// stopReason "error"; pi-durable emits no task_failed for it, so this
+				// is the only place the failure surfaces. Without this check the turn
+				// ends in a silent, empty done.
+				if msg, aborted := entryFailure(ev.Entry); msg != "" || aborted {
+					if aborted {
+						return turn, context.Canceled
+					}
+					return turn, errors.New(msg)
+				}
 			case "tool_execution_start":
 				emit(agent.ChatEvent{Type: "tool_start", Name: ev.ToolName, Detail: harnessToolDetail(ev.Args)})
 			case "tool_execution_end":

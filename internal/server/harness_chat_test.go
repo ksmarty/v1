@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
@@ -74,7 +75,7 @@ func TestConsumeHarnessTurnTranslatesEvents(t *testing.T) {
 	})
 	q.Push([]harness.Event{{Type: "run_end"}})
 
-	turn, err := s.consumeHarnessTurn(context.Background(), q, runner,
+	turn, err := s.consumeHarnessTurn(context.Background(), nil, "conv-1", q, runner,
 		agent.ChatParams{Project: p, SessionID: sessionID}, "test-model", emit)
 	if err != nil {
 		t.Fatalf("consumeHarnessTurn: %v", err)
@@ -162,7 +163,7 @@ func TestConsumeHarnessTurnReadsTextAndUsageFromCommittedEntry(t *testing.T) {
 	q.Push([]harness.Event{{Type: "run_end"}})
 
 	var events []agent.ChatEvent
-	turn, err := s.consumeHarnessTurn(context.Background(), q, runner,
+	turn, err := s.consumeHarnessTurn(context.Background(), nil, "conv-1", q, runner,
 		agent.ChatParams{Project: p, SessionID: sessionID}, "test-model", func(ev agent.ChatEvent) { events = append(events, ev) })
 	if err != nil {
 		t.Fatal(err)
@@ -215,7 +216,7 @@ func TestConsumeHarnessTurnDoesNotDuplicateStreamedText(t *testing.T) {
 	q.Push([]harness.Event{{Type: "run_end"}})
 
 	var streamed string
-	_, err := s.consumeHarnessTurn(context.Background(), q, runner,
+	_, err := s.consumeHarnessTurn(context.Background(), nil, "conv-1", q, runner,
 		agent.ChatParams{Project: p, SessionID: sessionID}, "test-model", func(ev agent.ChatEvent) {
 			if ev.Type == "delta" {
 				streamed += ev.Text
@@ -236,6 +237,53 @@ func TestConsumeHarnessTurnDoesNotDuplicateStreamedText(t *testing.T) {
 	}
 }
 
+// A model call that fails commits an entry with stopReason "error" instead of
+// emitting task_failed; the turn must still report the failure rather than
+// ending in a silent done.
+func TestConsumeHarnessTurnReportsCommittedModelError(t *testing.T) {
+	s, p, sessionID := newHarnessTestServer(t)
+	q := harness.NewEventQueue()
+	runner := &harnessToolRunner{results: map[string]harness.ToolResult{}}
+	q.Push([]harness.Event{
+		{Type: "message_start"},
+		{Type: "message_end", Entry: json.RawMessage(`{"id":1,"kind":"assistant","model":[{"role":"assistant","content":[],` +
+			`"stopReason":"error","errorMessage":"400: {\"type\":\"MissingSessionID\"}"}]}`)},
+		{Type: "run_end"},
+	})
+
+	_, err := s.consumeHarnessTurn(context.Background(), nil, "conv-1", q, runner,
+		agent.ChatParams{Project: p, SessionID: sessionID}, "test-model", func(agent.ChatEvent) {})
+	if err == nil || !strings.Contains(err.Error(), "MissingSessionID") {
+		t.Fatalf("err = %v, want the committed model failure", err)
+	}
+}
+
+// A client-requested abort is not an error worth persisting, but it must still
+// stop the turn rather than report success.
+func TestConsumeHarnessTurnReportsAbortedGeneration(t *testing.T) {
+	s, p, sessionID := newHarnessTestServer(t)
+	q := harness.NewEventQueue()
+	runner := &harnessToolRunner{results: map[string]harness.ToolResult{}}
+	q.Push([]harness.Event{
+		{Type: "message_end", Entry: json.RawMessage(`{"id":1,"kind":"assistant","model":[{"role":"assistant","content":[{"type":"text","text":"half"}],"stopReason":"aborted"}]}`)},
+		{Type: "run_end"},
+	})
+
+	_, err := s.consumeHarnessTurn(context.Background(), nil, "conv-1", q, runner,
+		agent.ChatParams{Project: p, SessionID: sessionID}, "test-model", func(agent.ChatEvent) {})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+	// The partial answer is kept.
+	msgs, lerr := s.st.ListMessages(p.ID, sessionID)
+	if lerr != nil {
+		t.Fatal(lerr)
+	}
+	if len(msgs) != 1 || msgs[0].Content != "half" {
+		t.Fatalf("persisted rows = %+v", msgs)
+	}
+}
+
 func TestConsumeHarnessTurnReportsFaultedGeneration(t *testing.T) {
 	s, p, sessionID := newHarnessTestServer(t)
 	q := harness.NewEventQueue()
@@ -245,7 +293,7 @@ func TestConsumeHarnessTurnReportsFaultedGeneration(t *testing.T) {
 		{Type: "task_failed", Message: json.RawMessage(`"provider error: 429"`)},
 	})
 
-	_, err := s.consumeHarnessTurn(context.Background(), q, runner,
+	_, err := s.consumeHarnessTurn(context.Background(), nil, "conv-1", q, runner,
 		agent.ChatParams{Project: p, SessionID: sessionID}, "test-model", func(agent.ChatEvent) {})
 	if err == nil || !strings.Contains(err.Error(), "429") {
 		t.Fatalf("err = %v, want the provider failure", err)
