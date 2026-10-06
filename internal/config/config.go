@@ -82,7 +82,7 @@ func Load(version, commit string) Config {
 		TurnHardTimeout:          10 * time.Minute,
 		VerifyEnabled:            true,
 		AutoPlan:                 true,
-		HarnessMode:              HarnessGo,
+		HarnessMode:              HarnessPi,
 		SidecarCmd:               "node",
 		MaxSidecarRestarts:       3,
 	}
@@ -206,10 +206,10 @@ func Load(version, commit string) Config {
 
 // Harness modes.
 const (
-	// HarnessGo is v1's built-in agent loop.
-	HarnessGo = "go"
-	// HarnessPi is the pi-durable sidecar.
+	// HarnessPi is the pi-durable sidecar; it is the default.
 	HarnessPi = "pi"
+	// HarnessGo is v1's built-in agent loop, kept as the escape hatch.
+	HarnessGo = "go"
 )
 
 // HarnessEnabled reports whether the pi-durable sidecar should be started.

@@ -39,12 +39,12 @@ func TestLoadSystemPrompt(t *testing.T) {
 	}
 }
 
-func TestHarnessDefaultsToGoLoop(t *testing.T) {
-	// The default must stay the built-in agent loop: shipping the sidecar off
-	// by default keeps the swap reversible with a single env var.
+func TestHarnessDefaultsToSidecar(t *testing.T) {
+	// The pi-durable sidecar is the chat harness now; V1_HARNESS=go remains the
+	// escape hatch back to the built-in loop.
 	c := Load("v", "c")
-	if c.HarnessMode != HarnessGo || c.HarnessEnabled() {
-		t.Fatalf("HarnessMode = %q, enabled = %v; want the Go loop", c.HarnessMode, c.HarnessEnabled())
+	if c.HarnessMode != HarnessPi || !c.HarnessEnabled() {
+		t.Fatalf("HarnessMode = %q, enabled = %v; want the pi-durable sidecar", c.HarnessMode, c.HarnessEnabled())
 	}
 	if c.SidecarCmd != "node" {
 		t.Fatalf("SidecarCmd = %q, want node", c.SidecarCmd)
@@ -85,10 +85,18 @@ func TestHarnessEnvOverrides(t *testing.T) {
 	}
 }
 
-func TestHarnessUnknownModeFallsBackToGo(t *testing.T) {
+func TestHarnessUnknownModeFallsBackToTheDefault(t *testing.T) {
 	t.Setenv("V1_HARNESS", "rust")
 	c := Load("v", "c")
-	if c.HarnessMode != HarnessGo {
-		t.Fatalf("HarnessMode = %q, want the Go loop for an unknown value", c.HarnessMode)
+	if c.HarnessMode != HarnessPi {
+		t.Fatalf("HarnessMode = %q, want the default for an unknown value", c.HarnessMode)
+	}
+}
+
+func TestHarnessGoEscapeHatch(t *testing.T) {
+	t.Setenv("V1_HARNESS", "go")
+	c := Load("v", "c")
+	if c.HarnessMode != HarnessGo || c.HarnessEnabled() {
+		t.Fatalf("HarnessMode = %q, enabled = %v; want the built-in loop", c.HarnessMode, c.HarnessEnabled())
 	}
 }

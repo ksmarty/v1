@@ -112,7 +112,7 @@ All configuration is via environment variables:
 | `V1_CONTEXT_THRESHOLD` | `0.80` | Fraction of the context budget that triggers auto-compaction. |
 | `V1_SYSTEM_PROMPT` | built-in | Extra global system-prompt text appended to the built-in agent system prompt. |
 | `V1_CHROME_PATH` | auto-detect | Chrome/Chromium binary for the `screenshot_app` tool. |
-| `V1_HARNESS` | `go` | Chat harness: `go` (built-in agent loop) or `pi` (the pi-durable sidecar). See [Chat harness](#chat-harness). |
+| `V1_HARNESS` | `pi` | Chat harness: `pi` (the pi-durable sidecar, default) or `go` (the built-in agent loop). See [Chat harness](#chat-harness). |
 | `V1_SIDECAR_CMD` | `node` | Runtime executable for the pi-durable sidecar. |
 | `V1_SIDECAR_SCRIPT` | next to the binary | Sidecar entrypoint; defaults to `<dir of v1>/sidecar/{dist,src}/host.js`, then the repo's `sidecar/src/host.js`. |
 | `V1_SIDECAR_SOCKET` | `$V1_DATA_DIR/harness.sock` | Unix socket the sidecar listens on. |
@@ -122,20 +122,22 @@ All configuration is via environment variables:
 
 ### Chat harness
 
-Chat turns are normally driven by v1's built-in Go agent loop. Setting
-`V1_HARNESS=pi` hands them to a **pi-durable sidecar** instead — a small Node
-process that owns the model call, the turn loop and the durable transcript,
-and calls back into Go for every tool and approval.
+Chat turns are driven by a **pi-durable sidecar** — a small Node process that
+owns the model call, the turn loop and the durable transcript, and calls back
+into Go for every tool and approval. `V1_HARNESS=go` hands them back to v1's
+built-in Go agent loop instead.
 
 - The sidecar starts with the server and is supervised: a crash is restarted
   with backoff, and a crash loop stops the server from pretending chat works.
 - Tools, file access, previews, approvals and auth stay in Go. The sidecar
   never touches the workspace directly.
-- Transcripts live in `V1_HARNESS_DB` (separate from v1's own SQLite store).
+- Transcripts live in `V1_HARNESS_DB` (separate from v1's own SQLite store),
+  so a chat session's conversation is remembered across restarts.
 - The sidecar is plain ESM run by `node` (see `sidecar/`), so there is no
-  build step; `npm install` in `sidecar/` is enough.
-- `V1_HARNESS=go` (the default) keeps the built-in loop; the switch is
-  reversible per process.
+  build step; `npm install` in `sidecar/` is enough. Running v1 from a checkout
+  needs that once — `make sidecar-deps`.
+- A sidecar that cannot start is a startup failure, not a silent fall back to
+  the Go loop: `make sidecar-deps`, or `V1_HARNESS=go` to opt out per process.
 
 ### LLM providers
 

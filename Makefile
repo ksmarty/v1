@@ -7,18 +7,19 @@ LDFLAGS := -X main.version=$(BUILD_ID) -X main.commit=$(shell git rev-parse --sh
 # Prefer two terminals — `make dev-backend` and `make dev-frontend` —
 # or use `make dev`, which backgrounds the backend with `&` and runs the
 # frontend dev server in the foreground (Ctrl-C stops both).
-dev:
+dev: sidecar-deps
 	@V1_AUTH_DISABLED=true V1_DATA_DIR=./data go run -ldflags "$(LDFLAGS)" ./cmd/v1 & \
 	cd web && npm run dev
 
-dev-backend:
+dev-backend: sidecar-deps
 	V1_AUTH_DISABLED=true V1_DATA_DIR=./data go run -ldflags "$(LDFLAGS)" ./cmd/v1
 
 dev-frontend:
 	cd web && npm run dev
 
-# Dependencies for the pi-durable chat harness sidecar (V1_HARNESS=pi).
+# Dependencies for the pi-durable chat harness sidecar (the default harness).
 # Plain ESM — no build step — so this is only needed to run it or its tests.
+# `dev`, `dev-backend` and `build` depend on it: v1 will not start without it.
 sidecar-deps:
 	cd sidecar && npm ci
 

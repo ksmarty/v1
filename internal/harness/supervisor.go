@@ -286,7 +286,7 @@ func (s *Supervisor) waitForSocket(ctx context.Context, p *proc) error {
 		}
 		select {
 		case <-p.exitCh:
-			return fmt.Errorf("harness: sidecar exited before listening: %v", p.exitErr)
+			return fmt.Errorf("sidecar exited before listening: %v", p.exitErr)
 		default:
 		}
 		if time.Now().After(deadline) {

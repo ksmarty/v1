@@ -61,14 +61,16 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	// The pi-durable sidecar replaces the built-in Go agent loop when
-	// V1_HARNESS=pi. It starts before the server accepts traffic so a sidecar
-	// that cannot start, handshake or agree on the protocol fails startup
-	// loudly instead of failing the user's first chat turn.
+	// The pi-durable sidecar is the default chat harness. It starts before the
+	// server accepts traffic so a sidecar that cannot start, handshake or agree
+	// on the protocol fails startup loudly instead of failing the user's first
+	// chat turn.
 	sup, err := startHarness(ctx, cfg)
 	if err != nil {
 		st.Close()
-		log.Fatalf("harness: %v", err)
+		// A silent fall back to the Go loop would hide the fact that the
+		// requested harness is not running, so this is fatal with a fix.
+		log.Fatalf("%v\n\nThe pi-durable sidecar is the default chat harness. Install its\ndependencies with `make sidecar-deps`, or set V1_HARNESS=go to run the\nbuilt-in agent loop instead.", err)
 	}
 	if sup != nil {
 		// The bridge routes the sidecar's host-tool calls back into v1's tools
@@ -105,11 +107,12 @@ func main() {
 	}
 }
 
-// startHarness launches the pi-durable sidecar when V1_HARNESS=pi and returns
+// startHarness launches the pi-durable sidecar when the pi harness is selected
+// (the default) and returns
 // nil otherwise, so the default configuration keeps running the Go agent loop.
 func startHarness(ctx context.Context, cfg config.Config) (*harness.Supervisor, error) {
 	if !cfg.HarnessEnabled() {
-		log.Printf("harness: built-in Go agent loop (set V1_HARNESS=pi to use the pi-durable sidecar)")
+		log.Printf("harness: built-in Go agent loop (V1_HARNESS=go); the pi-durable sidecar is the default")
 		return nil, nil
 	}
 	sup := harness.New(harness.Options{
