@@ -31,6 +31,20 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     go build -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${COMMIT}" -o /out/v1 ./cmd/v1
 
+# ---------- Stage 2b: the pi-durable harness sidecar ----------
+# Deliberately NOT $BUILDPLATFORM: some transitive dependencies ship
+# platform-specific binaries (esbuild), so installing under the build platform
+# would produce a node_modules that cannot run on the other architecture. The
+# base image matches the runtime stage, so glibc and Node versions agree.
+#
+# The sidecar is plain ESM — there is no build step, so this only has to
+# install dependencies and copy the sources.
+FROM node:22-slim AS sidecar
+WORKDIR /sidecar
+COPY sidecar/package.json sidecar/package-lock.json ./
+RUN --mount=type=cache,target=/root/.npm npm ci --omit=dev
+COPY sidecar/src ./src
+
 # ---------- Stage 3: runtime ----------
 # The container runs generated user apps, so it needs node + npm + pnpm,
 # plus git and bash. Only these apk/corepack steps run under QEMU when
@@ -101,8 +115,13 @@ RUN mkdir -p /data && chown node:node /data
 
 COPY --from=build /out/v1 /usr/local/bin/v1
 
+# The pi-durable chat harness (V1_HARNESS=pi). Installed outside /usr/local/bin
+# so the binary directory stays binaries-only; V1_SIDECAR_SCRIPT points at it.
+COPY --from=sidecar /sidecar /usr/local/lib/v1/sidecar
+
 ENV V1_DATA_DIR=/data \
-    V1_PORT=8080
+    V1_PORT=8080 \
+    V1_SIDECAR_SCRIPT=/usr/local/lib/v1/sidecar/src/host.js
 
 EXPOSE 8080
 VOLUME ["/data"]

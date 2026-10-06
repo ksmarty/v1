@@ -284,6 +284,115 @@ func TestConsumeHarnessTurnReportsAbortedGeneration(t *testing.T) {
 	}
 }
 
+// The tool definitions the sidecar advertises must be exactly the ones the
+// built-in loop would send: same names, same schemas, same order. This is the
+// property that keeps the two harnesses from drifting apart, and it is easy to
+// break by assembling tools in two places.
+func TestHarnessToolDefsMatchTheBuiltInLoop(t *testing.T) {
+	params := agent.ChatParams{
+		Vision:        true,
+		PlanMode:      false,
+		ExtraTools:    []llm.Tool{mcpEchoTool()},
+		DisabledTools: map[string]bool{"delete_file": true},
+	}
+	defs := harnessToolDefs(params)
+
+	want := params.ToolSet()
+	if len(defs) != len(want) {
+		t.Fatalf("defs = %d tools, built-in loop = %d", len(defs), len(want))
+	}
+	for i, def := range defs {
+		if def.Name != want[i].Function.Name {
+			t.Fatalf("def[%d] = %q, want %q (order must match too)", i, def.Name, want[i].Function.Name)
+		}
+		if def.Description != want[i].Function.Description {
+			t.Fatalf("def %q description differs from the built-in loop", def.Name)
+		}
+		got, err := json.Marshal(def.Parameters)
+		if err != nil {
+			t.Fatal(err)
+		}
+		expect, err := json.Marshal(want[i].Function.Parameters)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != string(expect) {
+			t.Fatalf("def %q schema = %s, want %s", def.Name, got, expect)
+		}
+	}
+
+	// The per-turn filters must survive the trip: a disabled tool is gone and
+	// the vision and MCP tools are present.
+	names := map[string]bool{}
+	for _, def := range defs {
+		names[def.Name] = true
+	}
+	if names["delete_file"] {
+		t.Error("a tool the user disabled is still advertised")
+	}
+	if !names["screenshot_app"] {
+		t.Error("screenshot_app missing for a vision model")
+	}
+	if !names["mcp_echo"] {
+		t.Error("MCP tool missing")
+	}
+}
+
+// Plan mode restricts the set to plan-safe tools on both harnesses.
+func TestHarnessToolDefsRespectPlanMode(t *testing.T) {
+	defs := harnessToolDefs(agent.ChatParams{PlanMode: true})
+	names := map[string]bool{}
+	for _, def := range defs {
+		names[def.Name] = true
+	}
+	if names["write_file"] || names["run_command"] {
+		t.Errorf("plan mode advertised a mutating tool: %v", names)
+	}
+	if !names["read_file"] || !names["make_plan"] {
+		t.Errorf("plan mode is missing a read-only tool: %v", names)
+	}
+}
+
+// The sidecar must receive the same system prompt the built-in loop would use,
+// skills, memories, plan and project instructions included.
+func TestHarnessInstructionsMatchTheBuiltInPrompt(t *testing.T) {
+	s, p, sessionID := newHarnessTestServer(t)
+	p.Instructions = "Always answer in rhyme."
+	params := agent.ChatParams{
+		Project:        p,
+		SessionID:      sessionID,
+		Store:          s.st,
+		Client:         &llm.Client{BaseURL: "https://example.test/v1", APIKey: "k", Model: "test-model"},
+		SkillsPrompt:   "SKILLS-MARKER",
+		MemoriesPrompt: "MEMORIES-MARKER",
+		ToonEnabled:    true,
+	}
+	got := harnessEnsureRequest(params, "test-model").Instructions
+	want := agent.BuildSystemPrompt(&params)
+	if got != want {
+		t.Fatalf("instructions differ from the built-in prompt:\n got %q\nwant %q", got, want)
+	}
+	for _, marker := range []string{"SKILLS-MARKER", "MEMORIES-MARKER", "Always answer in rhyme."} {
+		if !strings.Contains(got, marker) {
+			t.Errorf("instructions are missing %q", marker)
+		}
+	}
+}
+
+func mcpEchoTool() llm.Tool {
+	return llm.Tool{
+		Type: "function",
+		Function: llm.ToolFunction{
+			Name:        "mcp_echo",
+			Description: "Echo a value back (from an MCP server).",
+			Parameters: map[string]any{
+				"type":       "object",
+				"properties": map[string]any{"value": map[string]any{"type": "string"}},
+			},
+		},
+	}
+}
+
 func TestConsumeHarnessTurnReportsFaultedGeneration(t *testing.T) {
 	s, p, sessionID := newHarnessTestServer(t)
 	q := harness.NewEventQueue()

@@ -63,6 +63,23 @@ func (s *Server) harnessEnabled() bool {
 // harnessConversationID is the pi-durable conversation behind one v1 chat
 // session. It is derived, not stored: the same session always maps to the same
 // conversation, so a restart or a retry resumes the durable transcript.
+// harnessEnsureRequest builds the conversation.ensure call for one turn. The
+// instructions and the tool definitions both come from the functions the
+// built-in loop uses — agent.BuildSystemPrompt and ChatParams.ToolSet — so a
+// turn's prompt and its tool set cannot depend on which harness runs it.
+func harnessEnsureRequest(params agent.ChatParams, model string) harness.EnsureRequest {
+	provider := harnessProviderSpec(params.Client)
+	return harness.EnsureRequest{
+		V1SessionID:   harnessConversationID(params.Project.ID, params.SessionID),
+		Cwd:           params.Project.Path,
+		Instructions:  agent.BuildSystemPrompt(&params),
+		Provider:      provider,
+		Model:         harness.ModelRef{Provider: provider.ID, ModelID: model},
+		ThinkingLevel: params.ReasoningEffort,
+		ToolDefs:      harnessToolDefs(params),
+	}
+}
+
 func harnessConversationID(projectID, sessionID string) string {
 	return projectID + ":" + sessionID
 }
@@ -205,16 +222,7 @@ func (s *Server) runHarnessTurn(ctx context.Context, p *store.Project, params ag
 	}
 
 	convID := harnessConversationID(p.ID, params.SessionID)
-	provider := harnessProviderSpec(params.Client)
-	ens, err := bridge.Ensure(ctx, harness.EnsureRequest{
-		V1SessionID:   convID,
-		Cwd:           p.Path,
-		Instructions:  agent.BuildSystemPrompt(&params),
-		Provider:      provider,
-		Model:         harness.ModelRef{Provider: provider.ID, ModelID: model},
-		ThinkingLevel: params.ReasoningEffort,
-		ToolDefs:      harnessToolDefs(params),
-	})
+	ens, err := bridge.Ensure(ctx, harnessEnsureRequest(params, model))
 	if err != nil {
 		return nil, err
 	}

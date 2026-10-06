@@ -1,7 +1,7 @@
 BUILD_ID := $(shell git rev-parse --short=6 HEAD)-$(shell date +%H%M%S)
 LDFLAGS := -X main.version=$(BUILD_ID) -X main.commit=$(shell git rev-parse --short HEAD)
 
-.PHONY: dev dev-backend dev-frontend build docker
+.PHONY: dev dev-backend dev-frontend build docker sidecar-deps sidecar-test
 
 # Dev mode: backend on :8080 (auth disabled, data in ./data) + Vite dev server.
 # Prefer two terminals — `make dev-backend` and `make dev-frontend` —
@@ -17,8 +17,18 @@ dev-backend:
 dev-frontend:
 	cd web && npm run dev
 
+# Dependencies for the pi-durable chat harness sidecar (V1_HARNESS=pi).
+# Plain ESM — no build step — so this is only needed to run it or its tests.
+sidecar-deps:
+	cd sidecar && npm ci
+
+# Syntax check + the bridge test suite (spawns the real sidecar and speaks the
+# JSON-RPC protocol to it).
+sidecar-test: sidecar-deps
+	cd sidecar && npm run check && npm test
+
 # Production build: frontend -> internal/server/dist (embedded) -> bin/v1
-build:
+build: sidecar-deps
 	cd web && npm ci && npm run build
 	mkdir -p internal/server/dist
 	cp -R web/dist/. internal/server/dist/
