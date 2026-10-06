@@ -435,6 +435,59 @@ func TestHarnessToolRunnerCarriesScreenshotImage(t *testing.T) {
 	}
 }
 
+// Attachments must reach the model on the pi path too: a turn with no
+// attachments stays a plain string, and one with them becomes content parts in
+// the shape pi-durable hands the model.
+// pi-ai silently drops image parts for a model whose input list omits "image",
+// so the pi path must never narrow that list from v1's catalog: the openrouter
+// entry for google/gemini-2.5-flash carries no imageInput while the built-in
+// loop sends images for it regardless, which is how a red image reached the
+// model as "Green" on the pi path and "Red" on the Go path.
+func TestHarnessProviderSpecAdvertisesImageInput(t *testing.T) {
+	client := &llm.Client{BaseURL: "https://example.test/v1", APIKey: "k", Model: "test-model"}
+	spec := harnessProviderSpec(client)
+	if len(spec.Models) == 0 {
+		t.Fatal("no models in the spec")
+	}
+	for _, m := range spec.Models {
+		found := false
+		for _, in := range m.Input {
+			if in == "image" {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("model %s advertises input %v, want image included", m.ID, m.Input)
+		}
+	}
+}
+
+func TestHarnessUserContent(t *testing.T) {
+	if got := harnessUserContent("hello", nil); got != "hello" {
+		t.Fatalf("no attachments: got %#v, want the plain string", got)
+	}
+
+	parts, ok := harnessUserContent("look at this", []agent.Attachment{
+		{Name: "shot.png", MIME: "image/png", Kind: "image", Content: "aGk="},
+		{Name: "notes.txt", MIME: "text/plain", Kind: "text", Content: "hi"},
+	}).([]harness.InputPart)
+	if !ok {
+		t.Fatalf("with attachments: got %T, want []harness.InputPart", parts)
+	}
+	if len(parts) != 3 {
+		t.Fatalf("parts = %+v, want text + image + text", parts)
+	}
+	if parts[0].Type != "text" || parts[0].Text != "look at this" {
+		t.Fatalf("parts[0] = %+v", parts[0])
+	}
+	if parts[1].Type != "image" || parts[1].Data != "aGk=" || parts[1].MimeType != "image/png" {
+		t.Fatalf("parts[1] = %+v, want an image part", parts[1])
+	}
+	if parts[2].Type != "text" || !strings.Contains(parts[2].Text, "Attached file: notes.txt") {
+		t.Fatalf("parts[2] = %+v, want the inlined text file", parts[2])
+	}
+}
+
 func TestConsumeHarnessTurnReportsFaultedGeneration(t *testing.T) {
 	s, p, sessionID := newHarnessTestServer(t)
 	q := harness.NewEventQueue()

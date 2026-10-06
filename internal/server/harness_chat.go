@@ -64,6 +64,25 @@ func (s *Server) harnessEnabled() bool {
 // harnessConversationID is the pi-durable conversation behind one v1 chat
 // session. It is derived, not stored: the same session always maps to the same
 // conversation, so a restart or a retry resumes the durable transcript.
+// harnessUserContent turns a v1 user turn into pi-durable content parts. With
+// no attachments it stays a plain string; with them, images become image parts
+// and text files are inlined the same way agent.userMessage inlines them, so
+// both harnesses put the same thing in front of the model.
+func harnessUserContent(text string, atts []agent.Attachment) any {
+	if len(atts) == 0 {
+		return text
+	}
+	parts := []harness.InputPart{{Type: "text", Text: text}}
+	for _, a := range atts {
+		if a.Kind == "image" {
+			parts = append(parts, harness.InputPart{Type: "image", Data: a.Content, MimeType: a.MIME})
+			continue
+		}
+		parts = append(parts, harness.InputPart{Type: "text", Text: "Attached file: " + a.Name + "\n```\n" + a.Content + "\n```"})
+	}
+	return parts
+}
+
 // harnessEnsureRequest builds the conversation.ensure call for one turn. The
 // instructions and the tool definitions both come from the functions the
 // built-in loop uses — agent.BuildSystemPrompt and ChatParams.ToolSet — so a
@@ -113,11 +132,26 @@ func harnessProviderSpec(c *llm.Client) harness.ProviderSpec {
 		seen[m.ID] = true
 		spec.Models = append(spec.Models, m)
 	}
-	add(harness.ModelSpec{ID: c.Model, Name: c.Model})
+	add(harness.ModelSpec{ID: c.Model, Name: c.Model, Input: []string{"text", "image"}})
 	for _, m := range llm.ModelsForBaseURL(c.BaseURL) {
-		ms := harness.ModelSpec{ID: m.ID, Name: m.Name, ContextWindow: m.Context, Reasoning: m.Reasoning != nil}
-		if m.ImageInput {
-			ms.Input = []string{"text", "image"}
+		// Image input is advertised unconditionally, deliberately.
+		//
+		// pi-ai drops image parts for a model whose input list omits "image",
+		// silently: no error, no note, the model just answers about an image it
+		// never saw. v1's catalog cannot be trusted for this — the openrouter
+		// entry for google/gemini-2.5-flash carries no imageInput while every
+		// other provider's entry for the same model does — and the built-in loop
+		// never consulted it anyway: it sends images and only strips them after
+		// the provider rejects them (agent.go:458). Advertising the capability
+		// keeps the two harnesses putting the same thing in front of the model,
+		// and a model that truly cannot take images now fails loudly instead of
+		// answering about an image it was never shown.
+		ms := harness.ModelSpec{
+			ID:            m.ID,
+			Name:          m.Name,
+			ContextWindow: m.Context,
+			Reasoning:     m.Reasoning != nil,
+			Input:         []string{"text", "image"},
 		}
 		add(ms)
 	}
@@ -260,7 +294,7 @@ func (s *Server) runHarnessTurn(ctx context.Context, p *store.Project, params ag
 	// The request id is what makes a resubmit idempotent: the sidecar keeps the
 	// submission record under it, so a duplicate never runs the turn twice.
 	requestID := fmt.Sprintf("v1-%d", time.Now().UnixNano())
-	if _, err := bridge.Submit(ctx, sidecarID, requestID, params.Message, "queue"); err != nil {
+	if _, err := bridge.Submit(ctx, sidecarID, requestID, harnessUserContent(params.Message, params.Attachments), "queue"); err != nil {
 		return nil, err
 	}
 	return s.consumeHarnessTurn(ctx, bridge, sidecarID, q, runner, params, model, emit)

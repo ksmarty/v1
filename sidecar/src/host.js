@@ -266,12 +266,19 @@ class Sidecar {
 	}
 
 	async submit(params, whenBusy) {
-		const { requestId, text } = params ?? {};
+		const { requestId, content } = params ?? {};
 		if (!requestId) throw new RpcError(-32602, "turn.submit: requestId is required");
-		if (typeof text !== "string" || !text.length) throw new RpcError(-32602, "turn.submit: text is required");
+		// A string is a plain message; an array is content parts (text plus the
+		// images and files the user attached).
+		if (typeof content !== "string" && !Array.isArray(content)) {
+			throw new RpcError(-32602, "turn.submit: content must be text or content parts");
+		}
+		if (typeof content === "string" && !content.length) {
+			throw new RpcError(-32602, "turn.submit: text is required");
+		}
 		const conversation = await this.conversationFor(params);
 		const submission = await conversation.submit(
-			{ type: "input", requestId, content: text, whenBusy: params.whenBusy ?? whenBusy ?? "reject" },
+			{ type: "input", requestId, content, whenBusy: params.whenBusy ?? whenBusy ?? "reject" },
 			this.ctx,
 		);
 		return { conversationId: String(conversation.id), submissionId: String(submission.id) };

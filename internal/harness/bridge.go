@@ -324,15 +324,26 @@ func (b *Bridge) Watch(ctx context.Context, subscriptionID, conversationID strin
 // "steer" and "reject". v1 runs at most one turn per session, so a second
 // submit means something is wrong and "reject" fails loudly instead of
 // silently queueing.
-func (b *Bridge) Submit(ctx context.Context, conversationID, requestID, text, whenBusy string) (SubmitResult, error) {
+// Submit queues one user turn on a conversation. content is either the message
+// text or []InputPart when the turn carries attachments.
+func (b *Bridge) Submit(ctx context.Context, conversationID, requestID string, content any, whenBusy string) (SubmitResult, error) {
 	var out SubmitResult
 	err := b.sup.Call(ctx, "turn.submit", map[string]any{
 		"conversationId": conversationID,
 		"requestId":      requestID,
-		"text":           text,
+		"content":        content,
 		"whenBusy":       whenBusy,
 	}, &out)
 	return out, err
+}
+
+// InputPart is one piece of a user submission, in the shape pi-durable hands
+// the model: a text block, or an image to look at.
+type InputPart struct {
+	Type     string `json:"type"`
+	Text     string `json:"text,omitempty"`
+	Data     string `json:"data,omitempty"`
+	MimeType string `json:"mimeType,omitempty"`
 }
 
 // Steer hands the sidecar a message to place after the current tool round,

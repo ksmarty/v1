@@ -250,7 +250,7 @@ async function main() {
 					conversationId,
 					requestId: "test-turn-1",
 					whenBusy: "reject",
-					text:
+					content:
 						"Do exactly three things, in order: (1) read probe.txt, " +
 						"(2) write its exact contents to copy.txt, " +
 						"(3) run the shell command `echo tool-round-trip-ok`. " +
@@ -386,6 +386,19 @@ async function checkToolResultMapping() {
 	])[0];
 	const plain = await textOnly.execute({}, { callId: "call-2", conversationId: "conv-1" });
 	check("tool result: no image block for a text result", plain.content.length === 1 && plain.content[0].type === "text");
+}
+
+/**
+ * turn.submit accepts both a plain message and content parts. The Go side sends
+ * parts for a turn with attachments, so the sidecar must forward them rather
+ * than expect a string.
+ */
+async function checkSubmitContentValidation(peer, conversationId) {
+	const rejected = await peer
+		.call("turn.submit", { conversationId, requestId: "bad-1", content: 42 })
+		.then(() => null)
+		.catch((err) => err);
+	check("turn.submit rejects non-string, non-array content", Boolean(rejected), String(rejected));
 }
 
 await checkToolResultMapping();
