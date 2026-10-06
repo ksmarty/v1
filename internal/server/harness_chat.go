@@ -178,10 +178,19 @@ func harnessToolDetail(args json.RawMessage) string {
 }
 
 // harnessToolRunner executes the sidecar's host-tool calls on the turn's
-// executor, and remembers each result so the UI event for a finished tool can
-// report success exactly as the built-in loop does.
+// executor, remembers each result so the UI event for a finished tool can
+// report success exactly as the built-in loop does, and persists the result as
+// a "tool" row.
+//
+// The durable transcript lives in the sidecar, but v1's store is what the UI
+// reloads from, and it renders tool cards from these rows: without them a
+// reloaded pi session showed the assistant's prose and no tool history at all.
 type harnessToolRunner struct {
 	exec *agent.Executor
+
+	store     *store.Store
+	projectID string
+	sessionID string
 
 	mu      sync.Mutex
 	results map[string]harness.ToolResult
@@ -213,6 +222,16 @@ func (r *harnessToolRunner) RunTool(ctx context.Context, call harness.ToolCall) 
 		r.results[call.CallID] = res
 	}
 	r.mu.Unlock()
+
+	// The built-in loop writes one "tool" row per call, tagged with the call id
+	// and tool name (agent.go:631). The UI parses that tag to label the card, so
+	// the shape has to match.
+	if r.store != nil {
+		meta, _ := json.Marshal(map[string]any{"tool_call_id": call.CallID, "name": call.Tool})
+		if _, err := r.store.AddMessage(r.projectID, r.sessionID, "tool", res.Text, string(meta), "", "", "", ""); err != nil {
+			log.Printf("harness: persisting tool result failed: %v", err)
+		}
+	}
 	return res, nil
 }
 
@@ -287,7 +306,13 @@ func (s *Server) runHarnessTurn(ctx context.Context, p *store.Project, params ag
 	}
 	defer stop()
 
-	runner := &harnessToolRunner{exec: params.Exec, results: map[string]harness.ToolResult{}}
+	runner := &harnessToolRunner{
+		exec:      params.Exec,
+		store:     params.Store,
+		projectID: params.Project.ID,
+		sessionID: params.SessionID,
+		results:   map[string]harness.ToolResult{},
+	}
 	unregister := bridge.Register(sidecarID, runner)
 	defer unregister()
 
@@ -331,6 +356,61 @@ func reconcile(streamed *strings.Builder, committed, typ string, emit func(agent
 	}
 	streamed.Reset()
 	streamed.WriteString(committed)
+}
+
+// entryToolJSON renders a committed assistant entry's tool calls in the shape
+// the UI reads back: messages.tool_json holding an OpenAI-style tool_calls
+// array, identical to what the built-in loop stores for the same round.
+func entryToolJSON(entry json.RawMessage) string {
+	calls := entryToolCalls(entry)
+	if len(calls) == 0 {
+		return ""
+	}
+	b, err := json.Marshal(map[string]any{"tool_calls": calls})
+	if err != nil {
+		return ""
+	}
+	return string(b)
+}
+
+// entryToolCalls extracts the tool calls pi-durable committed on an assistant
+// entry. Arguments arrive as a parsed object (pi-ai's shape) and are
+// re-serialized to the JSON string v1's ToolCall carries.
+func entryToolCalls(entry json.RawMessage) []llm.ToolCall {
+	if len(entry) == 0 {
+		return nil
+	}
+	var rec struct {
+		Model []struct {
+			Content []struct {
+				Type      string          `json:"type"`
+				ID        string          `json:"id"`
+				Name      string          `json:"name"`
+				Arguments json.RawMessage `json:"arguments"`
+			} `json:"content"`
+		} `json:"model"`
+	}
+	if err := json.Unmarshal(entry, &rec); err != nil {
+		return nil
+	}
+	var out []llm.ToolCall
+	for _, m := range rec.Model {
+		for _, c := range m.Content {
+			if c.Type != "toolCall" || c.Name == "" {
+				continue
+			}
+			args := "{}"
+			if len(c.Arguments) > 0 {
+				args = string(c.Arguments)
+			}
+			out = append(out, llm.ToolCall{
+				ID:       c.ID,
+				Type:     "function",
+				Function: llm.FunctionCall{Name: c.Name, Arguments: args},
+			})
+		}
+	}
+	return out
 }
 
 // entryFailure reports why a committed assistant entry is a failure. A model
@@ -458,13 +538,18 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge,
 	var hasCost bool
 	var lastContext int64
 
+	// The assistant's tool calls, as the UI reads them back from the row's
+	// tool_json; set when a round commits and consumed by persist.
+	var toolJSON string
+
 	persist := func() error {
-		if text.Len() == 0 && reasoning.Len() == 0 {
+		if text.Len() == 0 && reasoning.Len() == 0 && toolJSON == "" {
 			return nil
 		}
-		_, err := s.st.AddMessage(params.Project.ID, params.SessionID, "assistant", text.String(), "", model, reasoning.String(), "", "")
+		_, err := s.st.AddMessage(params.Project.ID, params.SessionID, "assistant", text.String(), toolJSON, model, reasoning.String(), "", "")
 		text.Reset()
 		reasoning.Reset()
+		toolJSON = ""
 		return err
 	}
 	// One model call's usage is that round's own totals, so rounds are summed as
@@ -606,6 +691,9 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge,
 					reconcile(&text, t, "delta", emit)
 					reconcile(&reasoning, r, "reasoning", emit)
 				}
+				// A round that called tools carries them on the row, the way the
+				// built-in loop stores res.ToolCalls (agent.go:508).
+				toolJSON = entryToolJSON(ev.Entry)
 				if err := persist(); err != nil {
 					return turn, err
 				}

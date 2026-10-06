@@ -438,6 +438,78 @@ func TestHarnessToolRunnerCarriesScreenshotImage(t *testing.T) {
 // Attachments must reach the model on the pi path too: a turn with no
 // attachments stays a plain string, and one with them becomes content parts in
 // the shape pi-durable hands the model.
+// A round that called tools must persist the calls on the assistant row and
+// the results as "tool" rows, exactly as the built-in loop does: v1's store is
+// what the UI reloads from, and it renders tool cards from these rows. Without
+// them a reloaded pi session showed prose and no tool history.
+func TestHarnessPersistsToolCallsAndResults(t *testing.T) {
+	s, p, sessionID := newHarnessTestServer(t)
+
+	entry := json.RawMessage(`{"id":1,"kind":"assistant","model":[{"role":"assistant","content":[` +
+		`{"type":"toolCall","id":"call_a","name":"write_file","arguments":{"path":"a.txt","content":"hi"}}],` +
+		`"stopReason":"toolUse"}]}`)
+	toolJSON := entryToolJSON(entry)
+	if toolJSON == "" {
+		t.Fatal("no tool_json for an assistant entry with a tool call")
+	}
+	var calls struct {
+		ToolCalls []struct {
+			ID       string `json:"id"`
+			Type     string `json:"type"`
+			Function struct {
+				Name      string `json:"name"`
+				Arguments string `json:"arguments"`
+			} `json:"function"`
+		} `json:"tool_calls"`
+	}
+	if err := json.Unmarshal([]byte(toolJSON), &calls); err != nil {
+		t.Fatalf("tool_json is not the UI's shape: %v (%s)", err, toolJSON)
+	}
+	if len(calls.ToolCalls) != 1 {
+		t.Fatalf("tool_calls = %+v, want one", calls.ToolCalls)
+	}
+	if calls.ToolCalls[0].ID != "call_a" || calls.ToolCalls[0].Function.Name != "write_file" {
+		t.Fatalf("tool_call = %+v", calls.ToolCalls[0])
+	}
+	// The UI reads arguments as the raw JSON string the model produced.
+	if !strings.Contains(calls.ToolCalls[0].Function.Arguments, `"a.txt"`) {
+		t.Fatalf("arguments = %q", calls.ToolCalls[0].Function.Arguments)
+	}
+
+	// A plain text round carries no tool calls.
+	if got := entryToolJSON(json.RawMessage(`{"id":2,"kind":"assistant","model":[{"role":"assistant","content":[{"type":"text","text":"hi"}],"stopReason":"stop"}]}`)); got != "" {
+		t.Fatalf("tool_json = %q, want empty for a text round", got)
+	}
+
+	runner := &harnessToolRunner{
+		exec:      &agent.Executor{Root: p.Path, ProjectID: p.ID, SessionID: sessionID, Store: s.st},
+		store:     s.st,
+		projectID: p.ID,
+		sessionID: sessionID,
+		results:   map[string]harness.ToolResult{},
+	}
+	args, _ := json.Marshal(map[string]string{"path": "a.txt", "content": "hi"})
+	if _, err := runner.RunTool(context.Background(), harness.ToolCall{
+		ConversationID: harnessConversationID(p.ID, sessionID),
+		Tool:           "write_file",
+		Args:           args,
+		CallID:         "call_a",
+	}); err != nil {
+		t.Fatalf("RunTool: %v", err)
+	}
+
+	msgs, err := s.st.ListMessages(p.ID, sessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 1 || msgs[0].Role != "tool" {
+		t.Fatalf("rows = %+v, want one tool row", msgs)
+	}
+	if !strings.Contains(msgs[0].ToolJSON, `"tool_call_id":"call_a"`) || !strings.Contains(msgs[0].ToolJSON, `"name":"write_file"`) {
+		t.Fatalf("tool row tag = %s, want the call id and tool name", msgs[0].ToolJSON)
+	}
+}
+
 // pi-ai silently drops image parts for a model whose input list omits "image",
 // so the pi path must never narrow that list from v1's catalog: the openrouter
 // entry for google/gemini-2.5-flash carries no imageInput while the built-in
