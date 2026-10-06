@@ -22,6 +22,7 @@ import (
 	"v1/internal/agent"
 	"v1/internal/auth"
 	"v1/internal/config"
+	"v1/internal/harness"
 	"v1/internal/llm"
 	"v1/internal/mcp"
 	"v1/internal/preview"
@@ -48,6 +49,11 @@ type Server struct {
 	mcp  *mcp.Manager
 	perm permRegistry
 	ask  askRegistry
+
+	// harness is the pi-durable bridge, attached at startup when V1_HARNESS=pi.
+	// Nil means chat turns run on the built-in Go agent loop.
+	harnessMu sync.RWMutex
+	harness   *harness.Bridge
 
 	oauthMu    sync.Mutex
 	oauthFlows map[string]*oauthFlow

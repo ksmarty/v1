@@ -162,41 +162,12 @@ func freshProject(dir string) bool {
 	return true
 }
 
-// RunChat persists the user message, replays history to the LLM, executes
-// tool calls for as long as the model keeps requesting them (no round cap —
-// the turn ends when the model replies without tool calls), persists the
-// transcript (including the model, reasoning and usage) and returns the
-// turn's final usage. The done event is emitted by the caller after RunChat
-// returns.
-func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
-	if p.Model != "" {
-		p.Client.Model = p.Model
-	}
-	if p.ReasoningEffort != "" {
-		p.Client.ReasoningEffort = p.ReasoningEffort
-	}
-	if p.LastUserID > 0 {
-		// Retry mode: the user message already exists with this ID; drop the
-		// aborted turn that followed it so history is truncated at the user.
-		if err := p.Store.DeleteMessagesAfter(p.Project.ID, p.SessionID, p.LastUserID); err != nil {
-			return nil, err
-		}
-	} else if p.ContinueFromID <= 0 {
-		if _, err := p.Store.AddMessage(p.Project.ID, p.SessionID, "user", p.Message, "", p.Client.Model, "", "", MarshalAttachments(p.Attachments)); err != nil {
-			return nil, err
-		}
-	}
-	_ = p.Store.TouchProject(p.Project.ID)
-
-	// Auto-planning: when the session has no active plan yet, ask the
-	// lightweight planner before assembling the system prompt so the plan is
-	// injected into the very first round of the task.
-	p.PlanPrompt = runAutoPlan(ctx, &p)
-
-	stored, err := p.Store.ListMessages(p.Project.ID, p.SessionID)
-	if err != nil {
-		return nil, err
-	}
+// BuildSystemPrompt assembles the system prompt for one turn: the user
+// override (or the built-in base) plus every section the turn's state
+// contributes. Both harnesses call it — the built-in Go loop and the
+// pi-durable sidecar — so a turn's instructions do not depend on which one
+// runs it.
+func BuildSystemPrompt(p *ChatParams) string {
 	system := p.SystemPrompt
 	if system == "" {
 		system = systemPrompt
@@ -234,6 +205,45 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 	if p.Vision {
 		system += "\n\nYou can see the app: call screenshot_app to capture an image of the running preview and inspect what is on screen. Use it after visual changes to verify them."
 	}
+	return system
+}
+
+// RunChat persists the user message, replays history to the LLM, executes
+// tool calls for as long as the model keeps requesting them (no round cap —
+// the turn ends when the model replies without tool calls), persists the
+// transcript (including the model, reasoning and usage) and returns the
+// turn's final usage. The done event is emitted by the caller after RunChat
+// returns.
+func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
+	if p.Model != "" {
+		p.Client.Model = p.Model
+	}
+	if p.ReasoningEffort != "" {
+		p.Client.ReasoningEffort = p.ReasoningEffort
+	}
+	if p.LastUserID > 0 {
+		// Retry mode: the user message already exists with this ID; drop the
+		// aborted turn that followed it so history is truncated at the user.
+		if err := p.Store.DeleteMessagesAfter(p.Project.ID, p.SessionID, p.LastUserID); err != nil {
+			return nil, err
+		}
+	} else if p.ContinueFromID <= 0 {
+		if _, err := p.Store.AddMessage(p.Project.ID, p.SessionID, "user", p.Message, "", p.Client.Model, "", "", MarshalAttachments(p.Attachments)); err != nil {
+			return nil, err
+		}
+	}
+	_ = p.Store.TouchProject(p.Project.ID)
+
+	// Auto-planning: when the session has no active plan yet, ask the
+	// lightweight planner before assembling the system prompt so the plan is
+	// injected into the very first round of the task.
+	p.PlanPrompt = runAutoPlan(ctx, &p)
+
+	stored, err := p.Store.ListMessages(p.Project.ID, p.SessionID)
+	if err != nil {
+		return nil, err
+	}
+	system := BuildSystemPrompt(&p)
 	history := []llm.Message{{Role: "system", Content: system}}
 	p.Exec.PlanMode = p.PlanMode
 	p.Exec.Background = p.Background

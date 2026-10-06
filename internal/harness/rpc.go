@@ -85,16 +85,16 @@ func (e *HandlerError) Error() string { return e.Message }
 // serialized, one reader goroutine dispatches responses to waiting callers
 // and inbound messages to the handler.
 type Conn struct {
-	ctx     context.Context
-	conn    net.Conn
-	r       *bufio.Reader
-	handler Handler
-	logf    func(format string, args ...any)
+	ctx  context.Context
+	conn net.Conn
+	r    *bufio.Reader
+	logf func(format string, args ...any)
 
 	writeMu sync.Mutex
 	w       *bufio.Writer
 
 	mu       sync.Mutex
+	handler  Handler
 	nextID   uint64
 	pending  map[uint64]chan *rpcMessage
 	closed   bool
@@ -150,6 +150,21 @@ func newConn(ctx context.Context, conn net.Conn, handler Handler, logf func(stri
 	}
 	go c.readLoop()
 	return c
+}
+
+// SetHandler replaces the handler for inbound messages. The server that owns
+// the tools is built after the sidecar is already connected, so the handler
+// arrives late; a nil handler answers inbound requests with method-not-found.
+func (c *Conn) SetHandler(h Handler) {
+	c.mu.Lock()
+	c.handler = h
+	c.mu.Unlock()
+}
+
+func (c *Conn) currentHandler() Handler {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.handler
 }
 
 // SetOnClose registers a callback for the connection's termination. It fires
@@ -393,10 +408,10 @@ func (c *Conn) handleNotification(msg rpcMessage) {
 }
 
 func (c *Conn) invoke(msg rpcMessage) (any, error) {
-	if c.handler == nil {
+	if c.currentHandler() == nil {
 		return nil, &HandlerError{Code: CodeMethodNotFound, Message: "no handler registered"}
 	}
-	return c.handler(c.ctx, msg.Method, msg.Params)
+	return c.currentHandler()(c.ctx, msg.Method, msg.Params)
 }
 
 // NewConnPair returns two connected in-memory Conns, for tests.

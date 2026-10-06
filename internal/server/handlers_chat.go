@@ -586,7 +586,13 @@ func (s *Server) streamChatTurn(w http.ResponseWriter, r *http.Request, p *store
 		}
 	}
 	for {
-		turn, err := agent.RunChat(ctx, params)
+		var turn *agent.TurnResult
+		var err error
+		if s.harnessEnabled() {
+			turn, err = s.runHarnessTurn(ctx, p, params, emit)
+		} else {
+			turn, err = agent.RunChat(ctx, params)
+		}
 		if err != nil {
 			// Persist the failure so anyone returning to the chat sees what
 			// happened (the SSE stream may be long gone by then). Explicit

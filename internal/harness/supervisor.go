@@ -97,6 +97,7 @@ type Supervisor struct {
 	mu          sync.Mutex
 	proc        *proc
 	conn        *Conn
+	handler     Handler
 	ready       Ready
 	restarts    int
 	consecutive int
@@ -127,7 +128,7 @@ func New(opts Options) *Supervisor {
 	if opts.ClientVersion == "" {
 		opts.ClientVersion = "v1"
 	}
-	return &Supervisor{opts: opts, logf: opts.Logf, stopped: make(chan struct{})}
+	return &Supervisor{opts: opts, logf: opts.Logf, handler: opts.Handler, stopped: make(chan struct{})}
 }
 
 // Start launches the sidecar and completes the handshake. It fails loudly: a
@@ -231,7 +232,7 @@ func (s *Supervisor) spawn(ctx context.Context) error {
 		s.terminate(p)
 		return err
 	}
-	conn, err := Dial(ctx, s.opts.Socket, DialOptions{Handler: s.opts.Handler, Logf: s.logf})
+	conn, err := Dial(ctx, s.opts.Socket, DialOptions{Handler: s.currentHandler(), Logf: s.logf})
 	if err != nil {
 		s.terminate(p)
 		return fmt.Errorf("harness: connect %s: %w", s.opts.Socket, err)
@@ -412,6 +413,26 @@ func (s *Supervisor) Restarts() int {
 }
 
 // Done is closed when the supervisor gives up on the sidecar.
+// SetHandler installs (or replaces) the handler for the sidecar's inbound
+// calls: host tools and approvals. The server owns the tools but is built
+// after the sidecar is already running, so the handler arrives late; a later
+// spawn (a restart) picks up the same handler.
+func (s *Supervisor) SetHandler(h Handler) {
+	s.mu.Lock()
+	s.handler = h
+	conn := s.conn
+	s.mu.Unlock()
+	if conn != nil {
+		conn.SetHandler(h)
+	}
+}
+
+func (s *Supervisor) currentHandler() Handler {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.handler
+}
+
 func (s *Supervisor) Done() <-chan struct{} { return s.stopped }
 
 // Close shuts the sidecar down gracefully: ask it to stop, close its stdin

@@ -1,0 +1,250 @@
+package server
+
+import (
+	"context"
+	"encoding/json"
+	"strings"
+	"testing"
+
+	"v1/internal/agent"
+	"v1/internal/config"
+	"v1/internal/harness"
+	"v1/internal/llm"
+	"v1/internal/store"
+)
+
+func newHarnessTestServer(t *testing.T) (*Server, *store.Project, string) {
+	t.Helper()
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	s := New(config.Config{DataDir: t.TempDir(), AuthDisabled: true}, st)
+	p := &store.Project{ID: store.NewID(), Name: "harness", Path: t.TempDir()}
+	if err := s.st.CreateProject(p); err != nil {
+		t.Fatal(err)
+	}
+	session, err := s.st.EnsureDefaultSession(p.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s, p, session.ID
+}
+
+// result records a tool result the way RunTool does, so the translation sees
+// it on tool_execution_end.
+func (r *harnessToolRunner) record(callID string, res harness.ToolResult) {
+	r.mu.Lock()
+	r.results[callID] = res
+	r.mu.Unlock()
+}
+
+func delta(typ, text string) harness.Change {
+	return harness.Change{Type: typ, Delta: text}
+}
+
+func TestConsumeHarnessTurnTranslatesEvents(t *testing.T) {
+	s, p, sessionID := newHarnessTestServer(t)
+	q := harness.NewEventQueue()
+	runner := &harnessToolRunner{results: map[string]harness.ToolResult{}}
+	runner.record("call-ok", harness.ToolResult{Text: "file contents"})
+	runner.record("call-fail", harness.ToolResult{Text: "boom", IsError: true})
+
+	var events []agent.ChatEvent
+	emit := func(ev agent.ChatEvent) { events = append(events, ev) }
+
+	cost := 0.5
+	q.Push([]harness.Event{
+		// First model round: text, reasoning and a tool call.
+		{Type: "message_update", Usage: &harness.Usage{Input: 100, Output: 20, Cost: &harness.Cost{Total: &cost}},
+			Changes: []harness.Change{delta("thinking_delta", "why"), delta("text_delta", "Hel"), delta("text_delta", "lo")}},
+		{Type: "message_end", Entry: json.RawMessage(`{"id":1,"kind":"assistant"}`)},
+		{Type: "tool_execution_start", ToolCallID: "call-ok", ToolName: "read_file", Args: []byte(`{"path":"a.txt"}`)},
+		{Type: "tool_execution_end", ToolCallID: "call-ok", ToolName: "read_file", Entry: json.RawMessage(`{"id":2,"kind":"toolResult"}`)},
+		// A tool whose task faulted: no entry at all.
+		{Type: "tool_execution_end", ToolCallID: "call-gone", ToolName: "run_command"},
+		// A tool that ran and failed: an entry, but its runner reported an error.
+		{Type: "tool_execution_start", ToolCallID: "call-fail", ToolName: "run_command", Args: []byte(`{"command":"false"}`)},
+		{Type: "tool_execution_end", ToolCallID: "call-fail", ToolName: "run_command", Entry: json.RawMessage(`{"id":3,"kind":"toolResult"}`)},
+		// Second model round after the tools.
+		{Type: "message_update", Usage: &harness.Usage{Input: 150, Output: 10},
+			Changes: []harness.Change{delta("text_delta", "second")}},
+		{Type: "message_end", Entry: json.RawMessage(`{"id":4,"kind":"assistant"}`)},
+	})
+	q.Push([]harness.Event{{Type: "run_end"}})
+
+	turn, err := s.consumeHarnessTurn(context.Background(), q, runner,
+		agent.ChatParams{Project: p, SessionID: sessionID}, "test-model", emit)
+	if err != nil {
+		t.Fatalf("consumeHarnessTurn: %v", err)
+	}
+
+	var texts, reasonings, toolStarts, toolEnds []agent.ChatEvent
+	for _, ev := range events {
+		switch ev.Type {
+		case "delta":
+			texts = append(texts, ev)
+		case "reasoning":
+			reasonings = append(reasonings, ev)
+		case "tool_start":
+			toolStarts = append(toolStarts, ev)
+		case "tool_end":
+			toolEnds = append(toolEnds, ev)
+		}
+	}
+	if len(texts) != 3 || texts[0].Text != "Hel" || texts[1].Text != "lo" || texts[2].Text != "second" {
+		t.Fatalf("text events = %+v", texts)
+	}
+	if len(reasonings) != 1 || reasonings[0].Text != "why" {
+		t.Fatalf("reasoning events = %+v", reasonings)
+	}
+	if len(toolStarts) != 2 || toolStarts[0].Name != "read_file" || toolStarts[0].Detail != "a.txt" {
+		t.Fatalf("tool_start events = %+v", toolStarts)
+	}
+	if len(toolEnds) != 3 {
+		t.Fatalf("tool_end events = %+v", toolEnds)
+	}
+	// A finished tool is ok; a faulted or erroring one is not.
+	if !toolEnds[0].OK {
+		t.Fatalf("successful tool reported not ok: %+v", toolEnds[0])
+	}
+	if toolEnds[1].OK {
+		t.Fatalf("faulted tool reported ok: %+v", toolEnds[1])
+	}
+	if toolEnds[2].OK {
+		t.Fatalf("erroring tool reported ok: %+v", toolEnds[2])
+	}
+
+	// Each completed assistant message is persisted as its own row.
+	msgs, err := s.st.ListMessages(p.ID, sessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var assistants []string
+	for _, m := range msgs {
+		if m.Role == "assistant" {
+			assistants = append(assistants, m.Content)
+		}
+	}
+	if len(assistants) != 2 || assistants[0] != "Hello" || assistants[1] != "second" {
+		t.Fatalf("persisted assistant rows = %q", assistants)
+	}
+
+	// Input/Output sum every round; Context is the last round's prompt size.
+	if turn.Usage == nil {
+		t.Fatal("no usage reported")
+	}
+	if turn.Usage.Input != 250 || turn.Usage.Output != 30 || turn.Usage.Context != 160 {
+		t.Fatalf("usage = %+v", turn.Usage)
+	}
+	if turn.Usage.Cost == nil || *turn.Usage.Cost != 0.5 {
+		t.Fatalf("cost = %+v", turn.Usage.Cost)
+	}
+	if turn.Usage.Model != "test-model" || turn.Model != "test-model" {
+		t.Fatalf("model = %q / %q", turn.Usage.Model, turn.Model)
+	}
+}
+
+func TestConsumeHarnessTurnReadsUsageFromCommittedEntry(t *testing.T) {
+	s, p, sessionID := newHarnessTestServer(t)
+	q := harness.NewEventQueue()
+	runner := &harnessToolRunner{results: map[string]harness.ToolResult{}}
+	// A fast round never emits a message_update carrying usage: pi-durable
+	// throttles the live partial, so the committed entry is the only source.
+	q.Push([]harness.Event{
+		{Type: "message_update", Changes: []harness.Change{delta("text_delta", "hi")}},
+		{Type: "message_end", Entry: json.RawMessage(`{"id":1,"kind":"assistant","model":[{"role":"assistant",` +
+			`"usage":{"input":8000,"output":50,"cacheRead":100,"totalTokens":8050,"cost":{"total":0.002}}}]}`)},
+	})
+	q.Push([]harness.Event{{Type: "run_end"}})
+
+	turn, err := s.consumeHarnessTurn(context.Background(), q, runner,
+		agent.ChatParams{Project: p, SessionID: sessionID}, "test-model", func(agent.ChatEvent) {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if turn.Usage == nil {
+		t.Fatal("no usage reported")
+	}
+	if turn.Usage.Input != 8000 || turn.Usage.Output != 50 || turn.Usage.Context != 8050 {
+		t.Fatalf("usage = %+v", turn.Usage)
+	}
+	if turn.Usage.Cost == nil || *turn.Usage.Cost != 0.002 {
+		t.Fatalf("cost = %+v", turn.Usage.Cost)
+	}
+}
+
+func TestConsumeHarnessTurnReportsFaultedGeneration(t *testing.T) {
+	s, p, sessionID := newHarnessTestServer(t)
+	q := harness.NewEventQueue()
+	runner := &harnessToolRunner{results: map[string]harness.ToolResult{}}
+	q.Push([]harness.Event{
+		{Type: "message_update", Changes: []harness.Change{delta("text_delta", "partial")}},
+		{Type: "task_failed", Message: json.RawMessage(`"provider error: 429"`)},
+	})
+
+	_, err := s.consumeHarnessTurn(context.Background(), q, runner,
+		agent.ChatParams{Project: p, SessionID: sessionID}, "test-model", func(agent.ChatEvent) {})
+	if err == nil || !strings.Contains(err.Error(), "429") {
+		t.Fatalf("err = %v, want the provider failure", err)
+	}
+	// The partial answer is kept rather than lost with the failed turn.
+	msgs, err := s.st.ListMessages(p.ID, sessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 1 || msgs[0].Content != "partial" {
+		t.Fatalf("persisted rows = %+v", msgs)
+	}
+}
+
+func TestHarnessProviderSpecRegistersTurnModel(t *testing.T) {
+	spec := harnessProviderSpec(llm.NewClient("https://api.example.com/v1/", "sk-secret", "custom-model"))
+	if spec.ID != "api.example.com" {
+		t.Fatalf("provider id = %q", spec.ID)
+	}
+	if spec.BaseURL != "https://api.example.com/v1" || spec.APIKey != "sk-secret" {
+		t.Fatalf("spec = %+v", spec)
+	}
+	if len(spec.Models) == 0 || spec.Models[0].ID != "custom-model" {
+		t.Fatalf("the turn's own model must be registered first: %+v", spec.Models)
+	}
+	seen := map[string]int{}
+	for _, m := range spec.Models {
+		seen[m.ID]++
+	}
+	for id, n := range seen {
+		if n != 1 {
+			t.Fatalf("model %q registered %d times", id, n)
+		}
+	}
+}
+
+func TestHarnessProviderIDFallsBack(t *testing.T) {
+	if got := harnessProviderID("not a url"); got != "v1" {
+		t.Fatalf("provider id = %q, want v1", got)
+	}
+}
+
+func TestHarnessToolListSkipsDisabled(t *testing.T) {
+	got := harnessToolList(map[string]bool{"run_command": true})
+	if len(got) != 2 || got[0] != "read_file" || got[1] != "write_file" {
+		t.Fatalf("tool list = %v", got)
+	}
+}
+
+func TestHarnessToolDetail(t *testing.T) {
+	cases := map[string]string{
+		`{"path":"src/a.ts"}`:         "src/a.ts",
+		`{"file_path":"/abs/b.md"}`:   "/abs/b.md",
+		`{"command":"go test ./..."}`: "go test ./...",
+		`{}`:                          "",
+		``:                            "",
+	}
+	for args, want := range cases {
+		if got := harnessToolDetail([]byte(args)); got != want {
+			t.Fatalf("harnessToolDetail(%s) = %q, want %q", args, got, want)
+		}
+	}
+}

@@ -60,6 +60,9 @@ type Config struct {
 	HarnessDB string
 	// MaxSidecarRestarts bounds restarts of a crashing sidecar.
 	MaxSidecarRestarts int
+	// HarnessDebug logs every agent event the sidecar forwards
+	// (V1_HARNESS_DEBUG), for diagnosing the translation.
+	HarnessDebug bool
 }
 
 // Load reads configuration from environment variables.
@@ -194,6 +197,9 @@ func Load(version, commit string) Config {
 		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
 			c.MaxSidecarRestarts = n
 		}
+	}
+	if v := os.Getenv("V1_HARNESS_DEBUG"); v == "true" || v == "1" || v == "yes" {
+		c.HarnessDebug = true
 	}
 	return c
 }

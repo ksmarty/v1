@@ -70,6 +70,11 @@ func main() {
 		st.Close()
 		log.Fatalf("harness: %v", err)
 	}
+	if sup != nil {
+		// The bridge routes the sidecar's host-tool calls back into v1's tools
+		// and turns its agent events into the chat client's SSE events.
+		srv.SetHarness(harness.NewBridge(sup, log.Printf))
+	}
 
 	go func() {
 		log.Printf("v1 %s (%s) listening on :%d (data dir: %s)", version, commit, cfg.Port, cfg.DataDir)
@@ -124,16 +129,24 @@ func startHarness(ctx context.Context, cfg config.Config) (*harness.Supervisor, 
 
 // sidecarScript resolves the sidecar entrypoint: an explicit
 // V1_SIDECAR_SCRIPT wins, then the copy shipped next to the v1 binary, then
-// the repo checkout (for `make dev-backend`).
+// the repo checkout (for `make dev-backend`). The sidecar is plain ESM, so
+// `src/host.js` is the real entrypoint; `dist/host.js` is preferred when a
+// bundled copy exists.
 func sidecarScript(cfg config.Config) string {
 	if cfg.SidecarScript != "" {
 		return cfg.SidecarScript
 	}
+	roots := []string{"sidecar"}
 	if exe, err := os.Executable(); err == nil {
-		next := filepath.Join(filepath.Dir(exe), "sidecar", "dist", "host.js")
-		if _, err := os.Stat(next); err == nil {
-			return next
+		roots = append([]string{filepath.Join(filepath.Dir(exe), "sidecar")}, roots...)
+	}
+	for _, root := range roots {
+		for _, name := range []string{"dist/host.js", "src/host.js"} {
+			candidate := filepath.Join(root, filepath.FromSlash(name))
+			if _, err := os.Stat(candidate); err == nil {
+				return candidate
+			}
 		}
 	}
-	return "sidecar/dist/host.js"
+	return filepath.Join("sidecar", "src", "host.js")
 }

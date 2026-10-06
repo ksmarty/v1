@@ -38,6 +38,47 @@ function signatureOf(config) {
 }
 
 /**
+ * Fill in every field pi-ai requires on a chat model. v1's catalog is thinner
+ * than pi-ai's `Model` (it has no pricing, for one), and pi-ai dereferences
+ * several of these unconditionally — `model.cost.tiers` in the usage
+ * accounting, `model.input.includes(...)` in the message transforms,
+ * `model.maxTokens` when building a request — so a missing field is a crash,
+ * not a default. Cost stays zero: v1's catalog publishes no prices, so the
+ * turn reports tokens but no spend.
+ */
+function modelDescriptor(model, key, config) {
+	const contextWindow = Number.isFinite(model.contextWindow) && model.contextWindow > 0 ? model.contextWindow : 0;
+	return {
+		...model,
+		id: model.id,
+		name: model.name ?? model.id,
+		api: model.api ?? config.api ?? "openai-completions",
+		// The registry looks models up by this key; createProvider does not stamp it.
+		provider: key,
+		// detectCompat dereferences baseUrl unconditionally.
+		baseUrl: model.baseUrl ?? config.baseUrl,
+		// `input.includes("image")` is called on every request, so text-only
+		// models must still carry an explicit list.
+		input: Array.isArray(model.input) && model.input.length > 0 ? model.input : ["text"],
+		reasoning: model.reasoning === true,
+		cost: {
+			input: model.cost?.input ?? 0,
+			output: model.cost?.output ?? 0,
+			cacheRead: model.cost?.cacheRead ?? 0,
+			cacheWrite: model.cost?.cacheWrite ?? 0,
+			...(model.cost?.tiers ? { tiers: model.cost.tiers } : {}),
+		},
+		contextWindow,
+		maxTokens:
+			Number.isFinite(model.maxTokens) && model.maxTokens > 0
+				? model.maxTokens
+				: contextWindow > 0
+					? Math.min(8192, contextWindow)
+					: 8192,
+	};
+}
+
+/**
  * Register (or refresh) the provider and return the model reference to store on
  * the conversation.
  *
@@ -54,14 +95,7 @@ export function registerProvider(models, config) {
 		return { providerId: key, modelId };
 	}
 
-	const descriptors = (config.models ?? []).map((model) => ({
-		// `provider` (the lookup key; createProvider does not stamp it) and
-		// `baseUrl` (detectCompat dereferences it unconditionally) are both
-		// required on the model object.
-		...model,
-		provider: key,
-		baseUrl: model.baseUrl ?? config.baseUrl,
-	}));
+	const descriptors = (config.models ?? []).map((model) => modelDescriptor(model, key, config));
 	if (descriptors.length === 0) throw new Error(`provider ${config.id}: no models supplied`);
 
 	const sessionHeader = config.sessionHeader;
@@ -81,10 +115,11 @@ export function registerProvider(models, config) {
 				: options,
 		);
 
-	const api =
-		config.api === "openai-completions"
-			? { stream: wrap(openaiStream), streamSimple: wrap(openaiStreamSimple) }
-			: undefined;
+	const apiName = config.api ?? "openai-completions";
+	if (apiName !== "openai-completions") {
+		throw new Error(`provider ${config.id}: unsupported api ${apiName}`);
+	}
+	const api = { stream: wrap(openaiStream), streamSimple: wrap(openaiStreamSimple) };
 
 	models.setProvider(
 		createProvider({
