@@ -1,0 +1,22 @@
+{
+	"name": "v1-sidecar",
+	"version": "0.1.0",
+	"private": true,
+	"description": "pi-durable harness sidecar for v1 (JSON-RPC bridge over a Unix socket)",
+	"type": "module",
+	"main": "src/host.js",
+	"engines": {
+		"node": ">=22.19"
+	},
+	"scripts": {
+		"start": "node src/host.js",
+		"check": "node --check src/host.js && node --check src/rpc.js && node --check src/provider.js && node --check src/tools.js && node --check src/log.js",
+		"test": "node test/bridge.test.mjs"
+	},
+	"dependencies": {
+		"@earendil-works/chord": "1.0.4",
+		"@earendil-works/pi-ai": "1.0.4",
+		"@earendil-works/pi-durable": "1.0.4",
+		"typebox": "^1.3.27"
+	}
+}
