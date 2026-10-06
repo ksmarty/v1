@@ -1,7 +1,9 @@
 package server
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -390,6 +392,46 @@ func mcpEchoTool() llm.Tool {
 				"properties": map[string]any{"value": map[string]any{"type": "string"}},
 			},
 		},
+	}
+}
+
+// A screenshot must reach the model. The built-in loop hands the PNG to the
+// agent loop through Executor.PendingImage; the harness attaches it to the tool
+// result instead, which is where a vision model expects it (pi-ai then splits
+// it into a follow-up user message for APIs that reject images in tool
+// results).
+func TestHarnessToolRunnerCarriesScreenshotImage(t *testing.T) {
+	png := []byte{0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a}
+	exec := &agent.Executor{
+		Screenshot: func(context.Context, string) ([]byte, error) { return png, nil },
+	}
+	r := &harnessToolRunner{exec: exec, results: map[string]harness.ToolResult{}}
+	res, err := r.RunTool(context.Background(), harness.ToolCall{
+		Tool:   "screenshot_app",
+		Args:   json.RawMessage(`{"path":"/"}`),
+		CallID: "call-1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.IsError {
+		t.Fatalf("result = %+v", res)
+	}
+	if len(res.Images) != 1 {
+		t.Fatalf("images = %+v, want exactly one", res.Images)
+	}
+	if res.Images[0].MimeType != "image/png" {
+		t.Errorf("mimeType = %q, want image/png", res.Images[0].MimeType)
+	}
+	got, err := base64.StdEncoding.DecodeString(res.Images[0].Data)
+	if err != nil {
+		t.Fatalf("image data is not base64: %v", err)
+	}
+	if !bytes.Equal(got, png) {
+		t.Errorf("image data = %q, want %q", got, png)
+	}
+	if len(exec.PendingImage) != 0 {
+		t.Error("PendingImage was left set, so a later tool would resend the same screenshot")
 	}
 }
 

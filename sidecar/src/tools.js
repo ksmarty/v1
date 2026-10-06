@@ -21,6 +21,15 @@ function toResult(reply) {
 		content: [{ type: "text", text: typeof reply.text === "string" ? reply.text : "" }],
 		isError: Boolean(reply.isError),
 	};
+	// A tool that produced pictures for the model (screenshot_app) attaches them
+	// to its result; pi-ai sends them as image content blocks.
+	if (Array.isArray(reply.images)) {
+		for (const image of reply.images) {
+			if (image && typeof image.data === "string") {
+				result.content.push({ type: "image", data: image.data, mimeType: image.mimeType || "image/png" });
+			}
+		}
+	}
 	if (reply.details !== undefined) result.details = reply.details;
 	return result;
 }

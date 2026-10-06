@@ -88,6 +88,16 @@ type ToolResult struct {
 	Text    string          `json:"text"`
 	IsError bool            `json:"isError"`
 	Details json.RawMessage `json:"details,omitempty"`
+	// Images are pictures a tool produced for the model to look at. Only
+	// screenshot_app does this, and only for a vision model.
+	Images []ToolImage `json:"images,omitempty"`
+}
+
+// ToolImage is one image attached to a tool result, base64 as the provider
+// APIs want it.
+type ToolImage struct {
+	Data     string `json:"data"`
+	MimeType string `json:"mimeType"`
 }
 
 // ToolRunner executes host tools and resolves approvals for one conversation.

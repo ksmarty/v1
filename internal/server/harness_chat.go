@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -166,7 +167,14 @@ func (r *harnessToolRunner) RunTool(ctx context.Context, call harness.ToolCall) 
 			res.Text = out + "\n" + err.Error()
 		}
 	}
+	// screenshot_app hands its PNG to the agent loop through PendingImage. The
+	// built-in loop injects it as a follow-up user message; here it rides on the
+	// tool result instead, which is where a vision model expects it.
 	r.mu.Lock()
+	if png := r.exec.PendingImage; len(png) > 0 {
+		r.exec.PendingImage = nil
+		res.Images = []harness.ToolImage{{Data: base64.StdEncoding.EncodeToString(png), MimeType: "image/png"}}
+	}
 	if r.results != nil {
 		r.results[call.CallID] = res
 	}

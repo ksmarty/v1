@@ -23,6 +23,7 @@ import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 
 import { createPeer } from "../src/rpc.js";
+import { buildHostTools } from "../src/tools.js";
 
 const run = promisify(execFile);
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -350,4 +351,42 @@ async function waitFor(predicate, timeoutMs) {
 	}
 }
 
+/**
+ * The Go tool result → pi-durable tool result mapping. Runs without a sidecar
+ * or a model: it exercises the proxy's translation directly, including the
+ * image block a screenshot_app result carries.
+ */
+async function checkToolResultMapping() {
+	const bridge = {
+		call: async () => ({
+			text: "captured the app preview",
+			isError: false,
+			details: { ok: true, bytes: 8 },
+			images: [{ data: "iVBORw0KGgo=", mimeType: "image/png" }],
+		}),
+	};
+	const [tool] = buildHostTools(bridge, [
+		{
+			name: "screenshot_app",
+			description: "Capture a screenshot of the app preview.",
+			parameters: { type: "object", properties: {} },
+		},
+	]);
+	const result = await tool.execute({}, { callId: "call-1", conversationId: "conv-1" });
+	check("tool result: text block", result.content[0]?.type === "text" && result.content[0].text === "captured the app preview");
+	check("tool result: image block", result.content[1]?.type === "image" && result.content[1].data === "iVBORw0KGgo=", JSON.stringify(result.content[1]));
+	check("tool result: image mime type", result.content[1]?.mimeType === "image/png");
+	check("tool result: details pass through", result.details?.ok === true);
+	check("tool result: not an error", result.isError === false);
+
+	// A text-only result must not gain an empty image block, which a provider
+	// would reject.
+	const textOnly = buildHostTools({ call: async () => ({ text: "ok", isError: false }) }, [
+		{ name: "read_file", description: "Read a file.", parameters: { type: "object", properties: {} } },
+	])[0];
+	const plain = await textOnly.execute({}, { callId: "call-2", conversationId: "conv-1" });
+	check("tool result: no image block for a text result", plain.content.length === 1 && plain.content[0].type === "text");
+}
+
+await checkToolResultMapping();
 await main();
