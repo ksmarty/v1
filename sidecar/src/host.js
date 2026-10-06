@@ -120,6 +120,8 @@ class Sidecar {
 		this.sessions = new Map();
 		/** String(conversationId) → conversation */
 		this.conversations = new Map();
+		/** Last agent change applied per conversation, reused when forking a rewind. */
+		this.changes = new Map();
 		this.closed = false;
 		this.closing = null;
 		/** Set once Go has asked us to stop; makes the later disconnect graceful. */
@@ -218,8 +220,9 @@ class Sidecar {
 			log.info("conversation created", { v1SessionId, conversationId: String(conversation.id) });
 		}
 
-		if (v1SessionId) this.sessions.set(v1SessionId, { conversation, providerId, modelId });
+		if (v1SessionId) this.sessions.set(v1SessionId, { conversation, providerId, modelId, change });
 		this.conversations.set(String(conversation.id), conversation);
+		this.changes.set(String(conversation.id), change);
 		return { conversationId: String(conversation.id), providerId, modelId };
 	}
 
@@ -299,6 +302,79 @@ class Sidecar {
 			this.ctx,
 		);
 		return { conversationId: String(conversation.id), submissionId: String(submission.id) };
+	}
+
+	/**
+	 * Drop durable user turns that v1 no longer has.
+	 *
+	 * v1 keeps its own transcript and owns retry, edit and delete: each one trims
+	 * v1's store and re-runs the turn, and the durable transcript never hears
+	 * about it. Without this the model keeps seeing history the user rewound — a
+	 * retried question reaches it twice.
+	 *
+	 * pi-durable has no "remove the last turn"; its rewind is a fork, which
+	 * inherits history through a fork entry and leaves the parent orphaned. Go
+	 * sends the number of user turns it still has, and the fork point is the
+	 * entry just older than the oldest turn being dropped.
+	 *
+	 * The fork point is taken from the active range (`ContextView.entries`), so a
+	 * rewind can never inherit entries a compaction cut: a turn the summary
+	 * replaced is simply not a candidate, and v1's retry is answered from the
+	 * summary.
+	 */
+	async rewindIfNeeded(conversation, keepUserTurns) {
+		if (!Number.isInteger(keepUserTurns) || keepUserTurns < 0) return conversation;
+		const view = await conversation.context(this.ctx);
+		// `entries` runs oldest-first ("from its head through the tail"), and
+		// contributions[i] is the model messages entry i still contributes, so
+		// this counts the user turns the model sees rather than relying on an
+		// entry kind. `conversation.entries()` is newest-first; do not confuse
+		// the two orderings.
+		const entries = view.entries ?? [];
+		const userTurns = [];
+		entries.forEach((entry, index) => {
+			if ((view.contributions?.[index] ?? []).some((message) => message.role === "user")) userTurns.push(index);
+		});
+		if (userTurns.length <= keepUserTurns) return conversation;
+
+		// Fork just older than the oldest turn being kept, so the child inherits
+		// everything up to and including the answer to the last kept turn and
+		// nothing from the dropped ones. With no turn kept that is the entry just
+		// older than the oldest turn, and when nothing is older the conversation
+		// starts over.
+		const oldestKept = keepUserTurns > 0 ? userTurns[userTurns.length - keepUserTurns] : userTurns[0];
+		const forkEntry = entries[oldestKept - 1];
+		const change = this.changes.get(String(conversation.id));
+		const options = { ownership: { kind: "ownerless" }, agent: change };
+		const forked = forkEntry
+			? await conversation.fork(forkEntry.id, options, this.ctx)
+			: await this.harness.createConversation(options, this.ctx);
+
+		log.info("conversation rewound to v1's transcript", {
+			from: String(conversation.id),
+			to: String(forked.id),
+			keptUserTurns: keepUserTurns,
+			droppedUserTurns: userTurns.length - keepUserTurns,
+			forkedAt: forkEntry ? String(forkEntry.id) : "start",
+		});
+		this.conversations.delete(String(conversation.id));
+		this.conversations.set(String(forked.id), forked);
+		this.changes.delete(String(conversation.id));
+		if (change) this.changes.set(String(forked.id), change);
+		// A session that registered the old conversation follows the fork, so the
+		// next turn does not resolve back to the orphaned parent.
+		for (const [v1SessionId, session] of this.sessions) {
+			if (String(session.conversation.id) === String(conversation.id)) {
+				this.sessions.set(v1SessionId, { ...session, conversation: forked });
+			}
+		}
+		return forked;
+	}
+
+	async rewind(params) {
+		const conversation = await this.conversationFor(params);
+		const rewound = await this.rewindIfNeeded(conversation, params?.keepUserTurns);
+		return { conversationId: String(rewound.id) };
 	}
 
 	async abort(params) {
@@ -425,6 +501,8 @@ class Sidecar {
 				return await this.reset(params);
 			case "conversation.entries":
 				return await this.entries(params);
+			case "conversation.rewind":
+				return await this.rewind(params);
 			case "conversation.usage":
 				return await this.usage(params);
 			case "watch.start":

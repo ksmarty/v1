@@ -239,6 +239,62 @@ func TestConsumeHarnessTurnDoesNotDuplicateStreamedText(t *testing.T) {
 	}
 }
 
+// The durable transcript must be rewound to match v1's store, which is the one
+// retry, edit and delete trim. The count is of the user turns the sidecar must
+// keep, so it excludes the turn being submitted: that turn is already in the
+// store, either appended or trimmed back to.
+func TestHarnessKeepUserTurns(t *testing.T) {
+	s, p, sessionID := newHarnessTestServer(t)
+	add := func(role string) {
+		t.Helper()
+		if _, err := s.st.AddMessage(p.ID, sessionID, role, role+" text", "", "", "", "", ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// An empty store has no turn to exclude.
+	if got := harnessKeepUserTurns(s.st, p.ID, sessionID); got != 0 {
+		t.Fatalf("empty store = %d, want 0", got)
+	}
+
+	// A fresh turn: the store ends on the submitted user message, which the
+	// sidecar must not count as one of its own.
+	add("user")
+	if got := harnessKeepUserTurns(s.st, p.ID, sessionID); got != 0 {
+		t.Fatalf("first turn = %d, want 0", got)
+	}
+
+	// A completed turn, then a second question.
+	add("assistant")
+	add("user")
+	if got := harnessKeepUserTurns(s.st, p.ID, sessionID); got != 1 {
+		t.Fatalf("second turn = %d, want 1", got)
+	}
+
+	// A retry trims back to a user message, so the turns before it survive and
+	// the re-run turn itself is excluded.
+	if err := s.st.DeleteMessagesAfter(p.ID, sessionID, 3); err != nil {
+		t.Fatal(err)
+	}
+	if got := harnessKeepUserTurns(s.st, p.ID, sessionID); got != 1 {
+		t.Fatalf("retry of the second turn = %d, want 1", got)
+	}
+
+	// Retrying the only turn leaves nothing for the sidecar to keep, which is
+	// the case that must rewind the durable transcript to empty.
+	if err := s.st.DeleteMessagesAfter(p.ID, sessionID, 1); err != nil {
+		t.Fatal(err)
+	}
+	if got := harnessKeepUserTurns(s.st, p.ID, sessionID); got != 0 {
+		t.Fatalf("retry of the first turn = %d, want 0", got)
+	}
+
+	// An unreadable store must not force a rewind.
+	if got := harnessKeepUserTurns(nil, p.ID, sessionID); got != -1 {
+		t.Fatalf("nil store = %d, want -1", got)
+	}
+}
+
 // A model call that fails commits an entry with stopReason "error" instead of
 // emitting task_failed; the turn must still report the failure rather than
 // ending in a silent done.

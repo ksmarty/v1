@@ -316,6 +316,23 @@ func (s *Server) runHarnessTurn(ctx context.Context, p *store.Project, params ag
 			log.Printf("harness: persisting conversation id failed: %v", err)
 		}
 	}
+	// v1's store is the transcript retry, edit and delete trim; the durable
+	// transcript is a second copy of the same conversation. Rewinding it back to
+	// where v1's store ends keeps the two from drifting, so a retried question
+	// reaches the model once instead of twice. This has to run before the watch:
+	// a rewind forks a new conversation, and a watch is per conversation.
+	if keep := harnessKeepUserTurns(params.Store, p.ID, params.SessionID); keep >= 0 {
+		rewound, err := bridge.Rewind(ctx, sidecarID, keep)
+		if err != nil {
+			return nil, err
+		}
+		if rewound != "" && rewound != sidecarID {
+			sidecarID = rewound
+			if err := params.Store.SetHarnessConversationID(p.ID, params.SessionID, sidecarID); err != nil {
+				log.Printf("harness: persisting rewound conversation id failed: %v", err)
+			}
+		}
+	}
 	subID := fmt.Sprintf("%s:%d", convID, time.Now().UnixNano())
 	q, stop, err := bridge.Watch(ctx, subID, sidecarID)
 	if err != nil {
@@ -340,6 +357,38 @@ func (s *Server) runHarnessTurn(ctx context.Context, p *store.Project, params ag
 		return nil, err
 	}
 	return s.consumeHarnessTurn(ctx, bridge, sidecarID, q, runner, params, model, emit)
+}
+
+// harnessKeepUserTurns is how many of the sidecar's user turns must survive the
+// submission: v1's own user turns, less the turn being submitted, which is
+// already in the store by now (the bookkeeping above either appended it or
+// trimmed back to it).
+//
+// A store that does not end on a user message is left unadjusted, and an
+// unreadable store reports -1, meaning "leave the durable transcript alone".
+// Both fall the same way on purpose: the sidecar only rewinds when it has more
+// user turns than v1 does, so a miscount can skip a rewind but never force one.
+func harnessKeepUserTurns(st *store.Store, projectID, sessionID string) int {
+	if st == nil {
+		return -1
+	}
+	msgs, err := st.ListMessages(projectID, sessionID)
+	if err != nil {
+		return -1
+	}
+	users := 0
+	for _, m := range msgs {
+		if m.Role == "user" {
+			users++
+		}
+	}
+	if len(msgs) > 0 && msgs[len(msgs)-1].Role == "user" {
+		users--
+	}
+	if users < 0 {
+		users = 0
+	}
+	return users
 }
 
 // toolSummary is the one-line tool result shown in the transcript, matching

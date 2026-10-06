@@ -330,6 +330,7 @@ func (b *Bridge) Watch(ctx context.Context, subscriptionID, conversationID strin
 // silently queueing.
 // Submit queues one user turn on a conversation. content is either the message
 // text or []InputPart when the turn carries attachments.
+// Submit queues one user turn on a conversation.
 func (b *Bridge) Submit(ctx context.Context, conversationID, requestID string, content any, whenBusy string) (SubmitResult, error) {
 	var out SubmitResult
 	err := b.sup.Call(ctx, "turn.submit", map[string]any{
@@ -339,6 +340,25 @@ func (b *Bridge) Submit(ctx context.Context, conversationID, requestID string, c
 		"whenBusy":       whenBusy,
 	}, &out)
 	return out, err
+}
+
+// Rewind forks the conversation back to the point where v1's own transcript
+// ends, so the model stops seeing turns the user rewound, and returns the
+// conversation to use from then on. keepUserTurns is how many user turns must
+// survive; the parent is left orphaned by the fork.
+//
+// This must run before the turn's watch: a rewind forks a new conversation and
+// a watch is per conversation, so a watch opened first would never see the
+// turn's events.
+func (b *Bridge) Rewind(ctx context.Context, conversationID string, keepUserTurns int) (string, error) {
+	var out struct {
+		ConversationID string `json:"conversationId"`
+	}
+	err := b.sup.Call(ctx, "conversation.rewind", map[string]any{
+		"conversationId": conversationID,
+		"keepUserTurns":  keepUserTurns,
+	}, &out)
+	return out.ConversationID, err
 }
 
 // InputPart is one piece of a user submission, in the shape pi-durable hands
