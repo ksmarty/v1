@@ -114,10 +114,11 @@ All configuration is via environment variables:
 | `V1_CHROME_PATH` | auto-detect | Chrome/Chromium binary for the `screenshot_app` tool. |
 | `V1_HARNESS` | `go` | Chat harness: `go` (built-in agent loop) or `pi` (the pi-durable sidecar). See [Chat harness](#chat-harness). |
 | `V1_SIDECAR_CMD` | `node` | Runtime executable for the pi-durable sidecar. |
-| `V1_SIDECAR_SCRIPT` | next to the binary | Sidecar entrypoint; defaults to `<dir of v1>/sidecar/dist/host.js`, then `sidecar/dist/host.js`. |
+| `V1_SIDECAR_SCRIPT` | next to the binary | Sidecar entrypoint; defaults to `<dir of v1>/sidecar/{dist,src}/host.js`, then the repo's `sidecar/src/host.js`. |
 | `V1_SIDECAR_SOCKET` | `$V1_DATA_DIR/harness.sock` | Unix socket the sidecar listens on. |
 | `V1_HARNESS_DB` | `$V1_DATA_DIR/harness.sqlite` | pi-durable store for harness transcripts. |
 | `V1_SIDECAR_MAX_RESTARTS` | `3` | Consecutive crashes tolerated before the server gives up on the sidecar. |
+| `V1_HARNESS_DEBUG` | off | Log every agent event the sidecar forwards (diagnosing the SSE translation). |
 
 ### Chat harness
 
@@ -131,6 +132,8 @@ and calls back into Go for every tool and approval.
 - Tools, file access, previews, approvals and auth stay in Go. The sidecar
   never touches the workspace directly.
 - Transcripts live in `V1_HARNESS_DB` (separate from v1's own SQLite store).
+- The sidecar is plain ESM run by `node` (see `sidecar/`), so there is no
+  build step; `npm install` in `sidecar/` is enough.
 - `V1_HARNESS=go` (the default) keeps the built-in loop; the switch is
   reversible per process.
 
