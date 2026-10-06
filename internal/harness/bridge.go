@@ -108,7 +108,18 @@ type EnsureRequest struct {
 	Provider       ProviderSpec `json:"provider"`
 	Model          ModelRef     `json:"model"`
 	ThinkingLevel  string       `json:"thinkingLevel,omitempty"`
-	Tools          []string     `json:"tools,omitempty"`
+	// ToolDefs are the model-facing tool definitions for this turn. v1 owns
+	// them (agent.ChatParams.ToolSet) so the two harnesses can never advertise
+	// different schemas; the sidecar only proxies calls back to Go.
+	ToolDefs []ToolDef `json:"toolDefs,omitempty"`
+}
+
+// ToolDef is one tool as the model sees it: the name, the description, and the
+// JSON Schema of its arguments, straight from v1's Go definitions.
+type ToolDef struct {
+	Name        string         `json:"name"`
+	Description string         `json:"description"`
+	Parameters  map[string]any `json:"parameters"`
 }
 
 // ProviderSpec is v1's provider descriptor in pi-ai's shape.

@@ -23,13 +23,23 @@ import (
 // transcripts stay here — the sidecar only owns the model call and the turn
 // loop.
 
-// harnessToolNames are the host tools the sidecar may call. Every one is
-// executed by Go (agent.Executor), so path guards, approvals and background
-// jobs behave exactly as they do on the built-in loop.
-//
-// The walking skeleton advertises a subset of the built-in tool set; the rest
-// land in phase 2 together with the parity harness.
-var harnessToolNames = []string{"read_file", "write_file", "run_command"}
+// harnessToolDefs are the tool definitions the sidecar advertises to the
+// model: exactly the set the built-in loop would send for this turn, taken
+// from the same source (agent.ChatParams.ToolSet) so the two paths cannot
+// drift. Every one is executed by Go (agent.Executor), so path guards,
+// approvals, background jobs and MCP tools behave identically.
+func harnessToolDefs(params agent.ChatParams) []harness.ToolDef {
+	set := params.ToolSet()
+	out := make([]harness.ToolDef, 0, len(set))
+	for _, t := range set {
+		out = append(out, harness.ToolDef{
+			Name:        t.Function.Name,
+			Description: t.Function.Description,
+			Parameters:  t.Function.Parameters,
+		})
+	}
+	return out
+}
 
 // SetHarness attaches the pi-durable bridge. Without one — or with
 // V1_HARNESS=go — chat turns run on the built-in Go agent loop.
@@ -94,18 +104,6 @@ func harnessProviderSpec(c *llm.Client) harness.ProviderSpec {
 		add(ms)
 	}
 	return spec
-}
-
-// harnessToolList is the advertised tool set minus the user's disabled tools,
-// which are neither advertised nor executable.
-func harnessToolList(disabled map[string]bool) []string {
-	out := make([]string, 0, len(harnessToolNames))
-	for _, name := range harnessToolNames {
-		if !disabled[name] {
-			out = append(out, name)
-		}
-	}
-	return out
 }
 
 // harnessToolDetail summarizes a tool call for the UI: the file path, command
@@ -215,7 +213,7 @@ func (s *Server) runHarnessTurn(ctx context.Context, p *store.Project, params ag
 		Provider:      provider,
 		Model:         harness.ModelRef{Provider: provider.ID, ModelID: model},
 		ThinkingLevel: params.ReasoningEffort,
-		Tools:         harnessToolList(params.DisabledTools),
+		ToolDefs:      harnessToolDefs(params),
 	})
 	if err != nil {
 		return nil, err

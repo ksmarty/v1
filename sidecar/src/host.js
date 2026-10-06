@@ -93,6 +93,17 @@ class Bridge {
 	}
 }
 
+/**
+ * pi-ai rejects an unknown thinking level, so a value outside its documented
+ * union is dropped rather than allowed to fail the turn. v1 has no thinking
+ * setting of its own; the provider's default applies when this is undefined.
+ */
+const THINKING_LEVELS = new Set(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
+
+function thinkingLevelOf(value) {
+	return typeof value === "string" && THINKING_LEVELS.has(value) ? value : undefined;
+}
+
 class Sidecar {
 	constructor({ socket, database, signal }) {
 		this.socket = socket;
@@ -117,17 +128,9 @@ class Sidecar {
 
 	async open() {
 		this.ctx = withAbortSignal(this.signal, BACKGROUND_CONTEXT);
-		this.registry.install(
-			defineExtension({
-				name: "v1-host-tools",
-				tools: buildHostTools(this.bridge),
-				hooks: [buildApprovalHook(this.bridge)],
-				// The cwd section is a placeholder: v1's real prompt blocks
-				// (base prompt, memories, plan, tool guidance) arrive as the
-				// conversation's `instructions` from Go.
-				sections: [section("v1-cwd", (input) => input.env?.cwd, { tag: false })],
-			}),
-		);
+		// Tools arrive per turn from Go; the extension is installed up front for
+		// its approval hook and cwd section.
+		this.installHostTools([]);
 		await mkdir(dirname(this.database), { recursive: true });
 		const storage = await openNodeSqliteStorage(this.database);
 		this.harness = await Harness.open(
@@ -170,7 +173,7 @@ class Sidecar {
 
 	/** `conversation.ensure` and `conversation.configure` share this path. */
 	async ensure(params) {
-		const { v1SessionId, conversationId, cwd, instructions, provider, model, thinkingLevel, tools } = params ?? {};
+		const { v1SessionId, conversationId, cwd, instructions, provider, model, thinkingLevel, toolDefs } = params ?? {};
 		if (!v1SessionId && !conversationId) {
 			throw new RpcError(-32602, "conversation.ensure: v1SessionId or conversationId is required");
 		}
@@ -180,12 +183,16 @@ class Sidecar {
 			...provider,
 			modelId: model?.modelId ?? provider.modelId,
 		});
+		// Go owns the tool definitions, and it has already applied vision, the
+		// user's disabled tools, plan mode and the project's MCP tools, so the
+		// set installed here is exactly what the built-in loop would advertise.
+		this.installHostTools(toolDefs);
 		const change = compact({
 			model: { provider: providerId, modelId },
 			cwd,
 			instructions,
-			thinkingLevel: thinkingLevel || undefined,
-			tools: this.resolveTools(tools),
+			thinkingLevel: thinkingLevelOf(thinkingLevel),
+			tools: this.resolveTools((toolDefs ?? []).map((def) => def.name)),
 		});
 
 		let conversation =
@@ -206,6 +213,29 @@ class Sidecar {
 		if (v1SessionId) this.sessions.set(v1SessionId, { conversation, providerId, modelId });
 		this.conversations.set(String(conversation.id), conversation);
 		return { conversationId: String(conversation.id), providerId, modelId };
+	}
+
+	/**
+	 * Install the host tools Go sent for a turn.
+	 *
+	 * The extension is replaced in place, so a conversation resumed later still
+	 * resolves the same names, and Go re-sends the definitions on every ensure,
+	 * so the schemas cannot drift from v1's Go definitions.
+	 */
+	installHostTools(defs) {
+		const tools = Array.isArray(defs) ? buildHostTools(this.bridge, defs) : [];
+		this.registry.install(
+			defineExtension({
+				name: "v1-host-tools",
+				tools,
+				hooks: [buildApprovalHook(this.bridge)],
+				// The cwd section is a placeholder: v1's real prompt blocks
+				// (base prompt, memories, plan, tool guidance) arrive as the
+				// conversation's `instructions` from Go.
+				sections: [section("v1-cwd", (input) => input.env?.cwd, { tag: false })],
+			}),
+		);
+		log.debug("host tools installed", { count: tools.length });
 	}
 
 	/**

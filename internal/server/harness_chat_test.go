@@ -336,10 +336,71 @@ func TestHarnessProviderIDFallsBack(t *testing.T) {
 	}
 }
 
-func TestHarnessToolListSkipsDisabled(t *testing.T) {
-	got := harnessToolList(map[string]bool{"run_command": true})
-	if len(got) != 2 || got[0] != "read_file" || got[1] != "write_file" {
-		t.Fatalf("tool list = %v", got)
+func TestHarnessToolDefsMirrorTheBuiltinSet(t *testing.T) {
+	defs := harnessToolDefs(agent.ChatParams{})
+	byName := make(map[string]harness.ToolDef, len(defs))
+	for _, d := range defs {
+		byName[d.Name] = d
+	}
+	// The sidecar advertises what the built-in loop sends, not a subset of it.
+	for _, name := range []string{
+		"read_file", "write_file", "edit_file", "list_files", "search_files",
+		"delete_file", "move_file", "fetch_url", "run_command", "run_command_background",
+		"restart_preview", "set_project_name", "set_session_name", "set_todos",
+		"remember", "forget", "ask_user", "git", "run_container", "verify_project",
+		"make_plan", "update_plan",
+	} {
+		d, ok := byName[name]
+		if !ok {
+			t.Fatalf("tool %q missing from the sidecar's definitions", name)
+		}
+		if d.Description == "" || d.Parameters["type"] != "object" {
+			t.Fatalf("tool %q has an incomplete definition: %+v", name, d)
+		}
+	}
+}
+
+func TestHarnessToolDefsRespectDisabledAndPlanMode(t *testing.T) {
+	disabled := harnessToolDefs(agent.ChatParams{DisabledTools: map[string]bool{"run_command": true}})
+	for _, d := range disabled {
+		if d.Name == "run_command" {
+			t.Fatal("a disabled tool must not be advertised")
+		}
+	}
+
+	// Plan mode is read-only: no writes, no commands, no MCP tools.
+	plan := map[string]bool{}
+	for _, d := range harnessToolDefs(agent.ChatParams{PlanMode: true}) {
+		plan[d.Name] = true
+	}
+	for _, name := range []string{"write_file", "edit_file", "run_command", "git"} {
+		if plan[name] {
+			t.Fatalf("plan mode advertised %q", name)
+		}
+	}
+	for _, name := range []string{"read_file", "list_files", "search_files"} {
+		if !plan[name] {
+			t.Fatalf("plan mode dropped %q", name)
+		}
+	}
+}
+
+func TestHarnessToolDefsIncludeVisionAndMCP(t *testing.T) {
+	defs := harnessToolDefs(agent.ChatParams{
+		Vision: true,
+		ExtraTools: []llm.Tool{{Type: "function", Function: llm.ToolFunction{
+			Name: "mcp_search", Description: "search", Parameters: map[string]any{"type": "object"},
+		}}},
+	})
+	seen := map[string]bool{}
+	for _, d := range defs {
+		seen[d.Name] = true
+	}
+	if !seen["screenshot_app"] {
+		t.Fatal("a vision model must be offered screenshot_app")
+	}
+	if !seen["mcp_search"] {
+		t.Fatal("dynamic MCP tools must reach the sidecar")
 	}
 }
 

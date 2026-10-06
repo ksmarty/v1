@@ -77,6 +77,36 @@ type ChatEvent struct {
 }
 
 // ChatParams carries everything needed to run one chat turn.
+// ToolSet assembles the tools offered to the model for this turn: the builtin
+// set plus the per-turn additions (screenshot for vision models, dynamic MCP
+// tools), minus the ones the user disabled, restricted to the plan-safe subset
+// in plan mode.
+//
+// Both the builtin loop and the pi-durable harness call it, so the two paths
+// can never advertise different schemas for the same tool.
+func (p ChatParams) ToolSet() []llm.Tool {
+	all := append(append(append(append([]llm.Tool{}, tools...), gitTool, containerTool), verifyProjectTool), makePlanTool, updatePlanTool)
+	if p.Vision {
+		all = append(all, screenshotAppTool)
+	}
+	if len(p.ExtraTools) > 0 {
+		all = append(all, p.ExtraTools...)
+	}
+	if len(p.DisabledTools) > 0 {
+		filtered := all[:0]
+		for _, t := range all {
+			if !p.DisabledTools[t.Function.Name] {
+				filtered = append(filtered, t)
+			}
+		}
+		all = filtered
+	}
+	if p.PlanMode {
+		all = planSafeTools(all)
+	}
+	return all
+}
+
 type ChatParams struct {
 	Store           *store.Store
 	Project         *store.Project
@@ -404,25 +434,7 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 				p.Emit(ChatEvent{Type: "injected_message", MessageID: r.MessageID, Text: r.Text})
 			}
 		}
-		allTools := append(append(append(append([]llm.Tool{}, tools...), gitTool, containerTool), verifyProjectTool), makePlanTool, updatePlanTool)
-		if p.Vision {
-			allTools = append(allTools, screenshotAppTool)
-		}
-		if len(p.ExtraTools) > 0 {
-			allTools = append(allTools, p.ExtraTools...)
-		}
-		if len(p.DisabledTools) > 0 {
-			filtered := allTools[:0]
-			for _, t := range allTools {
-				if !p.DisabledTools[t.Function.Name] {
-					filtered = append(filtered, t)
-				}
-			}
-			allTools = filtered
-		}
-		if p.PlanMode {
-			allTools = planSafeTools(allTools)
-		}
+		allTools := p.ToolSet()
 		requestHistory := compactForModel(ctx, history, p)
 		res, err := p.Client.ChatStream(turnCtx, requestHistory, allTools,
 			func(d string) { p.Emit(ChatEvent{Type: "delta", Text: d}) },

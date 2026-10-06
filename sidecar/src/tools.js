@@ -1,48 +1,17 @@
 /**
  * Host tools (plan D4/F3): every agent tool stays implemented in Go. Each tool
- * here is a thin proxy — it declares the schema the model sees, then forwards
- * the call over the bridge and returns Go's result verbatim.
+ * here is a thin proxy — it takes the definition Go sent, then forwards the
+ * call over the bridge and returns Go's result verbatim.
  *
- * Go owns argument validation, the path-escape/SSRF guards, output truncation
- * and TOON re-encoding, so nothing about tool semantics lives in this process.
+ * Go owns the schemas, argument validation, the path-escape/SSRF guards, output
+ * truncation and TOON re-encoding, so nothing about tool semantics lives in
+ * this process. The sidecar deliberately keeps no schema of its own: the model
+ * must see exactly what v1's built-in loop would have sent.
  */
-import { ToolTask, defineTool, hook } from "@earendil-works/pi-durable";
+import { defineTool, hook, ToolTask } from "@earendil-works/pi-durable";
 import { Type } from "typebox";
 
 import { log } from "./log.js";
-
-/**
- * Tool schemas for the walking skeleton. The authoritative argument structs are
- * v1's Go tool definitions; these mirror the names the model must send.
- */
-const HOST_TOOLS = {
-	read_file: {
-		description:
-			"Read a UTF-8 text file from the project. Returns the file contents, optionally a line range.",
-		parameters: Type.Object({
-			path: Type.String({ description: "Path to the file, relative to the project root or absolute" }),
-			offset: Type.Optional(Type.Number({ description: "First line to return (1-based)" })),
-			limit: Type.Optional(Type.Number({ description: "Maximum number of lines to return" })),
-		}),
-	},
-	write_file: {
-		description: "Write a UTF-8 text file in the project, creating parent directories as needed.",
-		parameters: Type.Object({
-			path: Type.String({ description: "Path to the file, relative to the project root or absolute" }),
-			content: Type.String({ description: "Full file contents to write" }),
-		}),
-	},
-	run_command: {
-		description: "Run a shell command in the project directory and return its combined output.",
-		parameters: Type.Object({
-			command: Type.String({ description: "Command line to execute" }),
-			timeout: Type.Optional(Type.Number({ description: "Timeout in seconds" })),
-		}),
-	},
-};
-
-/** Every tool name this sidecar knows how to proxy. */
-export const HOST_TOOL_NAMES = Object.keys(HOST_TOOLS);
 
 function toResult(reply) {
 	if (!reply || typeof reply !== "object") {
@@ -57,19 +26,21 @@ function toResult(reply) {
 }
 
 /**
- * Build the host-tool registrations.
+ * Build the host-tool registrations from the definitions Go sent.
  *
  * @param {{ call: (method: string, params: any, options?: any) => Promise<any> }} bridge
- * @param {readonly string[]} [names] tools to expose; defaults to all known
+ * @param {readonly {name: string, description: string, parameters: object}[]} defs
+ *        v1's tool definitions, in the model-facing shape
  */
-export function buildHostTools(bridge, names = HOST_TOOL_NAMES) {
-	return names.map((name) => {
-		const spec = HOST_TOOLS[name];
-		if (!spec) throw new Error(`sidecar: no schema for host tool "${name}"`);
+export function buildHostTools(bridge, defs) {
+	return defs.map((def) => {
+		const { name } = def;
 		return defineTool({
 			name,
-			description: spec.description,
-			parameters: spec.parameters,
+			description: def.description,
+			// Go holds plain JSON Schema; Unsafe hands it to the validator as-is
+			// instead of making this process rebuild it as TypeBox calls.
+			parameters: Type.Unsafe(def.parameters ?? { type: "object", properties: {} }),
 			execute: async (args, api) => {
 				log.debug("tool call", { tool: name, callId: String(api.callId) });
 				const reply = await bridge.call("tool.call", {

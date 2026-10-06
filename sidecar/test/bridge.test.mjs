@@ -186,7 +186,40 @@ async function main() {
 				provider,
 				model: { provider: PROVIDER_ID, modelId: MODEL_ID },
 				thinkingLevel: "low",
-				tools: ["read_file", "write_file", "run_command"],
+				// Plain JSON Schema, exactly as Go sends it: the sidecar must accept
+				// v1's own definitions rather than rebuild them.
+				toolDefs: [
+					{
+						name: "read_file",
+						description: "Read a UTF-8 text file from the project.",
+						parameters: {
+							type: "object",
+							properties: { path: { type: "string", description: "Path to the file" } },
+							required: ["path"],
+						},
+					},
+					{
+						name: "write_file",
+						description: "Write a UTF-8 text file in the project.",
+						parameters: {
+							type: "object",
+							properties: {
+								path: { type: "string", description: "Path to the file" },
+								content: { type: "string", description: "Full file contents" },
+							},
+							required: ["path", "content"],
+						},
+					},
+					{
+						name: "run_command",
+						description: "Run a shell command in the project directory.",
+						parameters: {
+							type: "object",
+							properties: { command: { type: "string", description: "Command line" } },
+							required: ["command"],
+						},
+					},
+				],
 			},
 			{ timeoutMs: 30_000 },
 		);
