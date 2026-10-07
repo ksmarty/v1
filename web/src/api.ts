@@ -13,6 +13,7 @@ import type {
   GitInfo,
   GitHubWorkflows,
   GitHubImages,
+  InstalledPackage,
   InstalledSkill,
   MCPServer,
   MCPServerStatus,
@@ -26,6 +27,8 @@ import type {
   ProvidersSearchResult,
   PushResult,
   Settings,
+  PackageSearchResult,
+  PackageSkill,
   SkillSearchResult,
   Memory,
   Todo,
@@ -505,6 +508,24 @@ export const api = {
   skillReadme: (id: string) => request<{ content: string }>(`/api/skills/${id}/readme`),
   skillToggle: (id: string, enabled: boolean) =>
     post<{ skills: InstalledSkill[] }>('/api/skills/toggle', { id, enabled }),
+
+  // Pi packages. A package's extension code targets the Pi CLI runtime, which v1
+  // does not embed, so installing one imports the skills it bundles.
+  packageSearch: (query: string) =>
+    post<{ packages: PackageSearchResult[] }>('/api/packages/search', { query }),
+  packagesInstalled: () => request<{ packages: InstalledPackage[] }>('/api/packages/installed'),
+  packagePreview: (name: string, version?: string) =>
+    request<{ name: string; skills: PackageSkill[] }>(
+      `/api/packages/preview?name=${encodeURIComponent(name)}` +
+        (version ? `&version=${encodeURIComponent(version)}` : ''),
+    ),
+  packageInstall: (name: string, version?: string) =>
+    post<{ installed: InstalledSkill[]; version: string; skills: InstalledSkill[] }>(
+      '/api/packages/install',
+      { name, version },
+    ),
+  packageRemove: (name: string) =>
+    post<{ skills: InstalledSkill[] }>('/api/packages/remove', { name }),
 
   // Chat permissions
   permissionRespond: (projectId: string, requestId: string, allow: boolean) =>

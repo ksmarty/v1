@@ -260,6 +260,12 @@ func (s *Server) routes(m *http.ServeMux) {
 	m.HandleFunc("GET /api/skills/{id}/readme", s.handleSkillReadme)
 	m.HandleFunc("POST /api/skills/remove", s.handleSkillsRemove)
 	m.HandleFunc("POST /api/skills/toggle", s.handleSkillsToggle)
+	// Pi packages: search the npm registry and import the skills they bundle.
+	m.HandleFunc("POST /api/packages/search", s.handlePackagesSearch)
+	m.HandleFunc("GET /api/packages/installed", s.handlePackagesInstalled)
+	m.HandleFunc("GET /api/packages/preview", s.handlePackagePreview)
+	m.HandleFunc("POST /api/packages/install", s.handlePackageInstall)
+	m.HandleFunc("POST /api/packages/remove", s.handlePackageRemove)
 
 	// The preview proxy handles all common HTTP methods (incl. WS upgrades
 	// via GET). Methods are enumerated so the patterns don't conflict with

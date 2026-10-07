@@ -36,6 +36,10 @@ type Skill struct {
 	Dir         string `json:"dir"`
 	Enabled     bool   `json:"enabled"`
 	Builtin     bool   `json:"builtin,omitempty"`
+	// Package names the pi package this skill was imported from, if any.
+	Package string `json:"package,omitempty"`
+	// PackageVersion is that package's version at install time.
+	PackageVersion string `json:"packageVersion,omitempty"`
 }
 
 // Search queries the SkillsMP index.
