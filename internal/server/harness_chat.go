@@ -15,6 +15,7 @@ import (
 	"v1/internal/agent"
 	"v1/internal/harness"
 	"v1/internal/llm"
+	"v1/internal/sanitize"
 	"v1/internal/store"
 )
 
@@ -64,21 +65,35 @@ func (s *Server) harnessEnabled() bool {
 // harnessConversationID is the pi-durable conversation behind one v1 chat
 // session. It is derived, not stored: the same session always maps to the same
 // conversation, so a restart or a retry resumes the durable transcript.
+// scrubHarnessText cleans text on its way out to the sidecar. The built-in loop
+// scrubs at the LLM API boundary (llm.sanitizeMessagesForAPI); the harness path
+// has no boundary of its own, so the text v1 hands over — the user turn, the
+// system prompt, steering messages and tool results — is scrubbed where it is
+// produced. Without this, one ANSI escape or control byte (a command's raw
+// output, an attached file, a pasted message) reaches the provider untouched,
+// and an endpoint that enforces a character pattern rejects the whole request
+// with "The string did not match the expected pattern". Background results are
+// already cleaned where they are formatted (agent.sanitizeBackgroundText).
+func scrubHarnessText(s string) string { return sanitize.Text(s) }
+
 // harnessUserContent turns a v1 user turn into pi-durable content parts. With
 // no attachments it stays a plain string; with them, images become image parts
 // and text files are inlined the same way agent.userMessage inlines them, so
 // both harnesses put the same thing in front of the model.
 func harnessUserContent(text string, atts []agent.Attachment) any {
+	text = scrubHarnessText(text)
 	if len(atts) == 0 {
 		return text
 	}
 	parts := []harness.InputPart{{Type: "text", Text: text}}
 	for _, a := range atts {
 		if a.Kind == "image" {
+			// Image bytes are base64 and hold no control characters, so the
+			// scrubber could only risk corrupting the payload.
 			parts = append(parts, harness.InputPart{Type: "image", Data: a.Content, MimeType: a.MIME})
 			continue
 		}
-		parts = append(parts, harness.InputPart{Type: "text", Text: "Attached file: " + a.Name + "\n```\n" + a.Content + "\n```"})
+		parts = append(parts, harness.InputPart{Type: "text", Text: scrubHarnessText("Attached file: " + a.Name + "\n```\n" + a.Content + "\n```")})
 	}
 	return parts
 }
@@ -92,7 +107,7 @@ func harnessEnsureRequest(params agent.ChatParams, model string) harness.EnsureR
 	return harness.EnsureRequest{
 		V1SessionID:   harnessConversationID(params.Project.ID, params.SessionID),
 		Cwd:           params.Project.Path,
-		Instructions:  agent.BuildSystemPrompt(&params),
+		Instructions:  scrubHarnessText(agent.BuildSystemPrompt(&params)),
 		Provider:      provider,
 		Model:         harness.ModelRef{Provider: provider.ID, ModelID: model},
 		ThinkingLevel: params.ReasoningEffort,
@@ -215,6 +230,11 @@ func (r *harnessToolRunner) RunTool(ctx context.Context, call harness.ToolCall) 
 			res.Text = out + "\n" + err.Error()
 		}
 	}
+	// Tool output is raw by nature: command output carries ANSI escapes and a
+	// file read can hold any byte. Scrub it once, before it is both handed back
+	// to the sidecar (which puts it in front of the model) and persisted, so the
+	// request and the row the UI reloads can never disagree.
+	res.Text = scrubHarnessText(res.Text)
 	// screenshot_app hands its PNG to the agent loop through PendingImage. The
 	// built-in loop injects it as a follow-up user message; here it rides on the
 	// tool result instead, which is where a vision model expects it.
@@ -654,7 +674,7 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge,
 			if msg == "" {
 				continue
 			}
-			if err := bridge.Steer(ctx, sidecarID, fmt.Sprintf("v1-steer-%d", time.Now().UnixNano()), msg); err != nil {
+			if err := bridge.Steer(ctx, sidecarID, fmt.Sprintf("v1-steer-%d", time.Now().UnixNano()), scrubHarnessText(msg)); err != nil {
 				log.Printf("harness: steer failed: %v", err)
 				continue
 			}
