@@ -6,13 +6,18 @@
  * path: handshake → conversation.ensure → watch.start → turn.submit → tool
  * callbacks → shutdown.
  *
- * The tool-callback half is always exercised. The model turn runs only when
- * /data/agent/auth.json has a key for the test provider, so the suite stays
- * green offline; it prints SKIPPED loudly when credentials are missing.
+ * The tool-callback half is always exercised. The model turn runs against a
+ * scripted fake endpoint (startFakeProvider) rather than a real model: a real
+ * model makes every assertion about the turn a coin toss — whether it called
+ * write_file at all, whether it streamed text before the tool call, whether it
+ * finished inside the timeout. The fake answers deterministically, so the
+ * assertions test the bridge, and it needs no credentials, so the turn is no
+ * longer skipped offline.
  *
  * Usage: node test/bridge.test.mjs
  */
 import net from "node:net";
+import http from "node:http";
 import { execFile } from "node:child_process";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -30,8 +35,6 @@ import { buildHostTools } from "../src/tools.js";
 
 const run = promisify(execFile);
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
-const AUTH_PATH = "/data/agent/auth.json";
-const CATALOG_PATH = "/data/agent/models-store.json";
 const PROVIDER_ID = "opencode-go";
 const MODEL_ID = "deepseek-v4-flash";
 const SESSION_HEADER = "x-opencode-session";
@@ -72,6 +75,126 @@ async function connect(socketPath, timeoutMs = 10_000) {
 	}
 }
 
+/**
+ * How long to wait between streamed chunks.
+ *
+ * pi-durable publishes the in-flight message on a coalescing boundary, so
+ * deltas that arrive closer together than that boundary land in one batch: the
+ * watch then sees a single message_start and no message_update at all, and the
+ * delta channel this check exists to cover goes untested. 300ms is comfortably
+ * above the boundary — 25ms collapsed every delta into one batch.
+ */
+const CHUNK_INTERVAL_MS = 300;
+
+/** One OpenAI-compatible streaming chunk. */
+function sseChunk(delta, finishReason) {
+	return {
+		id: "chatcmpl-sidecar-test",
+		object: "chat.completion.chunk",
+		created: 1_700_000_000,
+		model: MODEL_ID,
+		choices: [{ index: 0, delta, finish_reason: finishReason ?? null }],
+	};
+}
+
+function textDelta(content) {
+	return sseChunk({ role: "assistant", content });
+}
+
+function toolCallDelta(index, name, args) {
+	return sseChunk({
+		tool_calls: [
+			{ index, id: `call_${index + 1}`, type: "function", function: { name, arguments: JSON.stringify(args) } },
+		],
+	});
+}
+
+function finishDelta(reason) {
+	return sseChunk({}, reason);
+}
+
+/** The client asks for usage in the stream (stream_options.include_usage). */
+function usageChunk() {
+	return {
+		id: "chatcmpl-sidecar-test",
+		object: "chat.completion.chunk",
+		created: 1_700_000_000,
+		model: MODEL_ID,
+		choices: [],
+		usage: { prompt_tokens: 42, completion_tokens: 7, total_tokens: 49 },
+	};
+}
+
+/**
+ * The next scripted reply, chosen from how many tool results the transcript
+ * already holds.
+ *
+ * Echoing the read_file result back as the write_file body is deliberate: the
+ * round-trip assertion can then only pass if the tool result really reached the
+ * provider, which is the part a real model made unverifiable.
+ */
+function scriptedReply(messages) {
+	const results = messages.filter((message) => message.role === "tool");
+	if (results.length === 0) {
+		return [
+			textDelta("Reading the file "),
+			textDelta("first."),
+			toolCallDelta(0, "read_file", { path: "probe.txt" }),
+			finishDelta("tool_calls"),
+		];
+	}
+	if (results.length === 1) {
+		const content = String(results[results.length - 1]?.content ?? "");
+		return [toolCallDelta(1, "write_file", { path: "copy.txt", content }), finishDelta("tool_calls")];
+	}
+	if (results.length === 2) {
+		return [toolCallDelta(2, "run_command", { command: "echo tool-round-trip-ok" }), finishDelta("tool_calls")];
+	}
+	return [textDelta("Done."), finishDelta("stop"), usageChunk()];
+}
+
+/**
+ * A scripted OpenAI-compatible endpoint, so the model turn is deterministic.
+ *
+ * @returns {Promise<{ url: string, requests: object[], close: () => Promise<void> }>}
+ */
+async function startFakeProvider() {
+	const requests = [];
+	const server = http.createServer((request, response) => {
+		let body = "";
+		request.on("data", (chunk) => {
+			body += chunk;
+		});
+		request.on("end", async () => {
+			const payload = JSON.parse(body || "{}");
+			requests.push({ url: request.url, headers: request.headers, body: payload });
+			response.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" });
+			try {
+				// Paced on purpose. pi-durable emits a message_update only when the
+				// in-flight message changed since the previous event batch, so a
+				// response written in one burst collapses into a single message_start
+				// and the delta channel — the thing this check exists to cover — never
+				// gets exercised. A real model is slow enough to avoid that by accident,
+				// which is exactly the accident that made this suite flaky.
+				for (const chunk of scriptedReply(payload.messages ?? [])) {
+					response.write(`data: ${JSON.stringify(chunk)}\n\n`);
+					await new Promise((resolve) => setTimeout(resolve, CHUNK_INTERVAL_MS));
+				}
+				response.write("data: [DONE]\n\n");
+			} finally {
+				response.end();
+			}
+		});
+	});
+	await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+	const { port } = server.address();
+	return {
+		url: `http://127.0.0.1:${port}/v1`,
+		requests,
+		close: () => new Promise((resolve) => server.close(resolve)),
+	};
+}
+
 async function main() {
 	const workspace = await mkdtemp(join(tmpdir(), "v1-sidecar-work-"));
 	const stateDir = await mkdtemp(join(tmpdir(), "v1-sidecar-state-"));
@@ -81,19 +204,7 @@ async function main() {
 	const copyPath = join(workspace, "copy.txt");
 	await writeFile(probePath, "hello from v1\n");
 
-	let credentials = null;
-	let catalog = null;
-	try {
-		credentials = JSON.parse(await readFile(AUTH_PATH, "utf8"))[PROVIDER_ID]?.key ?? null;
-	} catch {
-		credentials = null;
-	}
-	try {
-		catalog = JSON.parse(await readFile(CATALOG_PATH, "utf8"))[PROVIDER_ID] ?? null;
-	} catch {
-		catalog = null;
-	}
-	const live = Boolean(credentials && catalog?.models?.length);
+	const fake = await startFakeProvider();
 
 	const child = spawn(process.execPath, [join(ROOT, "src", "host.js")], {
 		env: {
@@ -197,12 +308,12 @@ async function main() {
 		const provider = {
 			id: PROVIDER_ID,
 			name: "opencode-go (sidecar test)",
-			baseUrl: catalog?.baseUrl ?? catalog?.models?.[0]?.baseUrl ?? "https://opencode.ai/zen/go/v1",
-			apiKey: credentials ?? "test-key-not-used-offline",
+			baseUrl: fake.url,
+			apiKey: "test-key",
 			api: "openai-completions",
 			sessionHeader: SESSION_HEADER,
 			headers: STATIC_HEADERS,
-			models: catalog?.models ?? [],
+			models: [{ id: MODEL_ID, name: "Scripted test model", contextWindow: 128_000, maxTokens: 8192 }],
 		};
 
 		const ensured = await peer.call(
@@ -297,9 +408,7 @@ async function main() {
 		}
 		check("an unknown method is a JSON-RPC method-not-found", unknownCode === -32601, String(unknownCode));
 
-		if (!live) {
-			console.log("\nmodel turn\n  SKIPPED (no credentials in /data/agent/auth.json for " + PROVIDER_ID + ")");
-		} else {
+		{
 			console.log("\nmodel turn");
 			const submitted = await peer.call(
 				"turn.submit",
@@ -327,6 +436,13 @@ async function main() {
 				240_000,
 			);
 			check("the turn settled", settled, "no settled submission within 240s");
+
+			// The static and routing headers have to reach the provider, not merely be
+			// computed: an endpoint that rejects unroutable requests fails the turn.
+			const first = fake.requests[0] ?? {};
+			check("the turn reached the provider's chat-completions endpoint", first.url === "/v1/chat/completions", first.url);
+			check("the provider received the static headers", first.headers?.["x-opencode-client"] === "v1", String(first.headers?.["x-opencode-client"]));
+			check("the provider received the routing header", typeof first.headers?.[SESSION_HEADER] === "string" && first.headers[SESSION_HEADER].length > 0, String(first.headers?.[SESSION_HEADER]));
 
 			const types = new Set(events.map((event) => event.type));
 			if (process.env.V1_TEST_DUMP) dumpEvents(events);
@@ -378,11 +494,12 @@ async function main() {
 	} finally {
 		if (exitCode === null) child.kill("SIGKILL");
 		await peer.close().catch(() => undefined);
+		await fake.close();
 		await rm(workspace, { recursive: true, force: true });
 		await rm(stateDir, { recursive: true, force: true });
 	}
 
-	console.log(`\n${checks - failures}/${checks} checks passed${live ? "" : " (model turn skipped)"}`);
+	console.log(`\n${checks - failures}/${checks} checks passed`);
 	if (failures > 0) process.exitCode = 1;
 }
 
