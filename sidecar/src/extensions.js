@@ -22,6 +22,34 @@ import { log } from "./log.js";
 /** The id is a directory name, so this is a path-safety guard, not cosmetics. */
 const ID_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
 
+/**
+ * Bind a tool to the conversation it is offered in.
+ *
+ * pi-durable hands `execute` its arguments, the API and a Context, and none of
+ * them name the conversation the call came from: a prompt section's render does
+ * receive a `conversationId`, but a tool does not. The conversation is known
+ * here, where the tool list is built for one conversation, so it is captured in
+ * a closure and carried through async context.
+ *
+ * AsyncLocalStorage rather than a field on the host, because two conversations
+ * can run turns at the same time: a shared field would let one call read the
+ * other's conversation.
+ *
+ * The id is read from the binding at call time, because the tool list is
+ * assembled before a newly created conversation has an id.
+ */
+export function bindToolToConversation(tool, binding, storage) {
+	if (!binding) return tool;
+	return {
+		...tool,
+		execute: (args, api, context) => {
+			const conversationId = binding.conversationId;
+			if (!conversationId) return tool.execute(args, api, context);
+			return storage.run(conversationId, () => tool.execute(args, api, context));
+		},
+	};
+}
+
 /** The tool names an extension contributes, for collision checks and reporting. */
 export function toolNames(extension) {
 	const tools = Array.isArray(extension?.tools) ? extension.tools : [];

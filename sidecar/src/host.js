@@ -9,9 +9,11 @@
  * Environment (all set by Go, see internal/harness + internal/config):
  *   V1_SIDECAR_SOCKET  Unix socket to listen on (required)
  *   V1_HARNESS_DB      pi-durable sqlite store path (required)
+ *   V1_EXTENSIONS_DIR  directory of user extensions to load (optional)
  *   V1_SIDECAR_LOG     debug | info | warn | error (default info)
  */
 import net from "node:net";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { existsSync, readFileSync } from "node:fs";
 import { mkdir, unlink } from "node:fs/promises";
 import { createRequire } from "node:module";
@@ -26,7 +28,7 @@ import { writeModelCatalog } from "./modeldata.js";
 import { installProviderFetchLog } from "./providerlog.js";
 import { RpcError, createPeer } from "./rpc.js";
 import { createModelStore, registerProvider } from "./provider.js";
-import { loadExtensions, sectionKeys, toolNames } from "./extensions.js";
+import { bindToolToConversation, loadExtensions, sectionKeys, toolNames } from "./extensions.js";
 import { buildApprovalHook, buildHostTools } from "./tools.js";
 
 /** Bridge protocol revision; must equal `harness.ProtocolVersion` in Go. */
@@ -138,6 +140,9 @@ class Sidecar {
 		this.hostToolNames = new Set();
 		/** The conversation the most recent turn belongs to; a delegate inherits from it. */
 		this.activeConversationId = null;
+		// Carries the invoking conversation into a tool call, which pi-durable does
+		// not tell the tool about.
+		this.conversationContext = new AsyncLocalStorage();
 		/** Set once Go has asked us to stop; makes the later disconnect graceful. */
 		this.shutdownRequested = false;
 	}
@@ -207,6 +212,11 @@ class Sidecar {
 		// user's disabled tools, plan mode and the project's MCP tools, so the
 		// set installed here is exactly what the built-in loop would advertise.
 		this.installHostTools(toolDefs);
+		// An extension tool has to know which conversation called it, and the
+		// conversation is only resolved below — a new session is created with this
+		// very change. The box is filled in as soon as the id is known, which is
+		// always before a turn can run.
+		const binding = { conversationId: conversationId ? String(conversationId) : null };
 		const change = compact({
 			model: { provider: providerId, modelId },
 			cwd,
@@ -219,7 +229,10 @@ class Sidecar {
 						// Go's tools plus whatever the user's extensions contribute. Without
 						// the union an extension tool is silently dropped: AgentState.tools
 						// is set to exactly this list.
-						tools: [...(this.resolveTools(toolDefs.map((def) => def.name)) ?? []), ...this.extensionTools()],
+						tools: [
+							...(this.resolveTools(toolDefs.map((def) => def.name)) ?? []),
+							...this.extensionTools(binding),
+						],
 					}
 				: {}),
 		});
@@ -244,6 +257,8 @@ class Sidecar {
 			conversation = await this.harness.createConversation({ ownership: { kind: "ownerless" }, agent: change }, this.ctx);
 			log.info("conversation created", { v1SessionId, conversationId: String(conversation.id) });
 		}
+		// Now the tools bound above can resolve the conversation they belong to.
+		binding.conversationId = String(conversation.id);
 
 		if (v1SessionId) this.sessions.set(v1SessionId, { conversation, providerId, modelId, change });
 		this.conversations.set(String(conversation.id), conversation);
@@ -370,7 +385,7 @@ class Sidecar {
 	 * A name that collides with a host tool is dropped: Go's definitions must win,
 	 * and the same name twice in one request is a provider error.
 	 */
-	extensionTools() {
+	extensionTools(binding) {
 		const tools = [];
 		for (const entry of this.loadedExtensions) {
 			for (const tool of entry.extension.tools ?? []) {
@@ -381,7 +396,7 @@ class Sidecar {
 					});
 					continue;
 				}
-				tools.push(tool);
+				tools.push(bindToolToConversation(tool, binding, this.conversationContext));
 			}
 		}
 		return tools;
@@ -403,13 +418,23 @@ class Sidecar {
 		const task = typeof input === "string" ? input : input?.task;
 		if (typeof task !== "string" || !task.trim()) throw new Error("delegate: a task is required");
 		if (!this.harness) throw new Error("delegate: the harness is not open");
-		const parentId = input?.parentConversationId ?? this.activeConversationId;
-		const change = parentId ? this.changes.get(String(parentId)) : undefined;
-		if (!change) {
+		// An explicit override wins; then the conversation this call came from,
+		// carried by the tool binding; the most recent turn is the last resort, for
+		// a call that arrived outside a bound tool.
+		const parentId =
+			input?.parentConversationId ?? this.conversationContext.getStore() ?? this.activeConversationId;
+		const inherited = parentId ? this.changes.get(String(parentId)) : undefined;
+		if (!inherited) {
 			throw new Error("delegate: no conversation to inherit a model from (run a turn first)");
 		}
+		// The child inherits the parent's agent but not the delegate tool itself: a
+		// sub-agent that can delegate again spawns an unbounded chain, and every
+		// level costs a full model call.
+		const tools = Array.isArray(inherited.tools)
+			? inherited.tools.filter((tool) => tool.name !== "delegate")
+			: undefined;
 		const child = await this.harness.createConversation(
-			{ ownership: { kind: "ownerless" }, agent: change },
+			{ ownership: { kind: "ownerless" }, agent: tools ? { ...inherited, tools } : { ...inherited } },
 			this.ctx,
 		);
 		try {

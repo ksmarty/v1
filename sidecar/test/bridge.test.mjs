@@ -16,6 +16,7 @@ import net from "node:net";
 import { execFile } from "node:child_process";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -23,7 +24,7 @@ import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 
 import { createPeer } from "../src/rpc.js";
-import { loadExtensions, toolNames } from "../src/extensions.js";
+import { bindToolToConversation, loadExtensions, toolNames } from "../src/extensions.js";
 import { endpointHeaders } from "../src/provider.js";
 import { buildHostTools } from "../src/tools.js";
 
@@ -468,6 +469,51 @@ async function checkExtensionLoading() {
 	await rm(root, { recursive: true, force: true });
 }
 
+/**
+ * A tool must see the conversation it was offered in, even while another
+ * conversation runs a turn at the same time. That is why the binding travels in
+ * async context rather than on a field of the host.
+ */
+async function checkConversationBinding() {
+	const storage = new AsyncLocalStorage();
+	const seen = [];
+	const tool = {
+		name: "whoami",
+		async execute() {
+			// Yield, so the two conversations really do interleave.
+			await new Promise((resolve) => setTimeout(resolve, 5));
+			seen.push(storage.getStore());
+			return {};
+		},
+	};
+
+	const a = bindToolToConversation(tool, { conversationId: "conv-a" }, storage);
+	const b = bindToolToConversation(tool, { conversationId: "conv-b" }, storage);
+	await Promise.all([a.execute({}, {}, {}), b.execute({}, {}, {}), a.execute({}, {}, {})]);
+	check(
+		"extensions: a tool sees its own conversation",
+		seen[0] === "conv-a" && seen[1] === "conv-b" && seen[2] === "conv-a",
+		JSON.stringify(seen),
+	);
+	check(
+		"extensions: binding keeps the tool's own fields",
+		a.name === "whoami" && typeof a.execute === "function",
+	);
+
+	// The id is read at call time, so a box filled in after binding still works —
+	// which is what a conversation created during the ensure needs.
+	const late = { conversationId: null };
+	const lateTool = bindToolToConversation(tool, late, storage);
+	late.conversationId = "conv-late";
+	seen.length = 0;
+	await lateTool.execute({}, {}, {});
+	check("extensions: a late-bound conversation is used", seen[0] === "conv-late", JSON.stringify(seen));
+
+	seen.length = 0;
+	await bindToolToConversation(tool, { conversationId: null }, storage).execute({}, {}, {});
+	check("extensions: an unresolved conversation runs unbound", seen[0] === undefined, JSON.stringify(seen));
+}
+
 async function checkToolResultMapping() {
 	const bridge = {
 		call: async () => ({
@@ -514,5 +560,6 @@ async function checkSubmitContentValidation(peer, conversationId) {
 }
 
 await checkExtensionLoading();
+await checkConversationBinding();
 await checkToolResultMapping();
 await main();
