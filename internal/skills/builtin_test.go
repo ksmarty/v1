@@ -43,3 +43,35 @@ func TestBuiltinsIncludesV1Extensions(t *testing.T) {
 		}
 	}
 }
+
+// TestBuiltinsAreWellFormed guards the invariants every bundled skill needs:
+// the metadata the marketplace renders, an id that matches its directory so the
+// prompt finds it after materialization, and a SKILL.md that reads as a
+// document. A new builtin with a typo here would install silently and then be
+// invisible to the agent.
+func TestBuiltinsAreWellFormed(t *testing.T) {
+	builtins := Builtins()
+	if len(builtins) == 0 {
+		t.Fatal("no builtin skills are registered")
+	}
+	seen := map[string]bool{}
+	for _, b := range builtins {
+		if b.Skill.ID == "" || b.Skill.Name == "" || b.Skill.Dir == "" {
+			t.Fatalf("builtin %+v is missing metadata", b.Skill)
+		}
+		if seen[b.Skill.ID] {
+			t.Fatalf("duplicate builtin id %q", b.Skill.ID)
+		}
+		seen[b.Skill.ID] = true
+		if b.Skill.Dir != b.Skill.ID {
+			t.Fatalf("builtin %q: dir %q must match the id", b.Skill.ID, b.Skill.Dir)
+		}
+		body, ok := b.Files["SKILL.md"]
+		if !ok {
+			t.Fatalf("builtin %q has no SKILL.md", b.Skill.ID)
+		}
+		if !strings.HasPrefix(body, "# ") {
+			t.Fatalf("builtin %q: SKILL.md should start with a heading", b.Skill.ID)
+		}
+	}
+}
