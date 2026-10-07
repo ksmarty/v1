@@ -67,17 +67,17 @@ type Executor struct {
 	// verify_project health check. Nil skips the preview step.
 	PreviewURL func() string
 	Store      *store.Store
-	Background    *BackgroundManager // detached commands (run_command_background)
-		// BackgroundNotify persists a finished background command's result into
-		// the chat transcript (wired by the server).
-		BackgroundNotify func(*BackgroundJob)
-		// OnBackgroundStarted notifies the UI when a background command has been
-		// dispatched (single arg: the job's short id), so it can show a live
-		// "running" indicator until the result lands.
-		OnBackgroundStarted func(string)
-	OnTodos          func([]store.Todo)
-	OnMemories       func([]store.Memory)
-	OnFileChange     func()
+	Background *BackgroundManager // detached commands (run_command_background)
+	// BackgroundNotify persists a finished background command's result into
+	// the chat transcript (wired by the server).
+	BackgroundNotify func(*BackgroundJob)
+	// OnBackgroundStarted notifies the UI when a background command has been
+	// dispatched (single arg: the job's short id), so it can show a live
+	// "running" indicator until the result lands.
+	OnBackgroundStarted func(string)
+	OnTodos             func([]store.Todo)
+	OnMemories          func([]store.Memory)
+	OnFileChange        func()
 	// OnProjectRename notifies the UI when set_project_name renames the
 	// project (nil when the turn cannot rename).
 	OnProjectRename func(string)
@@ -94,9 +94,13 @@ type Executor struct {
 	// OnAsk asks the user one or more questions and waits for the answers
 	// (the ask_user tool); nil when the turn cannot prompt.
 	OnAsk func(ctx context.Context, questions []AskQuestion) ([]AskAnswer, error)
-	// AskTimeout bounds ask_user's wait for an answer; 0 uses the default of
-	// 5 minutes. The user can always answer sooner.
+	// AskTimeout bounds ask_user's wait for an answer; 0 uses
+	// DefaultAskTimeout. The user can always answer sooner.
 	AskTimeout time.Duration
+	// askPending tracks the questions this turn is still waiting on, so a
+	// second call asking the same thing waits for the same answer instead of
+	// putting a duplicate question in front of the user.
+	askPending map[string]chan struct{}
 	// askCache remembers answered questions during the turn so the agent
 	// can't pester the user with the same question twice.
 	askCache map[string]string
@@ -378,6 +382,13 @@ func toolFail(t, msg string, recoverable bool, suggestion string) error {
 	return &ToolError{Type: t, Message: msg, Recoverable: recoverable, Suggestion: suggestion}
 }
 
+// DefaultAskTimeout is how long ask_user waits for an answer before the model
+// is told to carry on without one. It is deliberately generous: a shorter wait
+// turns a user who stepped away into a timeout, and the model then repeats the
+// question — so the user comes back to two open copies of one question, neither
+// of them answered.
+const DefaultAskTimeout = 30 * time.Minute
+
 // AskQuestion is one question for the ask_user tool; AskAnswer pairs it with
 // the user's response.
 type AskQuestion struct {
@@ -394,9 +405,10 @@ type AskAnswer struct {
 // single question can be passed as "question" (with optional "options"); pass
 // "questions" as an array to ask several in sequence — the user steps through
 // them and confirms all answers at once. Questions are bounded by AskTimeout
-// (default 5 minutes) and remembered for the rest of the turn: asking the
-// same question again returns the earlier answer instead of pestering the
-// user.
+// (default DefaultAskTimeout) and remembered for the rest of the turn: asking
+// the same question again returns the earlier answer instead of pestering the
+// user, and asking it again while it is still unanswered waits for the answer
+// the first call is already waiting for rather than asking twice.
 func (e *Executor) askUser(ctx context.Context, argsJSON string) (string, error) {
 	var args struct {
 		Question  string        `json:"question"`
@@ -442,9 +454,33 @@ func (e *Executor) askUser(ctx context.Context, argsJSON string) (string, error)
 	if prev, ok := e.askCache[key]; ok && len(qs) == 1 {
 		return toolResult(map[string]any{"answer": prev, "note": "this question was already answered earlier in the turn; reusing that answer"}), nil
 	}
+	// Still unanswered: a second call for the same question must not put a
+	// second copy of it in front of the user. Wait for the answer the first
+	// call is already waiting for — asking blocks, so the model cannot stack
+	// questions by asking again.
+	if ch, ok := e.askPending[key]; ok {
+		select {
+		case <-ch:
+			if prev, ok := e.askCache[key]; ok {
+				return toolResult(map[string]any{"answer": prev, "note": "this question was already answered earlier in the turn; reusing that answer"}), nil
+			}
+			return "", toolFail("ASK_PENDING", "that question is still waiting for the user's answer", true, "wait for the user's answer instead of asking the same question again")
+		case <-ctx.Done():
+			return "", ctx.Err()
+		}
+	}
+	if e.askPending == nil {
+		e.askPending = map[string]chan struct{}{}
+	}
+	pending := make(chan struct{})
+	e.askPending[key] = pending
+	defer func() {
+		delete(e.askPending, key)
+		close(pending)
+	}()
 	timeout := e.AskTimeout
 	if timeout <= 0 {
-		timeout = 5 * time.Minute
+		timeout = DefaultAskTimeout
 	}
 	askCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()

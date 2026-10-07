@@ -222,6 +222,65 @@ func TestAskUserRepeatGuard(t *testing.T) {
 	}
 }
 
+// TestAskUserCoalescesPendingQuestion verifies that a second identical question
+// asked while the first is still unanswered waits for that answer instead of
+// putting a duplicate question in front of the user. That duplicate is what a
+// user saw after an ask timed out and the model repeated it: two open copies of
+// one question, neither of them answered.
+func TestAskUserCoalescesPendingQuestion(t *testing.T) {
+	e := newTestExecutor(t)
+	var calls int32
+	release := make(chan struct{})
+	e.OnAsk = func(ctx context.Context, qs []AskQuestion) ([]AskAnswer, error) {
+		atomic.AddInt32(&calls, 1)
+		<-release
+		return []AskAnswer{{Question: qs[0].Question, Answer: "blue"}}, nil
+	}
+	const ask = `{"question":"Pick a color?"}`
+	type result struct {
+		text string
+		err  error
+	}
+	run := func() chan result {
+		ch := make(chan result, 1)
+		go func() {
+			text, err := e.Execute(context.Background(), "ask_user", ask)
+			ch <- result{text, err}
+		}()
+		return ch
+	}
+	first := run()
+	// Wait until the first call is genuinely waiting on the user.
+	for deadline := time.Now().Add(2 * time.Second); atomic.LoadInt32(&calls) == 0; {
+		if time.Now().After(deadline) {
+			t.Fatal("the first ask never reached the user")
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	second := run()
+	time.Sleep(50 * time.Millisecond)
+	if n := atomic.LoadInt32(&calls); n != 1 {
+		t.Fatalf("OnAsk called %d times while the question was pending, want 1", n)
+	}
+	close(release)
+	for i, ch := range []chan result{first, second} {
+		select {
+		case got := <-ch:
+			if got.err != nil {
+				t.Fatalf("call %d failed: %v", i+1, got.err)
+			}
+			if answer := parseToolResult(t, got.text)["answer"]; answer != "blue" {
+				t.Fatalf("call %d answer = %v, want blue", i+1, answer)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatalf("call %d never returned", i+1)
+		}
+	}
+	if n := atomic.LoadInt32(&calls); n != 1 {
+		t.Fatalf("OnAsk called %d times, want 1", n)
+	}
+}
+
 // TestAskUserTimeout verifies ask_user gives up after AskTimeout and tells
 // the model to proceed with its best judgment.
 func TestAskUserTimeout(t *testing.T) {
