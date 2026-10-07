@@ -110,8 +110,12 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 # podman can map container uids; without /etc/subuid + /etc/subgid entries
 # podman refuses to start containers.
 
-# Run as the non-root `node` user (uid 1000, shipped with the base image).
-RUN mkdir -p /data && chown node:node /data
+# Pre-create the persistent install directories so a FRESH volume inherits them
+# (Docker initialises an empty named volume from the image's directory). An
+# existing volume is covered by the persistent-tool-install builtin skill,
+# which mkdir -p's the same paths before installing.
+RUN mkdir -p /data/npm/bin /data/python/bin /data/cargo/bin /data/go/bin /data/bun/bin /data/bin \
+    && chown -R node:node /data
 
 COPY --from=build /out/v1 /usr/local/bin/v1
 
@@ -122,6 +126,25 @@ COPY --from=sidecar /sidecar /usr/local/lib/v1/sidecar
 ENV V1_DATA_DIR=/data \
     V1_PORT=8080 \
     V1_SIDECAR_SCRIPT=/usr/local/lib/v1/sidecar/src/host.js
+
+# Tools the agent installs must survive container recreation, so every toolchain
+# that installs globally is pointed at the persisted /data volume — /usr/local
+# is wiped by an image update, /data is not. NPM_CONFIG_PREFIX, PYTHONUSERBASE,
+# CARGO_HOME, GOPATH, BUN_INSTALL, PIPX_* and UV_* redirect each toolchain
+# without touching HOME, so the plain `npm install -g` / `pip install --user`
+# commands the agent already knows land in the right place. The bin directories
+# are prepended to the base image's PATH, with /data/bin as the shared drop-in
+# for standalone binaries. See the persistent-tool-install builtin skill.
+ENV NPM_CONFIG_PREFIX=/data/npm \
+    PYTHONUSERBASE=/data/python \
+    PIPX_HOME=/data/pipx \
+    PIPX_BIN_DIR=/data/bin \
+    UV_TOOL_DIR=/data/uv/tools \
+    UV_TOOL_BIN_DIR=/data/bin \
+    CARGO_HOME=/data/cargo \
+    GOPATH=/data/go \
+    BUN_INSTALL=/data/bun \
+    PATH=/data/bin:/data/npm/bin:/data/python/bin:/data/cargo/bin:/data/go/bin:/data/bun/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 EXPOSE 8080
 VOLUME ["/data"]

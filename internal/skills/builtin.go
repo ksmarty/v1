@@ -227,9 +227,129 @@ jobs:
 	},
 }
 
+// persistentToolInstall is the bundled "persistent-tool-install" skill. v1
+// runs in a container whose only persisted volume is /data, so a tool the
+// agent installs the obvious way (apt-get, a bare `npm install -g`, a download
+// into /usr/local) is gone on the next image update. The skill teaches the
+// agent to install into /data instead. The Dockerfile sets the matching
+// environment (NPM_CONFIG_PREFIX, PYTHONUSERBASE, CARGO_HOME, GOPATH,
+// BUN_INSTALL, PIPX_*, UV_*) so the plain commands land there and are on PATH.
+var persistentToolInstall = Builtin{
+	Skill: Skill{
+		ID:          "persistent-tool-install",
+		Name:        "Persistent Tool Install",
+		Author:      "v1",
+		Description: "Install CLI tools, libraries and language runtimes so they survive container recreation: npm, pip, pipx, uv, cargo, go, bun and standalone binaries, all under the persisted /data volume.",
+		Dir:         "persistent-tool-install",
+		Enabled:     true,
+	},
+	Files: map[string]string{
+		"SKILL.md": `# Persistent Tool Install
+
+Use this skill when you need a CLI tool, library or language runtime that is
+not already installed, and the user will expect it to still be there next week.
+
+## Why the obvious install is the wrong one
+
+v1 runs in a container. Only /data is a persisted volume:
+
+- /data — survives everything, including a backup of the volume.
+- /workspace — survives container recreation.
+- /usr, /usr/local, /opt, /root — survive a plain restart, but are DESTROYED
+  when the container is recreated from a new image (an update, a redeploy,
+  docker compose down && up).
+
+So apt-get, a bare npm install -g, and anything downloaded into /usr/local
+silently disappear on the next update — the user reinstalls the tool, and you
+are asked to fix the same missing-command problem again. Install under /data.
+
+## Where things go
+
+The toolchains are already configured (by the image's environment) to install
+into /data, and every one of these directories is on PATH. Use the plain
+command — no extra flags needed:
+
+    tool            command                     lands in
+    npm  global     npm install -g TOOL         /data/npm/bin
+    pip  user       pip install --user TOOL     /data/python/bin
+    pipx            pipx install TOOL           /data/bin
+    uv              uv tool install TOOL        /data/bin
+    cargo           cargo install TOOL          /data/cargo/bin
+    go              go install MODULE@latest    /data/go/bin
+    bun             bun add -g TOOL             /data/bun/bin
+    any binary      curl -o /data/bin/TOOL URL  /data/bin
+
+The volume may predate this configuration, so create the target directory
+before the first install:
+
+    mkdir -p /data/npm/bin /data/python/bin /data/cargo/bin /data/go/bin /data/bun/bin /data/bin
+
+## Recipes
+
+### npm — the zero-setup path, prefer this when the tool is published there
+
+    npm install -g TOOL
+
+### Python
+
+    pip install --user TOOL
+    pipx install TOOL
+    uv tool install TOOL
+
+### Rust
+
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+    cargo install TOOL
+
+### Go
+
+    go install MODULE@latest
+
+### Bun
+
+    curl -fsSL https://bun.sh/install | bash
+    bun add -g TOOL
+
+### A standalone binary from a release URL
+
+    curl -fsSL URL -o /data/bin/TOOL && chmod +x /data/bin/TOOL
+
+## Verify where it landed
+
+command -v tells you whether the install will survive. A path under /data is
+persistent; a path under /usr, /usr/local or /opt is lost on the next image
+update:
+
+    command -v TOOL
+
+To check several at once:
+
+    for t in TOOL1 TOOL2; do printf '%s -> %s\n' "$t" "$(command -v "$t" || echo MISSING)"; done
+
+If a tool reports that it is missing right after you installed it, the shell
+may be holding a stale PATH; the directories above are already on PATH, so
+re-running the command in a fresh shell is enough.
+
+## Never install these this way
+
+The v1 binary, the pi-durable harness sidecar, Node.js and pnpm are managed by
+the image and replaced on every update — installing your own copy under /data
+shadows the managed one and breaks the next update.
+
+## System packages
+
+apt-get installs into the container filesystem, so it is fine for a build-time
+dependency you need only for this task, and wrong for anything the user expects
+to keep. If a tool genuinely requires a system package at runtime, add it to
+the project's Dockerfile instead of installing it here — that is the only place
+it can be made to persist.
+`,
+	},
+}
+
 // Builtins returns the skills bundled with v1.
 func Builtins() []Builtin {
-	return []Builtin{githubWorkflows}
+	return []Builtin{githubWorkflows, persistentToolInstall}
 }
 
 // FindBuiltin returns the builtin skill with the given id, or nil.
