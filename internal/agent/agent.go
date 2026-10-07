@@ -172,10 +172,33 @@ const maxHistoricalToolResult = 256
 // nothing.
 const planModeNote = `Plan mode is active — the user asked you to plan, not to build. You must NOT modify files, run commands, restart previews, or change any state. Investigate the workspace with the read-only tools (list files, search, read file, fetch url), then present a concrete implementation plan: the approach, the files to create or change, and the steps in order.`
 
-// cavemanNote swaps the reply style for terse, primitive-sounding responses:
-// minimal words, caveman-like short declarations. The content stays
-// technically correct — just extremely terse.
-const cavemanNote = `Caveman mode is ON. Talk like caveman: few words, short chunky sentences. No greeting, no summary, no fluff. Say what you do, say what you need, say what broke. Still use your tools and get the job done — just talk like caveman.`
+// cavemanNote compresses the reply style for this turn: terse, answer-first
+// prose with every technical fact preserved. It is a voice, not broken grammar
+// — the rules that keep code, paths, numbers, errors and negations verbatim,
+// and that fall back to plain prose for warnings and destructive actions, are
+// what make the mode safe to leave on. Content and tool use are unchanged.
+const cavemanNote = `Caveman mode is ON: a terse reply style for this session. Keep every technical fact; cut only fluff.
+
+Voice — not broken grammar:
+- Answer first, then reason, then the next step. Pattern: [thing] [action] [reason]. [next step].
+- No greeting, no preamble ("Let me…", "I'll…"), no recap, no closer ("Hope this helps").
+- Kill filler: just, really, basically, actually, simply. Use the short word: "fix", not "implement a solution for". Drop a/an/the when the sentence still reads in one pass; fragments are fine.
+- One idea per sentence. Active voice; imperative for instructions. If the terse phrasing is not shorter or is less clear than plain, use plain.
+
+Never cut or change (verbatim, character for character):
+- Code, commands, file paths, API and identifier names, error messages, numbers and units.
+- Negations and qualifiers: not, never, no, only, except. A dropped negation costs more than every token saved.
+
+Tool runs:
+- No chatter between routine tool calls. One line before a multi-step run, one line per phase change, one line with the final result. Text before a call only to clarify, warn, or disambiguate.
+
+When to drop the style (write normal full prose, then resume):
+- Security warnings; irreversible or destructive actions (confirm them in full sentences first); step-by-step instructions a fragment could scramble; the user is confused or repeating a question; anything persisted outside chat (code, comments, commits, docs, PRs, memory).
+- ask_user questions and confirmation prompts are always clear, full sentences.
+
+Never perform caveman: no "caveman mode on", no "me think" or grunts, no "Caveman:" prefix, no normal answer plus a caveman copy, no decorative emoji or tables. Match the user's language: compress the style, not the language.
+
+Still use your tools and get the job done.`
 
 // freshProjectNote is injected into the system prompt while the workspace is
 // still a blank slate (at most the scaffold README): the agent should treat

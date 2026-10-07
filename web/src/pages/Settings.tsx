@@ -45,6 +45,7 @@ import {
 import {
   Button,
   Center,
+  Dialog,
   ErrorBox,
   Field,
   Input,
@@ -120,7 +121,7 @@ const SETTINGS_SEARCH: {
   { id: 'sec-system-prompt', page: 'llm', label: 'Global system prompt', hint: 'Extra instructions for every chat', keywords: 'prompt instructions behavior context rules system agent' },
   { id: 'sec-thinking-default', page: 'llm', label: 'Default thinking level', hint: 'Off / low / medium / high / xhigh / max', keywords: 'thinking reasoning effort level default tokens model' },
   { id: 'sec-toon', page: 'llm', label: 'TOON', hint: 'Token-efficient tool result encoding', keywords: 'toon tokens efficient encode tool results format compact json' },
-  { id: 'sec-caveman', page: 'llm', label: 'Caveman mode', hint: 'Terse caveman-style replies', keywords: 'caveman terse style reply grunt fun mode brief short' },
+  { id: 'sec-caveman', page: 'llm', label: 'Caveman mode', hint: 'Terse replies, technical facts kept', keywords: 'caveman terse style reply concise brief short answer first no fluff' },
   { id: 'sec-auto-push', page: 'llm', label: 'Auto-push new projects', hint: 'Default for newly created projects only', keywords: 'auto push commits github default new projects git remote' },
   { id: 'sec-context-threshold', page: 'llm', label: 'Context compaction', hint: 'Percent of context before auto compaction', keywords: 'context compaction threshold percent auto compact tokens' },
   { id: 'sec-turn-timeouts', page: 'llm', label: 'Turn timeouts', hint: 'Soft/hard run time limits in minutes', keywords: 'turn timeout soft hard deadline minutes abort warn run length' },
@@ -2479,7 +2480,7 @@ export default function Settings() {
           >
             <div className={page === 'llm' ? 'flex flex-col gap-4' : 'hidden'}>
               <Section id="sec-llm" title="LLM" description="The OpenAI-compatible endpoint v1 uses to generate apps. The model is picked per project in the chat.">
-          {editing === null ? (
+          {editing === null && (
             <div className="flex flex-col gap-3">
               <Button variant="primary" onClick={startAdd} className="w-fit">
                 <IconPlus className="h-4 w-4" /> Add Provider
@@ -2490,16 +2491,19 @@ export default function Settings() {
                 Edit on a saved provider below to change it.
               </p>
             </div>
-          ) : (
+          )}
+
+          <Dialog
+            open={editing !== null}
+            onClose={cancelEdit}
+            wide
+            title={
+              editing === 'new'
+                ? 'New provider'
+                : `Edit: ${providers.find((p) => p.id === editing)?.name ?? 'provider'}`
+            }
+          >
             <form onSubmit={(e) => void saveLLM(e)} className="flex flex-col gap-3">
-              <div className="flex items-center justify-between border-b border-border pb-1.5">
-                <h3 className="text-sm font-medium text-text">
-                  {editing === 'new' ? 'New provider' : `Edit: ${providers.find((p) => p.id === editing)?.name ?? 'provider'}`}
-                </h3>
-                <Button variant="ghost" onClick={cancelEdit} className="h-8 px-2.5 text-xs">
-                  Cancel
-                </Button>
-              </div>
               <ProviderSelector
               baseURL={baseURL}
               model={model}
@@ -2574,8 +2578,8 @@ export default function Settings() {
                   </span>
                 </p>
               ))}
-          </form>
-          )}
+            </form>
+          </Dialog>
 
           {providers.length > 0 && (
             <div className="border-t border-border pt-3">
@@ -2765,7 +2769,7 @@ export default function Settings() {
         <Section
           id="sec-caveman"
           title="Caveman mode"
-          description="Make the model reply in a terse, caveman-style way: few words, short chunky sentences, no fluff. The work still gets done — it just talks like a caveman."
+          description="Terse replies: answer first, no fluff, and code, paths, numbers and errors kept verbatim. Security warnings and destructive actions still use full sentences."
         >
           <CavemanControl />
         </Section>

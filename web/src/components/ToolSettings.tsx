@@ -1059,30 +1059,32 @@ function ToolSettings({
 
   const extensionsSection = (
     <div className="flex h-full min-h-0 min-w-0 flex-col gap-3">
-      <div className="flex shrink-0 items-center gap-2">
-        <p className="min-w-0 flex-1 text-[11px] leading-relaxed text-subtle">
+      <div className="flex shrink-0 flex-col gap-2">
+        <p className="text-[11px] leading-relaxed text-subtle">
           Extensions are small JavaScript modules the agent loads to add tools, inject prompt
           sections or hook into a run. The agent can write them itself, which is how v1 grows new
           abilities.
         </p>
-        <Button
-          variant="outline"
-          className="h-7 shrink-0 px-2 text-xs"
-          disabled={extBusy}
-          onClick={() => void reloadExtensions()}
-        >
-          Reload
-        </Button>
-        <Button
-          variant="outline"
-          className="h-7 shrink-0 px-2 text-xs"
-          onClick={() => {
-            setExtError(null);
-            setExtEditor({ id: '', description: '', source: EXTENSION_TEMPLATE, isNew: true });
-          }}
-        >
-          New
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            className="h-7 shrink-0 px-2 text-xs"
+            disabled={extBusy}
+            onClick={() => void reloadExtensions()}
+          >
+            Reload
+          </Button>
+          <Button
+            variant="outline"
+            className="h-7 shrink-0 px-2 text-xs"
+            onClick={() => {
+              setExtError(null);
+              setExtEditor({ id: '', description: '', source: EXTENSION_TEMPLATE, isNew: true });
+            }}
+          >
+            New
+          </Button>
+        </div>
       </div>
 
       {extError !== null && (
@@ -1100,9 +1102,21 @@ function ToolSettings({
         </div>
       ))}
 
-      {extEditor !== null ? (
-        <div className="flex min-h-0 flex-1 flex-col gap-3">
-          <div className="flex shrink-0 items-end gap-2">
+      {extEditor !== null && (
+        <Dialog
+          open
+          onClose={() => {
+            setExtEditor(null);
+            setExtError(null);
+          }}
+          title={extEditor.isNew ? 'New extension' : `Edit ${extEditor.id}`}
+          wide
+          fullScreen
+          fixedBody
+          align="top"
+        >
+          <div className="flex h-full min-h-0 flex-col gap-3">
+            <div className="flex shrink-0 flex-wrap items-end gap-2">
             <div className="w-40">
               <Field label="Id">
                 <Input
@@ -1159,9 +1173,11 @@ function ToolSettings({
             spellCheck={false}
             className="min-h-0 flex-1 resize-none rounded-lg border border-border bg-surface px-3 py-2 font-mono text-[12px] leading-relaxed text-text outline-none focus:border-accent"
           />
-        </div>
-      ) : (
-        <div className="fade-y flex min-h-0 flex-1 flex-col gap-2 overflow-x-hidden overflow-y-auto overscroll-contain">
+          </div>
+        </Dialog>
+      )}
+
+      <div className="fade-y flex min-h-0 flex-1 flex-col gap-2 overflow-x-hidden overflow-y-auto overscroll-contain">
           {extensions.length === 0 && (
             <div className="text-[11px] text-faint">
               No extensions yet. The agent can create one when it needs a capability it does not have.
@@ -1201,8 +1217,7 @@ function ToolSettings({
               </button>
             </div>
           ))}
-        </div>
-      )}
+      </div>
     </div>
   );
 
