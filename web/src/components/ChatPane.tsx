@@ -3346,14 +3346,20 @@ export default function ChatPane({
   );
 
   // Auto-send the New project dialog's "what do you want to create?"
-  // description once the initial history and model selection are ready.
+  // description, but only into a chat that is still empty. The dialog's prompt
+  // travels in the navigation state, and a browser Back restores that state —
+  // so without this guard, returning to a finished chat re-sends the prompt and
+  // starts a fresh turn (and its errors) on a conversation that is already done.
+  // The history check, not the ref, is what survives the remount: the ref is
+  // per-mount, while a reopened chat always has its messages loaded.
   const initialSentRef = useRef(false);
   useEffect(() => {
     if (!initialPrompt || initialSentRef.current) return;
     if (loading || !llmReady || !modelOverride || !sessionId) return;
     initialSentRef.current = true;
+    if (loadError || items.length > 0) return;
     sendText(initialPrompt);
-  }, [initialPrompt, loading, llmReady, modelOverride, sessionId, sendText]);
+  }, [initialPrompt, loading, loadError, items.length, llmReady, modelOverride, sessionId, sendText]);
 
   const addFiles = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
