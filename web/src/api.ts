@@ -484,7 +484,12 @@ export const api = {
     request<VercelDeploymentsResponse>(`/api/projects/${id}/vercel/deployments`),
 
   // MCP
-  mcpStatus: () => request<{ servers: MCPServerStatus[] }>('/api/mcp/status'),
+  mcpStatus: () =>
+    request<{ servers: MCPServerStatus[]; oauth: Record<string, string> }>('/api/mcp/status'),
+  // Remote servers authorize against their own OAuth server; the callback
+  // returns the browser to /settings.
+  mcpOAuthStart: (id: string) => post<{ url: string }>('/api/mcp/oauth/start', { id }),
+  mcpOAuthDisconnect: (id: string) => post<void>('/api/mcp/oauth/disconnect', { id }),
   mcpTest: (srv: MCPServer) =>
     post<{ ok: boolean; tools?: { name: string; description: string }[]; error?: string }>(
       '/api/mcp/test',

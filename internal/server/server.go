@@ -50,6 +50,10 @@ type Server struct {
 	perm permRegistry
 	ask  askRegistry
 
+	// mcpOAuthFlows holds in-flight MCP authorization attempts, keyed by the
+	// state parameter, until the authorization server redirects back.
+	mcpOAuthFlows *pendingOAuth
+
 	// clientLogs keeps the newest browser-side debug records (uncaught errors,
 	// React render failures, failed requests) so the diagnostics dump can report
 	// what happened in the client, not only on the server.
@@ -98,8 +102,9 @@ func New(cfg config.Config, st *store.Store) *Server {
 		ask:            askRegistry{reqs: map[string]*askRequest{}},
 		clientLogs:     newClientLogs(),
 		piModels:       newPiModelCache(),
+		mcpOAuthFlows:  newPendingOAuth(),
 	}
-	s.mcp = mcp.NewManager(s.mcpServers)
+	s.mcp = mcp.NewManager(s.mcpServers, mcp.WithTokenSource(&oauthStore{s: s}))
 	s.auth.BootstrapAdmin()
 	s.rebuildOIDC()
 	s.pruneOIDCFlows()
@@ -242,6 +247,9 @@ func (s *Server) routes(m *http.ServeMux) {
 
 	m.HandleFunc("GET /api/mcp/status", s.handleMCPStatus)
 	m.HandleFunc("POST /api/mcp/test", s.handleMCPTest)
+	m.HandleFunc("POST /api/mcp/oauth/start", s.handleMCPOAuthStart)
+	m.HandleFunc("GET /api/mcp/oauth/callback", s.handleMCPOAuthCallback)
+	m.HandleFunc("POST /api/mcp/oauth/disconnect", s.handleMCPOAuthDisconnect)
 
 	m.HandleFunc("GET /api/vercel/user", s.handleVercelUser)
 	m.HandleFunc("POST /api/projects/{id}/vercel/deploy", s.handleVercelDeploy)

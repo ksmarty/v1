@@ -69,9 +69,13 @@ func (s *Server) handleMCPTest(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "tools": out})
 }
 
-// handleMCPStatus reports the connection state of configured servers.
+// handleMCPStatus reports the connection state of configured servers, plus
+// whether each remote server holds an OAuth grant.
 func (s *Server) handleMCPStatus(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"servers": s.mcp.Status()})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"servers": s.mcp.Status(),
+		"oauth":   s.mcpOAuthStatus(),
+	})
 }
 
 // ---- permission mode (ask / auto / yolo) ----

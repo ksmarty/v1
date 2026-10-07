@@ -30,6 +30,8 @@ type protocolVersionSetter interface {
 type httpTransport struct {
 	cfg    ServerConfig
 	client *http.Client
+	// tokens supplies a bearer token from a stored OAuth grant, when configured.
+	tokens TokenSource
 
 	mu      sync.Mutex
 	nextID  int
@@ -41,7 +43,7 @@ type httpTransport struct {
 	token string
 }
 
-func dialHTTP(cfg ServerConfig) (*httpTransport, error) {
+func dialHTTP(cfg ServerConfig, tokens TokenSource) (*httpTransport, error) {
 	url := strings.TrimSpace(cfg.URL)
 	if url == "" {
 		return nil, fmt.Errorf("url is required")
@@ -52,6 +54,7 @@ func dialHTTP(cfg ServerConfig) (*httpTransport, error) {
 	return &httpTransport{
 		cfg:    cfg,
 		client: &http.Client{Timeout: 5 * time.Minute},
+		tokens: tokens,
 	}, nil
 }
 
@@ -124,7 +127,7 @@ func (t *httpTransport) close() error {
 		return nil
 	}
 	req.Header.Set("Mcp-Session-Id", session)
-	if err := t.authorize(req); err != nil {
+	if err := t.authorize(ctx, req); err != nil {
 		return nil
 	}
 	res, err := t.client.Do(req)
@@ -136,14 +139,25 @@ func (t *httpTransport) close() error {
 	return nil
 }
 
-// authorize applies the configured headers and any OAuth token.
-func (t *httpTransport) authorize(req *http.Request) error {
+// authorize applies the configured headers and any OAuth token. An explicitly
+// configured Authorization header wins, so a pasted token is never overridden.
+func (t *httpTransport) authorize(ctx context.Context, req *http.Request) error {
 	for k, v := range t.cfg.Headers {
 		req.Header.Set(k, v)
+	}
+	if req.Header.Get("Authorization") != "" {
+		return nil
 	}
 	t.mu.Lock()
 	token := t.token
 	t.mu.Unlock()
+	if token == "" && t.tokens != nil {
+		// A grant that cannot be read must not block the request: the server
+		// may well accept it anonymously, and the 401 path reports the reason.
+		if tok, err := t.tokens.AccessToken(ctx, t.cfg.ID); err == nil {
+			token = tok
+		}
+	}
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
@@ -153,6 +167,10 @@ func (t *httpTransport) authorize(req *http.Request) error {
 // post sends one JSON-RPC message and returns the response that matches it, or
 // nil for a notification.
 func (t *httpTransport) post(ctx context.Context, msg rpcMessage) (json.RawMessage, error) {
+	return t.postAttempt(ctx, msg, false)
+}
+
+func (t *httpTransport) postAttempt(ctx context.Context, msg rpcMessage, retried bool) (json.RawMessage, error) {
 	body, err := json.Marshal(msg)
 	if err != nil {
 		return nil, err
@@ -175,7 +193,7 @@ func (t *httpTransport) post(ctx context.Context, msg rpcMessage) (json.RawMessa
 	if version != "" && msg.Method != "initialize" {
 		req.Header.Set("MCP-Protocol-Version", version)
 	}
-	if err := t.authorize(req); err != nil {
+	if err := t.authorize(ctx, req); err != nil {
 		return nil, err
 	}
 
@@ -192,6 +210,13 @@ func (t *httpTransport) post(ctx context.Context, msg rpcMessage) (json.RawMessa
 
 	if res.StatusCode == http.StatusUnauthorized {
 		snippet, _ := io.ReadAll(io.LimitReader(res.Body, 1024))
+		// A stored grant may simply be stale (revoked, or the token rotated),
+		// so drop it and try once more before giving up.
+		if t.tokens != nil && !retried {
+			t.tokens.Invalidate(t.cfg.ID)
+			_ = res.Body.Close()
+			return t.postAttempt(ctx, msg, true)
+		}
 		return nil, t.unauthorized(res.Header.Get("WWW-Authenticate"), snippet)
 	}
 	// A notification is answered with 202 and no body.

@@ -92,9 +92,34 @@ type Client struct {
 	tr  transport
 }
 
+// TokenSource supplies a bearer token for a remote server, refreshing it when
+// it has expired. The server implements this against its stored grants; a nil
+// source means the server needs no OAuth.
+type TokenSource interface {
+	AccessToken(ctx context.Context, serverID string) (string, error)
+	// Invalidate drops the cached token so the next call refreshes it.
+	Invalidate(serverID string)
+}
+
+// Option configures Connect.
+type Option func(*connectOptions)
+
+type connectOptions struct {
+	tokens TokenSource
+}
+
+// WithTokenSource authenticates a remote connection with a stored OAuth grant.
+func WithTokenSource(ts TokenSource) Option {
+	return func(o *connectOptions) { o.tokens = ts }
+}
+
 // Connect opens the configured transport and performs the MCP handshake.
-func Connect(ctx context.Context, cfg ServerConfig) (*Client, error) {
-	tr, err := dial(ctx, cfg)
+func Connect(ctx context.Context, cfg ServerConfig, opts ...Option) (*Client, error) {
+	var o connectOptions
+	for _, opt := range opts {
+		opt(&o)
+	}
+	tr, err := dial(ctx, cfg, o.tokens)
 	if err != nil {
 		return nil, err
 	}
@@ -114,9 +139,9 @@ func Connect(ctx context.Context, cfg ServerConfig) (*Client, error) {
 
 // dial picks the transport the config describes: a URL means the streamable
 // HTTP transport, otherwise the server is spawned as a subprocess.
-func dial(ctx context.Context, cfg ServerConfig) (transport, error) {
+func dial(ctx context.Context, cfg ServerConfig, tokens TokenSource) (transport, error) {
 	if strings.TrimSpace(cfg.URL) != "" {
-		return dialHTTP(cfg)
+		return dialHTTP(cfg, tokens)
 	}
 	return dialStdio(ctx, cfg)
 }
@@ -220,7 +245,8 @@ type entry struct {
 
 // Manager keeps MCP servers connected and exposes their tools to the agent.
 type Manager struct {
-	load func() []ServerConfig
+	load   func() []ServerConfig
+	tokens TokenSource
 
 	mu      sync.Mutex
 	clients map[string]*entry
@@ -228,8 +254,12 @@ type Manager struct {
 
 // NewManager creates a manager that loads its server list from load on each
 // Sync call (so config changes are picked up without a restart).
-func NewManager(load func() []ServerConfig) *Manager {
-	return &Manager{load: load, clients: map[string]*entry{}}
+func NewManager(load func() []ServerConfig, opts ...Option) *Manager {
+	var o connectOptions
+	for _, opt := range opts {
+		opt(&o)
+	}
+	return &Manager{load: load, tokens: o.tokens, clients: map[string]*entry{}}
 }
 
 // Sync connects to every configured server (skipping recent failures and
@@ -264,7 +294,7 @@ func (m *Manager) Sync(ctx context.Context) ([]llm.Tool, error) {
 			continue
 		}
 		connectCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-		cl, err := Connect(connectCtx, cfg)
+		cl, err := Connect(connectCtx, cfg, WithTokenSource(m.tokens))
 		cancel()
 		if err != nil {
 			m.clients[cfg.ID] = &entry{cfg: cfg, failed: true, failAt: time.Now()}

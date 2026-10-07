@@ -193,6 +193,11 @@ function ToolSettings({
     error?: string;
   } | null>(null);
   const [cardTestingId, setCardTestingId] = useState<string | null>(null);
+  // Remote servers authorize against their own OAuth server; this maps a server
+  // id to whether v1 already holds a usable grant.
+  const [oauth, setOAuth] = useState<Record<string, string>>({});
+  const [oauthBusyId, setOAuthBusyId] = useState<string | null>(null);
+  const [oauthNotice, setOAuthNotice] = useState<{ ok: boolean; text: string } | null>(null);
 
   // Skills (skillsmp)
   const [skills, setSkills] = useState<InstalledSkill[]>([]);
@@ -340,6 +345,7 @@ function ToolSettings({
       const byId: Record<string, MCPServerStatus> = {};
       for (const sv of st.servers) byId[sv.id] = sv;
       setStatus(byId);
+      setOAuth(st.oauth ?? {});
     } catch {
       // transient — keep the previous state
     }
@@ -348,6 +354,52 @@ function ToolSettings({
   useEffect(() => {
     void load();
   }, [load]);
+
+  // The OAuth callback lands back on /settings with the outcome in the query.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const result = params.get('mcp');
+    if (!result) return;
+    const reason = params.get('reason');
+    setOAuthNotice(
+      result === 'connected'
+        ? { ok: true, text: 'Authorized. The server connects on the next chat.' }
+        : { ok: false, text: reason || 'Authorization failed.' },
+    );
+    // Drop the parameters so a reload does not repeat the notice.
+    const cleaned = new URL(window.location.href);
+    cleaned.searchParams.delete('mcp');
+    cleaned.searchParams.delete('reason');
+    window.history.replaceState({}, '', cleaned.pathname + cleaned.search + cleaned.hash);
+    void load();
+  }, [load]);
+
+  const connectMCP = async (srv: MCPServer) => {
+    setOAuthBusyId(srv.id);
+    setOAuthNotice(null);
+    try {
+      const { url } = await api.mcpOAuthStart(srv.id);
+      // Leave the app for the authorization server; it sends the browser back
+      // to /settings when the user is done.
+      window.location.href = url;
+    } catch (e) {
+      setOAuthNotice({ ok: false, text: errMsg(e) });
+      setOAuthBusyId(null);
+    }
+  };
+
+  const disconnectMCP = async (srv: MCPServer) => {
+    setOAuthBusyId(srv.id);
+    setOAuthNotice(null);
+    try {
+      await api.mcpOAuthDisconnect(srv.id);
+      await load();
+    } catch (e) {
+      setOAuthNotice({ ok: false, text: errMsg(e) });
+    } finally {
+      setOAuthBusyId(null);
+    }
+  };
 
   useEffect(() => {
     // Built-in skills are always shown in the "Suggested / included" group
@@ -648,6 +700,15 @@ function ToolSettings({
           ))}
       </form>
 
+      {oauthNotice && (
+        <p
+          className={`mt-3 text-xs ${oauthNotice.ok ? 'text-emerald-400' : 'text-red-400'}`}
+          role="status"
+        >
+          {oauthNotice.text}
+        </p>
+      )}
+
       {servers.length > 0 && (
         <>
           <div className="my-4 border-t border-border" />
@@ -717,6 +778,28 @@ function ToolSettings({
                         <IconFlask className="h-3.5 w-3.5" />
                       )}
                     </button>
+                    {srv.url &&
+                      (oauth[srv.id] === 'connected' ? (
+                        <button
+                          type="button"
+                          title="Authorized — click to disconnect"
+                          aria-label={`Disconnect authorization for ${srv.name}`}
+                          onClick={() => void disconnectMCP(srv)}
+                          className="shrink-0 rounded-md bg-emerald-950 px-1.5 py-0.5 text-[10px] text-emerald-400 transition-colors hover:bg-emerald-900"
+                        >
+                          {oauthBusyId === srv.id ? '…' : 'Authorized'}
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          title="Sign in to this server"
+                          aria-label={`Authorize MCP server ${srv.name}`}
+                          onClick={() => void connectMCP(srv)}
+                          className="shrink-0 rounded-md border border-border px-1.5 py-0.5 text-[10px] text-dim transition-colors hover:bg-border hover:text-text"
+                        >
+                          {oauthBusyId === srv.id ? '…' : 'Authorize'}
+                        </button>
+                      ))}
                     <button
                       type="button"
                       aria-label={`Edit MCP server ${srv.name}`}
