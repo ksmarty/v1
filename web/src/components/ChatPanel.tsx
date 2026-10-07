@@ -141,16 +141,9 @@ export default function ChatPanel({
             <span className="block h-4 w-32 animate-pulse rounded bg-border" />
           )}
         </div>
-        <button
-          type="button"
-          onClick={() => setTab('git')}
-          aria-label="Git"
-          title="Git"
-          className={iconLinkClass}
-        >
-          <IconGitBranch className="h-5 w-5" />
-        </button>
-        <VercelMenu projectId={projectId} projectName={project?.name ?? ''} />
+        {project?.vercelEnabled && (
+          <VercelMenu projectId={projectId} projectName={project?.name ?? ''} />
+        )}
         <Link
           to="/settings"
           state={{ from: `/project/${projectId}` }}

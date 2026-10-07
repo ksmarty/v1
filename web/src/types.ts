@@ -200,6 +200,7 @@ export interface Project {
   instructions?: string;
   autoPush: boolean;
   previewDisabled?: boolean;
+  vercelEnabled: boolean;
   preview: PreviewInfo;
   updatedAt: string;
 }

@@ -265,6 +265,10 @@ CREATE TABLE pending_asks_v2 (
 	}
 	return migrateAddColumns(db, "projects", map[string]string{
 		"preview_disabled": "ALTER TABLE projects ADD COLUMN preview_disabled INTEGER NOT NULL DEFAULT 0",
+		// DEFAULT 1 grandfathers projects created before the toggle existed: the
+		// Vercel button kept working for them. New projects are inserted with an
+		// explicit 0 (see CreateProject), so Vercel is opt-in from now on.
+		"vercel_enabled": "ALTER TABLE projects ADD COLUMN vercel_enabled INTEGER NOT NULL DEFAULT 1",
 	})
 }
 
@@ -793,8 +797,11 @@ type Project struct {
 	OwnerID         string
 	AutoPush        bool
 	PreviewDisabled bool
-	CreatedAt       int64
-	UpdatedAt       int64
+	// VercelEnabled is opt-in: the zero value is off, so a project only talks to
+	// Vercel after the toggle is switched on.
+	VercelEnabled bool
+	CreatedAt     int64
+	UpdatedAt     int64
 }
 
 // CreateProject inserts a project, stamping created_at/updated_at.
@@ -802,9 +809,9 @@ func (s *Store) CreateProject(p *Project) error {
 	t := now()
 	p.CreatedAt = t
 	p.UpdatedAt = t
-	_, err := s.db.Exec(`INSERT INTO projects (id, name, path, repo_url, preview_command, instructions, owner_id, auto_push, preview_disabled, created_at, updated_at)
-		VALUES (?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?, ?, ?, ?)`,
-		p.ID, p.Name, p.Path, p.RepoURL, p.PreviewCommand, p.Instructions, p.OwnerID, boolInt(p.AutoPush), boolInt(p.PreviewDisabled), p.CreatedAt, p.UpdatedAt)
+	_, err := s.db.Exec(`INSERT INTO projects (id, name, path, repo_url, preview_command, instructions, owner_id, auto_push, preview_disabled, vercel_enabled, created_at, updated_at)
+		VALUES (?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?, ?, ?, ?, ?)`,
+		p.ID, p.Name, p.Path, p.RepoURL, p.PreviewCommand, p.Instructions, p.OwnerID, boolInt(p.AutoPush), boolInt(p.PreviewDisabled), boolInt(p.VercelEnabled), p.CreatedAt, p.UpdatedAt)
 	return err
 }
 
@@ -815,8 +822,8 @@ type scanner interface {
 func scanProject(row scanner) (*Project, error) {
 	var p Project
 	var repoURL, previewCmd, instructions, ownerID sql.NullString
-	var autoPush, previewDisabled int
-	if err := row.Scan(&p.ID, &p.Name, &p.Path, &repoURL, &previewCmd, &instructions, &ownerID, &autoPush, &previewDisabled, &p.CreatedAt, &p.UpdatedAt); err != nil {
+	var autoPush, previewDisabled, vercelEnabled int
+	if err := row.Scan(&p.ID, &p.Name, &p.Path, &repoURL, &previewCmd, &instructions, &ownerID, &autoPush, &previewDisabled, &vercelEnabled, &p.CreatedAt, &p.UpdatedAt); err != nil {
 		return nil, err
 	}
 	p.RepoURL = repoURL.String
@@ -825,10 +832,11 @@ func scanProject(row scanner) (*Project, error) {
 	p.OwnerID = ownerID.String
 	p.AutoPush = autoPush != 0
 	p.PreviewDisabled = previewDisabled != 0
+	p.VercelEnabled = vercelEnabled != 0
 	return &p, nil
 }
 
-const projectCols = `id, name, path, repo_url, preview_command, instructions, owner_id, auto_push, preview_disabled, created_at, updated_at`
+const projectCols = `id, name, path, repo_url, preview_command, instructions, owner_id, auto_push, preview_disabled, vercel_enabled, created_at, updated_at`
 
 // UpdateProjectAutoPush toggles the per-project auto-push flag.
 func (s *Store) UpdateProjectAutoPush(id string, autoPush bool) error {
@@ -839,6 +847,12 @@ func (s *Store) UpdateProjectAutoPush(id string, autoPush bool) error {
 // UpdateProjectPreviewDisabled toggles the per-project preview-disabled flag.
 func (s *Store) UpdateProjectPreviewDisabled(id string, disabled bool) error {
 	_, err := s.db.Exec(`UPDATE projects SET preview_disabled = ?, updated_at = ? WHERE id = ?`, boolInt(disabled), now(), id)
+	return err
+}
+
+// UpdateProjectVercelEnabled toggles the per-project Vercel integration.
+func (s *Store) UpdateProjectVercelEnabled(id string, enabled bool) error {
+	_, err := s.db.Exec(`UPDATE projects SET vercel_enabled = ?, updated_at = ? WHERE id = ?`, boolInt(enabled), now(), id)
 	return err
 }
 

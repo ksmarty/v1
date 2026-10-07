@@ -325,6 +325,10 @@ func (s *Server) handleVercelDeploy(w http.ResponseWriter, r *http.Request) {
 	if p == nil {
 		return
 	}
+	if !p.VercelEnabled {
+		writeError(w, http.StatusForbidden, "Vercel is disabled for this project")
+		return
+	}
 	userID := s.currentUser(r).ID
 	if s.vercelToken(userID) == "" {
 		writeError(w, http.StatusBadRequest, "no Vercel token configured (connect Vercel in Settings)")
@@ -396,6 +400,10 @@ func (s *Server) handleVercelDeploy(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleVercelDeployments(w http.ResponseWriter, r *http.Request) {
 	p := s.projectOr404(w, r)
 	if p == nil {
+		return
+	}
+	if !p.VercelEnabled {
+		writeError(w, http.StatusForbidden, "Vercel is disabled for this project")
 		return
 	}
 	userID := s.currentUser(r).ID

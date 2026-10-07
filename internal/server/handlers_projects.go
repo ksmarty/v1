@@ -26,6 +26,7 @@ type projectJSON struct {
 	Instructions          string `json:"instructions,omitempty"`
 	AutoPush              bool   `json:"autoPush"`
 	PreviewDisabled       bool   `json:"previewDisabled"`
+	VercelEnabled         bool   `json:"vercelEnabled"`
 	CreatedAt             int64  `json:"createdAt"`
 	UpdatedAt             int64  `json:"updatedAt"`
 }
@@ -40,6 +41,7 @@ func toProjectJSON(p *store.Project) projectJSON {
 		Instructions:          p.Instructions,
 		AutoPush:              p.AutoPush,
 		PreviewDisabled:       p.PreviewDisabled,
+		VercelEnabled:         p.VercelEnabled,
 		CreatedAt:             p.CreatedAt,
 		UpdatedAt:             p.UpdatedAt,
 	}
@@ -57,6 +59,7 @@ func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
 		Instructions    string `json:"instructions"`
 		AutoPush        *bool  `json:"autoPush"`
 		PreviewDisabled *bool  `json:"previewDisabled"`
+		VercelEnabled   *bool  `json:"vercelEnabled"`
 	}
 	if !decodeJSON(w, r, &body) {
 		return
@@ -83,6 +86,12 @@ func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
 		// Stop any running preview so a disabled preview doesn't linger.
 		if *body.PreviewDisabled {
 			s.previews.Stop(p.ID)
+		}
+	}
+	if body.VercelEnabled != nil {
+		if err := s.st.UpdateProjectVercelEnabled(p.ID, *body.VercelEnabled); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
 		}
 	}
 	updated, err := s.st.GetProject(p.ID)
