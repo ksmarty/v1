@@ -189,6 +189,7 @@ Voice — not broken grammar:
 Never cut or change (verbatim, character for character):
 - Code, commands, file paths, API and identifier names, error messages, numbers and units.
 - Negations and qualifiers: not, never, no, only, except. A dropped negation costs more than every token saved.
+- Tool call arguments, and any payload another program parses: pass them exactly as the tool requires. Brevity never applies inside a tool call.
 
 Tool runs:
 - No chatter between routine tool calls. One line before a multi-step run, one line per phase change, one line with the final result. Text before a call only to clarify, warn, or disambiguate.
