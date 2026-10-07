@@ -33,6 +33,7 @@ import type {
   VercelDeploymentsResponse,
   VercelUserInfo,
 } from './types';
+import { debugBreadcrumb, debugError } from './debuglog';
 
 export class ApiError extends Error {
   status: number;
@@ -129,14 +130,32 @@ async function parseError(res: Response): Promise<string> {
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const res = await fetch(path, { credentials: 'same-origin', ...init });
+  const method = init.method ?? 'GET';
+  const started = Date.now();
+  let res: Response;
+  try {
+    res = await fetch(path, { credentials: 'same-origin', ...init });
+  } catch (e) {
+    // A malformed URL throws here; the path is the only record of which one it
+    // was. Re-throw the original error unchanged.
+    debugError('fetch', e, { path, method });
+    throw e;
+  }
   if (res.status === 401) {
     redirectToLogin();
     throw new ApiError('Unauthorized', 401);
   }
   if (!res.ok) {
-    throw new ApiError(await parseError(res), res.status);
+    const message = await parseError(res);
+    debugBreadcrumb('api', `${method} ${path} → ${res.status}`, {
+      ms: Date.now() - started,
+      error: message,
+    });
+    throw new ApiError(message, res.status);
   }
+  debugBreadcrumb('api', `${method} ${path} → ${res.status}`, {
+    ms: Date.now() - started,
+  });
   if (res.status === 204) return undefined as T;
   const ct = res.headers.get('content-type') ?? '';
   if (ct.includes('application/json')) {

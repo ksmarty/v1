@@ -22,6 +22,7 @@ import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite
 import { BACKGROUND_CONTEXT, withAbortSignal } from "@earendil-works/chord/context";
 
 import { log } from "./log.js";
+import { installProviderFetchLog } from "./providerlog.js";
 import { RpcError, createPeer } from "./rpc.js";
 import { createModelStore, registerProvider } from "./provider.js";
 import { buildApprovalHook, buildHostTools } from "./tools.js";
@@ -613,10 +614,14 @@ async function main() {
 		finish(undefined);
 	}
 
+	// Capture the provider exchange before any model call can be made: in this
+	// process Go never sees the endpoint's answer, only the message pi-durable
+	// keeps on the entry.
+	installProviderFetchLog();
+
 	await sidecar.open();
 	server = await listen(socketPath);
 	log.info("listening", { socket: socketPath, node: process.versions.node, pid: process.pid });
-
 	server.on("connection", (socket) => {
 		if (peer && !peer.closed) {
 			log.warn("rejecting a second host connection");

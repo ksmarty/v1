@@ -3,6 +3,7 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 import { api } from '../api';
+import { debugError } from '../debuglog';
 import { Button } from './ui';
 
 export default function TerminalPane({
@@ -77,7 +78,21 @@ export default function TerminalPane({
       // scheme and host the browser used to load v1 — robust behind reverse
       // proxies (Traefik, Caddy, nginx, Cloudflare) regardless of TLS offload
       // or forwarded-host rewriting.
-      const ws = new WebSocket(`/api/projects/${projectId}/terminal`);
+      // The constructor throws a SyntaxError ("The string did not match the
+      // expected pattern" in WebKit) if the URL cannot be parsed. That throw
+      // used to escape into the effect and blank the whole app, so catch it,
+      // report it, and let the rest of the page keep working.
+      let ws: WebSocket;
+      try {
+        ws = new WebSocket(`/api/projects/${projectId}/terminal`);
+      } catch (err) {
+        debugError('websocket', err, { projectId, path: `/api/projects/${projectId}/terminal` });
+        setConnected(false);
+        term.write(
+          '\r\n\x1b[31m[terminal: could not open the WebSocket — the URL was rejected by the browser.]\x1b[0m\r\n',
+        );
+        return;
+      }
       wsRef.current = ws;
       ws.onopen = () => {
         retriesRef.current = 0;
@@ -133,7 +148,7 @@ export default function TerminalPane({
       retriesRef.current = 0;
       connect();
     };
-    connect();
+    if (active) connect();
 
     const dataSub = term.onData((data) => {
       const ws = wsRef.current;
@@ -172,6 +187,9 @@ export default function TerminalPane({
   // Re-fit when the pane becomes visible (it may have been display:none).
   useEffect(() => {
     if (!active) return;
+    // A pane mounted while hidden skipped its initial connect; connect now that
+    // it is on screen (connect() keeps an already-open socket untouched).
+    connectRef.current();
     const container = containerRef.current;
     const fit = fitRef.current;
     if (container && fit && container.clientWidth > 0) {

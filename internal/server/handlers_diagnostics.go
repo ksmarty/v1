@@ -18,14 +18,19 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	userID := s.currentUser(r).ID
-	sessionID := s.chatSessionID(p, r.URL.Query().Get("sessionId"))
+	requestedSessionID := r.URL.Query().Get("sessionId")
+	sessionID := s.chatSessionID(p, requestedSessionID)
 
 	out := map[string]any{
-		"project":  map[string]any{"id": p.ID, "name": p.Name},
-		"session":  sessionID,
-		"version":  s.cfg.Version,
-		"commit":   s.cfg.Commit,
-		"provider": s.diagnosticsProvider(userID),
+		"project": map[string]any{"id": p.ID, "name": p.Name},
+		"session": sessionID,
+		// What the client asked for. When this differs from "session" the pane
+		// is being shown a different session than the one it requested, which is
+		// itself a diagnosis.
+		"sessionRequested": requestedSessionID,
+		"version":          s.cfg.Version,
+		"commit":           s.cfg.Commit,
+		"provider":         s.diagnosticsProvider(userID),
 	}
 	if q := s.turns.get(p.ID, sessionID); q != nil {
 		queued := []map[string]any{}
@@ -42,9 +47,16 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 	}
 
 	msgs, err := s.st.ListMessages(p.ID, sessionID)
-	if err == nil {
+	if err != nil {
+		// Never drop this. An empty history and a failed read look identical in
+		// the UI — the pane shows an error either way — and which one it was
+		// decides the diagnosis.
+		out["messagesError"] = err.Error()
+	} else {
 		list := make([]map[string]any, 0, len(msgs))
+		roles := map[string]int{}
 		for _, m := range msgs {
+			roles[m.Role]++
 			list = append(list, map[string]any{
 				"id":          m.ID,
 				"role":        m.Role,
@@ -57,6 +69,18 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 			})
 		}
 		out["messages"] = list
+		out["messageCount"] = len(msgs)
+		// The role histogram makes an unexpected row visible at a glance: the
+		// chat view renders a row whose role it does not know — a persisted
+		// failure, for instance — as its raw content.
+		out["messageRoles"] = roles
+	}
+
+	// What the browser saw. Without this the export is server-only, and a
+	// failure that happened while loading or rendering the session leaves no
+	// trace in it at all.
+	if client, entries := s.clientLogs.get(userID); client != nil || len(entries) > 0 {
+		out["clientLog"] = map[string]any{"client": client, "entries": entries}
 	}
 	writeJSON(w, http.StatusOK, out)
 }

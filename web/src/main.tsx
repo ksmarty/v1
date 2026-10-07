@@ -1,10 +1,13 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
+import ErrorBoundary from './components/ErrorBoundary';
+import { installDebugLog } from './debuglog';
 import { initTheme } from './themes';
 import './index.css';
 
 initTheme();
+installDebugLog();
 
 // Register the service worker only in production builds so dev never serves
 // stale cached assets. updateViaCache 'none' + an explicit update() on every
@@ -24,6 +27,8 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <App />
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
   </React.StrictMode>,
 );

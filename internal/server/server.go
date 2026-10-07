@@ -50,6 +50,11 @@ type Server struct {
 	perm permRegistry
 	ask  askRegistry
 
+	// clientLogs keeps the newest browser-side debug records (uncaught errors,
+	// React render failures, failed requests) so the diagnostics dump can report
+	// what happened in the client, not only on the server.
+	clientLogs *clientLogs
+
 	// harness is the pi-durable bridge, attached at startup when V1_HARNESS=pi.
 	// Nil means chat turns run on the built-in Go agent loop.
 	harnessMu sync.RWMutex
@@ -87,6 +92,7 @@ func New(cfg config.Config, st *store.Store) *Server {
 		oidc:           auth.NewOIDC(auth.OIDCConfig{}),
 		perm:           permRegistry{reqs: map[string]*permRequest{}},
 		ask:            askRegistry{reqs: map[string]*askRequest{}},
+		clientLogs:     newClientLogs(),
 	}
 	s.mcp = mcp.NewManager(s.mcpServers)
 	s.auth.BootstrapAdmin()
@@ -172,6 +178,7 @@ func (s *Server) routes(m *http.ServeMux) {
 	m.HandleFunc("GET /api/projects/{id}/ask/pending", s.handleAskPending)
 	m.HandleFunc("GET /api/projects/{id}/chat/queue", s.handleChatQueue)
 	m.HandleFunc("GET /api/projects/{id}/diagnostics", s.handleDiagnostics)
+	m.HandleFunc("POST /api/client-log", s.handleClientLog)
 	m.HandleFunc("POST /api/projects/{id}/chat/queue/reorder", s.handleChatQueueReorder)
 	m.HandleFunc("POST /api/projects/{id}/chat/queue/steer", s.handleChatQueueSteer)
 	m.HandleFunc("POST /api/projects/{id}/chat/queue/edit", s.handleChatQueueEdit)
