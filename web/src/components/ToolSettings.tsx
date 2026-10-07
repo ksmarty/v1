@@ -1,12 +1,9 @@
 import { memo, useCallback, useEffect, useState, type FormEvent } from 'react';
 import { api } from '../api';
 import type {
-  InstalledPackage,
   InstalledSkill,
   MCPServer,
   MCPServerStatus,
-  PackageSearchResult,
-  PackageSkill,
   PermissionMode,
   SkillSearchResult,
 } from '../types';
@@ -19,7 +16,7 @@ import { IconCheck, IconExternalLink, IconFlask, IconPencil, IconX } from './ico
 const TABS = [
   { id: 'mcp', label: 'MCP' },
   { id: 'skills', label: 'Skills' },
-  { id: 'packages', label: 'Extensions' },
+  { id: 'extensions', label: 'Extensions' },
   { id: 'tools', label: 'Tools' },
   { id: 'perms', label: 'Permissions' },
 ] as const;
@@ -212,21 +209,6 @@ function ToolSettings({
   const [skillBusyId, setSkillBusyId] = useState<string | null>(null);
   const [skillError, setSkillError] = useState<string | null>(null);
   const [skillPreview, setSkillPreview] = useState<SkillPreviewTarget | null>(null);
-
-  // Pi packages (the extensions tab). A package's extension code targets the Pi
-  // CLI runtime, so installing one imports the skills it bundles instead.
-  const [pkgQuery, setPkgQuery] = useState('');
-  const [pkgResults, setPkgResults] = useState<PackageSearchResult[]>([]);
-  const [pkgBusy, setPkgBusy] = useState(false);
-  const [pkgBusyName, setPkgBusyName] = useState<string | null>(null);
-  const [pkgError, setPkgError] = useState<string | null>(null);
-  const [installedPkgs, setInstalledPkgs] = useState<InstalledPackage[]>([]);
-  const [pkgPreview, setPkgPreview] = useState<{
-    name: string;
-    version: string;
-    skills: PackageSkill[];
-    installed: boolean;
-  } | null>(null);
 
   // Approval mode
   const [permissionMode, setPermissionMode] = useState<PermissionMode>(initialPermissionMode ?? 'ask');
@@ -627,83 +609,6 @@ function ToolSettings({
     }
   };
 
-  const refreshPackages = useCallback(async () => {
-    try {
-      const r = await api.packagesInstalled();
-      setInstalledPkgs(r.packages ?? []);
-    } catch {
-      setInstalledPkgs([]);
-    }
-  }, []);
-
-  // Refresh when the tab is shown, so packages installed elsewhere appear too.
-  useEffect(() => {
-    if (tab === 'packages') void refreshPackages();
-  }, [tab, refreshPackages]);
-
-  const searchPackages = async (e?: FormEvent) => {
-    e?.preventDefault();
-    const q = pkgQuery.trim();
-    if (!q) return;
-    setPkgBusy(true);
-    setPkgError(null);
-    setPkgPreview(null);
-    try {
-      const r = await api.packageSearch(q);
-      setPkgResults(r.packages ?? []);
-    } catch (err) {
-      setPkgError(errMsg(err));
-    } finally {
-      setPkgBusy(false);
-    }
-  };
-
-  const openPackage = async (name: string, version?: string, installed = false) => {
-    setPkgBusyName(name);
-    setPkgError(null);
-    try {
-      const r = await api.packagePreview(name, version);
-      setPkgPreview({ name, version: version ?? '', skills: r.skills ?? [], installed });
-    } catch (err) {
-      setPkgError(errMsg(err));
-    } finally {
-      setPkgBusyName(null);
-    }
-  };
-
-  const installPackage = async (name: string, version?: string) => {
-    setPkgBusyName(name);
-    setPkgError(null);
-    try {
-      const r = await api.packageInstall(name, version);
-      setSkills(r.skills);
-      setPkgResults([]);
-      setPkgQuery('');
-      setPkgPreview(null);
-      await refreshPackages();
-    } catch (err) {
-      setPkgError(errMsg(err));
-    } finally {
-      setPkgBusyName(null);
-    }
-  };
-
-  const removePackage = async (name: string) => {
-    if (!window.confirm(`Remove ${name} and the skills it installed?`)) return;
-    setPkgBusyName(name);
-    setPkgError(null);
-    try {
-      const r = await api.packageRemove(name);
-      setSkills(r.skills);
-      setPkgPreview(null);
-      await refreshPackages();
-    } catch (err) {
-      setPkgError(errMsg(err));
-    } finally {
-      setPkgBusyName(null);
-    }
-  };
-
   const savePermissionMode = async (e: FormEvent) => {
     e.preventDefault();
     setPermSaving(true);
@@ -1014,192 +919,6 @@ function ToolSettings({
     </div>
   );
 
-  const packagesSection = (
-    <div className="flex h-full min-h-0 min-w-0 flex-col gap-3">
-      <form onSubmit={(e) => void searchPackages(e)} className="flex shrink-0 min-w-0 items-end gap-2">
-        <div className="flex-1">
-          <Field label="Search pi packages">
-            <Input
-              value={pkgQuery}
-              onChange={(e) => setPkgQuery(e.target.value)}
-              placeholder="e.g. powers, mcp, subagents"
-              autoComplete="off"
-            />
-          </Field>
-        </div>
-        <Button type="submit" variant="outline" disabled={pkgBusy || pkgQuery.trim() === ''} className="h-[42px] sm:h-[38px]">
-          {pkgBusy ? <Spinner className="h-4 w-4" /> : 'Search'}
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          disabled={pkgBusy || (pkgQuery === '' && pkgResults.length === 0 && !pkgError)}
-          onClick={() => {
-            setPkgQuery('');
-            setPkgResults([]);
-            setPkgError(null);
-            setPkgPreview(null);
-          }}
-          className="h-[42px] sm:h-[38px]"
-        >
-          Clear
-        </Button>
-      </form>
-
-      <p className="shrink-0 rounded-lg border border-border bg-surface/50 px-3 py-2 text-[11px] leading-relaxed text-subtle">
-        Installing a package imports the <span className="text-text">skills</span> it bundles so your
-        agents can use them. Extension code inside a package targets the Pi CLI runtime, which v1
-        does not run, so the extension itself is not installed.
-      </p>
-
-      {pkgError && (
-        <div className="shrink-0 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-[11px] text-red-400">
-          {pkgError}
-        </div>
-      )}
-
-      {pkgPreview ? (
-        <div className="fade-y flex min-h-0 flex-1 flex-col gap-3 overflow-x-hidden overflow-y-auto overscroll-contain">
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              className="h-7 shrink-0 px-2 text-xs"
-              onClick={() => setPkgPreview(null)}
-            >
-              Back
-            </Button>
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-sm text-text">{pkgPreview.name}</div>
-              {pkgPreview.version !== '' && (
-                <div className="truncate text-[11px] text-faint">v{pkgPreview.version}</div>
-              )}
-            </div>
-            {pkgPreview.installed ? (
-              <Button
-                variant="outline"
-                className="h-7 shrink-0 px-2 text-xs"
-                disabled={pkgBusyName === pkgPreview.name}
-                onClick={() => void removePackage(pkgPreview.name)}
-              >
-                Remove
-              </Button>
-            ) : (
-              <Button
-                variant="outline"
-                className="h-7 shrink-0 px-2 text-xs"
-                disabled={pkgBusyName === pkgPreview.name}
-                onClick={() => void installPackage(pkgPreview.name, pkgPreview.version)}
-              >
-                {pkgBusyName === pkgPreview.name ? <Spinner className="h-3.5 w-3.5" /> : 'Install'}
-              </Button>
-            )}
-          </div>
-          {pkgPreview.skills.length === 0 && (
-            <div className="text-[11px] text-faint">This package bundles no skills.</div>
-          )}
-          {pkgPreview.skills.map((sk) => (
-            <div key={sk.dir} className="rounded-xl border border-border bg-surface px-3 py-2">
-              <div className="text-sm text-text">{sk.name}</div>
-              {sk.description !== '' && (
-                <div className="mt-0.5 text-[11px] text-faint">{sk.description}</div>
-              )}
-              <div className="my-2 border-t border-border" />
-              <div className="text-[12px] leading-relaxed">
-                <Markdown text={sk.skillMd} />
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div className="fade-y flex min-h-0 flex-1 flex-col gap-3 overflow-x-hidden overflow-y-auto overscroll-contain">
-          {installedPkgs.length > 0 && (
-            <div className="flex flex-col gap-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-subtle">Installed packages</span>
-                <span className="text-[11px] text-faint">{installedPkgs.length}</span>
-              </div>
-              <ul className="flex flex-col gap-1.5">
-                {installedPkgs.map((p) => (
-                  <li
-                    key={p.name}
-                    className="flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2"
-                  >
-                    <button
-                      type="button"
-                      onClick={() => void openPackage(p.name, p.version, true)}
-                      title={`About ${p.name}`}
-                      className="min-w-0 flex-1 text-left"
-                    >
-                      <div className="truncate text-sm text-text">{p.name}</div>
-                      <div className="truncate text-[11px] text-faint">
-                        v{p.version} · {p.skills.length} {p.skills.length === 1 ? 'skill' : 'skills'}
-                      </div>
-                    </button>
-                    <button
-                      type="button"
-                      aria-label={`Remove ${p.name}`}
-                      title="Remove package"
-                      onClick={() => void removePackage(p.name)}
-                      className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-dim transition-colors hover:bg-border hover:text-red-400"
-                    >
-                      <IconX className="h-3.5 w-3.5" />
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {pkgResults.length > 0 && (
-            <ul className="min-w-0 flex flex-col gap-2">
-              {pkgResults.map((p) => (
-                <li
-                  key={p.name}
-                  className="flex items-center gap-2 rounded-xl border border-border bg-surface px-3 py-2"
-                >
-                  <button
-                    type="button"
-                    onClick={() => void openPackage(p.name, p.version)}
-                    title={`About ${p.name}`}
-                    className="min-w-0 flex-1 text-left"
-                  >
-                    <div className="flex items-center gap-1.5">
-                      <span className="truncate text-sm text-text">{p.name}</span>
-                      <span className="shrink-0 text-[10px] text-faint">v{p.version}</span>
-                    </div>
-                    <div className="truncate text-[11px] text-faint">
-                      {p.author}
-                      {p.description ? ` · ${p.description}` : ''}
-                    </div>
-                  </button>
-                  {typeof p.downloads === 'number' && p.downloads > 0 && (
-                    <span className="shrink-0 text-[10px] text-faint" title="Monthly downloads">
-                      ↓ {formatStars(p.downloads)}
-                    </span>
-                  )}
-                  <Button
-                    variant="outline"
-                    className="h-7 shrink-0 px-2 text-xs"
-                    disabled={pkgBusyName === p.name}
-                    onClick={() => void installPackage(p.name, p.version)}
-                  >
-                    {pkgBusyName === p.name ? <Spinner className="h-3.5 w-3.5" /> : 'Install'}
-                  </Button>
-                </li>
-              ))}
-            </ul>
-          )}
-
-          {!pkgBusy && pkgResults.length === 0 && installedPkgs.length === 0 && (
-            <div className="text-[11px] text-faint">
-              Search the pi package registry. Try “powers” or “subagents”.
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-
   const skillsSection = (
     <div className="flex h-full min-h-0 min-w-0 flex-col gap-3">
       <form onSubmit={(e) => void searchSkills(e)} className="flex shrink-0 min-w-0 items-end gap-2">
@@ -1490,7 +1209,6 @@ function ToolSettings({
       <div className="fade-y min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-3 pt-2 pb-2 overscroll-contain">
         {tab === 'mcp' && mcpSection}
         {tab === 'skills' && <div className="flex h-full min-h-0 flex-col">{skillsSection}</div>}
-        {tab === 'packages' && <div className="flex h-full min-h-0 flex-col">{packagesSection}</div>}
         {tab === 'tools' && <div className="flex h-full min-h-0 flex-col">{toolsSection}</div>}
         {tab === 'perms' && permsSection}
       </div>

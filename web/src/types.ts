@@ -318,40 +318,6 @@ export interface InstalledSkill {
   dir: string;
   enabled: boolean;
   builtin?: boolean;
-  /** pi package this skill was imported from, if any. */
-  package?: string;
-  packageVersion?: string;
-}
-
-/** A skill bundled inside a pi package. */
-export interface PackageSkill {
-  dir: string;
-  name: string;
-  description: string;
-  skillMd: string;
-}
-
-/** A pi package published to npm, as returned by the registry search. */
-export interface PackageSearchResult {
-  name: string;
-  version: string;
-  description: string;
-  author: string;
-  homepage?: string;
-  repository?: string;
-  npmUrl?: string;
-  keywords?: string[];
-  downloads?: number;
-  updated?: string;
-  /** Names of the skills the package bundles. */
-  skills?: string[];
-}
-
-/** An installed pi package and the skills it contributed. */
-export interface InstalledPackage {
-  name: string;
-  version: string;
-  skills: InstalledSkill[];
 }
 
 export interface SkillSearchResult {
