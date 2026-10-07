@@ -883,6 +883,11 @@ func (s *Server) handleContextUsage(w http.ResponseWriter, r *http.Request) {
 		}
 		if n := s.catalogModelContext(baseURL, model); n > 0 {
 			budget = n
+		} else if n := s.piModelContext(model); n > 0 {
+			// pi's catalog knows models v1's does not (deepseek-v4.1-flash, for
+			// one) and costs nothing to consult, so it is tried before the
+			// provider request.
+			budget = n
 		} else {
 			_, apiKey, _ := s.llmConfig(userID)
 			if pid := r.URL.Query().Get("providerId"); pid != "" {

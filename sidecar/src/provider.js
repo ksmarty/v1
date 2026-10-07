@@ -15,6 +15,7 @@ import { createModels, createProvider } from "@earendil-works/pi-ai";
 import { stream as openaiStream, streamSimple as openaiStreamSimple } from "@earendil-works/pi-ai/api/openai-completions";
 
 import { log } from "./log.js";
+import { builtinModel } from "./modeldata.js";
 
 /** Models registered so far: key → signature of the descriptor it was built from. */
 const registered = new Map();
@@ -50,7 +51,15 @@ function signatureOf(config) {
  * turn reports tokens but no spend.
  */
 function modelDescriptor(model, key, config) {
-	const contextWindow = Number.isFinite(model.contextWindow) && model.contextWindow > 0 ? model.contextWindow : 0;
+	// A model v1's catalog does not know arrives with no contextWindow at all
+	// (`omitempty` drops the field), so fall back to pi's catalog: telling pi-ai
+	// the window is zero skews its compaction threshold and its max_tokens
+	// default.
+	const known = builtinModel(model.id);
+	const contextWindow =
+		Number.isFinite(model.contextWindow) && model.contextWindow > 0
+			? model.contextWindow
+			: (known?.contextWindow ?? 0);
 	return {
 		...model,
 		id: model.id,

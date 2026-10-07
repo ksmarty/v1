@@ -22,6 +22,7 @@ import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite
 import { BACKGROUND_CONTEXT, withAbortSignal } from "@earendil-works/chord/context";
 
 import { log } from "./log.js";
+import { writeModelCatalog } from "./modeldata.js";
 import { installProviderFetchLog } from "./providerlog.js";
 import { RpcError, createPeer } from "./rpc.js";
 import { createModelStore, registerProvider } from "./provider.js";
@@ -618,6 +619,11 @@ async function main() {
 	// process Go never sees the endpoint's answer, only the message pi-durable
 	// keeps on the entry.
 	installProviderFetchLog();
+
+	// Hand Go pi's model catalog: it cannot read pi's data itself, and its own
+	// catalog does not know every model the user can select — for those the
+	// context ring was left showing a fixed fallback budget.
+	writeModelCatalog(process.env.V1_HARNESS_DB ? dirname(process.env.V1_HARNESS_DB) : null);
 
 	await sidecar.open();
 	server = await listen(socketPath);

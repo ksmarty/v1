@@ -55,6 +55,10 @@ type Server struct {
 	// what happened in the client, not only on the server.
 	clientLogs *clientLogs
 
+	// piModels caches the model catalog the sidecar writes from pi's own model
+	// data, used to resolve a context window v1's own catalog does not know.
+	piModels *piModelCache
+
 	// harness is the pi-durable bridge, attached at startup when V1_HARNESS=pi.
 	// Nil means chat turns run on the built-in Go agent loop.
 	harnessMu sync.RWMutex
@@ -93,6 +97,7 @@ func New(cfg config.Config, st *store.Store) *Server {
 		perm:           permRegistry{reqs: map[string]*permRequest{}},
 		ask:            askRegistry{reqs: map[string]*askRequest{}},
 		clientLogs:     newClientLogs(),
+		piModels:       newPiModelCache(),
 	}
 	s.mcp = mcp.NewManager(s.mcpServers)
 	s.auth.BootstrapAdmin()

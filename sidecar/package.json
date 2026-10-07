@@ -10,7 +10,7 @@
 	},
 	"scripts": {
 		"start": "node src/host.js",
-		"check": "node --check src/host.js && node --check src/rpc.js && node --check src/provider.js && node --check src/providerlog.js && node --check src/tools.js && node --check src/log.js",
+		"check": "node --check src/host.js && node --check src/rpc.js && node --check src/provider.js && node --check src/providerlog.js && node --check src/modeldata.js && node --check src/tools.js && node --check src/log.js",
 		"test": "node test/bridge.test.mjs"
 	},
 	"dependencies": {
