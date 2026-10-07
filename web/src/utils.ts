@@ -81,6 +81,7 @@ export function setDebugHud(on: boolean): void {
 const NOTIFY_KEY = 'v1.notifications';
 const NOTIFY_TURN_DONE_KEY = 'v1.notifyTurnDone';
 const NOTIFY_TURN_ERROR_KEY = 'v1.notifyTurnError';
+const NOTIFY_ASK_KEY = 'v1.notifyAsk';
 const NOTIFY_BACKGROUND_KEY = 'v1.notifyOnlyBackground';
 
 export function getNotifyEnabled(): boolean {
@@ -127,6 +128,12 @@ export function getNotifyTurnError(): boolean {
 }
 export function setNotifyTurnError(v: boolean): void {
   setBool(NOTIFY_TURN_ERROR_KEY, v);
+}
+export function getNotifyAsk(): boolean {
+  return getNotifyEnabled() && getBool(NOTIFY_ASK_KEY, true);
+}
+export function setNotifyAsk(v: boolean): void {
+  setBool(NOTIFY_ASK_KEY, v);
 }
 /** True when notifications should fire only while the app is not focused. */
 export function getNotifyOnlyBackground(): boolean {

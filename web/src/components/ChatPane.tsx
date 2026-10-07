@@ -31,7 +31,7 @@ import type {
   Todo,
 } from '../types';
 import { errMsg, diffLines, getDebugHud, getJsonPretty, getThinkingCollapsed, getToolCallsCollapsed } from '../utils';
-import { notifyTurnDone, notifyTurnError } from '../notify';
+import { notifyTurnDone, notifyTurnError, notifyAsk } from '../notify';
 import { permissionMeta } from '../permissions';
 
 // sessionStorageKey is the localStorage key remembering the last-used chat
@@ -1408,6 +1408,9 @@ function askAnswers(detail: string): AskAnswerView[] {
 // The agent's ask_user block. A single question shows the options + answer
 // input directly; multiple questions render as a stepper the user walks
 // through (back/next, answers editable) with a final "confirm all" action.
+// A pending question must stay open to be answered; once answered it collapses
+// to a summary line (click to expand), matching what a reloaded transcript
+// shows, so an answered question doesn't hold the chat open.
 function AskBlock({
   questions,
   result,
@@ -1423,18 +1426,50 @@ function AskBlock({
   const [step, setStep] = useState(0);
   const [drafts, setDrafts] = useState<string[]>(() => questions.map(() => ''));
   const answered = result !== undefined;
+  const [open, setOpen] = useState(!answered);
+  useEffect(() => {
+    if (answered) setOpen(false);
+  }, [answered]);
   const multi = questions.length > 1;
   const q = questions[Math.min(step, questions.length - 1)];
   const cur = drafts[step] ?? '';
   const allAnswered = drafts.every((d) => d.trim() !== '');
+  const askSummary = multi ? `Asked ${questions.length} questions` : 'Asked 1 question';
 
   const setCur = (v: string) =>
     setDrafts((prev) => prev.map((d, i) => (i === step ? v : d)));
+
+  if (answered && !open) {
+    const first = result![0]?.answer ?? '';
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="flex min-h-[26px] w-full items-center gap-1.5 rounded-lg border border-accent/30 bg-surface px-2 py-1 text-left text-dim transition-colors hover:text-text"
+      >
+        <IconChevronRight className="h-3 w-3 shrink-0" />
+        <IconUser className="h-3 w-3 shrink-0 text-accent" />
+        <span className="min-w-0 flex-1 truncate text-[10px] text-faint">
+          {askSummary}
+          {first ? ` · ${first}` : ''}
+        </span>
+      </button>
+    );
+  }
 
   return (
     <div className="rounded-lg border border-accent/50 bg-surface p-3 text-sm">
       {answered ? (
         <>
+          <button
+            type="button"
+            onClick={() => setOpen(false)}
+            className="mb-1 flex w-full items-center gap-1.5 text-left text-[10px] text-dim transition-colors hover:text-text"
+          >
+            <IconChevronDown className="h-3 w-3 shrink-0" />
+            <IconUser className="h-3 w-3 shrink-0 text-accent" />
+            <span className="min-w-0 flex-1 truncate text-faint">{askSummary}</span>
+          </button>
           <div className="flex items-start gap-2">
             <IconUser className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
             <div className="min-w-0 flex-1 space-y-2">
@@ -2943,10 +2978,12 @@ export default function ChatPane({
         case 'tool_start': {
           assistantKeyRef.current = null;
           // A tool call begins after the previous round — close any thinking
-          // block still open from it.
+          // block still open from it. The guard deliberately includes a message
+          // still marked `streaming`: its round has ended, and waiting for the
+          // next reasoning/delta event leaves the block open too long.
           update((prev) =>
             prev.map((it) =>
-              it.kind === 'msg' && it.role === 'assistant' && !it.streaming
+              it.kind === 'msg' && it.role === 'assistant'
                 ? { ...it, reasoningCollapsed: true }
                 : it,
             ),
@@ -3041,13 +3078,23 @@ export default function ChatPane({
             });
           }
           // A user question lands after the previous round — close any
-          // thinking block still open from it.
+          // thinking block still open from it. The guard deliberately includes
+          // a message still marked `streaming`: its round has ended, and waiting
+          // for the next reasoning/delta event leaves the block open too long.
           update((prev) =>
             prev.map((it) =>
-              it.kind === 'msg' && it.role === 'assistant' && !it.streaming
+              it.kind === 'msg' && it.role === 'assistant'
                 ? { ...it, reasoningCollapsed: true }
                 : it,
             ),
+          );
+          // The turn is blocked until this question is answered, so notify —
+          // the user may have walked away while the agent was still working.
+          void notifyAsk(
+            projectId,
+            sessionId,
+            projectName,
+            questions.map((q) => q.question),
           );
           break;
         }
@@ -3131,9 +3178,10 @@ export default function ChatPane({
           if (ev.text) setSteering((prev) => prev.filter((s) => s.text !== ev.text));
           update((prev) => [
             // A screenshot/injected message closes any thinking block that was
-            // still open from the previous round.
+            // still open from the previous round. As with a tool call, this
+            // includes a message still marked `streaming`.
             ...prev.map((it) =>
-              it.kind === 'msg' && it.role === 'assistant' && !it.streaming
+              it.kind === 'msg' && it.role === 'assistant'
                 ? { ...it, reasoningCollapsed: true }
                 : it,
             ),

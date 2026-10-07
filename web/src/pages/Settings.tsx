@@ -10,6 +10,7 @@ import {
   getChatTabLayout,
   getDebugHud,
   getJsonPretty,
+  getNotifyAsk,
   getNotifyEnabled,
   getNotifyOnlyBackground,
   getNotifyTurnDone,
@@ -20,6 +21,7 @@ import {
   isIOS,
   isStandalone,
   randomId,
+  setNotifyAsk,
   setChatSide,
   setChatTabLayout,
   setDebugHud,
@@ -1340,6 +1342,7 @@ function NotificationsControl() {
   const [on, setOn] = useState(() => getNotifyEnabled());
   const [turnDone, setTurnDone] = useState(() => getNotifyTurnDone());
   const [turnError, setTurnError] = useState(() => getNotifyTurnError());
+  const [ask, setAsk] = useState(() => getNotifyAsk());
   const [onlyBackground, setOnlyBackground] = useState(() => getNotifyOnlyBackground());
   const [perm, setPerm] = useState(() => (supported ? Notification.permission : 'denied'));
   const [testing, setTesting] = useState(false);
@@ -1496,6 +1499,13 @@ function NotificationsControl() {
               <p className="text-[11px] text-faint">When a chat turn errors out</p>
             </div>
             <Seg value={turnError} onChoose={(v) => { setTurnError(v); setNotifyTurnError(v); }} />
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="text-sm text-text">Question asked</p>
+              <p className="text-[11px] text-faint">When the agent asks you a question</p>
+            </div>
+            <Seg value={ask} onChoose={(v) => { setAsk(v); setNotifyAsk(v); }} />
           </div>
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>

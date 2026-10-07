@@ -1,4 +1,4 @@
-import { getNotifyEnabled, getNotifyOnlyBackground, getNotifyTurnDone, getNotifyTurnError } from './utils';
+import { getNotifyAsk, getNotifyEnabled, getNotifyOnlyBackground, getNotifyTurnDone, getNotifyTurnError } from './utils';
 
 // Shows a notification through the service worker when one is registered
 // (the path iOS PWAs support), falling back to the page constructor. Returns
@@ -72,6 +72,27 @@ export async function notifyTurnError(
   const body = (message.replace(/\s+/g, ' ').trim() || 'Something went wrong.').slice(0, 140);
   const url = `/project/${encodeURIComponent(projectId)}?session=${encodeURIComponent(sessionId)}`;
   await shouldNotify(getNotifyTurnError(), projectId, title, body, url);
+}
+
+/**
+ * System notification for an agent question (the ask_user tool). The turn is
+ * blocked until the user answers, so this is the notification most likely to be
+ * missed — it fires under the same gating as the turn notifications, which by
+ * default means only while the app is not focused.
+ */
+export async function notifyAsk(
+  projectId: string,
+  sessionId: string,
+  projectName: string,
+  questions: string[],
+) {
+  const title = projectName ? `${projectName} — question` : 'The agent asked a question';
+  const body = (questions.join(' · ').replace(/\s+/g, ' ').trim() || 'Waiting for your answer.').slice(
+    0,
+    140,
+  );
+  const url = `/project/${encodeURIComponent(projectId)}?session=${encodeURIComponent(sessionId)}`;
+  await shouldNotify(getNotifyAsk(), projectId, title, body, url);
 }
 
 // Test notification for the Settings → About control: fires regardless of the
