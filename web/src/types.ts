@@ -30,12 +30,20 @@ export interface SavedProvider {
   baseURL: string;
   model: string;
   apiKeySet: boolean;
+  /**
+   * A short prefix of the stored key (never the whole key), so the UI can show
+   * which key is in use. Empty when no key is set, or when the key is too short
+   * to reveal a prefix of safely.
+   */
+  apiKeyHint?: string;
 }
 
 export interface LLMSettings {
   baseURL: string;
   model: string;
   apiKeySet: boolean;
+  /** Short prefix of the effective key; see SavedProvider.apiKeyHint. */
+  apiKeyHint?: string;
   models: ProviderModel[];
   providers: SavedProvider[];
   /** Default model used by new sessions when nothing is selected yet. */

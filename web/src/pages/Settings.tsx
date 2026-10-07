@@ -2045,6 +2045,13 @@ export default function Settings() {
     setLlmError(null);
   };
 
+  // The provider the form is currently editing, if any. The key hint comes from
+  // the provider being edited, not from the effective key: otherwise editing
+  // one provider would report the state of another.
+  const editingProvider =
+    editing && editing !== 'new' ? providers.find((p) => p.id === editing) : undefined;
+  const formKeyHint = editingProvider ? editingProvider.apiKeyHint : settings?.llm.apiKeyHint;
+
   const saveCurrency = async (v: string) => {
     setCurrency(v);
     try {
@@ -2496,7 +2503,11 @@ export default function Settings() {
                   value={apiKey}
                   onChange={(e) => setApiKey(e.target.value)}
                   placeholder={
-                    settings.llm.apiKeySet ? '•••••••• (set — enter to replace)' : 'Not set'
+                    formKeyHint
+                      ? `${formKeyHint}… (set — enter to replace)`
+                      : settings.llm.apiKeySet
+                        ? '•••••••• (set — enter to replace)'
+                        : 'Not set'
                   }
                   autoComplete="off"
                 />
@@ -2566,6 +2577,11 @@ export default function Settings() {
                       <div className="truncate font-mono text-[11px] text-faint">
                         {p.baseURL || '(no base URL)'}
                       </div>
+                      {p.apiKeySet && (
+                        <div className="truncate font-mono text-[11px] text-faint">
+                          {p.apiKeyHint ? `key ${p.apiKeyHint}…` : 'key set'}
+                        </div>
+                      )}
                     </div>
                     {!p.apiKeySet && (
                       <span className="shrink-0 text-[10px] text-red-400">no key</span>
