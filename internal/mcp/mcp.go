@@ -4,12 +4,9 @@
 package mcp
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"os/exec"
 	"strings"
 	"sync"
 	"time"
@@ -17,15 +14,32 @@ import (
 	"v1/internal/llm"
 )
 
-// ServerConfig describes one MCP server the user configured. Command may be a
-// bare executable or an npx-style launcher (e.g. npx -y some-server).
+// ServerConfig describes one MCP server the user configured. A config with a
+// URL is reached over the streamable HTTP transport; otherwise Command is
+// spawned as a subprocess (a bare executable or an npx-style launcher).
 type ServerConfig struct {
 	ID      string   `json:"id"`
 	Name    string   `json:"name"`
 	Command string   `json:"command"`
 	Args    []string `json:"args"`
+	// URL selects the streamable HTTP transport. When set, Command and Args
+	// are ignored.
+	URL string `json:"url,omitempty"`
+	// Headers are sent with every HTTP request, for servers that authenticate
+	// with a static key.
+	Headers map[string]string `json:"headers,omitempty"`
 	// Enabled is nil when the field predates the toggle; nil means enabled.
 	Enabled *bool `json:"enabled,omitempty"`
+}
+
+// sameConnection reports whether two configs describe the same connection, so
+// that a running server can be reused. The name and the enabled flag do not
+// change what is on the other end.
+func (c ServerConfig) sameConnection(other ServerConfig) bool {
+	return c.Command == other.Command &&
+		c.URL == other.URL &&
+		equalStrings(c.Args, other.Args) &&
+		equalHeaders(c.Headers, other.Headers)
 }
 
 // IsEnabled reports whether the server should be connected. Missing means
@@ -56,63 +70,75 @@ type rpcMessage struct {
 	} `json:"error,omitempty"`
 }
 
-// Client is a connected MCP server subprocess.
-type Client struct {
-	cfg     ServerConfig
-	cmd     *exec.Cmd
-	stdin   io.WriteCloser
-	mu      sync.Mutex
-	nextID  int
-	pending map[int]chan json.RawMessage
-	done    chan struct{}
+// transport carries JSON-RPC messages to one MCP server.
+type transport interface {
+	// request sends a request and returns its raw result.
+	request(ctx context.Context, method string, params map[string]any) (json.RawMessage, error)
+	// notify sends a fire-and-forget notification.
+	notify(method string, params map[string]any) error
+	// close releases the transport.
+	close() error
 }
 
-// Connect starts the server subprocess and performs the MCP handshake.
+// stderrReporter is implemented by transports that can explain a failed
+// handshake with what the server printed.
+type stderrReporter interface {
+	stderr() string
+}
+
+// Client is a connected MCP server, over either transport.
+type Client struct {
+	cfg ServerConfig
+	tr  transport
+}
+
+// Connect opens the configured transport and performs the MCP handshake.
 func Connect(ctx context.Context, cfg ServerConfig) (*Client, error) {
-	if cfg.Command == "" {
-		return nil, fmt.Errorf("command is required")
-	}
-	cmd := exec.Command(cfg.Command, cfg.Args...)
-	stdin, err := cmd.StdinPipe()
+	tr, err := dial(ctx, cfg)
 	if err != nil {
 		return nil, err
 	}
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return nil, err
-	}
-	// Keep stderr in a small buffer for diagnostics instead of surfacing it.
-	var errBuf strings.Builder
-	cmd.Stderr = &errBuf
-	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("starting %s: %w", cfg.Command, err)
-	}
-	c := &Client{
-		cfg:     cfg,
-		cmd:     cmd,
-		stdin:   stdin,
-		pending: map[int]chan json.RawMessage{},
-		done:    make(chan struct{}),
-	}
-	go c.readLoop(stdout)
+	c := &Client{cfg: cfg, tr: tr}
 	if err := c.handshake(ctx); err != nil {
-		_ = c.Close()
+		_ = tr.close()
 		msg := err.Error()
-		if e := errBuf.String(); e != "" {
-			msg = fmt.Sprintf("%s (stderr: %s)", msg, strings.TrimSpace(e))
+		if sr, ok := tr.(stderrReporter); ok {
+			if e := sr.stderr(); e != "" {
+				msg = fmt.Sprintf("%s (stderr: %s)", msg, strings.TrimSpace(e))
+			}
 		}
 		return nil, fmt.Errorf("%s", msg)
 	}
 	return c, nil
 }
 
+// dial picks the transport the config describes: a URL means the streamable
+// HTTP transport, otherwise the server is spawned as a subprocess.
+func dial(ctx context.Context, cfg ServerConfig) (transport, error) {
+	if strings.TrimSpace(cfg.URL) != "" {
+		return dialHTTP(cfg)
+	}
+	return dialStdio(ctx, cfg)
+}
+
 func (c *Client) handshake(ctx context.Context) error {
-	if _, err := c.request(ctx, "initialize", map[string]any{
+	raw, err := c.request(ctx, "initialize", map[string]any{
 		"protocolVersion": protocolVersion,
 		"capabilities":    map[string]any{},
 		"clientInfo":      map[string]any{"name": "v1", "version": "0.1.0"},
-	}); err != nil {
+	})
+	if err != nil {
 		return fmt.Errorf("initialize: %w", err)
+	}
+	// The server may negotiate a different version, and the HTTP transport has
+	// to echo the negotiated one back on every later request.
+	var res struct {
+		ProtocolVersion string `json:"protocolVersion"`
+	}
+	if json.Unmarshal(raw, &res) == nil && res.ProtocolVersion != "" {
+		if vs, ok := c.tr.(protocolVersionSetter); ok {
+			vs.setProtocolVersion(res.ProtocolVersion)
+		}
 	}
 	// Server notifications are fire-and-forget; the initialized one tells the
 	// server we are ready for requests.
@@ -168,115 +194,19 @@ func (c *Client) CallTool(ctx context.Context, name string, arguments map[string
 	return text, nil
 }
 
-// Close stops the server subprocess.
+// Close releases the connection.
 func (c *Client) Close() error {
-	select {
-	case <-c.done:
-		return nil
-	default:
-	}
-	close(c.done)
-	_ = c.stdin.Close()
-	if c.cmd.Process != nil {
-		_ = c.cmd.Process.Kill()
-	}
-	_ = c.cmd.Wait()
-	return nil
+	return c.tr.close()
 }
 
 // notify sends a notification (no response expected).
 func (c *Client) notify(method string, params map[string]any) {
-	_ = c.writeLine(rpcMessage{JSONRPC: "2.0", Method: method, Params: params})
+	_ = c.tr.notify(method, params)
 }
 
 // request sends a request and waits for its response.
 func (c *Client) request(ctx context.Context, method string, params map[string]any) (json.RawMessage, error) {
-	c.mu.Lock()
-	c.nextID++
-	id := c.nextID
-	ch := make(chan json.RawMessage, 1)
-	c.pending[id] = ch
-	c.mu.Unlock()
-	defer func() {
-		c.mu.Lock()
-		delete(c.pending, id)
-		c.mu.Unlock()
-	}()
-
-	msg := rpcMessage{JSONRPC: "2.0", ID: json.RawMessage(fmt.Sprintf("%d", id)), Method: method}
-	if params != nil {
-		msg.Params = params
-	}
-	if err := c.writeLine(msg); err != nil {
-		return nil, err
-	}
-	select {
-	case raw := <-ch:
-		if len(raw) == 0 {
-			return nil, fmt.Errorf("connection closed by server")
-		}
-		var rpc rpcMessage
-		if err := json.Unmarshal(raw, &rpc); err != nil {
-			return nil, err
-		}
-		if rpc.Error != nil {
-			return nil, fmt.Errorf("%s (%d)", rpc.Error.Message, rpc.Error.Code)
-		}
-		return rpc.Result, nil
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case <-c.done:
-		return nil, fmt.Errorf("connection closed by server")
-	}
-}
-
-func (c *Client) writeLine(msg rpcMessage) error {
-	b, err := json.Marshal(msg)
-	if err != nil {
-		return err
-	}
-	if _, err := c.stdin.Write(append(b, '\n')); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (c *Client) readLoop(r io.Reader) {
-	sc := bufio.NewScanner(r)
-	sc.Buffer(make([]byte, 64*1024), 8<<20)
-	for sc.Scan() {
-		line := strings.TrimSpace(sc.Text())
-		if line == "" {
-			continue
-		}
-		var msg rpcMessage
-		if err := json.Unmarshal([]byte(line), &msg); err != nil {
-			continue // ignore malformed frames
-		}
-		if len(msg.ID) == 0 {
-			continue // notification — ignore
-		}
-		var id int
-		if err := json.Unmarshal(msg.ID, &id); err != nil {
-			continue
-		}
-		c.mu.Lock()
-		ch := c.pending[id]
-		c.mu.Unlock()
-		if ch != nil {
-			select {
-			case ch <- []byte(line):
-			default:
-			}
-		}
-	}
-	// Stream ended: fail all pending requests.
-	c.mu.Lock()
-	for _, ch := range c.pending {
-		ch <- nil
-	}
-	c.pending = map[int]chan json.RawMessage{}
-	c.mu.Unlock()
+	return c.tr.request(ctx, method, params)
 }
 
 // entry is one connected server in the Manager.
@@ -324,7 +254,7 @@ func (m *Manager) Sync(ctx context.Context) ([]llm.Tool, error) {
 			continue
 		}
 		e := m.clients[cfg.ID]
-		if e != nil && e.cfg.Command == cfg.Command && equalStrings(e.cfg.Args, cfg.Args) && e.cl != nil {
+		if e != nil && e.cfg.sameConnection(cfg) && e.cl != nil {
 			for _, t := range e.tools {
 				tools = append(tools, t.ToLLMTool(cfg.ID))
 			}
@@ -437,6 +367,18 @@ func equalStrings(a, b []string) bool {
 	}
 	for i := range a {
 		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func equalHeaders(a, b map[string]string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k, v := range a {
+		if b[k] != v {
 			return false
 		}
 	}

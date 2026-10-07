@@ -45,8 +45,8 @@ func (s *Server) handleMCPTest(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &body) {
 		return
 	}
-	if body.ID == "" || body.Command == "" {
-		writeError(w, http.StatusBadRequest, "id and command are required")
+	if body.ID == "" || (body.Command == "" && body.URL == "") {
+		writeError(w, http.StatusBadRequest, "id and either a command or a url are required")
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 40*time.Second)

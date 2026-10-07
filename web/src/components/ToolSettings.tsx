@@ -362,20 +362,39 @@ function ToolSettings({
     setTab(initialTab);
   }, [initialTab]);
 
-  const parseMCP = (): MCPServer => {
-    const parts = mcpCommand.trim().split(/\s+/).filter(Boolean);
+  // parseMCPSpec reads the "command line or URL" field. A URL selects the
+  // streamable HTTP transport; anything else is a command line whose first
+  // token is the executable.
+  const parseMCPSpec = (raw: string, fallbackName: string) => {
+    const value = raw.trim();
+    if (/^https?:\/\//i.test(value)) {
+      let name = fallbackName;
+      if (!name) {
+        try {
+          name = new URL(value).host;
+        } catch {
+          name = 'server';
+        }
+      }
+      return { name, command: '', args: [] as string[], url: value };
+    }
+    const parts = value.split(/\s+/).filter(Boolean);
     return {
-      id: randomId(),
-      name: mcpName.trim() || parts[0] || 'server',
+      name: fallbackName || parts[0] || 'server',
       command: parts[0] ?? '',
       args: parts.slice(1),
-      enabled: true,
+      url: undefined,
     };
+  };
+
+  const parseMCP = (): MCPServer => {
+    const spec = parseMCPSpec(mcpCommand, mcpName.trim());
+    return { id: randomId(), ...spec, enabled: true };
   };
 
   const testMCP = async () => {
     if (!mcpCommand.trim()) {
-      setMcpError('Enter a command line to test.');
+      setMcpError('Enter a command line or URL to test.');
       return;
     }
     setMcpTesting(true);
@@ -393,7 +412,7 @@ function ToolSettings({
   const addMCP = async (e: FormEvent) => {
     e.preventDefault();
     if (!mcpCommand.trim()) {
-      setMcpError('Enter a command line.');
+      setMcpError('Enter a command line or URL.');
       return;
     }
     setMcpSaving(true);
@@ -428,29 +447,22 @@ function ToolSettings({
     }
     setEditingId(srv.id);
     setEditName(srv.name);
-    setEditCommand([srv.command, ...srv.args].join(' '));
+    setEditCommand(srv.url ?? [srv.command, ...srv.args].join(' '));
     setEditError(null);
     setCardTest(null);
   };
 
   const saveEdit = async (srv: MCPServer) => {
     if (!editCommand.trim()) {
-      setEditError('Enter a command line.');
+      setEditError('Enter a command line or URL.');
       return;
     }
     setEditSaving(true);
     setEditError(null);
     try {
-      const parts = editCommand.trim().split(/\s+/).filter(Boolean);
+      const spec = parseMCPSpec(editCommand, editName.trim());
       const updated = servers.map((s) =>
-        s.id === srv.id
-          ? {
-              ...s,
-              name: editName.trim() || parts[0] || s.name,
-              command: parts[0] ?? '',
-              args: parts.slice(1),
-            }
-          : s,
+        s.id === srv.id ? { ...s, ...spec, name: spec.name || s.name } : s,
       );
       await api.updateSettings({ mcp: updated });
       setEditingId(null);
@@ -574,11 +586,11 @@ function ToolSettings({
               autoComplete="off"
             />
           </Field>
-          <Field label="Command line">
+          <Field label="Command line or URL">
             <Input
               value={mcpCommand}
               onChange={(e) => setMcpCommand(e.target.value)}
-              placeholder="npx -y @modelcontextprotocol/server-filesystem /tmp"
+              placeholder="npx -y @modelcontextprotocol/server-filesystem /tmp — or https://example.com/mcp"
               autoComplete="off"
               autoCorrect="off"
               autoCapitalize="off"
@@ -588,7 +600,8 @@ function ToolSettings({
         </div>
         <p className="text-xs leading-relaxed text-subtle">
           The command line is split on whitespace — the first token is the executable, the rest
-          are arguments.
+          are arguments. Enter an http(s) URL instead to reach a remote server over streamable
+          HTTP.
         </p>
         <SaveRow
           saving={mcpSaving}
@@ -726,7 +739,7 @@ function ToolSettings({
                     </button>
                   </div>
                   <div className="truncate font-mono text-[11px] text-faint">
-                    {srv.command} {srv.args.join(' ')}
+                    {srv.url ?? `${srv.command} ${srv.args.join(' ')}`.trim()}
                   </div>
                   {!enabled ? (
                     <span className="text-[10px] text-faint">

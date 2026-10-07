@@ -295,6 +295,8 @@ export interface MCPServer {
   name: string;
   command: string;
   args: string[];
+  /** Set for a remote server reached over the streamable HTTP transport. */
+  url?: string;
   /** Missing means enabled (servers saved before the toggle existed). */
   enabled?: boolean;
 }
