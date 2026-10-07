@@ -330,8 +330,8 @@ const (
 	keyToonEnabled             = "toon_enabled"
 	keyDisabledTools           = "disabled_tools"
 	keyCaveman                 = "caveman"
-	keySoftTimeout             = "turn_soft_timeout" // minutes; 0 = disabled
-	keyHardTimeout             = "turn_hard_timeout" // minutes; 0 = disabled
+	keySoftTimeout             = "turn_soft_timeout"  // minutes; 0 = disabled
+	keyHardTimeout             = "turn_hard_timeout"  // minutes; 0 = disabled
 	keyTerminalFontSize        = "terminal_font_size" // px
 	keyTerminalWrap            = "terminal_wrap"      // "1" = wrap, "0" = off
 	keyAutoPushDefault         = "auto_push_default"
@@ -446,7 +446,8 @@ func (s *Server) defaultLLMModel(userID string) string {
 }
 
 // llmProviderRecord is one saved LLM provider. APIKey is only ever written
-// and used server-side; responses expose just apiKeySet.
+// and used server-side; responses expose just apiKeySet and apiKeyHint (a short
+// prefix, never the key).
 type llmProviderRecord struct {
 	ID      string `json:"id"`
 	Name    string `json:"name"`

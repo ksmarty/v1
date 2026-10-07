@@ -212,6 +212,7 @@ func (s *Server) handleCompact(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	userID := s.currentUser(r).ID
+	providerID := r.URL.Query().Get("providerId")
 	sessionID := s.chatSessionID(p, r.URL.Query().Get("sessionId"))
 	ctx, cancel := context.WithTimeout(r.Context(), compactTimeout)
 	defer cancel()
@@ -235,12 +236,39 @@ func (s *Server) handleCompact(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"compacted": true})
 		return
 	}
-	id, err := agent.CompactProject(ctx, s.st, p.ID, sessionID, s.llmClient(userID))
+	id, err := agent.CompactProject(ctx, s.st, p.ID, sessionID, s.llmClientFor(userID, providerID))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"coveredMessageId": id})
+}
+
+// requireLLMKey validates the credentials a turn will use and writes the
+// matching error response when they are missing, reporting whether the caller
+// may continue. A provider id selects a saved provider record; without one the
+// effective single-provider config is used. Every path that starts a turn must
+// resolve credentials this way — otherwise a turn can run on a different key
+// than the one the user just replaced, which looks like the replacement being
+// ignored.
+func (s *Server) requireLLMKey(w http.ResponseWriter, userID, providerID string) bool {
+	if providerID == "" {
+		if _, apiKey, _ := s.llmConfig(userID); apiKey == "" {
+			writeError(w, http.StatusBadRequest, "no_api_key")
+			return false
+		}
+		return true
+	}
+	prov := s.findLLMProvider(userID, providerID)
+	if prov == nil {
+		writeError(w, http.StatusBadRequest, "unknown_provider")
+		return false
+	}
+	if prov.APIKey == "" {
+		writeError(w, http.StatusBadRequest, "no_api_key")
+		return false
+	}
+	return true
 }
 
 func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
@@ -278,18 +306,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if body.ProviderID != "" {
-		prov := s.findLLMProvider(userID, body.ProviderID)
-		if prov == nil {
-			writeError(w, http.StatusBadRequest, "unknown_provider")
-			return
-		}
-		if prov.APIKey == "" {
-			writeError(w, http.StatusBadRequest, "no_api_key")
-			return
-		}
-	} else if _, apiKey, _ := s.llmConfig(userID); apiKey == "" {
-		writeError(w, http.StatusBadRequest, "no_api_key")
+	if !s.requireLLMKey(w, userID, body.ProviderID) {
 		return
 	}
 
@@ -387,8 +404,8 @@ func (s *Server) handleChatRetry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	userID := s.currentUser(r).ID
-	if _, apiKey, _ := s.llmConfig(userID); apiKey == "" {
-		writeError(w, http.StatusBadRequest, "no_api_key")
+	providerID := r.URL.Query().Get("providerId")
+	if !s.requireLLMKey(w, userID, providerID) {
 		return
 	}
 	sessionID := s.chatSessionID(p, r.URL.Query().Get("sessionId"))
@@ -407,13 +424,13 @@ func (s *Server) handleChatRetry(w http.ResponseWriter, r *http.Request) {
 	params := agent.ChatParams{
 		Store:        s.st,
 		Project:      p,
-		Client:       s.llmClient(userID),
+		Client:       s.llmClientFor(userID, providerID),
 		Message:      last.Content,
 		SessionID:    sessionID,
 		Attachments:  agent.ParseAttachments(last.Attachments),
 		Model:        last.Model,
 		LastUserID:   last.ID,
-		Vision:       s.modelSupportsImages(userID, "", last.Model),
+		Vision:       s.modelSupportsImages(userID, providerID, last.Model),
 		SkipSnapshot: true,
 		PlanMode:     isPlan,
 	}

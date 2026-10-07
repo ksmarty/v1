@@ -156,6 +156,34 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 
 // ---- settings ----
 
+// sameBaseURL reports whether two endpoints name the same provider. Only
+// surrounding space, case and trailing slashes are normalised: a different path
+// or port is a different endpoint.
+func sameBaseURL(a, b string) bool {
+	a = strings.TrimRight(strings.TrimSpace(a), "/")
+	b = strings.TrimRight(strings.TrimSpace(b), "/")
+	return a != "" && strings.EqualFold(a, b)
+}
+
+// apiKeyHint returns a short prefix of a stored key so the UI can show WHICH
+// key is in use. Providers commonly display this prefix after creation, and it
+// is what makes a key distinguishable from its replacement — without it, a
+// stale key and a fresh one look identical in the UI.
+//
+// It reveals at most the first 10 characters and never more than half the key,
+// so a short key is never exposed in full. It returns the bare prefix with no
+// ellipsis: the caller adds that, so the value stays a plain hint on the wire.
+func apiKeyHint(key string) string {
+	if len(key) < 8 {
+		return ""
+	}
+	n := len(key) / 2
+	if n > 10 {
+		n = 10
+	}
+	return key[:n]
+}
+
 func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 	userID := s.currentUser(r).ID
 	baseURL, apiKey, model := s.llmConfig(userID)
@@ -167,11 +195,12 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 	providerJSON := make([]map[string]any, 0, len(providers))
 	for _, p := range providers {
 		providerJSON = append(providerJSON, map[string]any{
-			"id":        p.ID,
-			"name":      p.Name,
-			"baseURL":   p.BaseURL,
-			"model":     p.Model,
-			"apiKeySet": p.APIKey != "",
+			"id":         p.ID,
+			"name":       p.Name,
+			"baseURL":    p.BaseURL,
+			"model":      p.Model,
+			"apiKeySet":  p.APIKey != "",
+			"apiKeyHint": apiKeyHint(p.APIKey),
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -180,6 +209,7 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 			"model":        model,
 			"defaultModel": s.defaultLLMModel(userID),
 			"apiKeySet":    apiKey != "",
+			"apiKeyHint":   apiKeyHint(apiKey),
 			"models":       models,
 			"providers":    providerJSON,
 			"currency":     s.currency(userID),
@@ -244,8 +274,8 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		DisabledTools           *[]string                 `json:"disabledTools"`
 		Caveman                 *bool                     `json:"caveman"`
 		TurnTimeouts            *struct{ Soft, Hard int } `json:"turnTimeouts"`
-		TerminalFontSize        *int                `json:"terminalFontSize"`
-		TerminalWrap            *bool               `json:"terminalWrap"`
+		TerminalFontSize        *int                      `json:"terminalFontSize"`
+		TerminalWrap            *bool                     `json:"terminalWrap"`
 		AutoPushDefault         *bool                     `json:"autoPushDefault"`
 		ContextThreshold        *float64                  `json:"contextThreshold"`
 		SystemPrompt            *string                   `json:"systemPrompt"`
@@ -308,6 +338,25 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 			// drop cached live model lists so the next providers request
 			// repopulates them instead of serving stale or missing models.
 			invalidateCustomModelsCache()
+			// Keep the effective single-provider key in step with the provider it
+			// mirrors. The first-run mirror below fires only once, so editing
+			// that provider's key would otherwise leave the effective key on the
+			// replaced value — and every path that resolves without a provider id
+			// (retry, compact, the Custom provider) would keep sending the old
+			// key. Only a record whose base URL is the effective one is treated
+			// as that mirror, so a second provider can never silently overwrite
+			// the effective config.
+			if effBase, _, _ := s.llmConfig(userID); effBase != "" {
+				for _, m := range merged {
+					if m.APIKey != "" && sameBaseURL(m.BaseURL, effBase) {
+						if err := s.st.SetUserSetting(userID, keyLLMAPIKey, m.APIKey); err != nil {
+							writeError(w, http.StatusInternalServerError, err.Error())
+							return
+						}
+						break
+					}
+				}
+			}
 			// First-run convenience: when the user saves their first provider
 			// and has no effective config of their own yet, mirror that
 			// provider into the single-provider keys so chat works without a
