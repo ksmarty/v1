@@ -247,9 +247,19 @@ func (s *Server) routes(m *http.ServeMux) {
 // ---- helpers ----
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
+	// Marshal BEFORE touching the response. Encoding straight into w after
+	// WriteHeader means an encoding failure produces a 200 with an empty body,
+	// which clients report as a confusing JSON syntax error (Safari: "The
+	// string did not match the expected pattern") instead of the real fault.
+	body, err := json.Marshal(v)
+	if err != nil {
+		log.Printf("writeJSON: encoding %T failed: %v", v, err)
+		body = []byte(`{"error":"failed to encode response"}`)
+		status = http.StatusInternalServerError
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
+	_, _ = w.Write(append(body, '\n'))
 }
 
 func writeError(w http.ResponseWriter, status int, msg string) {

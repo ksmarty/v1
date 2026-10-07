@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"path/filepath"
 	"strconv"
@@ -117,7 +118,19 @@ func (s *Server) handleListMessages(w http.ResponseWriter, r *http.Request) {
 	for _, m := range msgs {
 		mj := messageJSON{ID: m.ID, Role: m.Role, Content: m.Content, Model: m.Model, Reasoning: m.Reasoning, CreatedAt: m.CreatedAt}
 		if m.ToolJSON != "" {
-			mj.Tool = json.RawMessage(m.ToolJSON)
+			switch {
+			case json.Valid([]byte(m.ToolJSON)):
+				mj.Tool = json.RawMessage(m.ToolJSON)
+			case agent.IsBackgroundRow(m.ToolJSON):
+				// Rows written before the background marker became a JSON string.
+				// Normalising them keeps old transcripts loadable AND keeps their
+				// distinct background styling, instead of failing the whole list.
+				mj.Tool = json.RawMessage(agent.BackgroundToolJSON)
+			default:
+				// Unrecognised non-JSON tool_json: drop it rather than let one bad
+				// row make the entire chat unreadable.
+				log.Printf("messages: dropping malformed tool_json on message %d (%s)", m.ID, p.ID)
+			}
 		}
 		if m.Usage != "" {
 			var u usageJSON
@@ -567,10 +580,13 @@ func (s *Server) streamChatTurn(w http.ResponseWriter, r *http.Request, p *store
 	params.Background = s.background
 	params.BackgroundNotify = func(job *agent.BackgroundJob) {
 		text := agent.BackgroundResultText(job)
-		// Stored as a user row with tool_json='background' so the frontend can
-		// tell finished background commands apart from real user messages and
-		// render them distinctively (they are not the user speaking).
-		msgID, err := s.st.AddMessage(p.ID, params.SessionID, "user", text, "background", params.Client.Model, "", "", "")
+		// Stored as a user row with tool_json='"background"' (a JSON string) so
+		// the frontend can tell finished background commands apart from real user
+		// messages and render them distinctively (they are not the user
+		// speaking). The marker must stay valid JSON — the API sends tool_json
+		// to the browser as json.RawMessage, and a non-JSON marker made the whole
+		// message list fail to encode.
+		msgID, err := s.st.AddMessage(p.ID, params.SessionID, "user", text, agent.BackgroundToolJSON, params.Client.Model, "", "", "")
 		if err == nil {
 			job.Text = text
 			job.MsgID = msgID

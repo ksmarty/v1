@@ -323,7 +323,7 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 			// sanitize them on rebuild so providers never see control bytes
 			// even for transcripts stored before the sanitizer existed.
 			content := m.Content
-			if m.ToolJSON == "background" {
+			if IsBackgroundRow(m.ToolJSON) {
 				content = sanitizeBackgroundText(content)
 			}
 			if m.Attachments != "" {

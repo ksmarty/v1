@@ -13,6 +13,26 @@ import (
 	"v1/internal/store"
 )
 
+// BackgroundToolJSON is the tool_json marker stored on a finished background
+// command's result row. It must be VALID JSON: the chat API hands tool_json to
+// the browser verbatim as json.RawMessage, and a bare marker made the whole
+// message list fail to marshal — the handler had already written its 200
+// header, so the client got an empty body and reported a JSON syntax error
+// (Safari: "The string did not match the expected pattern") instead of the
+// chat history. It is a JSON string so the UI can compare tool === 'background'
+// and style the row as a background result rather than something the user said.
+const BackgroundToolJSON = `"background"`
+
+// legacyBackgroundToolJSON is the unquoted marker written by earlier builds.
+// Rows still carrying it must keep working, so readers accept both encodings.
+const legacyBackgroundToolJSON = "background"
+
+// IsBackgroundRow reports whether a stored tool_json marks a background result
+// row, in either the current (JSON string) or the legacy (bare word) encoding.
+func IsBackgroundRow(toolJSON string) bool {
+	return toolJSON == BackgroundToolJSON || toolJSON == legacyBackgroundToolJSON
+}
+
 // sanitizeBackgroundText makes raw command output safe for chat messages and
 // LLM requests. ANSI escapes and other control characters are removed — the
 // OpenAI-compatible providers reject strings that fail their character
