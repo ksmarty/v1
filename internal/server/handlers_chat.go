@@ -654,6 +654,11 @@ func (s *Server) streamChatTurn(w http.ResponseWriter, r *http.Request, p *store
 			if !errors.Is(err, context.Canceled) {
 				_, _ = s.st.AddMessage(p.ID, params.SessionID, "error", err.Error(), "", params.Client.Model, "", "", "")
 			}
+			// A canceled turn is not worth a push (the user pressed stop), but a real
+			// failure is exactly what they want to hear about.
+			if !errors.Is(err, context.Canceled) {
+				s.notifyTurnPush(userID, p.ID, params.SessionID, p.Name, err)
+			}
 			emit(agent.ChatEvent{Type: "error", Error: err.Error()})
 			return
 		}
@@ -691,6 +696,9 @@ func (s *Server) streamChatTurn(w http.ResponseWriter, r *http.Request, p *store
 				}
 			}
 		}
+		// Reach the phone even when iOS has suspended the app: the page's own
+		// notification can only fire while its JavaScript is still running.
+		s.notifyTurnPush(userID, p.ID, params.SessionID, p.Name, nil)
 		emit(agent.ChatEvent{Type: "done", Usage: turn.Usage})
 
 		// Messages queued during the run become follow-up turns in order, one

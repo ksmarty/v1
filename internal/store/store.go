@@ -154,6 +154,16 @@ CREATE TABLE IF NOT EXISTS vercel_deploys (
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  endpoint TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  p256dh TEXT NOT NULL,
+  auth TEXT NOT NULL,
+  user_agent TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL,
+  seen_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user ON push_subscriptions(user_id);
 `)
 	if err != nil {
 		return err
@@ -745,6 +755,57 @@ func (s *Store) GetPendingAsk(projectID, sessionID string) (*PendingAsk, error) 
 // superseded by a new turn).
 func (s *Store) ClearPendingAsk(projectID, sessionID string) error {
 	_, err := s.db.Exec(`DELETE FROM pending_asks WHERE project_id = ? AND session_id = ?`, projectID, sessionID)
+	return err
+}
+
+// ---- push subscriptions ----
+
+// PushSubscription is a browser push endpoint registered for a user. One row
+// per device: the endpoint is the natural key, so re-registering the same
+// device refreshes it rather than accumulating duplicates.
+type PushSubscription struct {
+	Endpoint  string
+	UserID    string
+	P256dh    string
+	Auth      string
+	UserAgent string
+	CreatedAt int64
+	SeenAt    int64
+}
+
+// SavePushSubscription records or refreshes a subscription.
+func (s *Store) SavePushSubscription(sub PushSubscription) error {
+	now := time.Now().Unix()
+	_, err := s.db.Exec(`INSERT INTO push_subscriptions (endpoint, user_id, p256dh, auth, user_agent, created_at, seen_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(endpoint) DO UPDATE SET user_id = excluded.user_id, p256dh = excluded.p256dh, auth = excluded.auth, user_agent = excluded.user_agent, seen_at = excluded.seen_at`,
+		sub.Endpoint, sub.UserID, sub.P256dh, sub.Auth, sub.UserAgent, now, now)
+	return err
+}
+
+// ListPushSubscriptions returns the user's devices, most recently seen first.
+func (s *Store) ListPushSubscriptions(userID string) ([]PushSubscription, error) {
+	rows, err := s.db.Query(`SELECT endpoint, user_id, p256dh, auth, user_agent, created_at, seen_at
+		FROM push_subscriptions WHERE user_id = ? ORDER BY seen_at DESC`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []PushSubscription
+	for rows.Next() {
+		var sub PushSubscription
+		if err := rows.Scan(&sub.Endpoint, &sub.UserID, &sub.P256dh, &sub.Auth, &sub.UserAgent, &sub.CreatedAt, &sub.SeenAt); err != nil {
+			return nil, err
+		}
+		out = append(out, sub)
+	}
+	return out, rows.Err()
+}
+
+// DeletePushSubscription removes one of the user's devices. The user is part of
+// the condition so one account can never delete another's subscription.
+func (s *Store) DeletePushSubscription(userID, endpoint string) error {
+	_, err := s.db.Exec(`DELETE FROM push_subscriptions WHERE user_id = ? AND endpoint = ?`, userID, endpoint)
 	return err
 }
 

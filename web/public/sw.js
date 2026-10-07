@@ -5,7 +5,7 @@
 // undefined and never a rejected promise. A rejected respondWith surfaces as
 // "FetchEvent ... resulted in a network error response: the promise was
 // rejected" / "Failed to convert value to 'Response'" and kills the load.
-const VERSION = 'v1-cache-v4';
+const VERSION = 'v1-cache-v5';
 const SHELL_KEY = '/index.html';
 const APP_SHELL = ['/', '/index.html', '/manifest.json?v=3', '/icon-192.png?v=3', '/icon-512.png?v=3'];
 
@@ -48,6 +48,78 @@ self.addEventListener('notificationclick', (e) => {
       }
       return clients.openWindow(url || '/');
     }),
+  );
+});
+
+function b64urlToBytes(base64) {
+  const padded = base64.replace(/-/g, '+').replace(/_/g, '/');
+  const raw = atob(padded + '='.repeat((4 - (padded.length % 4)) % 4));
+  const out = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+  return out;
+}
+
+function subscriptionBody(sub) {
+  const json = sub.toJSON();
+  return {
+    endpoint: sub.endpoint,
+    p256dh: (json.keys && json.keys.p256dh) || '',
+    auth: (json.keys && json.keys.auth) || '',
+    userAgent: (self.navigator && self.navigator.userAgent) || '',
+  };
+}
+
+// Web Push: the notification path that still works with the app closed. iOS
+// suspends the page's JavaScript within seconds of backgrounding, so a
+// notification built by the page can never fire while the app is away — only
+// this handler can.
+//
+// waitUntil is called synchronously (the async body runs inside it): the push
+// event is only kept alive by a waitUntil registered during dispatch.
+self.addEventListener('push', (e) => {
+  e.waitUntil(
+    (async () => {
+      let msg = {};
+      try {
+        msg = e.data ? await e.data.json() : {};
+      } catch {
+        msg = {};
+      }
+      await self.registration.showNotification(msg.title || 'v1', {
+        body: msg.body || '',
+        icon: '/icon-192.png?v=3',
+        badge: '/icon-192.png?v=3',
+        // One tag per chat: a newer notification replaces the older one for the
+        // same chat instead of stacking, and renotify still re-alerts.
+        tag: msg.tag || 'v1',
+        renotify: true,
+        data: { url: msg.url || '/' },
+      });
+    })().catch(() => {}),
+  );
+});
+
+// The browser rotates a subscription while the app is closed. Without this the
+// server keeps a dead endpoint and notifications stop with no visible error.
+self.addEventListener('pushsubscriptionchange', (e) => {
+  e.waitUntil(
+    (async () => {
+      let key = (e.oldSubscription && e.oldSubscription.options && e.oldSubscription.options.applicationServerKey) || null;
+      if (!key) {
+        const res = await fetch('/api/push/vapid');
+        const body = await res.json();
+        key = b64urlToBytes(body.publicKey);
+      }
+      const sub = await self.registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: key,
+      });
+      await fetch('/api/push/subscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(subscriptionBody(sub)),
+      });
+    })().catch(() => {}),
   );
 });
 

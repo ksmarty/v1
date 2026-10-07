@@ -1,0 +1,254 @@
+package server
+
+import (
+	"context"
+	"errors"
+	"log"
+	"net/http"
+	"net/url"
+	"strings"
+	"time"
+
+	"v1/internal/push"
+	"v1/internal/sanitize"
+	"v1/internal/store"
+)
+
+// keyVAPIDPrivate is the per-user Web Push application server key. It is
+// generated on first use rather than configured, so turning notifications on
+// needs no deployment step and no extra environment variable.
+const keyVAPIDPrivate = "push_vapid_private"
+
+// pushSubject is the contact address handed to the push services, which
+// RFC 8292 requires. Nothing is ever sent to it.
+const pushSubject = "mailto:v1@localhost"
+
+// maxUserAgent caps the stored device label.
+const maxUserAgent = 200
+
+// vapidKeys returns the user's VAPID key pair, creating it on first use.
+func (s *Server) vapidKeys(userID string) (*push.VAPIDKeys, error) {
+	if raw, ok, err := s.st.GetUserSetting(userID, keyVAPIDPrivate); err != nil {
+		return nil, err
+	} else if ok && raw != "" {
+		return push.ParseVAPIDKeys(raw)
+	}
+	keys, err := push.GenerateVAPIDKeys()
+	if err != nil {
+		return nil, err
+	}
+	if err := s.st.SetUserSetting(userID, keyVAPIDPrivate, keys.PrivateScalar()); err != nil {
+		return nil, err
+	}
+	return keys, nil
+}
+
+// deliverPush sends msg to every device the user has registered.
+//
+// It is synchronous so it can be tested directly; callers that must not block
+// use notifyPush. Delivery failures are logged rather than returned: a chat
+// turn must never fail because a phone could not be reached. A subscription the
+// push service reports as gone is deleted, since it can never work again —
+// which is also how a device that uninstalled the PWA gets cleaned up.
+func (s *Server) deliverPush(userID string, msg push.Message) {
+	subs, err := s.st.ListPushSubscriptions(userID)
+	if err != nil {
+		log.Printf("push: list subscriptions: %v", err)
+		return
+	}
+	if len(subs) == 0 {
+		return
+	}
+	keys, err := s.vapidKeys(userID)
+	if err != nil {
+		log.Printf("push: vapid keys: %v", err)
+		return
+	}
+	client := push.NewClient(keys, pushSubject)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	for _, sub := range subs {
+		err := client.Send(ctx, push.Subscription{
+			Endpoint: sub.Endpoint,
+			P256dh:   sub.P256dh,
+			Auth:     sub.Auth,
+		}, msg)
+		switch {
+		case err == nil:
+		case errors.Is(err, push.ErrGone):
+			if err := s.st.DeletePushSubscription(userID, sub.Endpoint); err != nil {
+				log.Printf("push: delete dead subscription: %v", err)
+			}
+		default:
+			log.Printf("push: send: %v", err)
+		}
+	}
+}
+
+// notifyPush delivers msg in the background. Unlike the page's own
+// showNotification, this reaches the device with the app closed — which is the
+// only way a notification arrives after iOS has suspended the PWA.
+func (s *Server) notifyPush(userID string, msg push.Message) {
+	if userID == "" {
+		return
+	}
+	go s.deliverPush(userID, msg)
+}
+
+// handlePushVAPID returns the application server public key the browser must
+// subscribe with, creating the key pair on first request.
+func (s *Server) handlePushVAPID(w http.ResponseWriter, r *http.Request) {
+	keys, err := s.vapidKeys(s.currentUser(r).ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not prepare push keys")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"publicKey": keys.PublicKey()})
+}
+
+// handlePushSubscribe stores a browser push subscription.
+func (s *Server) handlePushSubscribe(w http.ResponseWriter, r *http.Request) {
+	userID := s.currentUser(r).ID
+	var body struct {
+		Endpoint  string `json:"endpoint"`
+		P256dh    string `json:"p256dh"`
+		Auth      string `json:"auth"`
+		UserAgent string `json:"userAgent"`
+	}
+	if !decodeJSON(w, r, &body) {
+		return
+	}
+	if body.Endpoint == "" || body.P256dh == "" || body.Auth == "" {
+		writeError(w, http.StatusBadRequest, "endpoint, p256dh and auth are required")
+		return
+	}
+	// The endpoint is a URL we will POST to on every turn, so it is constrained
+	// to https and bounded in length.
+	if len(body.Endpoint) > 2000 || !strings.HasPrefix(body.Endpoint, "https://") {
+		writeError(w, http.StatusBadRequest, "endpoint must be an https URL")
+		return
+	}
+	// Refuse a subscription we could never encrypt for, so a broken client does
+	// not sit in the table failing on every turn.
+	if _, err := push.Encrypt(push.Subscription{
+		Endpoint: body.Endpoint, P256dh: body.P256dh, Auth: body.Auth,
+	}, []byte("{}")); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid subscription key material")
+		return
+	}
+	ua := body.UserAgent
+	if len(ua) > maxUserAgent {
+		ua = ua[:maxUserAgent]
+	}
+	err := s.st.SavePushSubscription(store.PushSubscription{
+		Endpoint:  body.Endpoint,
+		UserID:    userID,
+		P256dh:    body.P256dh,
+		Auth:      body.Auth,
+		UserAgent: sanitize.Text(ua),
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not store the subscription")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handlePushUnsubscribe forgets one of the caller's devices.
+func (s *Server) handlePushUnsubscribe(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Endpoint string `json:"endpoint"`
+	}
+	if !decodeJSON(w, r, &body) {
+		return
+	}
+	if body.Endpoint == "" {
+		writeError(w, http.StatusBadRequest, "endpoint is required")
+		return
+	}
+	if err := s.st.DeletePushSubscription(s.currentUser(r).ID, body.Endpoint); err != nil {
+		writeError(w, http.StatusInternalServerError, "could not remove the subscription")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handlePushTest sends a notification to the caller's own devices, so the
+// Settings toggle can be verified without waiting for a turn to finish.
+func (s *Server) handlePushTest(w http.ResponseWriter, r *http.Request) {
+	userID := s.currentUser(r).ID
+	subs, err := s.st.ListPushSubscriptions(userID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not read subscriptions")
+		return
+	}
+	if len(subs) == 0 {
+		writeError(w, http.StatusBadRequest, "no device is subscribed")
+		return
+	}
+	s.deliverPush(userID, push.Message{
+		Title: "v1",
+		Body:  "Test notification",
+		URL:   "/",
+		Tag:   "v1-test",
+	})
+	writeJSON(w, http.StatusOK, map[string]int{"devices": len(subs)})
+}
+
+// collapseText flattens whitespace and truncates, so a notification body stays
+// one short line.
+func collapseText(s string, max int) string {
+	s = strings.Join(strings.Fields(s), " ")
+	if len(s) > max {
+		s = strings.TrimSpace(s[:max]) + "\u2026"
+	}
+	return s
+}
+
+// pushSnippet returns the assistant's last reply, so a push says something
+// useful rather than just "done".
+func (s *Server) pushSnippet(projectID, sessionID string) string {
+	msgs, err := s.st.ListMessages(projectID, sessionID)
+	if err != nil {
+		return ""
+	}
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if msgs[i].Role == "assistant" && strings.TrimSpace(msgs[i].Content) != "" {
+			return collapseText(msgs[i].Content, 140)
+		}
+	}
+	return ""
+}
+
+// notifyTurnPush delivers a turn result to the user's devices. This is the only
+// notification path that survives iOS suspending the app, where the page's own
+// showNotification can never run.
+func (s *Server) notifyTurnPush(userID, projectID, sessionID, projectName string, turnErr error) {
+	if userID == "" {
+		return
+	}
+	// Nothing to do without a registered device, and this keeps the message
+	// query off the hot path of every turn.
+	if subs, err := s.st.ListPushSubscriptions(userID); err != nil || len(subs) == 0 {
+		return
+	}
+	link := "/project/" + url.PathEscape(projectID) + "?session=" + url.QueryEscape(sessionID)
+	title := projectName
+	if title == "" {
+		title = "v1"
+	}
+	if turnErr != nil {
+		s.notifyPush(userID, push.Message{
+			Title: title,
+			Body:  "Turn failed: " + collapseText(turnErr.Error(), 120),
+			URL:   link,
+			Tag:   "v1-turn-" + sessionID,
+		})
+		return
+	}
+	body := s.pushSnippet(projectID, sessionID)
+	if body == "" {
+		body = "Turn finished"
+	}
+	s.notifyPush(userID, push.Message{Title: title, Body: body, URL: link, Tag: "v1-turn-" + sessionID})
+}

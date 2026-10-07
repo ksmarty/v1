@@ -3,6 +3,7 @@ import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { SiVercel } from 'react-icons/si';
 import { api, clearClientCaches, type SettingsUpdate } from '../api';
 import { testNotification } from '../notify';
+import { pushSupported, registerPush } from '../push';
 import type { Settings as SettingsType, UserInfo, Provider, ProviderModel } from '../types';
 import {
   errMsg,
@@ -1400,6 +1401,18 @@ function NotificationsControl() {
     setTesting(true);
     setTested(null);
     try {
+      // A real server push proves the path iOS actually uses — the notification
+      // arriving with the app closed. The in-page notification is only the
+      // fallback for a device that cannot receive one.
+      if (pushSupported() && (await registerPush())) {
+        try {
+          const { devices } = await api.pushTest();
+          setTested(devices > 0 ? 'ok' : 'fail');
+          return;
+        } catch {
+          // No subscribed device: fall through to the local notification.
+        }
+      }
       setTested((await testNotification()) ? 'ok' : 'fail');
     } finally {
       setTesting(false);

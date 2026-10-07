@@ -335,6 +335,13 @@ export const api = {
     request<void>(`/api/projects/${id}/file?path=${encodeURIComponent(path)}`, { method: 'DELETE' }),
 
   // Chat history (streaming lives in streamChat below)
+  // ---- Web Push ----
+  pushVapid: () => request<{ publicKey: string }>('/api/push/vapid'),
+  pushSubscribe: (body: { endpoint: string; p256dh: string; auth: string; userAgent: string }) =>
+    post<void>('/api/push/subscribe', body),
+  pushUnsubscribe: (endpoint: string) => post<void>('/api/push/unsubscribe', { endpoint }),
+  pushTest: () => post<{ devices: number }>('/api/push/test'),
+
   getMessages: (id: string, sessionId: string) =>
     request<ChatMessage[]>(`/api/projects/${id}/messages?sessionId=${encodeURIComponent(sessionId)}`),
   // Chat sessions: independent threads per project.

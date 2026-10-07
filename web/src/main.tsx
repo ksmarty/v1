@@ -7,6 +7,8 @@ import { initTheme } from './themes';
 import './index.css';
 
 initTheme();
+import { registerPush } from './push';
+
 installDebugLog();
 
 // Register the service worker only in production builds so dev never serves
@@ -18,6 +20,10 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
       .register('/sw.js', { updateViaCache: 'none' })
       .then((reg) => {
         void reg.update();
+        // Register for Web Push once the worker exists. Idempotent, and every
+        // failure is swallowed: this only decides whether a notification can
+        // reach the device with the app closed.
+        void registerPush();
       })
       .catch(() => {
         // SW registration is best-effort (e.g. unsupported or private mode).

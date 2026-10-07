@@ -184,6 +184,13 @@ func (s *Server) routes(m *http.ServeMux) {
 	m.HandleFunc("GET /api/projects/{id}/chat/queue", s.handleChatQueue)
 	m.HandleFunc("GET /api/projects/{id}/diagnostics", s.handleDiagnostics)
 	m.HandleFunc("POST /api/client-log", s.handleClientLog)
+
+	// Web Push: the only notification path that reaches the device with the app
+	// closed, which is what iOS does to a backgrounded PWA within seconds.
+	m.HandleFunc("GET /api/push/vapid", s.handlePushVAPID)
+	m.HandleFunc("POST /api/push/subscribe", s.handlePushSubscribe)
+	m.HandleFunc("POST /api/push/unsubscribe", s.handlePushUnsubscribe)
+	m.HandleFunc("POST /api/push/test", s.handlePushTest)
 	m.HandleFunc("POST /api/projects/{id}/chat/queue/reorder", s.handleChatQueueReorder)
 	m.HandleFunc("POST /api/projects/{id}/chat/queue/steer", s.handleChatQueueSteer)
 	m.HandleFunc("POST /api/projects/{id}/chat/queue/edit", s.handleChatQueueEdit)
