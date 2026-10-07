@@ -1,5 +1,6 @@
 import type {
   AuthStatus,
+  BackgroundJob,
   ChatEvent,
   ChatMessage,
   ChatSession,
@@ -436,6 +437,17 @@ export const api = {
       options?: string[];
       questions?: { question: string; options?: string[] }[];
     }>(`/api/projects/${id}/ask/pending?sessionId=${encodeURIComponent(sessionId)}`),
+  // Background jobs: the detached commands still running for a session, and
+  // stopping one. A finished job is read from its transcript row instead.
+  listBackground: (id: string, sessionId: string) =>
+    request<{ jobs: BackgroundJob[] }>(
+      `/api/projects/${id}/background?sessionId=${encodeURIComponent(sessionId)}`,
+    ),
+  cancelBackground: (id: string, sessionId: string, jobId: string) =>
+    post<{ ok: boolean; id: string }>(`/api/projects/${id}/background/cancel`, {
+      sessionId,
+      jobId,
+    }),
 
   // Preview
   getPreviewStatus: (id: string) => request<PreviewStatus>(`/api/projects/${id}/preview/status`),

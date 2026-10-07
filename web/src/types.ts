@@ -290,6 +290,18 @@ export type ChatEvent =
     }
   | { type: 'background_started'; text?: string };
 
+/**
+ * A detached command the agent started with run_command_background and that is
+ * still running. Finished jobs are not served by the API: their output is
+ * already in the transcript as the "[Background #…] finished" row.
+ */
+export interface BackgroundJob {
+  id: string;
+  command: string;
+  /** Unix seconds, for ordering the list oldest first. */
+  startedAt: number;
+}
+
 export interface MCPServer {
   id: string;
   name: string;

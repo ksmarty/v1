@@ -46,6 +46,56 @@ func TestBackgroundManagerLifecycle(t *testing.T) {
 	}
 }
 
+// TestBackgroundRunningAndCancel verifies the UI's two needs: the session's
+// in-flight jobs are listable, and one can be stopped by the short id the agent
+// was told about. A finished job is not cancellable, and another session's job
+// is unreachable.
+func TestBackgroundRunningAndCancel(t *testing.T) {
+	m := NewBackgroundManager()
+	done := make(chan *BackgroundJob, 1)
+	id, err := m.Start(t.TempDir(), "sleep 30", 60*time.Second, "sessA", func(j *BackgroundJob) { done <- j })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.Start(t.TempDir(), "sleep 30", 60*time.Second, "sessB", nil); err != nil {
+		t.Fatal(err)
+	}
+	running := m.Running("sessA")
+	if len(running) != 1 || running[0].ID != id {
+		t.Fatalf("Running(sessA) = %v", running)
+	}
+	short := running[0].ShortID()
+	if len(short) != 8 || short == id {
+		t.Fatalf("ShortID() = %q, want the first 8 chars of %q", short, id)
+	}
+	// Another session's job is not reachable through this session's id.
+	if got := m.Cancel("sessB", short); got != nil {
+		t.Fatalf("Cancel(sessB, %q) = %v, want nil", short, got)
+	}
+	job := m.Cancel("sessA", short)
+	if job == nil {
+		t.Fatalf("Cancel(sessA, %q) returned nil", short)
+	}
+	select {
+	case finished := <-done:
+		if !finished.Cancelled {
+			t.Fatal("the cancelled job did not record Cancelled")
+		}
+		if text := BackgroundResultText(finished); !strings.Contains(text, "finished (cancelled)") {
+			t.Fatalf("result text = %q, want it to report the cancellation", text)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("the cancelled job never finished")
+	}
+	if got := m.Running("sessA"); len(got) != 0 {
+		t.Fatalf("Running(sessA) after the cancel = %v", got)
+	}
+	// A finished job cannot be cancelled again.
+	if got := m.Cancel("sessA", short); got != nil {
+		t.Fatalf("Cancel on a finished job = %v, want nil", got)
+	}
+}
+
 // TestBackgroundCancelSession verifies that cancelling a session terminates
 // its running detached commands quickly instead of leaving them to run on.
 func TestBackgroundCancelSession(t *testing.T) {

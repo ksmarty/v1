@@ -189,6 +189,8 @@ func (s *Server) routes(m *http.ServeMux) {
 	m.HandleFunc("DELETE /api/projects/{id}/memories/{memId}", s.handleDeleteMemory)
 	m.HandleFunc("POST /api/projects/{id}/ask/respond", s.handleAskRespond)
 	m.HandleFunc("GET /api/projects/{id}/ask/pending", s.handleAskPending)
+	m.HandleFunc("GET /api/projects/{id}/background", s.handleListBackground)
+	m.HandleFunc("POST /api/projects/{id}/background/cancel", s.handleCancelBackground)
 	m.HandleFunc("GET /api/projects/{id}/chat/queue", s.handleChatQueue)
 	m.HandleFunc("GET /api/projects/{id}/diagnostics", s.handleDiagnostics)
 	m.HandleFunc("POST /api/client-log", s.handleClientLog)

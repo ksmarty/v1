@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"sort"
 	"strings"
 	"sync"
 	"syscall"
@@ -57,13 +58,17 @@ type BackgroundJob struct {
 	ID        string
 	Command   string
 	SessionID string
+	StartedAt time.Time
 
 	ExitCode int
 	TimedOut bool
-	Err      error
-	Output   string
-	done     chan struct{}
-	cmd      *exec.Cmd
+	// Cancelled is set when the user cancelled the job from the UI, so the
+	// result the model reads says so instead of reporting the signal's exit code.
+	Cancelled bool
+	Err       error
+	Output    string
+	done      chan struct{}
+	cmd       *exec.Cmd
 
 	// Filled by the completion callback once the result is persisted.
 	Text   string
@@ -93,6 +98,7 @@ func (m *BackgroundManager) Start(dir, command string, timeout time.Duration, se
 		ID:        store.NewID(),
 		Command:   command,
 		SessionID: sessionID,
+		StartedAt: time.Now(),
 		done:      make(chan struct{}),
 		notify:    notify,
 	}
@@ -163,6 +169,72 @@ func (m *BackgroundManager) CancelSession(sessionID string) {
 	killProcessGroups(procs)
 }
 
+// ShortID is the id the agent and the UI use for a job: the first eight
+// characters, which is what run_command_background reports back to the model.
+func (j *BackgroundJob) ShortID() string {
+	if len(j.ID) > 8 {
+		return j.ID[:8]
+	}
+	return j.ID
+}
+
+// Running returns the session's still-running jobs, oldest first, so the UI can
+// list what is in flight and offer to cancel one.
+func (m *BackgroundManager) Running(sessionID string) []*BackgroundJob {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []*BackgroundJob
+	for _, j := range m.jobs {
+		if j.SessionID != sessionID {
+			continue
+		}
+		select {
+		case <-j.done:
+			continue
+		default:
+		}
+		out = append(out, j)
+	}
+	sort.Slice(out, func(i, k int) bool { return out[i].StartedAt.Before(out[k].StartedAt) })
+	return out
+}
+
+// Cancel terminates one still-running job of the session, matched by short id
+// (or full id). It returns the job it cancelled, or nil when nothing running
+// matched: a finished job cannot be cancelled, and another session's job is not
+// reachable this way.
+func (m *BackgroundManager) Cancel(sessionID, id string) *BackgroundJob {
+	m.mu.Lock()
+	var target *BackgroundJob
+	for _, j := range m.jobs {
+		if j.SessionID != sessionID || (j.ID != id && j.ShortID() != id) {
+			continue
+		}
+		select {
+		case <-j.done:
+			continue
+		default:
+		}
+		target = j
+		break
+	}
+	if target != nil {
+		// Set before the kill so the result row the model reads says the user
+		// stopped it rather than reporting a signal's exit code.
+		target.Cancelled = true
+	}
+	var procs []*os.Process
+	if target != nil && target.cmd != nil && target.cmd.Process != nil {
+		procs = append(procs, target.cmd.Process)
+	}
+	m.mu.Unlock()
+	if target == nil {
+		return nil
+	}
+	killProcessGroups(procs)
+	return target
+}
+
 // KillAll terminates every still-running job across all sessions — used on
 // server shutdown so detached commands can't outlive the process.
 func (m *BackgroundManager) KillAll() {
@@ -228,7 +300,9 @@ func (m *BackgroundManager) Completed(sessionID string) []*BackgroundJob {
 // characters) can never leak into provider-bound messages.
 func BackgroundResultText(j *BackgroundJob) string {
 	status := fmt.Sprintf("exit %d", j.ExitCode)
-	if j.TimedOut {
+	if j.Cancelled {
+		status = "cancelled"
+	} else if j.TimedOut {
 		status = "timed out"
 	} else if j.Err != nil {
 		status = "failed to start"

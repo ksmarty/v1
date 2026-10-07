@@ -45,6 +45,7 @@ import ToolSettings, { type ToolsTab } from './ToolSettings';
 import Markdown from './Markdown';
 import ModelPicker from './ModelPicker';
 import SessionsModal from './SessionsModal';
+import BackgroundTasksModal from './BackgroundTasksModal';
 import TrackBorder, { TRACK_DEFAULTS } from './TrackBorder';
 import {
   IconArrowUp,
@@ -1710,6 +1711,7 @@ const MessageRow = memo(function MessageRow({
   onEditStart,
   onImageClick,
   onAskAnswered,
+  onOpenBackground,
   currency,
 }: {
   item: Item;
@@ -1724,6 +1726,8 @@ const MessageRow = memo(function MessageRow({
   onEditStart: (key: string, editing: boolean) => void;
   onImageClick: (url: string, name: string) => void;
   onAskAnswered: (answers: AskAnswerView[]) => void;
+  /** Open a finished background task's full output in the tasks modal. */
+  onOpenBackground: (text: string) => void;
   currency: string;
 }) {
   if (item.kind === 'tool') return <ToolRow item={item} />;
@@ -1747,11 +1751,19 @@ const MessageRow = memo(function MessageRow({
             <IconTerminal className="h-3 w-3" />
             Background task finished
           </span>
-          <div className="w-full rounded-xl border border-amber-300/20 bg-amber-300/5 px-3.5 py-2 text-sm text-text">
+          <button
+            type="button"
+            onClick={() => onOpenBackground(item.content)}
+            title="Show the full output"
+            className="w-full cursor-pointer rounded-xl border border-amber-300/20 bg-amber-300/5 px-3.5 py-2 text-left text-sm text-text transition-colors hover:border-amber-300/40 hover:bg-amber-300/10"
+          >
             <div className="whitespace-pre-wrap break-words font-mono text-[12px] leading-relaxed text-amber-100/90">
-              {item.content}
+              {item.content.length > 400 ? `${item.content.slice(0, 400)}…` : item.content}
             </div>
-          </div>
+            <span className="mt-1 block text-[10px] uppercase tracking-wide text-amber-300/70">
+              Show output
+            </span>
+          </button>
         </div>
       );
     }
@@ -2011,6 +2023,9 @@ export default function ChatPane({
   // Mobile-only: the composer can cover the chat pane for long messages.
   const [expanded, setExpanded] = useState(false);
   const [lightbox, setLightbox] = useState<{ url: string; name: string } | null>(null);
+  // Background tasks modal: the running list, or one finished job's output.
+  const [bgTasksOpen, setBgTasksOpen] = useState(false);
+  const [bgTaskOutput, setBgTaskOutput] = useState<{ title: string; text: string } | null>(null);
   const track = TRACK_DEFAULTS;
   const [permissionMode, setPermissionMode] = useState<PermissionMode>('ask');
   const [rewindApproval, setRewindApproval] = useState(false);
@@ -2120,6 +2135,14 @@ export default function ChatPane({
   onMemoriesRef.current = onMemories;
 
   const openLightbox = useCallback((url: string, name: string) => setLightbox({ url, name }), []);
+  const openBackgroundOutput = useCallback((text: string) => {
+    setBgTaskOutput({ title: 'Background task', text });
+    setBgTasksOpen(true);
+  }, []);
+  const openBackgroundTasks = useCallback(() => {
+    setBgTaskOutput(null);
+    setBgTasksOpen(true);
+  }, []);
 
   const update = useCallback((fn: (prev: Item[]) => Item[]) => {
     itemsRef.current = fn(itemsRef.current);
@@ -4392,6 +4415,7 @@ export default function ChatPane({
                         onEditStart={setItemEditing}
                         onImageClick={openLightbox}
                         onAskAnswered={(answer) => void answerAsk(answer)}
+                        onOpenBackground={openBackgroundOutput}
                         currency={currency}
                       />
                     </div>,
@@ -4432,6 +4456,7 @@ export default function ChatPane({
                       onEditStart={setItemEditing}
                       onImageClick={openLightbox}
                       onAskAnswered={(answer) => void answerAsk(answer)}
+                      onOpenBackground={openBackgroundOutput}
                       currency={currency}
                     />
                   </div>,
@@ -4636,12 +4661,17 @@ export default function ChatPane({
         >
           <div className={`relative flex flex-col gap-2 ${expanded ? 'min-h-0 flex-1' : ''}`}>
             {bgRunning.length > 0 && (
-              <div className="flex shrink-0 items-center gap-1.5 rounded-md border border-amber-300/25 bg-amber-300/5 px-2.5 py-1 text-[11px] font-medium text-amber-300/90">
+              <button
+                type="button"
+                onClick={openBackgroundTasks}
+                title="View or cancel background tasks"
+                className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded-md border border-amber-300/25 bg-amber-300/5 px-2.5 py-1 text-left text-[11px] font-medium text-amber-300/90 transition-colors hover:border-amber-300/40 hover:bg-amber-300/10"
+              >
                 <IconTerminal className="h-3 w-3 shrink-0 animate-pulse" />
                 {bgRunning.length === 1
                   ? '1 background task running…'
                   : `${bgRunning.length} background tasks running…`}
-              </div>
+              </button>
             )}
             {suggestions.length > 0 && (
               <div
@@ -5133,6 +5163,14 @@ export default function ChatPane({
       {lightbox && (
         <ImageLightbox url={lightbox.url} name={lightbox.name} onClose={() => setLightbox(null)} />
       )}
+
+      <BackgroundTasksModal
+        open={bgTasksOpen}
+        onClose={() => setBgTasksOpen(false)}
+        projectId={projectId}
+        sessionId={sessionId}
+        output={bgTaskOutput}
+      />
     </div>
   );
 }
