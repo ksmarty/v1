@@ -55,3 +55,25 @@ func TestProviderModelsEndpointUnauthorized(t *testing.T) {
 		t.Fatal("expected an error for 401")
 	}
 }
+
+// TestPrettifyModelName covers the fallback used when an endpoint lists an id
+// with no display name and the catalog has no entry for it — the opencode-go
+// models whose models.dev counterparts are named.
+func TestPrettifyModelName(t *testing.T) {
+	cases := map[string]string{
+		"deepseek-v4.1-flash": "DeepSeek V4.1 Flash",
+		"glm-5.3-flash":       "GLM 5.3 Flash",
+		"minimax-m2.7":        "MiniMax M2.7",
+		"mimo-v2.5-pro":       "MiMo V2.5 Pro",
+		"qwen3.7-max":         "Qwen3.7 Max",
+		"gpt-5.6-luna":        "GPT 5.6 Luna",
+		"space-bunny":         "Space Bunny",
+		"kimi_k2.7_code":      "Kimi K2.7 Code",
+		"":                    "",
+	}
+	for id, want := range cases {
+		if got := PrettifyModelName(id); got != want {
+			t.Errorf("PrettifyModelName(%q) = %q, want %q", id, got, want)
+		}
+	}
+}

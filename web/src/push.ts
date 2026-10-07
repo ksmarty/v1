@@ -76,6 +76,40 @@ export async function registerPush(): Promise<boolean> {
   }
 }
 
+let pushActiveCache: { at: number; value: boolean } | null = null;
+
+/**
+ * Whether this device currently holds a live push subscription, meaning the
+ * server will reach it for a finished turn.
+ *
+ * Cached briefly, and raced against a timeout: this is consulted on the
+ * notification path, which must never stall a turn's UI, and
+ * `serviceWorker.ready` never settles when no worker is registered (dev).
+ */
+export async function pushActive(maxAgeMs = 30_000): Promise<boolean> {
+  if (!pushSupported() || !getNotifyEnabled()) return false;
+  const now = Date.now();
+  if (pushActiveCache && now - pushActiveCache.at < maxAgeMs) return pushActiveCache.value;
+  let value = false;
+  try {
+    const reg = await Promise.race([
+      navigator.serviceWorker.getRegistration(),
+      new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), 2000)),
+    ]);
+    if (reg) {
+      const sub = await Promise.race([
+        reg.pushManager.getSubscription(),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 2000)),
+      ]);
+      value = sub !== null;
+    }
+  } catch {
+    value = false;
+  }
+  pushActiveCache = { at: now, value };
+  return value;
+}
+
 /** Forget this device, so no further pushes are sent to it. */
 export async function unregisterPush(): Promise<void> {
   if (!pushSupported()) return;

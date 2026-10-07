@@ -621,7 +621,7 @@ function ToolSettings({
       const r = await api.skillInstall(skill);
       setSkillResults([]);
       setSkillQuery('');
-      setSkills(r.skills);
+      setSkills(r.skills ?? []);
     } catch (err) {
       setSkillError(errMsg(err));
     } finally {
@@ -635,7 +635,7 @@ function ToolSettings({
     setSkillError(null);
     try {
       const r = await api.skillRemove(id);
-      setSkills(r.skills);
+      setSkills(r.skills ?? []);
     } catch (err) {
       setSkillError(errMsg(err));
     }
@@ -648,7 +648,7 @@ function ToolSettings({
     setSkills(prev.map((s) => (s.id === id ? { ...s, enabled } : s)));
     try {
       const r = await api.skillToggle(id, enabled);
-      setSkills(r.skills);
+      setSkills(r.skills ?? []);
     } catch (err) {
       setSkills(prev);
       setSkillError(errMsg(err));
@@ -1211,29 +1211,36 @@ function ToolSettings({
       <form onSubmit={(e) => void searchSkills(e)} className="flex shrink-0 min-w-0 items-end gap-2">
         <div className="flex-1">
           <Field label="Search SkillsMP">
-            <Input
-              value={skillQuery}
-              onChange={(e) => setSkillQuery(e.target.value)}
-              placeholder="e.g. react, security, postgres"
-              autoComplete="off"
-            />
+            <div className="relative">
+              <Input
+                value={skillQuery}
+                onChange={(e) => setSkillQuery(e.target.value)}
+                placeholder="e.g. react, security, postgres"
+                autoComplete="off"
+                className="pr-8"
+              />
+              {/* Only offered once there is something to clear, and as an icon
+                  so it reads as part of the field rather than a second action. */}
+              {(skillQuery !== '' || skillResults.length > 0 || skillError !== null) && (
+                <button
+                  type="button"
+                  aria-label="Clear search"
+                  title="Clear search"
+                  onClick={() => {
+                    setSkillQuery('');
+                    setSkillResults([]);
+                    setSkillError(null);
+                  }}
+                  className="absolute right-2 top-1/2 inline-flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded text-faint transition-colors hover:bg-border hover:text-text"
+                >
+                  <IconX className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
           </Field>
         </div>
         <Button type="submit" variant="outline" disabled={skillBusy || skillQuery.trim() === ''} className="h-[42px] sm:h-[38px]">
           {skillBusy ? <Spinner className="h-4 w-4" /> : 'Search'}
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          disabled={skillBusy || (skillQuery === '' && skillResults.length === 0 && !skillError)}
-          onClick={() => {
-            setSkillQuery('');
-            setSkillResults([]);
-            setSkillError(null);
-          }}
-          className="h-[42px] sm:h-[38px]"
-        >
-          Clear
         </Button>
       </form>
 
@@ -1477,13 +1484,13 @@ function ToolSettings({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="shrink-0 z-10 flex gap-0.5 overflow-x-auto border-b border-border bg-bg">
+      <div className="shrink-0 z-10 flex gap-0.5 overflow-x-auto overflow-y-hidden border-b border-border bg-bg">
         {TABS.map((t) => (
           <button
             key={t.id}
             type="button"
             onClick={() => setTab(t.id)}
-            className={`-mb-px flex h-9 flex-1 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap border-b-2 px-2 text-xs transition-colors ${
+            className={`-mb-px flex h-9 shrink-0 grow basis-auto items-center justify-center gap-1.5 whitespace-nowrap border-b-2 px-2 text-sm transition-colors ${
               tab === t.id
                 ? 'border-accent text-text'
                 : 'border-transparent text-subtle hover:text-text'

@@ -4199,7 +4199,7 @@ export default function ChatPane({
   return (
     <div className="relative flex h-full min-h-0 flex-col">
       {llmReady && (
-        <div className="shrink-0 border-b border-border px-3 py-1.5 md:px-4">
+        <div className="shrink-0 px-3 py-1.5 md:px-4">
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -4631,7 +4631,7 @@ export default function ChatPane({
           className={
             expanded
               ? 'absolute inset-0 z-20 flex flex-col bg-bg px-2 pt-2 pb-1'
-              : 'mt-auto shrink-0 border-t border-border px-2 pt-2 pb-1 md:p-3'
+              : 'mt-auto shrink-0 px-2 pt-2 pb-1 md:p-3'
           }
         >
           <div className={`relative flex flex-col gap-2 ${expanded ? 'min-h-0 flex-1' : ''}`}>

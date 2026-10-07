@@ -103,7 +103,9 @@ func (s *Server) handleSkillsInstall(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"installed": installed, "builtin": true})
+		// Same shape as the marketplace branch below: `skills` is the full list the
+		// client renders, `installed` is the one that was just added.
+		writeJSON(w, http.StatusOK, map[string]any{"skills": installed, "installed": sk, "builtin": true})
 		return
 	}
 	if body.Skill.Name == "" || body.Skill.Owner == "" {

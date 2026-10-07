@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 )
 
 //go:embed providers.json
@@ -61,6 +62,13 @@ type Provider struct {
 type Catalog struct {
 	Source    string     `json:"source"`
 	Providers []Provider `json:"providers"`
+	// FetchedAt is when models.dev was last read for this catalog. The catalog
+	// is served from the settings cache, so without a timestamp a build made
+	// once would be served indefinitely and any model models.dev gained
+	// afterwards would keep an empty name, no context size and no reasoning
+	// metadata — the field checks below only notice a catalog built before a
+	// field existed, never a model added later.
+	FetchedAt time.Time `json:"fetchedAt,omitempty"`
 }
 
 // customProvider is appended to every served catalog; it is not part of the
@@ -653,6 +661,42 @@ func fetchModelsDev(ctx context.Context) (map[string]modelsDevDoc, error) {
 	return fresh, nil
 }
 
+// nameAcronyms are the id segments the ecosystem writes in a fixed case, so a
+// title built from an id reads the way the provider's own docs write it.
+var nameAcronyms = map[string]string{
+	"ai": "AI", "api": "API", "glm": "GLM", "gpt": "GPT", "llm": "LLM",
+	"mimo": "MiMo", "minimax": "MiniMax", "longcat": "LongCat",
+	"nvidia": "NVIDIA", "ocr": "OCR", "vl": "VL", "vlm": "VLM",
+	"deepseek": "DeepSeek",
+}
+
+// PrettifyModelName builds a readable title from a model id. It covers the two
+// cases where no published name is available: an endpoint that lists ids with
+// no display name, and an id the catalog has no entry for (a model models.dev
+// gained after the cached catalog was built, or a provider we have no entry
+// for). "deepseek-v4.1-flash" becomes "DeepSeek V4.1 Flash".
+func PrettifyModelName(id string) string {
+	parts := strings.FieldsFunc(id, func(r rune) bool {
+		return r == '-' || r == '_' || r == '/' || r == ':'
+	})
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if part == "" {
+			continue
+		}
+		if fixed, ok := nameAcronyms[strings.ToLower(part)]; ok {
+			out = append(out, fixed)
+			continue
+		}
+		r := []rune(part)
+		out = append(out, string(unicode.ToUpper(r[0]))+string(r[1:]))
+	}
+	if len(out) == 0 {
+		return id
+	}
+	return strings.Join(out, " ")
+}
+
 // modelSubset builds the curated, sorted model list for a models.dev entry:
 // only tool-calling models, capped for size.
 func modelSubset(fp modelsDevDoc) []ProviderModel {
@@ -672,7 +716,7 @@ func modelSubset(fp modelsDevDoc) []ProviderModel {
 		}
 		name := m.Name
 		if name == "" {
-			name = id
+			name = PrettifyModelName(id)
 		}
 		image := false
 		for _, in := range m.Modalities.Input {
@@ -781,7 +825,7 @@ func RefreshCatalog(ctx context.Context) (*Catalog, error) {
 		return nil, err
 	}
 
-	out := &Catalog{Source: snapshot.Source, Providers: make([]Provider, 0, len(fresh))}
+	out := &Catalog{Source: snapshot.Source, FetchedAt: time.Now(), Providers: make([]Provider, 0, len(fresh))}
 	seen := make(map[string]bool, len(snapshot.Providers))
 	for _, sp := range snapshot.Providers {
 		p := sp // keep id and baseURL from the snapshot

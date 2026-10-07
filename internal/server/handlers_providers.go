@@ -36,13 +36,32 @@ func (s *Server) routerModels() ([]llm.ProviderModel, bool) {
 	return nil, false
 }
 
+// providerCatalogTTL bounds how long the settings-cached catalog is served
+// before it is rebuilt from models.dev. The field checks below only catch a
+// catalog built before a field existed; they never notice a model models.dev
+// added afterwards, so a fresh catalog also needs an age limit.
+const providerCatalogTTL = 24 * time.Hour
+
+// catalogNeedsRefresh reports whether the cached catalog should be rebuilt: it
+// is absent, predates one of the metadata fields, or has simply aged out.
+func catalogNeedsRefresh(cat *llm.Catalog) bool {
+	if cat == nil || !llm.CatalogHasVision(cat) || !llm.CatalogHasReasoning(cat) ||
+		!llm.CatalogHasReasoningLevels(cat) || !llm.CatalogHasContext(cat) {
+		return true
+	}
+	// A cache written before FetchedAt existed carries no timestamp; refresh
+	// once so that it gains one.
+	return cat.FetchedAt.IsZero() || time.Since(cat.FetchedAt) > providerCatalogTTL
+}
+
 // handleListProviders serves the provider catalog: the settings-cached copy
 // when present, otherwise the embedded snapshot; runtime-added providers and
-// the custom entry are appended. Caches built before image-input metadata
-// existed are refreshed lazily so the model lists carry vision flags.
+// the custom entry are appended. A cache that predates a metadata field, or
+// that has simply aged out, is rebuilt from models.dev so the model lists gain
+// names, context windows and vision/reasoning flags for models added since.
 func (s *Server) handleListProviders(w http.ResponseWriter, r *http.Request) {
 	cat := s.providerCatalog()
-	if cat == nil || !llm.CatalogHasVision(cat) || !llm.CatalogHasReasoning(cat) || !llm.CatalogHasReasoningLevels(cat) || !llm.CatalogHasContext(cat) {
+	if catalogNeedsRefresh(cat) {
 		if fresh, err := llm.RefreshCatalog(r.Context()); err == nil {
 			cat = fresh
 			if data, err := json.Marshal(fresh); err == nil {
@@ -186,6 +205,13 @@ func (s *Server) finalizeProviders(cat *llm.Catalog, r *http.Request) *llm.Catal
 		}
 		out := make([]llm.ProviderModel, 0, len(byID))
 		for _, m := range byID {
+			if m.Name == "" {
+				// The endpoint published no name and the catalog has no entry for
+				// this id (a model models.dev gained after the cache was built, or
+				// a provider we have no entry for). Derive one so every model in
+				// the picker is identifiable rather than showing a bare id.
+				m.Name = llm.PrettifyModelName(m.ID)
+			}
 			out = append(out, m)
 		}
 		sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })

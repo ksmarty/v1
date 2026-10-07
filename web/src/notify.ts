@@ -1,4 +1,5 @@
 import { getNotifyAsk, getNotifyEnabled, getNotifyOnlyBackground, getNotifyTurnDone, getNotifyTurnError } from './utils';
+import { pushActive } from './push';
 
 // Shows a notification through the service worker when one is registered
 // (the path iOS PWAs support), falling back to the page constructor. Returns
@@ -33,10 +34,24 @@ async function showNotification(
 
 // Common gating for turn notifications: master toggle, the specific
 // category toggle, and (by default) only when the window is not focused.
-async function shouldNotify(category: boolean, projectId: string, title: string, body: string, url: string) {
+//
+// The device's own push subscription is the final gate. Whenever it exists the
+// server pushes for turn events, and that push arrives even when iOS has
+// suspended the app — so showing the in-page notification as well delivers the
+// same turn twice. The in-page copy is the one that lands late, because the page
+// only discovers a finished turn when the user comes back to it.
+async function shouldNotify(
+  category: boolean,
+  sessionId: string,
+  title: string,
+  body: string,
+  url: string,
+) {
   if (!getNotifyEnabled() || !category) return;
   if (getNotifyOnlyBackground() && document.visibilityState === 'visible') return;
-  await showNotification(title, body, `v1-turn-${projectId}`, url);
+  if (await pushActive()) return;
+  // Same tag as the push path, so a duplicate replaces instead of stacking.
+  await showNotification(title, body, `v1-turn-${sessionId}`, url);
 }
 
 /**
@@ -54,7 +69,7 @@ export async function notifyTurnDone(
   const title = projectName ? `${projectName} — turn finished` : 'Turn finished';
   const body = (text.replace(/\s+/g, ' ').trim() || 'Response complete.').slice(0, 140);
   const url = `/project/${encodeURIComponent(projectId)}?session=${encodeURIComponent(sessionId)}`;
-  await shouldNotify(getNotifyTurnDone(), projectId, title, body, url);
+  await shouldNotify(getNotifyTurnDone(), sessionId, title, body, url);
 }
 
 /**
@@ -71,7 +86,7 @@ export async function notifyTurnError(
   const title = projectName ? `${projectName} — turn failed` : 'Turn failed';
   const body = (message.replace(/\s+/g, ' ').trim() || 'Something went wrong.').slice(0, 140);
   const url = `/project/${encodeURIComponent(projectId)}?session=${encodeURIComponent(sessionId)}`;
-  await shouldNotify(getNotifyTurnError(), projectId, title, body, url);
+  await shouldNotify(getNotifyTurnError(), sessionId, title, body, url);
 }
 
 /**
@@ -92,7 +107,7 @@ export async function notifyAsk(
     140,
   );
   const url = `/project/${encodeURIComponent(projectId)}?session=${encodeURIComponent(sessionId)}`;
-  await shouldNotify(getNotifyAsk(), projectId, title, body, url);
+  await shouldNotify(getNotifyAsk(), sessionId, title, body, url);
 }
 
 // Test notification for the Settings → About control: fires regardless of the

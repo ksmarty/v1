@@ -505,12 +505,16 @@ export default function Projects() {
               >
                 <Link to={`/project/${p.id}`} className="block p-4 pr-12">
                   <div className="flex items-center gap-2">
-                      <span
-                        className={`h-2 w-2 shrink-0 rounded-full ${
-                          p.preview.running ? 'bg-emerald-500' : 'bg-border-strong'
-                        }`}
-                        title={p.preview.running ? 'Preview running' : 'Preview stopped'}
-                      />
+                      {/* A preview that is switched off is not stopped, it is absent:
+                          saying so would report a state the project does not have. */}
+                      {!p.previewDisabled && (
+                        <span
+                          className={`h-2 w-2 shrink-0 rounded-full ${
+                            p.preview.running ? 'bg-emerald-500' : 'bg-border-strong'
+                          }`}
+                          title={p.preview.running ? 'Preview running' : 'Preview stopped'}
+                        />
+                      )}
                       <span className="truncate font-medium text-text">{p.name}</span>
                     </div>
                   <div className="mt-1.5 flex items-center gap-1.5 text-xs text-subtle">
@@ -520,11 +524,21 @@ export default function Projects() {
                         title="A chat turn is running in this project"
                       >
                         <Spinner className="h-3 w-3" />
-                        LLM running ·
+                        LLM running
                       </span>
                     )}
-                    {p.preview.running ? 'Preview running' : 'Preview stopped'}
-                    {p.updatedAt ? ` · ${timeAgo(p.updatedAt)}` : ''}
+                    {!p.previewDisabled && (
+                      <>
+                        {activeIds.has(p.id) && ' · '}
+                        {p.preview.running ? 'Preview running' : 'Preview stopped'}
+                      </>
+                    )}
+                    {p.updatedAt && (
+                      <>
+                        {(activeIds.has(p.id) || !p.previewDisabled) && ' · '}
+                        {timeAgo(p.updatedAt)}
+                      </>
+                    )}
                   </div>
                 </Link>
                 <div className="absolute right-1.5 top-1.5">
