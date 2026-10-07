@@ -16,13 +16,14 @@ import net from "node:net";
 import { execFile } from "node:child_process";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 
 import { createPeer } from "../src/rpc.js";
+import { loadExtensions, toolNames } from "../src/extensions.js";
 import { endpointHeaders } from "../src/provider.js";
 import { buildHostTools } from "../src/tools.js";
 
@@ -411,6 +412,62 @@ async function waitFor(predicate, timeoutMs) {
  * or a model: it exercises the proxy's translation directly, including the
  * image block a screenshot_app result carries.
  */
+/**
+ * Extensions are loaded from disk, but whether one is enabled is v1's decision,
+ * pushed along with the reload. A disabled extension must not be imported at
+ * all — skipping only the install would still have run its factory.
+ */
+async function checkExtensionLoading() {
+	const root = await mkdtemp(join(tmpdir(), "v1-extensions-"));
+	const write = async (id, source) => {
+		await mkdir(join(root, id), { recursive: true });
+		await writeFile(join(root, id, "index.js"), source, "utf8");
+	};
+	await write("alpha", 'export default () => ({ name: "alpha", tools: [{ name: "alpha_tool" }] });\n');
+	await write("beta", 'export default () => ({ name: "beta", tools: [{ name: "beta_tool" }] });\n');
+	await write("broken", "export default (pi) => ({\n");
+
+	// Only the enabled id is imported.
+	const filtered = await loadExtensions(root, {}, new Set(["alpha"]));
+	check(
+		"extensions: only the enabled one is loaded",
+		filtered.extensions.length === 1 && filtered.extensions[0].id === "alpha",
+		JSON.stringify(filtered.extensions.map((entry) => entry.id)),
+	);
+	check(
+		"extensions: a loaded extension keeps its tools",
+		toolNames(filtered.extensions[0].extension)[0] === "alpha_tool",
+	);
+	check(
+		"extensions: a disabled extension contributes nothing",
+		filtered.errors.length === 0,
+		JSON.stringify(filtered.errors),
+	);
+
+	// Without a filter everything loads, and a broken file is reported rather
+	// than fatal: one bad extension must not take the sidecar down.
+	const all = await loadExtensions(root, {}, null);
+	check(
+		"extensions: without a filter everything loads",
+		all.extensions.length === 2,
+		JSON.stringify(all.extensions.map((entry) => entry.id)),
+	);
+	check(
+		"extensions: a broken module is reported, not fatal",
+		all.errors.some((entry) => entry.id === "broken"),
+		JSON.stringify(all.errors),
+	);
+
+	// A missing directory is simply "no extensions".
+	const missing = await loadExtensions(join(root, "absent"), {}, null);
+	check(
+		"extensions: a missing directory is not an error",
+		missing.extensions.length === 0 && missing.errors.length === 0,
+	);
+
+	await rm(root, { recursive: true, force: true });
+}
+
 async function checkToolResultMapping() {
 	const bridge = {
 		call: async () => ({
@@ -456,5 +513,6 @@ async function checkSubmitContentValidation(peer, conversationId) {
 	check("turn.submit rejects non-string, non-array content", Boolean(rejected), String(rejected));
 }
 
+await checkExtensionLoading();
 await checkToolResultMapping();
 await main();

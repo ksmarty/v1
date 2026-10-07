@@ -40,6 +40,8 @@ type Options struct {
 	Socket string
 	// DBPath is the pi-durable store path, passed to the sidecar.
 	DBPath string
+	// ExtensionsDir is the directory the sidecar loads agent extensions from.
+	ExtensionsDir string
 	// Env adds to the inherited environment for the child process.
 	Env []string
 	// Handler answers the sidecar's tool and approval calls.
@@ -201,10 +203,17 @@ func (s *Supervisor) spawn(ctx context.Context) error {
 	}
 
 	cmd := exec.Command(s.opts.Command, args...)
-	cmd.Env = append(os.Environ(), append(s.opts.Env,
-		"V1_SIDECAR_SOCKET="+s.opts.Socket,
-		"V1_HARNESS_DB="+s.opts.DBPath,
-	)...)
+	// Build the environment explicitly rather than appending to s.opts.Env:
+	// append reuses the caller's backing array when it has spare capacity,
+	// which would silently overwrite whatever followed it.
+	env := append([]string{
+		"V1_SIDECAR_SOCKET=" + s.opts.Socket,
+		"V1_HARNESS_DB=" + s.opts.DBPath,
+	}, s.opts.Env...)
+	if s.opts.ExtensionsDir != "" {
+		env = append(env, "V1_EXTENSIONS_DIR="+s.opts.ExtensionsDir)
+	}
+	cmd.Env = append(os.Environ(), env...)
 	// The child watches its stdin: when this process dies the pipe closes and
 	// the sidecar exits instead of lingering with the store open.
 	stdin, err := cmd.StdinPipe()

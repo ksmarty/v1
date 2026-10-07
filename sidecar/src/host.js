@@ -17,7 +17,7 @@ import { mkdir, unlink } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 
-import { Harness, createRegistry, defineExtension, section, watchEvents } from "@earendil-works/pi-durable";
+import { Harness, createRegistry, defineExtension, defineTool, hook, section, wrapSection, wrapTool, watchEvents } from "@earendil-works/pi-durable";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { BACKGROUND_CONTEXT, withAbortSignal } from "@earendil-works/chord/context";
 
@@ -26,6 +26,7 @@ import { writeModelCatalog } from "./modeldata.js";
 import { installProviderFetchLog } from "./providerlog.js";
 import { RpcError, createPeer } from "./rpc.js";
 import { createModelStore, registerProvider } from "./provider.js";
+import { loadExtensions, sectionKeys, toolNames } from "./extensions.js";
 import { buildApprovalHook, buildHostTools } from "./tools.js";
 
 /** Bridge protocol revision; must equal `harness.ProtocolVersion` in Go. */
@@ -126,6 +127,17 @@ class Sidecar {
 		this.changes = new Map();
 		this.closed = false;
 		this.closing = null;
+		/** Extensions the user wrote, keyed by id, and their load errors. */
+		this.extensionsDir = process.env.V1_EXTENSIONS_DIR || null;
+		this.loadedExtensions = [];
+		this.extensionErrors = [];
+		// The ids the user enabled, pushed by the host. null means "everything",
+		// which only holds before the host has told us.
+		this.enabledExtensionIds = null;
+		/** Tool names Go owns, so an extension cannot shadow one. */
+		this.hostToolNames = new Set();
+		/** The conversation the most recent turn belongs to; a delegate inherits from it. */
+		this.activeConversationId = null;
 		/** Set once Go has asked us to stop; makes the later disconnect graceful. */
 		this.shutdownRequested = false;
 	}
@@ -135,6 +147,9 @@ class Sidecar {
 		// Tools arrive per turn from Go; the extension is installed up front for
 		// its approval hook and cwd section.
 		this.installHostTools([]);
+		// Extensions load into the registry before the harness opens, so a
+		// conversation created later already sees their tools and sections.
+		await this.reloadExtensions();
 		await mkdir(dirname(this.database), { recursive: true });
 		const storage = await openNodeSqliteStorage(this.database);
 		this.harness = await Harness.open(
@@ -145,6 +160,7 @@ class Sidecar {
 		this.harness.resume();
 		log.info("harness opened", {
 			database: this.database,
+			extensions: this.loadedExtensions.map((entry) => entry.id).join(","),
 			tools: this.registry
 				.snapshot()
 				.tools()
@@ -198,7 +214,14 @@ class Sidecar {
 			thinkingLevel: thinkingLevelOf(thinkingLevel),
 			// Only an explicit tool list rebinds the conversation's tools: a partial
 			// ensure (a rejoin that rebinds the model) must not empty them.
-			...(Array.isArray(toolDefs) ? { tools: this.resolveTools(toolDefs.map((def) => def.name)) } : {}),
+			...(Array.isArray(toolDefs)
+				? {
+						// Go's tools plus whatever the user's extensions contribute. Without
+						// the union an extension tool is silently dropped: AgentState.tools
+						// is set to exactly this list.
+						tools: [...(this.resolveTools(toolDefs.map((def) => def.name)) ?? []), ...this.extensionTools()],
+					}
+				: {}),
 		});
 
 		let conversation =
@@ -225,6 +248,8 @@ class Sidecar {
 		if (v1SessionId) this.sessions.set(v1SessionId, { conversation, providerId, modelId, change });
 		this.conversations.set(String(conversation.id), conversation);
 		this.changes.set(String(conversation.id), change);
+		// The conversation a delegate spawned during this turn inherits from.
+		this.activeConversationId = String(conversation.id);
 		return { conversationId: String(conversation.id), providerId, modelId };
 	}
 
@@ -241,6 +266,7 @@ class Sidecar {
 		// every tool the conversation had, so only an explicit list installs.
 		if (!Array.isArray(defs)) return;
 		const tools = buildHostTools(this.bridge, defs);
+		this.hostToolNames = new Set(tools.map((tool) => tool.name));
 		this.registry.install(
 			defineExtension({
 				name: "v1-host-tools",
@@ -266,6 +292,178 @@ class Sidecar {
 		const missing = names.filter((name) => !available.has(name));
 		if (missing.length) throw new RpcError(-32602, `conversation.ensure: unknown tools: ${missing.join(", ")}`);
 		return names.map((name) => available.get(name));
+	}
+
+	/* ---------------------------------------------------------------- *
+	 * Extensions
+	 * ---------------------------------------------------------------- */
+
+	/**
+	 * Load the user's extensions into the registry.
+	 *
+	 * Safe to call repeatedly and it never throws: Go calls it after every
+	 * change, and one broken extension must not stop the sidecar or the others.
+	 * Installing by name replaces in place, so a reload cannot accumulate
+	 * duplicate tools.
+	 */
+	async reloadExtensions(enabledIds) {
+		if (Array.isArray(enabledIds)) this.enabledExtensionIds = new Set(enabledIds);
+		const result = await loadExtensions(this.extensionsDir, this.extensionApi(), this.enabledExtensionIds);
+		const present = new Set();
+		for (const entry of result.extensions) {
+			present.add(entry.id);
+			this.registry.install(entry.extension);
+		}
+		// An extension deleted from disk (or disabled in v1) must stop
+		// contributing, so uninstall whatever is no longer there.
+		for (const entry of this.loadedExtensions) {
+			if (present.has(entry.id)) continue;
+			try {
+				this.registry.uninstall(entry.extension);
+			} catch (error) {
+				log.debug("extensions: uninstall skipped", { id: entry.id, error: error?.message ?? String(error) });
+			}
+		}
+		this.loadedExtensions = result.extensions;
+		this.extensionErrors = result.errors;
+		const listed = this.extensionsList();
+		log.info("extensions loaded", { count: listed.loaded.length, errors: listed.errors.length });
+		return listed;
+	}
+
+	/**
+	 * The API object handed to an extension factory.
+	 *
+	 * `delegate` is injected rather than left to the module because only the host
+	 * can run a child conversation (see `delegate`).
+	 */
+	extensionApi() {
+		return {
+			defineExtension,
+			defineTool,
+			hook,
+			section,
+			wrapSection,
+			wrapTool,
+			log,
+			delegate: (input, context) => this.delegate(input, context),
+		};
+	}
+
+	/** What is loaded right now, for Go and the UI. */
+	extensionsList() {
+		return {
+			loaded: this.loadedExtensions.map((entry) => ({
+				id: entry.id,
+				name: entry.name,
+				tools: toolNames(entry.extension),
+				sections: sectionKeys(entry.extension),
+			})),
+			enabled: this.enabledExtensionIds ? [...this.enabledExtensionIds] : null,
+			errors: this.extensionErrors,
+		};
+	}
+
+	/**
+	 * The tools the user's extensions contribute.
+	 *
+	 * A name that collides with a host tool is dropped: Go's definitions must win,
+	 * and the same name twice in one request is a provider error.
+	 */
+	extensionTools() {
+		const tools = [];
+		for (const entry of this.loadedExtensions) {
+			for (const tool of entry.extension.tools ?? []) {
+				if (this.hostToolNames.has(tool.name)) {
+					log.warn("extensions: tool name collides with a host tool; skipping", {
+						id: entry.id,
+						tool: tool.name,
+					});
+					continue;
+				}
+				tools.push(tool);
+			}
+		}
+		return tools;
+	}
+
+	/**
+	 * Run a task in a child conversation and return its answer.
+	 *
+	 * This lives on the host because only the host can do it: a `Context` carries
+	 * no conversation, `tx.createConversation()` takes no agent, and a child with
+	 * no model cannot run. The child inherits the asking turn's agent (model,
+	 * provider, cwd, instructions), so a delegate runs on the same model as the
+	 * agent that asked for it.
+	 *
+	 * The child is scratch space: it is deliberately NOT registered in
+	 * `this.conversations`, so no later turn can resolve to it.
+	 */
+	async delegate(input, context) {
+		const task = typeof input === "string" ? input : input?.task;
+		if (typeof task !== "string" || !task.trim()) throw new Error("delegate: a task is required");
+		if (!this.harness) throw new Error("delegate: the harness is not open");
+		const parentId = input?.parentConversationId ?? this.activeConversationId;
+		const change = parentId ? this.changes.get(String(parentId)) : undefined;
+		if (!change) {
+			throw new Error("delegate: no conversation to inherit a model from (run a turn first)");
+		}
+		const child = await this.harness.createConversation(
+			{ ownership: { kind: "ownerless" }, agent: change },
+			this.ctx,
+		);
+		try {
+			await child.submit(
+				{
+					type: "input",
+					requestId: `delegate-${String(child.id)}-${Date.now()}`,
+					content: task,
+					whenBusy: "reject",
+				},
+				this.ctx,
+			);
+			await child.waitForIdle(this.ctx);
+			return await this.readAnswer(child, input?.maxChars);
+		} finally {
+			// This path never registers the child, but drop the caches anyway so a
+			// later change cannot leave it resolvable.
+			this.conversations.delete(String(child.id));
+			this.changes.delete(String(child.id));
+		}
+	}
+
+	/** The child's final assistant text, read back from its transcript. */
+	async readAnswer(conversation, maxChars) {
+		const page = await conversation.entries({}, 40, undefined, this.ctx);
+		const items = page?.items ?? [];
+		let toolCalls = 0;
+		// entries() is newest-first, so the first assistant message carrying text
+		// is the answer the child finished on.
+		let text = "";
+		for (const entry of items) {
+			for (const message of [...(entry?.model ?? [])].reverse()) {
+				if (message?.role !== "assistant") continue;
+				const blocks = Array.isArray(message.content) ? message.content : [];
+				for (const block of blocks) {
+					if (typeof block?.type === "string" && block.type.startsWith("toolcall")) toolCalls += 1;
+				}
+				if (text) continue;
+				const joined = blocks
+					.filter((block) => block?.type === "text" && typeof block.text === "string")
+					.map((block) => block.text)
+					.join("")
+					.trim();
+				if (joined) text = joined;
+			}
+			if (text) break;
+		}
+		const limit = Number.isInteger(maxChars) && maxChars > 0 ? maxChars : 20000;
+		const truncated = text.length > limit;
+		return {
+			conversationId: String(conversation.id),
+			text: truncated ? `${text.slice(0, limit)}\n… (truncated)` : text,
+			toolCalls,
+		};
 	}
 
 	async conversationFor(params) {
@@ -299,6 +497,8 @@ class Sidecar {
 			throw new RpcError(-32602, "turn.submit: text is required");
 		}
 		const conversation = await this.conversationFor(params);
+		// A delegate spawned by a tool call during this turn inherits its agent.
+		this.activeConversationId = String(conversation.id);
 		const submission = await conversation.submit(
 			{ type: "input", requestId, content, whenBusy: params.whenBusy ?? whenBusy ?? "reject" },
 			this.ctx,
@@ -511,6 +711,10 @@ class Sidecar {
 				return await this.watchStart(params);
 			case "watch.stop":
 				return await this.watchStop(params);
+			case "extensions.reload":
+				return await this.reloadExtensions(params?.enabled);
+			case "extensions.list":
+				return this.extensionsList();
 			default:
 				throw new RpcError(-32601, `sidecar: unknown method ${method}`);
 		}

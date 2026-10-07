@@ -404,6 +404,28 @@ func (b *Bridge) Shutdown(ctx context.Context, reason string) error {
 	return b.sup.Call(ctx, "harness.shutdown", map[string]any{"reason": reason}, nil)
 }
 
+// ExtensionsList reports the extensions the sidecar has loaded, and any it
+// refused, so the settings page can show the load state rather than only what
+// is on disk.
+func (b *Bridge) ExtensionsList(ctx context.Context) (map[string]any, error) {
+	var out map[string]any
+	err := b.sup.Call(ctx, "extensions.list", map[string]any{}, &out)
+	return out, err
+}
+
+// ExtensionsReload re-reads the extensions directory, so a change takes effect
+// on the next turn without restarting the harness. enabledIDs is the set the
+// user has enabled: a disabled extension is not loaded at all, so the set has to
+// travel with the reload rather than being filtered afterwards.
+func (b *Bridge) ExtensionsReload(ctx context.Context, enabledIDs []string) (map[string]any, error) {
+	var out map[string]any
+	if enabledIDs == nil {
+		enabledIDs = []string{}
+	}
+	err := b.sup.Call(ctx, "extensions.reload", map[string]any{"enabled": enabledIDs}, &out)
+	return out, err
+}
+
 // EventQueue is an unbounded, non-blocking FIFO of sidecar events.
 //
 // Event notifications are handled on the bridge's read loop, so Push must

@@ -49,6 +49,12 @@ func (s *Server) SetHarness(b *harness.Bridge) {
 	s.harnessMu.Lock()
 	s.harness = b
 	s.harnessMu.Unlock()
+	// Tell the sidecar which extensions are enabled straight away. Until it is
+	// told, it loads everything on disk, and a turn must never run an extension
+	// the user disabled.
+	if state := s.reloadExtensions(context.Background()); state["reloaded"] != true {
+		log.Printf("extensions: the initial reload failed: %v", state["reason"])
+	}
 }
 
 func (s *Server) harnessBridge() *harness.Bridge {

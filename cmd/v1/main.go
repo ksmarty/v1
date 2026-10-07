@@ -116,10 +116,13 @@ func startHarness(ctx context.Context, cfg config.Config) (*harness.Supervisor, 
 		return nil, nil
 	}
 	sup := harness.New(harness.Options{
-		Command:       cfg.SidecarCmd,
-		Script:        sidecarScript(cfg),
-		Socket:        cfg.SidecarSocket,
-		DBPath:        cfg.HarnessDB,
+		Command: cfg.SidecarCmd,
+		Script:  sidecarScript(cfg),
+		Socket:  cfg.SidecarSocket,
+		DBPath:  cfg.HarnessDB,
+		// The agent extensions v1 ships and the ones a user writes both live
+		// under the data volume, so the sidecar is told where to load them.
+		ExtensionsDir: filepath.Join(cfg.DataDir, "extensions"),
 		ClientVersion: fmt.Sprintf("v1/%s", version),
 		MaxRestarts:   cfg.MaxSidecarRestarts,
 		Logf:          log.Printf,

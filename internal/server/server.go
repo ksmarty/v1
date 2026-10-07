@@ -110,6 +110,9 @@ func New(cfg config.Config, st *store.Store) *Server {
 	s.pruneOIDCFlows()
 	s.pruneVercelFlows()
 	s.failInterruptedVercelDeploys()
+	// The bundled agent extensions (currently the `delegate` sub-agent tool)
+	// are written to the data volume on startup, so a fresh install has them.
+	s.ensureBuiltinExtensions()
 	mux := http.NewServeMux()
 	s.routes(mux)
 	s.handler = s.auth.Middleware(mux)
@@ -261,6 +264,13 @@ func (s *Server) routes(m *http.ServeMux) {
 	m.HandleFunc("POST /api/skills/remove", s.handleSkillsRemove)
 	m.HandleFunc("POST /api/skills/toggle", s.handleSkillsToggle)
 
+	m.HandleFunc("GET /api/extensions", s.handleExtensionsList)
+	m.HandleFunc("GET /api/extensions/{id}", s.handleExtensionGet)
+	m.HandleFunc("POST /api/extensions", s.handleExtensionSave)
+	m.HandleFunc("POST /api/extensions/toggle", s.handleExtensionsToggle)
+	m.HandleFunc("POST /api/extensions/remove", s.handleExtensionsRemove)
+	m.HandleFunc("POST /api/extensions/reload", s.handleExtensionsReload)
+
 	// The preview proxy handles all common HTTP methods (incl. WS upgrades
 	// via GET). Methods are enumerated so the patterns don't conflict with
 	// the "GET /" SPA catch-all.
@@ -361,6 +371,7 @@ const (
 	keyProvidersCustom         = "providers_custom"
 	keyMCP                     = "mcp_servers"
 	keySkills                  = "skills_installed"
+	keyExtensions              = "extensions_installed"
 	keyPermissionMode          = "permission_mode"
 	keyRewindApproval          = "rewind_approval"
 	keyThinkingDefault         = "thinking_default"
