@@ -3,8 +3,10 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"v1/internal/extensions"
@@ -125,6 +127,128 @@ func (s *Server) reloadExtensions(ctx context.Context) map[string]any {
 	return map[string]any{"reloaded": true, "state": result}
 }
 
+// createExtension installs an extension the agent wrote: it validates and
+// writes the source, records it as enabled, and asks the sidecar to reload so
+// it takes effect on the next turn. It backs the create_extension tool.
+//
+// The result names the tools and prompt sections the extension contributed, or
+// returns the load error so the agent can fix it.
+func (s *Server) createExtension(ctx context.Context, id, description, source string) (string, error) {
+	if err := extensions.Validate(id, source); err != nil {
+		return "", err
+	}
+	if err := extensions.Write(s.extensionsRoot(), id, source); err != nil {
+		return "", err
+	}
+
+	list := s.installedExtensions()
+	now := time.Now().UTC()
+	updated := false
+	for i := range list {
+		if list[i].ID != id {
+			continue
+		}
+		if description != "" {
+			list[i].Description = description
+		}
+		list[i].Enabled = true
+		list[i].UpdatedAt = now
+		updated = true
+		break
+	}
+	if !updated {
+		list = append(list, extensions.Extension{
+			ID:          id,
+			Name:        id,
+			Description: description,
+			Enabled:     true,
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		})
+	}
+	if err := s.saveExtensions(list); err != nil {
+		return "", err
+	}
+
+	reload := s.reloadExtensions(ctx)
+	outcome := extensionReloadOutcome(reload, id)
+	if outcome.err != "" {
+		return "", fmt.Errorf("extension %q was written but the harness could not load it: %s", id, outcome.err)
+	}
+	message := fmt.Sprintf("installed extension %q and enabled it", id)
+	if len(outcome.tools) > 0 {
+		message += "; tools: " + strings.Join(outcome.tools, ", ")
+	}
+	if len(outcome.sections) > 0 {
+		message += "; sections: " + strings.Join(outcome.sections, ", ")
+	}
+	if !outcome.reloaded {
+		reason, _ := reload["reason"].(string)
+		if reason == "" {
+			reason = "the agent harness is not running"
+		}
+		message += " (the harness is not running, so it will load on the next start: " + reason + ")"
+	}
+	return message, nil
+}
+
+// extensionOutcome describes one extension in a reload response, so the
+// create_extension tool can report what the extension contributed.
+type extensionOutcome struct {
+	reloaded bool
+	tools    []string
+	sections []string
+	err      string
+}
+
+func extensionReloadOutcome(reload map[string]any, id string) extensionOutcome {
+	var out extensionOutcome
+	out.reloaded, _ = reload["reloaded"].(bool)
+	state, _ := reload["state"].(map[string]any)
+	if state == nil {
+		return out
+	}
+	if loadErrors, ok := state["errors"].([]any); ok {
+		for _, item := range loadErrors {
+			entry, _ := item.(map[string]any)
+			if entry == nil {
+				continue
+			}
+			if entryID, _ := entry["id"].(string); entryID == id {
+				out.err, _ = entry["message"].(string)
+			}
+		}
+	}
+	if loaded, ok := state["loaded"].([]any); ok {
+		for _, item := range loaded {
+			entry, _ := item.(map[string]any)
+			if entry == nil {
+				continue
+			}
+			if entryID, _ := entry["id"].(string); entryID != id {
+				continue
+			}
+			out.tools = anyStrings(entry["tools"])
+			out.sections = anyStrings(entry["sections"])
+		}
+	}
+	return out
+}
+
+func anyStrings(v any) []string {
+	items, ok := v.([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		if s, ok := item.(string); ok && s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
 // extensionLoadErrors flattens the sidecar's per-extension load failures into
 // the plain list the settings UI displays.
 func extensionLoadErrors(state map[string]any) []string {
@@ -149,7 +273,6 @@ func extensionLoadErrors(state map[string]any) []string {
 	return out
 }
 
-// handleExtensionsList returns every extension with the sidecar's load state.
 func (s *Server) handleExtensionsList(w http.ResponseWriter, r *http.Request) {
 	state := s.extensionLoadState(r.Context())
 	writeJSON(w, http.StatusOK, map[string]any{

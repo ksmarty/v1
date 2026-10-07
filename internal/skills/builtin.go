@@ -348,8 +348,162 @@ it can be made to persist.
 }
 
 // Builtins returns the skills bundled with v1.
+// v1Extensions is the bundled "v1-extensions" skill. It teaches the agent to
+// extend v1 itself — writing a JavaScript module that adds a tool, a prompt
+// section, a hook or a wrapper — and to install it with the create_extension
+// tool. The API described here is the object the sidecar builds in
+// sidecar/src/host.js (extensionApi) and the pi-durable define.ts helpers.
+var v1Extensions = Builtin{
+	Skill: Skill{
+		ID:          "v1-extensions",
+		Name:        "v1 Extensions",
+		Author:      "v1",
+		Description: "Write and install v1 extensions: JavaScript modules that add new tools, prompt sections, hooks or tool wrappers to the agent itself, installed with create_extension.",
+		Dir:         "v1-extensions",
+		Enabled:     true,
+	},
+	Files: map[string]string{
+		"SKILL.md": `# v1 Extensions
+
+Use this skill when the user wants v1 itself to gain a new ability: a new tool
+for you to call, extra instructions in your prompt, a hook around a run, or a
+change to an existing tool. An extension is a small JavaScript module that the
+agent harness loads, and you write and install it yourself with the
+create_extension tool.
+
+Do not use this skill for a change to the user's project. It is for extending
+the agent.
+
+## What an extension can add
+
+- tools - new functions you can call, each with a JSON Schema for its
+  arguments. This is the usual case, and the one to prefer.
+- sections - text injected into your instructions while the extension is
+  loaded.
+- hooks - handlers that run around a named task.
+- wraps - pure functions that wrap another extension's tool or section.
+
+Extensions live at <data-dir>/extensions/<id>/index.js. The id must match
+[a-z0-9][a-z0-9-]* - lowercase letters, digits and dashes, and it cannot start
+with a dash.
+
+## The module
+
+The default export is a function. v1 calls it with an api object and uses what
+it returns:
+
+    export default (pi) => ({
+      name: "word-count",
+      tools: [ /* ... */ ],
+    });
+
+The api object provides:
+
+- pi.defineTool({ name, description, parameters, execute })
+- pi.section(key, render, options)
+- pi.hook(task, handlers)
+- pi.wrapTool(tool, wrapper)
+- pi.wrapSection(key, wrapper)
+- pi.defineExtension(extension) - identity, used only to type the object
+- pi.log - a logger with log.info(message, fields) and log.error(...)
+- pi.delegate({ task }, context) - run a sub-agent, returning { text, toolCalls }
+
+### defineTool
+
+    pi.defineTool({
+      name: "word_count",
+      description:
+        "Count the words in a string. Use when the user asks how long a piece " +
+        "of text is.",
+      parameters: {
+        type: "object",
+        properties: {
+          text: { type: "string", description: "The text to count." },
+        },
+        required: ["text"],
+      },
+      async execute(args, api, context) {
+        const text = typeof args?.text === "string" ? args.text : "";
+        const trimmed = text.trim();
+        const words = trimmed ? trimmed.split(/\s+/).length : 0;
+        return { content: [{ type: "text", text: words + " words" }] };
+      },
+    })
+
+Rules that matter:
+
+- The name must be unique across everything loaded. A name that collides with
+  a builtin tool is dropped, with a log line - the model never sees it.
+- parameters is a JSON Schema object, and required lists the mandatory
+  properties. Without them the model cannot call the tool correctly.
+- execute returns an object with a content array of { type: "text", text }
+  items. It may be async and may await.
+- A thrown error is reported to the model as a tool failure, so throw with a
+  message that says what to do differently.
+- The description is what the model reads when deciding whether to call the
+  tool. Say when to use it, not only what it does.
+
+### section
+
+    pi.section("house-style", () => "Prefer tabs in this project.")
+
+render receives (input, context) and returns a string, or undefined to add
+nothing. By default the text is wrapped as <house-style>...</house-style> so the
+model can tell it apart from the rest of the prompt. Pass { tag: false } to
+inject it unwrapped.
+
+### hook and wrap
+
+    pi.hook("some-task", { onStart: (event) => { /* ... */ } })
+
+    pi.wrapTool(someTool, (tool) => ({
+      ...tool,
+      description: tool.description + " Also reports the character count.",
+    }))
+
+Hooks attach to a task by name. Wrappers are pure functions applied where the
+wrapping extension is selected. Both are advanced - prefer a plain new tool
+unless the user needs to change something that already exists.
+
+## Installing it
+
+Call create_extension with the id, a one-line description and the complete
+module source:
+
+    create_extension({
+      id: "word-count",
+      description: "Adds a word_count tool.",
+      source: "<the whole module>"
+    })
+
+It validates the id, syntax-checks the source with node, writes it, enables it
+and reloads the harness, then reports what loaded. Installing an id that
+already exists replaces its source. A new tool becomes available on the next
+turn, so tell the user to send another message before expecting to use it.
+
+Read the result of create_extension rather than assuming the extension loaded.
+If it reports an error, fix the source and call it again.
+
+## Failure modes to check before you install
+
+- A syntax error - node rejects the file and nothing loads. The result quotes
+  node's message.
+- A duplicate tool name - the tool is dropped with a log line, so the model
+  never sees it.
+- A bad id - must be lowercase, and cannot start with a dash.
+- A module whose default export is not a function - nothing is registered.
+
+## Working style
+
+Write the smallest extension that does the job. Prefer one tool with a clear
+description over several vague ones. After installing, verify from the result
+that the tool you intended is listed.
+`,
+	},
+}
+
 func Builtins() []Builtin {
-	return []Builtin{githubWorkflows, persistentToolInstall}
+	return []Builtin{githubWorkflows, persistentToolInstall, v1Extensions}
 }
 
 // FindBuiltin returns the builtin skill with the given id, or nil.

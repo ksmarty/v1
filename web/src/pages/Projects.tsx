@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api';
-import type { GitHubRepo, Project, Provider, ProviderModel, SavedProvider } from '../types';
+import type { ChatSession, GitHubRepo, Project, Provider, ProviderModel, SavedProvider } from '../types';
 import { errMsg, timeAgo } from '../utils';
 import { Button, Dialog, ErrorBox, IconButton, Input, Spinner } from '../components/ui';
 import ModelPicker from '../components/ModelPicker';
 import {
+  IconChat,
   IconChevronDown,
   IconDots,
   IconGitHub,
@@ -386,6 +387,8 @@ export default function Projects() {
   // Project IDs that currently have a chat turn running (the backend dashes
   // them under "generating" — polled so the dashboard stays live).
   const [activeIds, setActiveIds] = useState<Set<string>>(new Set());
+  // Each project's chat threads, listed under its header on the dashboard.
+  const [sessionsByProject, setSessionsByProject] = useState<Record<string, ChatSession[]>>({});
 
   const loadActive = useCallback(() => {
     api
@@ -400,15 +403,30 @@ export default function Projects() {
     return () => window.clearInterval(t);
   }, [loadActive]);
 
+  // Sessions are fetched per project so the dashboard can list the threads
+  // under each project header. A project whose sessions fail to load still
+  // renders — it just shows no threads.
+  const loadSessions = useCallback((list: Project[]) => {
+    void Promise.all(
+      list.map((p) =>
+        api
+          .listSessions(p.id)
+          .then((res) => [p.id, res.sessions ?? []] as const)
+          .catch(() => [p.id, [] as ChatSession[]] as const),
+      ),
+    ).then((pairs) => setSessionsByProject(Object.fromEntries(pairs)));
+  }, []);
+
   const load = useCallback(() => {
     api
       .listProjects()
       .then((list) => {
         setProjects(list);
+        loadSessions(list);
         setError(null);
       })
       .catch((e) => setError(errMsg(e)));
-  }, []);
+  }, [loadSessions]);
 
   useEffect(() => {
     load();
@@ -497,60 +515,69 @@ export default function Projects() {
           </div>
         )}
         {projects !== null && projects.length > 0 && (
-          <div className="mx-auto grid max-w-6xl grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {projects.map((p) => (
-              <div
-                key={p.id}
-                className="relative rounded-xl border border-border bg-bg transition-colors hover:border-faint"
-              >
-                <Link to={`/project/${p.id}`} className="block p-4 pr-12">
-                  <div className="flex items-center gap-2">
-                      {/* A preview that is switched off is not stopped, it is absent:
-                          saying so would report a state the project does not have. */}
-                      {!p.previewDisabled && (
-                        <span
-                          className={`h-2 w-2 shrink-0 rounded-full ${
-                            p.preview.running ? 'bg-emerald-500' : 'bg-border-strong'
-                          }`}
-                          title={p.preview.running ? 'Preview running' : 'Preview stopped'}
-                        />
-                      )}
-                      <span className="truncate font-medium text-text">{p.name}</span>
-                    </div>
-                  <div className="mt-1.5 flex items-center gap-1.5 text-xs text-subtle">
+          <div className="mx-auto flex max-w-4xl flex-col gap-4">
+            {projects.map((p) => {
+              const sessions = (sessionsByProject[p.id] ?? []).filter((s) => !s.archived);
+              return (
+                <section key={p.id} className="overflow-hidden rounded-xl border border-border bg-bg">
+                  <div className="flex items-center gap-2 border-b border-border px-4 py-3">
+                    {/* A preview that is switched off is not stopped, it is absent:
+                        saying so would report a state the project does not have. */}
+                    {!p.previewDisabled && (
+                      <span
+                        className={`h-2 w-2 shrink-0 rounded-full ${
+                          p.preview.running ? 'bg-emerald-500' : 'bg-border-strong'
+                        }`}
+                        title={p.preview.running ? 'Preview running' : 'Preview stopped'}
+                      />
+                    )}
+                    <Link
+                      to={`/project/${p.id}`}
+                      className="min-w-0 flex-1 truncate font-medium text-text transition-colors hover:text-accent"
+                    >
+                      {p.name}
+                    </Link>
                     {activeIds.has(p.id) && (
                       <span
-                        className="inline-flex items-center gap-1 font-medium text-accent"
+                        className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-accent"
                         title="A chat turn is running in this project"
                       >
                         <Spinner className="h-3 w-3" />
                         LLM running
                       </span>
                     )}
-                    {!p.previewDisabled && (
-                      <>
-                        {activeIds.has(p.id) && ' · '}
-                        {p.preview.running ? 'Preview running' : 'Preview stopped'}
-                      </>
-                    )}
                     {p.updatedAt && (
-                      <>
-                        {(activeIds.has(p.id) || !p.previewDisabled) && ' · '}
-                        {timeAgo(p.updatedAt)}
-                      </>
+                      <span className="shrink-0 text-xs text-faint">{timeAgo(p.updatedAt)}</span>
                     )}
+                    <CardMenu
+                      onDelete={() => {
+                        setDeleteError(null);
+                        setDeleting(p);
+                      }}
+                    />
                   </div>
-                </Link>
-                <div className="absolute right-1.5 top-1.5">
-                  <CardMenu
-                    onDelete={() => {
-                      setDeleteError(null);
-                      setDeleting(p);
-                    }}
-                  />
-                </div>
-              </div>
-            ))}
+                  <ul>
+                    {sessions.length === 0 && (
+                      <li className="px-4 py-2.5 text-xs text-faint">No sessions yet</li>
+                    )}
+                    {sessions.map((s) => (
+                      <li key={s.id} className="border-b border-border/60 last:border-0">
+                        <Link
+                          to={`/project/${p.id}?session=${s.id}`}
+                          className="flex items-center gap-2 px-4 py-2.5 transition-colors hover:bg-surface"
+                        >
+                          <IconChat className="h-3.5 w-3.5 shrink-0 text-faint" />
+                          <span className="min-w-0 flex-1 truncate text-sm text-dim">{s.name}</span>
+                          <span className="shrink-0 text-xs text-faint">
+                            {timeAgo(new Date(s.createdAt * 1000).toISOString())}
+                          </span>
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              );
+            })}
           </div>
         )}
       </main>

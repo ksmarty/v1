@@ -628,7 +628,8 @@ func (s *Server) streamChatTurn(w http.ResponseWriter, r *http.Request, p *store
 		OnSessionRename: func(name string) {
 			emit(agent.ChatEvent{Type: "session_renamed", Text: name})
 		},
-		OnAsk: s.turnAsk(p.ID, params.SessionID, emit),
+		OnAsk:           s.turnAsk(p.ID, params.SessionID, emit),
+		CreateExtension: s.createExtension,
 		RenderPage: func(ctx context.Context, url string) (string, error) {
 			return screenshot.RenderText(ctx, url)
 		},

@@ -1214,6 +1214,31 @@ var tools = []llm.Tool{
 			},
 		},
 	},
+	{
+		Type: "function",
+		Function: llm.ToolFunction{
+			Name:        "create_extension",
+			Description: "Create or update a v1 extension the agent can use in later turns. Pass a lowercase dashed id, a one-line description, and the complete JavaScript source of the extension's index.js. The source is syntax-checked and installed enabled, then loaded immediately. Use this to add a custom tool or a prompt section to v1; see the v1-extensions skill for the API.",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"id": map[string]any{
+						"type":        "string",
+						"description": "Extension id: lowercase letters, digits and dashes; becomes the directory name (e.g. word-stats).",
+					},
+					"description": map[string]any{
+						"type":        "string",
+						"description": "One-line description of what the extension does.",
+					},
+					"source": map[string]any{
+						"type":        "string",
+						"description": "The complete JavaScript source of index.js: default-export a factory that is called with the pi API.",
+					},
+				},
+				"required": []string{"id", "source"},
+			},
+		},
+	},
 }
 
 // waitResumeBackoff sleeps between auto-resume retries: 2^attempt seconds

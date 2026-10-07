@@ -91,6 +91,10 @@ type Executor struct {
 	// refused even if the model somehow sends one.
 	DisabledTools map[string]bool
 	GithubToken   string // user's GitHub token for the git tool's remote ops
+	// CreateExtension installs an extension the agent wrote (the
+	// create_extension tool): it validates, writes, enables and reloads. Nil
+	// when extensions are unavailable, and the tool then says so.
+	CreateExtension func(ctx context.Context, id, description, source string) (string, error)
 	// OnAsk asks the user one or more questions and waits for the answers
 	// (the ask_user tool); nil when the turn cannot prompt.
 	OnAsk func(ctx context.Context, questions []AskQuestion) ([]AskAnswer, error)
@@ -141,6 +145,7 @@ var planBlockedTools = map[string]bool{
 	"run_command_background": true,
 	"remember":               true,
 	"forget":                 true,
+	"create_extension":       true,
 }
 
 // planSafeTools filters a tool list down to the read-only ones for plan mode.
@@ -198,6 +203,8 @@ func (e *Executor) Execute(ctx context.Context, name, argsJSON string) (string, 
 		return e.runCommandBackground(ctx, argsJSON)
 	case "set_todos":
 		return e.setTodos(argsJSON)
+	case "create_extension":
+		return e.createExtension(ctx, argsJSON)
 	case "remember":
 		return e.remember(argsJSON)
 	case "forget":
@@ -351,6 +358,37 @@ func (e *Executor) forget(argsJSON string) (string, error) {
 	}
 	e.emitMemories()
 	return toolResult(map[string]any{"ok": true}), nil
+}
+
+// createExtension installs an extension the agent wrote. Validation, writing,
+// enabling and reloading live on the server, which owns the extensions
+// directory and the harness; this only shape-checks the call and turns a
+// refusal into the model-readable error contract.
+func (e *Executor) createExtension(ctx context.Context, argsJSON string) (string, error) {
+	if e.CreateExtension == nil {
+		return "", toolFail("UNAVAILABLE", "extensions are not available in this session", false, "ask the user to start the agent harness, then retry")
+	}
+	var args struct {
+		ID          string `json:"id"`
+		Description string `json:"description"`
+		Source      string `json:"source"`
+	}
+	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
+		return "", fmt.Errorf("invalid arguments: %w", err)
+	}
+	args.ID = strings.TrimSpace(args.ID)
+	args.Source = strings.TrimSpace(args.Source)
+	if args.ID == "" {
+		return "", toolFail("BAD_ARGUMENT", "id is required (lowercase letters, digits and dashes)", true, "pick a short id such as word-stats")
+	}
+	if args.Source == "" {
+		return "", toolFail("BAD_ARGUMENT", "source is required", true, "pass the complete index.js source")
+	}
+	message, err := e.CreateExtension(ctx, args.ID, args.Description, args.Source)
+	if err != nil {
+		return "", toolFail("EXTENSION_REJECTED", err.Error(), true, "read the reported error, fix the source, and call create_extension again")
+	}
+	return toolResult(map[string]any{"ok": true, "message": message}), nil
 }
 
 // emitMemories pushes the refreshed memory list to the UI after a change.

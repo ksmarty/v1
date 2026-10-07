@@ -12,6 +12,7 @@ import { errMsg, randomId } from '../utils';
 import { PERMISSION_MODES } from '../permissions';
 import { Button, Dialog, Field, Input, SaveRow, Spinner } from './ui';
 import Markdown from './Markdown';
+import NewExtensionDialog from './NewExtensionDialog';
 import { IconCheck, IconExternalLink, IconFlask, IconPencil, IconX } from './icons';
 
 const TABS = [
@@ -249,6 +250,8 @@ function ToolSettings({
   const [extErrors, setExtErrors] = useState<string[]>([]);
   const [extError, setExtError] = useState<string | null>(null);
   const [extBusy, setExtBusy] = useState(false);
+  // Whether the "describe an extension" chat-starter dialog is open.
+  const [newExtOpen, setNewExtOpen] = useState(false);
   const [extEditor, setExtEditor] = useState<{
     id: string;
     description: string;
@@ -1077,10 +1080,18 @@ function ToolSettings({
           <Button
             variant="outline"
             className="h-7 shrink-0 px-2 text-xs"
+            title="Write the JavaScript yourself instead"
             onClick={() => {
               setExtError(null);
               setExtEditor({ id: '', description: '', source: EXTENSION_TEMPLATE, isNew: true });
             }}
+          >
+            Blank
+          </Button>
+          <Button
+            variant="outline"
+            className="h-7 shrink-0 px-2 text-xs"
+            onClick={() => setNewExtOpen(true)}
           >
             New
           </Button>
@@ -1218,6 +1229,8 @@ function ToolSettings({
             </div>
           ))}
       </div>
+
+      <NewExtensionDialog open={newExtOpen} onClose={() => setNewExtOpen(false)} />
     </div>
   );
 
