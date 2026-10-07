@@ -98,6 +98,7 @@ function SkillPreviewDialog({
       <div className="flex h-full min-h-0 flex-col gap-3">
         <p className="text-xs text-subtle">by {target.author}</p>
         {target.description && <p className="text-sm text-text">{target.description}</p>}
+        {(readmeLoading || readme) && <div className="shrink-0 border-t border-border" />}
         {readmeLoading && (
           <div className="flex justify-center py-4">
             <Spinner className="h-4 w-4" />
@@ -837,6 +838,19 @@ function ToolSettings({
         <Button type="submit" variant="outline" disabled={skillBusy || skillQuery.trim() === ''} className="h-[42px] sm:h-[38px]">
           {skillBusy ? <Spinner className="h-4 w-4" /> : 'Search'}
         </Button>
+        <Button
+          type="button"
+          variant="outline"
+          disabled={skillBusy || (skillQuery === '' && skillResults.length === 0 && !skillError)}
+          onClick={() => {
+            setSkillQuery('');
+            setSkillResults([]);
+            setSkillError(null);
+          }}
+          className="h-[42px] sm:h-[38px]"
+        >
+          Clear
+        </Button>
       </form>
 
       {suggestedSkills.filter((sk) => !skills.some((s) => s.id === sk.id)).length > 0 && (
@@ -1007,6 +1021,11 @@ function ToolSettings({
 
   const permsSection = (
     <form onSubmit={(e) => void savePermissionMode(e)} className="flex flex-col gap-3">
+      <p className="text-xs leading-relaxed text-subtle">
+        Used by every project that hasn't chosen its own permission mode. A
+        project's own setting takes precedence, so changing this does not affect
+        projects that already have one.
+      </p>
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
         {PERMISSION_MODES.map((m) => {
           const active = permissionMode === m.id;
