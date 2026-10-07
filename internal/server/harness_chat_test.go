@@ -592,7 +592,7 @@ func TestHarnessPersistsToolCallsAndResults(t *testing.T) {
 // model as "Green" on the pi path and "Red" on the Go path.
 func TestHarnessProviderSpecAdvertisesImageInput(t *testing.T) {
 	client := &llm.Client{BaseURL: "https://example.test/v1", APIKey: "k", Model: "test-model"}
-	spec := harnessProviderSpec(client)
+	spec := harnessProviderSpec(client, "test-model")
 	if len(spec.Models) == 0 {
 		t.Fatal("no models in the spec")
 	}
@@ -659,25 +659,55 @@ func TestConsumeHarnessTurnReportsFaultedGeneration(t *testing.T) {
 	}
 }
 
+// The model the turn runs on must be in the catalog even when it is neither
+// the client's configured model nor a model in v1's static catalog: a user
+// picking a newer model from the provider's live list (deepseek-v4.1-flash
+// against a catalog holding only deepseek-v4-flash) used to fail the turn with
+// "model ... is not in the supplied catalog" before the model was called.
 func TestHarnessProviderSpecRegistersTurnModel(t *testing.T) {
-	spec := harnessProviderSpec(llm.NewClient("https://api.example.com/v1/", "sk-secret", "custom-model"))
+	client := llm.NewClient("https://api.example.com/v1/", "sk-secret", "configured-model")
+	spec := harnessProviderSpec(client, "deepseek-v4.1-flash")
 	if spec.ID != "api.example.com" {
 		t.Fatalf("provider id = %q", spec.ID)
 	}
 	if spec.BaseURL != "https://api.example.com/v1" || spec.APIKey != "sk-secret" {
 		t.Fatalf("spec = %+v", spec)
 	}
-	if len(spec.Models) == 0 || spec.Models[0].ID != "custom-model" {
+	if len(spec.Models) == 0 || spec.Models[0].ID != "deepseek-v4.1-flash" {
 		t.Fatalf("the turn's own model must be registered first: %+v", spec.Models)
 	}
 	seen := map[string]int{}
 	for _, m := range spec.Models {
 		seen[m.ID]++
+		if len(m.Input) == 0 {
+			t.Fatalf("model %q advertises no input", m.ID)
+		}
+	}
+	for _, id := range []string{"deepseek-v4.1-flash", "configured-model"} {
+		if seen[id] != 1 {
+			t.Fatalf("model %q registered %d times", id, seen[id])
+		}
 	}
 	for id, n := range seen {
 		if n != 1 {
 			t.Fatalf("model %q registered %d times", id, n)
 		}
+	}
+}
+
+// A turn with no explicit model falls back to the client's, which must not be
+// registered twice.
+func TestHarnessProviderSpecHandlesEmptyTurnModel(t *testing.T) {
+	spec := harnessProviderSpec(llm.NewClient("https://api.example.com/v1/", "sk", "configured-model"), "")
+	seen := map[string]int{}
+	for _, m := range spec.Models {
+		seen[m.ID]++
+	}
+	if seen["configured-model"] != 1 {
+		t.Fatalf("configured model registered %d times: %+v", seen["configured-model"], spec.Models)
+	}
+	if seen[""] != 0 {
+		t.Fatal("an empty model id must not be registered")
 	}
 }
 

@@ -88,7 +88,7 @@ func harnessUserContent(text string, atts []agent.Attachment) any {
 // built-in loop uses — agent.BuildSystemPrompt and ChatParams.ToolSet — so a
 // turn's prompt and its tool set cannot depend on which harness runs it.
 func harnessEnsureRequest(params agent.ChatParams, model string) harness.EnsureRequest {
-	provider := harnessProviderSpec(params.Client)
+	provider := harnessProviderSpec(params.Client, model)
 	return harness.EnsureRequest{
 		V1SessionID:   harnessConversationID(params.Project.ID, params.SessionID),
 		Cwd:           params.Project.Path,
@@ -115,11 +115,15 @@ func harnessProviderID(baseURL string) string {
 	return u.Hostname()
 }
 
-// harnessProviderSpec describes v1's configured endpoint in pi-ai's shape. The
-// turn's own model is always registered: the catalog may not know a custom
-// endpoint's model, and pi-ai must be able to resolve every model it is asked
-// for.
-func harnessProviderSpec(c *llm.Client) harness.ProviderSpec {
+// harnessProviderSpec describes v1's configured endpoint in pi-ai's shape.
+//
+// The turn's own model is registered first, and it is not necessarily the
+// client's: the user can pick any model v1 offers for the endpoint, including
+// ones the static catalog does not know (a newer model from the provider's
+// live list, or a custom endpoint's). pi-durable refuses a model missing from
+// the supplied catalog, so omitting it fails the turn before the model is ever
+// called.
+func harnessProviderSpec(c *llm.Client, turnModel string) harness.ProviderSpec {
 	id := harnessProviderID(c.BaseURL)
 	// v1's own client only ever speaks OpenAI chat completions, so the
 	// sidecar must run the turn on the same protocol.
@@ -132,6 +136,7 @@ func harnessProviderSpec(c *llm.Client) harness.ProviderSpec {
 		seen[m.ID] = true
 		spec.Models = append(spec.Models, m)
 	}
+	add(harness.ModelSpec{ID: turnModel, Name: turnModel, Input: []string{"text", "image"}})
 	add(harness.ModelSpec{ID: c.Model, Name: c.Model, Input: []string{"text", "image"}})
 	for _, m := range llm.ModelsForBaseURL(c.BaseURL) {
 		// Image input is advertised unconditionally, deliberately.
