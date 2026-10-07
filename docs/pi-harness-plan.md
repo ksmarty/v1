@@ -248,9 +248,26 @@ One further finding, important for **both** the provider story and the event tra
 3. Provider-level `headers` are **not** merged on the harness call path, and upstream endpoints may
    require per-session routing headers (opencode-go returns
    `400 {"type":"MissingSessionID","message":"Request is missing x-opencode-session ..."}`).
-   The working recipe is to wrap the registered streams and inject the header from the
-   `options.sessionId` the harness does supply (stable per submission, e.g.
-   `01a11293-4867-778f-85f9-f19c6a1adc0b`). v1 will need this wrapper per provider config.
+   **Resolved**: v1 sends the endpoint's headers itself — `ProviderSpec.SessionHeader` (a header
+   *name*, whose value is the session id) plus `ProviderSpec.Headers` (static headers such as
+   `x-opencode-client`) — derived from the base URL's hostname in `internal/llm/providers.go`
+   (`endpointHeadersByHost`, `SessionHeaderForBaseURL`, `StaticHeadersForBaseURL`) and injected by
+   the sidecar's `endpointHeaders()` wrapper in `sidecar/src/provider.js`.
+   Two things about that table are load-bearing:
+   - **Keyed by hostname, not by base URL.** opencode serves the same API under `/zen/v1` and
+     `/zen/go/v1`; a path-keyed table silently stops matching on the other path, and the failure is
+     a 400 that names no header. pi's own matching is hostname equality (`matchesHost` in
+     `dist/core/provider-attribution.js`).
+   - **pi's quirk knowledge cannot be imported.** `@earendil-works/pi-coding-agent`'s `exports` map
+     publishes only `.`, `./extensions` and `./package.json`, so `dist/core/provider-attribution.js`
+     is unreachable (`ERR_PACKAGE_PATH_NOT_EXPORTED`). The table is therefore a mirror, guarded by
+     `TestEndpointHeaderHostsCoverPiAttributionHosts`, which fails when pi starts handling a host v1
+     has not considered, and by `TestStaticHeadersDoNotImpersonatePi`.
+   pi's *attribution* headers are deliberately **not** mirrored — `X-BILLING-INVOKE-ORIGIN: Pi`
+   (nvidia), `HTTP-Referer: https://pi.dev` / `X-OpenRouter-Title: pi` (openrouter),
+   `User-Agent: pi-coding-agent` (cloudflare) all assert pi's identity, and one is a billing
+   origin. pi itself sends none of them unless its own telemetry setting is on. v1 sends
+   `x-opencode-client: v1`.
 4. A provider failure does **not** always arrive as an `error` event: the run settled `unanswered`,
    usage stayed zero, and the only evidence was `stopReason: "error"` +
    `errorMessage: "<status>: <body>"` on the committed assistant entry. The translator must read

@@ -174,30 +174,60 @@ var knownBaseURLs = map[string]string{
 	"cerebras":   "https://api.cerebras.ai/v1",
 }
 
-// sessionHeaderHosts maps a hostname to the per-session routing header that
-// endpoint requires. opencode's zen endpoint rejects a request without one
-// (400 MissingSessionID): it routes by session so a conversation keeps hitting
-// the same upstream, and an unroutable request is refused rather than guessed
-// at.
-//
-// This keys on the hostname, not the full base URL, matching pi's own provider
-// layer (`matchesHost` in pi-coding-agent's core/provider-attribution.js). One
+// endpointHeaders is what an endpoint needs on every request: the name of its
+// per-session routing header (its value is the session id, so the name alone is
+// not enough to send it) and any static headers that accompany it.
+type endpointHeaders struct {
+	SessionHeader string
+	Static        map[string]string
+}
+
+// endpointHeadersByHost keys on hostname, matching pi's own provider layer
+// (`matchesHost` in pi-coding-agent's dist/core/provider-attribution.js). One
 // API is served under several paths — opencode.ai serves both /zen/v1 and
 // /zen/go/v1 — so a path-keyed table silently stops matching the moment a
 // deployment points at the other one, and the failure is a 400 that names no
 // header.
-var sessionHeaderHosts = map[string]string{
-	"opencode.ai": "x-opencode-session",
+//
+// pi sends two headers here: the routing one, and "x-opencode-client: pi". We
+// send v1's own name for the second rather than copying pi's, because that
+// header attributes the traffic and claiming to be pi would misattribute it.
+//
+// pi's remaining attribution headers are deliberately NOT mirrored for the same
+// reason — they assert pi's identity, and one of them is explicitly a billing
+// origin: X-BILLING-INVOKE-ORIGIN: Pi (nvidia), HTTP-Referer: https://pi.dev /
+// X-OpenRouter-Title: pi / X-OpenRouter-Categories: cli-agent (openrouter),
+// User-Agent: pi-coding-agent (cloudflare). pi itself sends none of them unless
+// its own telemetry setting is on (getDefaultAttributionHeaders returns early
+// when isInstallTelemetryEnabled is false), so they are telemetry, not
+// protocol. v1 may want its own attribution values; that is a product decision,
+// not something to inherit.
+var endpointHeadersByHost = map[string]endpointHeaders{
+	"opencode.ai": {
+		SessionHeader: "x-opencode-session",
+		Static:        map[string]string{"x-opencode-client": "v1"},
+	},
 }
 
-// SessionHeaderForBaseURL returns the routing header an endpoint needs, or ""
-// when it needs none. An unparseable URL needs none.
-func SessionHeaderForBaseURL(baseURL string) string {
+func endpointHeadersFor(baseURL string) endpointHeaders {
 	u, err := url.Parse(strings.TrimSpace(baseURL))
 	if err != nil {
-		return ""
+		return endpointHeaders{}
 	}
-	return sessionHeaderHosts[strings.ToLower(u.Hostname())]
+	return endpointHeadersByHost[strings.ToLower(u.Hostname())]
+}
+
+// SessionHeaderForBaseURL returns the routing header name an endpoint needs, or
+// "" when it needs none.
+func SessionHeaderForBaseURL(baseURL string) string {
+	return endpointHeadersFor(baseURL).SessionHeader
+}
+
+// StaticHeadersForBaseURL returns the headers an endpoint needs on every
+// request, independent of the session. The result is shared and must not be
+// mutated by the caller.
+func StaticHeadersForBaseURL(baseURL string) map[string]string {
+	return endpointHeadersFor(baseURL).Static
 }
 
 // liveCacheTTL is how long the in-memory models.dev cache stays fresh. It is

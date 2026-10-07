@@ -138,13 +138,17 @@ type ToolDef struct {
 
 // ProviderSpec is v1's provider descriptor in pi-ai's shape.
 type ProviderSpec struct {
-	ID            string      `json:"id"`
-	Name          string      `json:"name,omitempty"`
-	BaseURL       string      `json:"baseUrl"`
-	APIKey        string      `json:"apiKey"`
-	API           string      `json:"api,omitempty"`
-	SessionHeader string      `json:"sessionHeader,omitempty"`
-	Models        []ModelSpec `json:"models,omitempty"`
+	ID            string `json:"id"`
+	Name          string `json:"name,omitempty"`
+	BaseURL       string `json:"baseUrl"`
+	APIKey        string `json:"apiKey"`
+	API           string `json:"api,omitempty"`
+	SessionHeader string `json:"sessionHeader,omitempty"`
+	// Headers are sent on every request to this provider, independent of the
+	// session. pi-ai's own provider layer attaches several such headers; v1
+	// passes the ones its endpoint needs rather than relying on pi to guess.
+	Headers map[string]string `json:"headers,omitempty"`
+	Models  []ModelSpec       `json:"models,omitempty"`
 }
 
 // ModelSpec is one model of a provider, in pi-ai's shape.

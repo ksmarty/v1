@@ -63,9 +63,12 @@ type Client struct {
 	ReasoningEffort string
 	// SessionHeader is the per-session routing header the endpoint requires
 	// (empty when it needs none); SessionID is the value sent for it, which
-	// should stay stable for the life of one conversation.
+	// should stay stable for the life of one conversation. StaticHeaders are
+	// the endpoint's headers that do not depend on the session, sent on every
+	// request.
 	SessionHeader string
 	SessionID     string
+	StaticHeaders map[string]string
 	HTTP          *http.Client
 }
 
@@ -79,16 +82,24 @@ func NewClient(baseURL, apiKey, model string) *Client {
 		APIKey:        apiKey,
 		Model:         model,
 		SessionHeader: SessionHeaderForBaseURL(baseURL),
+		StaticHeaders: StaticHeadersForBaseURL(baseURL),
 		// Generous so long reasoning streams are never cut off; the chat
 		// handler's own context timeout is the real backstop.
 		HTTP: &http.Client{Timeout: 15 * time.Minute},
 	}
 }
 
-// setSessionHeaders applies the endpoint's per-session routing header. The
-// value should be stable across one conversation so the upstream routes it
-// consistently; any non-empty value satisfies the requirement.
-func (c *Client) setSessionHeaders(req *http.Request) {
+// applyEndpointHeaders applies the headers the endpoint requires: its static
+// ones first, then the per-session routing header. The session value should be
+// stable across one conversation so the upstream routes it consistently; any
+// non-empty value satisfies the requirement. A caller-supplied header of the
+// same name wins, so an explicit request can still override the default.
+func (c *Client) applyEndpointHeaders(req *http.Request) {
+	for name, value := range c.StaticHeaders {
+		if req.Header.Get(name) == "" {
+			req.Header.Set(name, value)
+		}
+	}
 	if c.SessionHeader == "" {
 		return
 	}
@@ -96,7 +107,9 @@ func (c *Client) setSessionHeaders(req *http.Request) {
 	if session == "" {
 		session = c.Model
 	}
-	req.Header.Set(c.SessionHeader, session)
+	if req.Header.Get(c.SessionHeader) == "" {
+		req.Header.Set(c.SessionHeader, session)
+	}
 }
 
 // Usage is the token accounting reported in the final chunk of a stream.
@@ -280,7 +293,7 @@ func (c *Client) Complete(ctx context.Context, messages []Message) (string, erro
 	if c.APIKey != "" {
 		req.Header.Set("Authorization", "Bearer "+c.APIKey)
 	}
-	c.setSessionHeaders(req)
+	c.applyEndpointHeaders(req)
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
 		return "", err
@@ -408,7 +421,7 @@ func (c *Client) postStream(ctx context.Context, messages []Message, tools []Too
 	if c.APIKey != "" {
 		req.Header.Set("Authorization", "Bearer "+c.APIKey)
 	}
-	c.setSessionHeaders(req)
+	c.applyEndpointHeaders(req)
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
 		return nil, 0, err

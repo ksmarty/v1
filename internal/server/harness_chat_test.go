@@ -659,6 +659,24 @@ func TestConsumeHarnessTurnReportsFaultedGeneration(t *testing.T) {
 	}
 }
 
+// The provider's static headers must reach the sidecar too: it is the side that
+// calls the endpoint, and opencode's client attribution travels with the
+// routing header rather than instead of it.
+func TestHarnessProviderSpecSendsStaticHeaders(t *testing.T) {
+	opencode := harnessProviderSpec(llm.NewClient("https://opencode.ai/zen/go/v1", "k", "m"), "m")
+	if got := opencode.Headers["x-opencode-client"]; got != "v1" {
+		t.Fatalf("headers = %v, want x-opencode-client: v1", opencode.Headers)
+	}
+	if opencode.SessionHeader != "x-opencode-session" {
+		t.Fatalf("sessionHeader = %q", opencode.SessionHeader)
+	}
+
+	openai := harnessProviderSpec(llm.NewClient("https://api.openai.com/v1", "k", "gpt-x"), "gpt-x")
+	if len(openai.Headers) != 0 {
+		t.Fatalf("an endpoint needing no static headers got %v", openai.Headers)
+	}
+}
+
 // The provider's routing header must reach the sidecar too: it is the side that
 // actually calls the endpoint, and without this the pi path (the default) sends
 // no header at all and opencode's zen endpoint refuses the turn.

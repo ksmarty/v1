@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"regexp"
 	"testing"
 )
 
@@ -37,6 +39,115 @@ func TestSessionHeaderForBaseURL(t *testing.T) {
 	for in, want := range cases {
 		if got := SessionHeaderForBaseURL(in); got != want {
 			t.Errorf("SessionHeaderForBaseURL(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// Static headers travel with every request to the endpoint, independent of the
+// session: opencode wants its client attribution alongside the routing header.
+// The descriptor has to be able to express more than one header — a single-name
+// field could not, which is exactly how the second header went missing.
+func TestStaticHeadersForBaseURL(t *testing.T) {
+	cases := map[string]map[string]string{
+		"https://opencode.ai/zen/v1":    {"x-opencode-client": "v1"},
+		"https://opencode.ai/zen/go/v1": {"x-opencode-client": "v1"},
+		"https://OPENCODE.AI":           {"x-opencode-client": "v1"},
+		"https://api.openai.com/v1":     nil,
+		"https://openrouter.ai/api/v1":  nil,
+		"":                              nil,
+	}
+	for in, want := range cases {
+		got := StaticHeadersForBaseURL(in)
+		if len(got) != len(want) {
+			t.Errorf("StaticHeadersForBaseURL(%q) = %v, want %v", in, got, want)
+			continue
+		}
+		for name, value := range want {
+			if got[name] != value {
+				t.Errorf("StaticHeadersForBaseURL(%q)[%q] = %q, want %q", in, name, got[name], value)
+			}
+		}
+	}
+}
+
+// v1 sends its own client name, never pi's. pi's attribution headers assert
+// pi's identity — one is a billing origin — so copying them would misattribute
+// v1's traffic to another project. This guards that decision against a
+// well-meaning "match pi exactly" edit.
+func TestStaticHeadersDoNotImpersonatePi(t *testing.T) {
+	hosts := []string{
+		"https://opencode.ai/zen/v1",
+		"https://opencode.ai/zen/go/v1",
+		"https://openrouter.ai/api/v1",
+		"https://integrate.api.nvidia.com/v1",
+		"https://api.cloudflare.com/client/v4/accounts/x/ai/v1",
+		"https://gateway.ai.cloudflare.com/v1/acc/gw",
+	}
+	piValues := []string{"pi", "Pi", "pi-coding-agent", "https://pi.dev"}
+	forbidden := []string{"HTTP-Referer", "X-BILLING-INVOKE-ORIGIN", "X-OpenRouter-Title", "X-OpenRouter-Categories"}
+	for _, host := range hosts {
+		headers := StaticHeadersForBaseURL(host)
+		for name, value := range headers {
+			for _, piValue := range piValues {
+				if value == piValue {
+					t.Errorf("StaticHeadersForBaseURL(%q) sends %s: %q, which claims pi's identity", host, name, value)
+				}
+			}
+		}
+		for _, name := range forbidden {
+			if _, ok := headers[name]; ok {
+				t.Errorf("StaticHeadersForBaseURL(%q) sends pi's attribution header %s", host, name)
+			}
+		}
+	}
+}
+
+// pi encodes endpoint quirks v1 cannot import: pi-coding-agent's package
+// "exports" map publishes only ".", "./extensions" and "./package.json", so
+// dist/core/provider-attribution.js is unreachable (ERR_PACKAGE_PATH_NOT_EXPORTED).
+// The table above is therefore a mirror and can drift, so this fails when pi
+// starts handling a host v1 has not considered — turning a silently missing
+// header into a test failure. It skips when pi is not installed.
+func TestEndpointHeaderHostsCoverPiAttributionHosts(t *testing.T) {
+	const path = "/usr/local/lib/node_modules/@earendil-works/pi-coding-agent/dist/core/provider-attribution.js"
+	source, err := os.ReadFile(path)
+	if err != nil {
+		t.Skipf("pi not installed at %s: %v", path, err)
+	}
+	piHosts := map[string]bool{}
+	for _, m := range regexp.MustCompile(`const [A-Z_]+_HOST = "([^"]+)"`).FindAllStringSubmatch(string(source), -1) {
+		piHosts[m[1]] = true
+	}
+	if len(piHosts) == 0 {
+		t.Fatalf("parsed no hosts from %s — has the file moved or changed shape?", path)
+	}
+
+	// Hosts pi handles that v1 deliberately does not, each with its reason.
+	documentedSkips := map[string]string{
+		"openrouter.ai":             "pi sends identity attribution only (HTTP-Referer, X-OpenRouter-Title, X-OpenRouter-Categories)",
+		"integrate.api.nvidia.com":  "pi sends X-BILLING-INVOKE-ORIGIN: Pi",
+		"api.cloudflare.com":        "pi sends User-Agent: pi-coding-agent",
+		"gateway.ai.cloudflare.com": "pi sends User-Agent: pi-coding-agent",
+	}
+
+	// v1 must never invent an endpoint quirk pi does not implement.
+	for host := range endpointHeadersByHost {
+		if !piHosts[host] {
+			t.Errorf("v1 attaches headers to %q, which pi's provider-attribution.js does not know", host)
+		}
+	}
+	// And every host pi knows must be a deliberate decision here.
+	for host := range piHosts {
+		_, mirrored := endpointHeadersByHost[host]
+		_, skipped := documentedSkips[host]
+		if !mirrored && !skipped {
+			t.Errorf("pi handles %q but v1 neither mirrors it nor documents why it is skipped", host)
+		}
+	}
+	// A skip that pi has dropped is stale documentation.
+	for host := range documentedSkips {
+		if !piHosts[host] {
+			t.Errorf("v1 documents skipping %q, which pi no longer handles", host)
 		}
 	}
 }
@@ -110,5 +221,26 @@ func TestChatStreamSessionHeaderFallback(t *testing.T) {
 	}
 	if present {
 		t.Fatal("an endpoint that needs no routing header must not get one")
+	}
+}
+
+// The static headers have to reach the wire on the streaming path the chat turn
+// uses, not just be carried on the client.
+func TestChatStreamSendsStaticHeaders(t *testing.T) {
+	var got string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.Header.Get("x-opencode-client")
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, "data: [DONE]\n\n")
+	}))
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "k", "m")
+	client.StaticHeaders = StaticHeadersForBaseURL("https://opencode.ai/zen/go/v1")
+	if _, err := client.ChatStream(context.Background(), []Message{{Role: "user", Content: "hi"}}, nil, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got != "v1" {
+		t.Fatalf("x-opencode-client = %q, want v1", got)
 	}
 }

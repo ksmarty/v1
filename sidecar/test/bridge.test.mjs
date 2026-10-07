@@ -23,6 +23,7 @@ import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 
 import { createPeer } from "../src/rpc.js";
+import { endpointHeaders } from "../src/provider.js";
 import { buildHostTools } from "../src/tools.js";
 
 const run = promisify(execFile);
@@ -32,6 +33,9 @@ const CATALOG_PATH = "/data/agent/models-store.json";
 const PROVIDER_ID = "opencode-go";
 const MODEL_ID = "deepseek-v4-flash";
 const SESSION_HEADER = "x-opencode-session";
+// opencode wants its client attribution alongside the routing header, so the
+// provider descriptor has to carry more than one header.
+const STATIC_HEADERS = { "x-opencode-client": "v1" };
 
 let checks = 0;
 let failures = 0;
@@ -168,6 +172,26 @@ async function main() {
 		check("harness.ready reports pi-durable 1.0.4", ready?.piDurableVersion === "1.0.4", ready?.piDurableVersion);
 		check("harness.ready reports the node version", typeof ready?.nodeVersion === "string", ready?.nodeVersion);
 
+		// The provider's static headers ride along on every request, and the
+		// routing header keeps its value. A descriptor that could express only one
+		// header is what let opencode's second header go missing.
+		const merged = endpointHeaders({ id: PROVIDER_ID, sessionHeader: SESSION_HEADER, headers: STATIC_HEADERS }, { sessionId: "sess-7" });
+		check("static headers are sent", merged["x-opencode-client"] === "v1", JSON.stringify(merged));
+		check("the routing header carries the session id", merged[SESSION_HEADER] === "sess-7", JSON.stringify(merged));
+		check(
+			"static headers are sent even with no session",
+			endpointHeaders({ id: PROVIDER_ID, headers: STATIC_HEADERS }, {})["x-opencode-client"] === "v1",
+		);
+		check("an endpoint needing no headers gets none", Object.keys(endpointHeaders({ id: PROVIDER_ID }, {})).length === 0);
+		check(
+			"caller headers win over static ones",
+			endpointHeaders({ id: PROVIDER_ID, headers: STATIC_HEADERS }, { headers: { "x-opencode-client": "caller" } })["x-opencode-client"] === "caller",
+		);
+		check(
+			"the routing header falls back to the provider id",
+			endpointHeaders({ id: PROVIDER_ID, sessionHeader: SESSION_HEADER }, {})[SESSION_HEADER] === PROVIDER_ID,
+		);
+
 		const provider = {
 			id: PROVIDER_ID,
 			name: "opencode-go (sidecar test)",
@@ -175,6 +199,7 @@ async function main() {
 			apiKey: credentials ?? "test-key-not-used-offline",
 			api: "openai-completions",
 			sessionHeader: SESSION_HEADER,
+			headers: STATIC_HEADERS,
 			models: catalog?.models ?? [],
 		};
 

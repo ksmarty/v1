@@ -33,6 +33,9 @@ function signatureOf(config) {
 		baseUrl: config.baseUrl,
 		api: config.api,
 		sessionHeader: config.sessionHeader,
+		// Included so a provider whose static headers changed is re-registered
+		// rather than reused with the headers it was first built with.
+		headers: Object.entries(config.headers ?? {}).sort(([a], [b]) => a.localeCompare(b)),
 		models: (config.models ?? []).map((model) => model.id),
 	});
 }
@@ -79,6 +82,21 @@ function modelDescriptor(model, key, config) {
 }
 
 /**
+ * The headers a request to this provider must carry: its static ones on every
+ * request, plus its per-session routing header when the endpoint needs one.
+ * Caller headers win over the static defaults; the routing header wins over
+ * both, since an endpoint that rejects unroutable requests cannot be
+ * overridden.
+ */
+export function endpointHeaders(config, options) {
+	return {
+		...(config?.headers ?? {}),
+		...(options?.headers ?? {}),
+		...(config?.sessionHeader ? { [config.sessionHeader]: options?.sessionId ?? config?.id } : {}),
+	};
+}
+
+/**
  * Register (or refresh) the provider and return the model reference to store on
  * the conversation.
  *
@@ -99,21 +117,13 @@ export function registerProvider(models, config) {
 	if (descriptors.length === 0) throw new Error(`provider ${config.id}: no models supplied`);
 
 	const sessionHeader = config.sessionHeader;
-	/** Inject the upstream's per-session routing header, when it needs one. */
-	const wrap = (fn) => (model, context, options) =>
-		fn(
-			model,
-			context,
-			sessionHeader
-				? {
-						...options,
-						headers: {
-							...(options?.headers ?? {}),
-							[sessionHeader]: options?.sessionId ?? config.id,
-						},
-					}
-				: options,
-		);
+	const staticHeaders = config.headers ?? {};
+	const wrap = (fn) => (model, context, options) => {
+		const headers = endpointHeaders(config, options);
+		return Object.keys(headers).length > 0
+			? fn(model, context, { ...options, headers })
+			: fn(model, context, options);
+	};
 
 	const apiName = config.api ?? "openai-completions";
 	if (apiName !== "openai-completions") {
@@ -144,6 +154,7 @@ export function registerProvider(models, config) {
 		key,
 		models: descriptors.map((model) => model.id).join(","),
 		sessionHeader: sessionHeader ?? "(none)",
+		headers: Object.keys(staticHeaders).sort().join(",") || "(none)",
 	});
 	return { providerId: key, modelId: pickModelId(config) };
 }
