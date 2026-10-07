@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useState, type FormEvent } from 'react';
 import { api } from '../api';
 import type {
+  InstalledExtension,
   InstalledSkill,
   MCPServer,
   MCPServerStatus,
@@ -20,6 +21,38 @@ const TABS = [
   { id: 'tools', label: 'Tools' },
   { id: 'perms', label: 'Permissions' },
 ] as const;
+
+// Starting point for a new extension, shown in the editor so the API is
+// discoverable without leaving the page.
+const EXTENSION_TEMPLATE = `// A v1 extension: the default export receives the extension API and returns
+// the extension. The sidecar loads this file when the extension is enabled.
+export default (pi) => ({
+  name: 'my-extension',
+
+  // Tools the agent can call, alongside its built-in ones.
+  tools: [
+    pi.defineTool({
+      name: 'my_tool',
+      description: 'What this tool does.',
+      parameters: {
+        type: 'object',
+        properties: {
+          input: { type: 'string', description: 'What to act on.' },
+        },
+        required: ['input'],
+      },
+      async execute(args) {
+        return { content: [{ type: 'text', text: 'got ' + args.input }] };
+      },
+    }),
+  ],
+
+  // Text injected into the system prompt before every request.
+  sections: [
+    pi.section('my-extension-note', () => 'Always prefer readable code.'),
+  ],
+});
+`;
 type Tab = (typeof TABS)[number]['id'];
 export type ToolsTab = Tab;
 
@@ -209,6 +242,19 @@ function ToolSettings({
   const [skillBusyId, setSkillBusyId] = useState<string | null>(null);
   const [skillError, setSkillError] = useState<string | null>(null);
   const [skillPreview, setSkillPreview] = useState<SkillPreviewTarget | null>(null);
+
+  // Extensions: JS modules the sidecar loads to add tools, prompt sections or
+  // hooks. An agent can write one, which is how v1 extends itself.
+  const [extensions, setExtensions] = useState<InstalledExtension[]>([]);
+  const [extErrors, setExtErrors] = useState<string[]>([]);
+  const [extError, setExtError] = useState<string | null>(null);
+  const [extBusy, setExtBusy] = useState(false);
+  const [extEditor, setExtEditor] = useState<{
+    id: string;
+    description: string;
+    source: string;
+    isNew: boolean;
+  } | null>(null);
 
   // Approval mode
   const [permissionMode, setPermissionMode] = useState<PermissionMode>(initialPermissionMode ?? 'ask');
@@ -609,6 +655,98 @@ function ToolSettings({
     }
   };
 
+  const refreshExtensions = useCallback(async () => {
+    try {
+      const r = await api.extensions();
+      setExtensions(r.extensions ?? []);
+      setExtErrors((r.errors ?? []).map(String));
+    } catch (err) {
+      setExtError(errMsg(err));
+    }
+  }, []);
+
+  useEffect(() => {
+    if (tab === 'extensions') void refreshExtensions();
+  }, [tab, refreshExtensions]);
+
+  const openExtension = async (id: string) => {
+    setExtBusy(true);
+    setExtError(null);
+    try {
+      const r = await api.extension(id);
+      setExtEditor({
+        id: r.id,
+        description: r.description ?? '',
+        source: r.source ?? '',
+        isNew: false,
+      });
+    } catch (err) {
+      setExtError(errMsg(err));
+    } finally {
+      setExtBusy(false);
+    }
+  };
+
+  const saveExtension = async () => {
+    if (!extEditor) return;
+    setExtBusy(true);
+    setExtError(null);
+    try {
+      const r = await api.extensionSave({
+        id: extEditor.id.trim(),
+        description: extEditor.description,
+        source: extEditor.source,
+        enabled: true,
+      });
+      setExtensions(r.extensions ?? []);
+      setExtEditor(null);
+      await refreshExtensions();
+    } catch (err) {
+      setExtError(errMsg(err));
+    } finally {
+      setExtBusy(false);
+    }
+  };
+
+  const toggleExtension = async (id: string, enabled: boolean) => {
+    setExtError(null);
+    try {
+      const r = await api.extensionToggle(id, enabled);
+      setExtensions(r.extensions ?? []);
+    } catch (err) {
+      setExtError(errMsg(err));
+    }
+  };
+
+  const removeExtension = async (id: string) => {
+    if (!window.confirm(`Delete the ${id} extension? This cannot be undone.`)) return;
+    setExtBusy(true);
+    setExtError(null);
+    try {
+      const r = await api.extensionRemove(id);
+      setExtensions(r.extensions ?? []);
+      setExtEditor(null);
+      await refreshExtensions();
+    } catch (err) {
+      setExtError(errMsg(err));
+    } finally {
+      setExtBusy(false);
+    }
+  };
+
+  const reloadExtensions = async () => {
+    setExtBusy(true);
+    setExtError(null);
+    try {
+      await api.extensionReload();
+      await refreshExtensions();
+    } catch (err) {
+      setExtError(errMsg(err));
+    } finally {
+      setExtBusy(false);
+    }
+  };
+
   const savePermissionMode = async (e: FormEvent) => {
     e.preventDefault();
     setPermSaving(true);
@@ -919,6 +1057,155 @@ function ToolSettings({
     </div>
   );
 
+  const extensionsSection = (
+    <div className="flex h-full min-h-0 min-w-0 flex-col gap-3">
+      <div className="flex shrink-0 items-center gap-2">
+        <p className="min-w-0 flex-1 text-[11px] leading-relaxed text-subtle">
+          Extensions are small JavaScript modules the agent loads to add tools, inject prompt
+          sections or hook into a run. The agent can write them itself, which is how v1 grows new
+          abilities.
+        </p>
+        <Button
+          variant="outline"
+          className="h-7 shrink-0 px-2 text-xs"
+          disabled={extBusy}
+          onClick={() => void reloadExtensions()}
+        >
+          Reload
+        </Button>
+        <Button
+          variant="outline"
+          className="h-7 shrink-0 px-2 text-xs"
+          onClick={() => {
+            setExtError(null);
+            setExtEditor({ id: '', description: '', source: EXTENSION_TEMPLATE, isNew: true });
+          }}
+        >
+          New
+        </Button>
+      </div>
+
+      {extError !== null && (
+        <div className="shrink-0 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-[11px] text-red-400">
+          {extError}
+        </div>
+      )}
+
+      {extErrors.map((msg, i) => (
+        <div
+          key={i}
+          className="shrink-0 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 font-mono text-[11px] text-amber-400"
+        >
+          {msg}
+        </div>
+      ))}
+
+      {extEditor !== null ? (
+        <div className="flex min-h-0 flex-1 flex-col gap-3">
+          <div className="flex shrink-0 items-end gap-2">
+            <div className="w-40">
+              <Field label="Id">
+                <Input
+                  value={extEditor.id}
+                  onChange={(e) => setExtEditor({ ...extEditor, id: e.target.value })}
+                  placeholder="my-extension"
+                  autoComplete="off"
+                  disabled={!extEditor.isNew}
+                />
+              </Field>
+            </div>
+            <div className="min-w-0 flex-1">
+              <Field label="Description">
+                <Input
+                  value={extEditor.description}
+                  onChange={(e) => setExtEditor({ ...extEditor, description: e.target.value })}
+                  placeholder="What this extension does"
+                  autoComplete="off"
+                />
+              </Field>
+            </div>
+            <Button
+              variant="outline"
+              className="h-[42px] shrink-0 px-3 text-xs sm:h-[38px]"
+              disabled={extBusy || extEditor.id.trim() === '' || extEditor.source.trim() === ''}
+              onClick={() => void saveExtension()}
+            >
+              {extBusy ? <Spinner className="h-4 w-4" /> : 'Save'}
+            </Button>
+            <Button
+              variant="outline"
+              className="h-[42px] shrink-0 px-3 text-xs sm:h-[38px]"
+              onClick={() => {
+                setExtEditor(null);
+                setExtError(null);
+              }}
+            >
+              Cancel
+            </Button>
+            {!extEditor.isNew && (
+              <Button
+                variant="outline"
+                className="h-[42px] shrink-0 px-3 text-xs text-red-400 sm:h-[38px]"
+                disabled={extBusy}
+                onClick={() => void removeExtension(extEditor.id)}
+              >
+                Delete
+              </Button>
+            )}
+          </div>
+          <textarea
+            value={extEditor.source}
+            onChange={(e) => setExtEditor({ ...extEditor, source: e.target.value })}
+            spellCheck={false}
+            className="min-h-0 flex-1 resize-none rounded-lg border border-border bg-surface px-3 py-2 font-mono text-[12px] leading-relaxed text-text outline-none focus:border-accent"
+          />
+        </div>
+      ) : (
+        <div className="fade-y flex min-h-0 flex-1 flex-col gap-2 overflow-x-hidden overflow-y-auto overscroll-contain">
+          {extensions.length === 0 && (
+            <div className="text-[11px] text-faint">
+              No extensions yet. The agent can create one when it needs a capability it does not have.
+            </div>
+          )}
+          {extensions.map((ext) => (
+            <div
+              key={ext.id}
+              className="flex items-center gap-2 rounded-xl border border-border bg-surface px-3 py-2"
+            >
+              <button
+                type="button"
+                onClick={() => void openExtension(ext.id)}
+                title={`Edit ${ext.id}`}
+                className="min-w-0 flex-1 text-left"
+              >
+                <div className="truncate text-sm text-text">{ext.id}</div>
+                <div className="truncate text-[11px] text-faint">
+                  {ext.description !== '' ? ext.description : 'No description'}
+                </div>
+              </button>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={ext.enabled}
+                aria-label={`${ext.enabled ? 'Disable' : 'Enable'} ${ext.id}`}
+                onClick={() => void toggleExtension(ext.id, !ext.enabled)}
+                className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
+                  ext.enabled ? 'bg-accent' : 'bg-border'
+                }`}
+              >
+                <span
+                  className={`inline-block h-3.5 w-3.5 transform rounded-full bg-bg transition-transform ${
+                    ext.enabled ? 'translate-x-[18px]' : 'translate-x-[3px]'
+                  }`}
+                />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
   const skillsSection = (
     <div className="flex h-full min-h-0 min-w-0 flex-col gap-3">
       <form onSubmit={(e) => void searchSkills(e)} className="flex shrink-0 min-w-0 items-end gap-2">
@@ -1209,6 +1496,9 @@ function ToolSettings({
       <div className="fade-y min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-3 pt-2 pb-2 overscroll-contain">
         {tab === 'mcp' && mcpSection}
         {tab === 'skills' && <div className="flex h-full min-h-0 flex-col">{skillsSection}</div>}
+        {tab === 'extensions' && (
+          <div className="flex h-full min-h-0 flex-col">{extensionsSection}</div>
+        )}
         {tab === 'tools' && <div className="flex h-full min-h-0 flex-col">{toolsSection}</div>}
         {tab === 'perms' && permsSection}
       </div>

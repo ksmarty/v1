@@ -320,6 +320,19 @@ export interface InstalledSkill {
   builtin?: boolean;
 }
 
+/** A v1 extension: a JS module the sidecar loads to add tools, prompt sections
+ *  or hooks to the agent. Extensions are how v1 extends itself. */
+export interface InstalledExtension {
+  id: string;
+  name: string;
+  description: string;
+  enabled: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+  /** Why the sidecar could not load it, when it could not. */
+  errors?: string[];
+}
+
 export interface SkillSearchResult {
   id: string;
   name: string;

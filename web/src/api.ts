@@ -13,6 +13,7 @@ import type {
   GitInfo,
   GitHubWorkflows,
   GitHubImages,
+  InstalledExtension,
   InstalledSkill,
   MCPServer,
   MCPServerStatus,
@@ -505,6 +506,26 @@ export const api = {
   skillReadme: (id: string) => request<{ content: string }>(`/api/skills/${id}/readme`),
   skillToggle: (id: string, enabled: boolean) =>
     post<{ skills: InstalledSkill[] }>('/api/skills/toggle', { id, enabled }),
+
+  // Extensions: JS modules the sidecar loads to extend the agent. An agent can
+  // author these itself, which is how v1 grows new capabilities.
+  extensions: () =>
+    request<{ extensions: InstalledExtension[]; errors?: string[] }>('/api/extensions'),
+  extension: (id: string) =>
+    request<{ id: string; name: string; description: string; enabled: boolean; source: string }>(
+      `/api/extensions/${encodeURIComponent(id)}`,
+    ),
+  extensionSave: (body: {
+    id: string;
+    description: string;
+    source: string;
+    enabled: boolean;
+  }) => post<{ extensions: InstalledExtension[]; error?: string }>('/api/extensions', body),
+  extensionToggle: (id: string, enabled: boolean) =>
+    post<{ extensions: InstalledExtension[] }>('/api/extensions/toggle', { id, enabled }),
+  extensionRemove: (id: string) =>
+    post<{ extensions: InstalledExtension[] }>('/api/extensions/remove', { id }),
+  extensionReload: () => post<{ errors?: string[] }>('/api/extensions/reload', {}),
 
   // Chat permissions
   permissionRespond: (projectId: string, requestId: string, allow: boolean) =>
