@@ -9,16 +9,30 @@ import (
 )
 
 // opencode's zen endpoint refuses a request without its routing header, so the
-// header name has to follow the base URL rather than being opt-in per call
+// header name has to follow the endpoint rather than being opt-in per call
 // site: every caller that builds a client for that endpoint must send it.
+//
+// The matching is by hostname, mirroring pi's own provider layer: opencode
+// serves the same API under /zen/v1 and /zen/go/v1, and a path-keyed table
+// missed the second one — which is how a deployment that worked under pi failed
+// on v1 with a 400 naming no header.
 func TestSessionHeaderForBaseURL(t *testing.T) {
 	cases := map[string]string{
-		"https://opencode.ai/zen/v1":   "x-opencode-session",
-		"https://opencode.ai/zen/v1/":  "x-opencode-session",
-		"https://OPENCODE.AI/zen/v1":   "x-opencode-session",
-		"https://api.openai.com/v1":    "",
-		"https://openrouter.ai/api/v1": "",
-		"":                             "",
+		"https://opencode.ai/zen/v1":    "x-opencode-session",
+		"https://opencode.ai/zen/go/v1": "x-opencode-session",
+		"https://opencode.ai/zen/v1/":   "x-opencode-session",
+		"https://opencode.ai":           "x-opencode-session",
+		"https://OPENCODE.AI/zen/v1":    "x-opencode-session",
+		"https://api.openai.com/v1":     "",
+		"https://openrouter.ai/api/v1":  "",
+		// A hostname is matched whole, not as a suffix: an unrelated domain
+		// that merely ends in the same letters must not get the header.
+		"https://notopencode.ai/zen/v1": "",
+		"https://opencode.ai.evil.test": "",
+		// A subdomain is a different hostname, and pi's matching agrees.
+		"https://go.opencode.ai/zen/v1": "",
+		"":                              "",
+		"not a url":                     "",
 	}
 	for in, want := range cases {
 		if got := SessionHeaderForBaseURL(in); got != want {

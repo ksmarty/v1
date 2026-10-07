@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 	"sync"
@@ -173,19 +174,30 @@ var knownBaseURLs = map[string]string{
 	"cerebras":   "https://api.cerebras.ai/v1",
 }
 
-// sessionHeaders maps a canonical base URL to the per-session routing header
-// that endpoint requires. opencode's zen endpoint rejects a request without one
+// sessionHeaderHosts maps a hostname to the per-session routing header that
+// endpoint requires. opencode's zen endpoint rejects a request without one
 // (400 MissingSessionID): it routes by session so a conversation keeps hitting
 // the same upstream, and an unroutable request is refused rather than guessed
 // at.
-var sessionHeaders = map[string]string{
-	"https://opencode.ai/zen/v1": "x-opencode-session",
+//
+// This keys on the hostname, not the full base URL, matching pi's own provider
+// layer (`matchesHost` in pi-coding-agent's core/provider-attribution.js). One
+// API is served under several paths — opencode.ai serves both /zen/v1 and
+// /zen/go/v1 — so a path-keyed table silently stops matching the moment a
+// deployment points at the other one, and the failure is a 400 that names no
+// header.
+var sessionHeaderHosts = map[string]string{
+	"opencode.ai": "x-opencode-session",
 }
 
 // SessionHeaderForBaseURL returns the routing header an endpoint needs, or ""
-// when it needs none.
+// when it needs none. An unparseable URL needs none.
 func SessionHeaderForBaseURL(baseURL string) string {
-	return sessionHeaders[canonicalBaseURL(baseURL)]
+	u, err := url.Parse(strings.TrimSpace(baseURL))
+	if err != nil {
+		return ""
+	}
+	return sessionHeaderHosts[strings.ToLower(u.Hostname())]
 }
 
 // liveCacheTTL is how long the in-memory models.dev cache stays fresh. It is
