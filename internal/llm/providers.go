@@ -173,6 +173,21 @@ var knownBaseURLs = map[string]string{
 	"cerebras":   "https://api.cerebras.ai/v1",
 }
 
+// sessionHeaders maps a canonical base URL to the per-session routing header
+// that endpoint requires. opencode's zen endpoint rejects a request without one
+// (400 MissingSessionID): it routes by session so a conversation keeps hitting
+// the same upstream, and an unroutable request is refused rather than guessed
+// at.
+var sessionHeaders = map[string]string{
+	"https://opencode.ai/zen/v1": "x-opencode-session",
+}
+
+// SessionHeaderForBaseURL returns the routing header an endpoint needs, or ""
+// when it needs none.
+func SessionHeaderForBaseURL(baseURL string) string {
+	return sessionHeaders[canonicalBaseURL(baseURL)]
+}
+
 // liveCacheTTL is how long the in-memory models.dev cache stays fresh. It is
 // shared by RefreshCatalog and SearchProviders so both hit the network at
 // most once per window.

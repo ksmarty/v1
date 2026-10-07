@@ -278,6 +278,12 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 	if p.ReasoningEffort != "" {
 		p.Client.ReasoningEffort = p.ReasoningEffort
 	}
+	// Endpoints that route by session (opencode's zen) get the chat session as
+	// the routing value, so one conversation keeps hitting the same upstream.
+	// The client is built per turn, so this is not shared across turns.
+	if p.Client.SessionHeader != "" {
+		p.Client.SessionID = p.SessionID
+	}
 	if p.LastUserID > 0 {
 		// Retry mode: the user message already exists with this ID; drop the
 		// aborted turn that followed it so history is truncated at the user.

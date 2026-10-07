@@ -61,19 +61,42 @@ type Client struct {
 	Model   string
 	// ReasoningEffort is sent as reasoning_effort when set (thinking level).
 	ReasoningEffort string
-	HTTP            *http.Client
+	// SessionHeader is the per-session routing header the endpoint requires
+	// (empty when it needs none); SessionID is the value sent for it, which
+	// should stay stable for the life of one conversation.
+	SessionHeader string
+	SessionID     string
+	HTTP          *http.Client
 }
 
 // NewClient creates a client for the given base URL, key and model.
+// NewClient builds a client for one endpoint. The per-session routing header
+// the endpoint requires (opencode's zen endpoint refuses requests without one)
+// is derived from the base URL here, so no caller has to know about it.
 func NewClient(baseURL, apiKey, model string) *Client {
 	return &Client{
-		BaseURL: strings.TrimSuffix(baseURL, "/"),
-		APIKey:  apiKey,
-		Model:   model,
+		BaseURL:       strings.TrimSuffix(baseURL, "/"),
+		APIKey:        apiKey,
+		Model:         model,
+		SessionHeader: SessionHeaderForBaseURL(baseURL),
 		// Generous so long reasoning streams are never cut off; the chat
 		// handler's own context timeout is the real backstop.
 		HTTP: &http.Client{Timeout: 15 * time.Minute},
 	}
+}
+
+// setSessionHeaders applies the endpoint's per-session routing header. The
+// value should be stable across one conversation so the upstream routes it
+// consistently; any non-empty value satisfies the requirement.
+func (c *Client) setSessionHeaders(req *http.Request) {
+	if c.SessionHeader == "" {
+		return
+	}
+	session := c.SessionID
+	if session == "" {
+		session = c.Model
+	}
+	req.Header.Set(c.SessionHeader, session)
 }
 
 // Usage is the token accounting reported in the final chunk of a stream.
@@ -257,6 +280,7 @@ func (c *Client) Complete(ctx context.Context, messages []Message) (string, erro
 	if c.APIKey != "" {
 		req.Header.Set("Authorization", "Bearer "+c.APIKey)
 	}
+	c.setSessionHeaders(req)
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
 		return "", err
@@ -384,6 +408,7 @@ func (c *Client) postStream(ctx context.Context, messages []Message, tools []Too
 	if c.APIKey != "" {
 		req.Header.Set("Authorization", "Bearer "+c.APIKey)
 	}
+	c.setSessionHeaders(req)
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
 		return nil, 0, err

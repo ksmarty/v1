@@ -127,7 +127,7 @@ func harnessProviderSpec(c *llm.Client, turnModel string) harness.ProviderSpec {
 	id := harnessProviderID(c.BaseURL)
 	// v1's own client only ever speaks OpenAI chat completions, so the
 	// sidecar must run the turn on the same protocol.
-	spec := harness.ProviderSpec{ID: id, Name: id, BaseURL: c.BaseURL, APIKey: c.APIKey, API: "openai-completions"}
+	spec := harness.ProviderSpec{ID: id, Name: id, BaseURL: c.BaseURL, APIKey: c.APIKey, API: "openai-completions", SessionHeader: llm.SessionHeaderForBaseURL(c.BaseURL)}
 	seen := map[string]bool{}
 	add := func(m harness.ModelSpec) {
 		if m.ID == "" || seen[m.ID] {

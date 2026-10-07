@@ -659,6 +659,21 @@ func TestConsumeHarnessTurnReportsFaultedGeneration(t *testing.T) {
 	}
 }
 
+// The provider's routing header must reach the sidecar too: it is the side that
+// actually calls the endpoint, and without this the pi path (the default) sends
+// no header at all and opencode's zen endpoint refuses the turn.
+func TestHarnessProviderSpecSendsSessionHeader(t *testing.T) {
+	opencode := harnessProviderSpec(llm.NewClient("https://opencode.ai/zen/v1", "k", "deepseek-v4-flash"), "deepseek-v4-flash")
+	if opencode.SessionHeader != "x-opencode-session" {
+		t.Fatalf("sessionHeader = %q, want x-opencode-session", opencode.SessionHeader)
+	}
+
+	openai := harnessProviderSpec(llm.NewClient("https://api.openai.com/v1", "k", "gpt-x"), "gpt-x")
+	if openai.SessionHeader != "" {
+		t.Fatalf("an endpoint needing no routing header got %q", openai.SessionHeader)
+	}
+}
+
 // The model the turn runs on must be in the catalog even when it is neither
 // the client's configured model nor a model in v1's static catalog: a user
 // picking a newer model from the provider's live list (deepseek-v4.1-flash
