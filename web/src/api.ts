@@ -618,11 +618,18 @@ export function streamChat(
 export function retryChat(
   projectId: string,
   sessionId: string,
+  providerId: string,
   onEvent: (ev: ChatEvent) => void,
   signal: AbortSignal,
 ): Promise<void> {
+  // The retry must run on the same provider the turn was sent with: without
+  // this the server falls back to the effective single-provider key, so a
+  // provider whose key was just replaced would keep being called with the old
+  // one.
+  const query = new URLSearchParams({ sessionId });
+  if (providerId) query.set('providerId', providerId);
   return streamChatEvents(
-    `/api/projects/${projectId}/chat/retry?sessionId=${encodeURIComponent(sessionId)}`,
+    `/api/projects/${projectId}/chat/retry?${query.toString()}`,
     undefined,
     onEvent,
     signal,

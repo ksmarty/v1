@@ -3222,7 +3222,7 @@ export default function ChatPane({
         if (signal.aborted) return false;
         if (await turnCompleted(projectId, sessionId)) return true;
         try {
-          await retryChat(projectId, sessionId, () => {}, signal);
+          await retryChat(projectId, sessionId, providerOverride ?? '', () => {}, signal);
           return true;
         } catch (e) {
           if (e instanceof DOMException && e.name === 'AbortError') return false;
@@ -3244,7 +3244,7 @@ export default function ChatPane({
         }
       }
     },
-    [projectId, sessionId],
+    [projectId, sessionId, providerOverride],
   );
 
   const run = useCallback(
@@ -3686,12 +3686,12 @@ export default function ChatPane({
     });
     setAskPrompt(null); // re-running the turn supersedes any pending question
     void run(async (signal) => {
-      await retryChat(projectId, sessionId, handleEvent, signal);
+      await retryChat(projectId, sessionId, providerOverride ?? '', handleEvent, signal);
       // A continued retry folds the partial + continuation into one message
       // and drops the error — reload to show that merged state.
       await load();
     });
-  }, [streaming, llmReady, projectId, sessionId, handleEvent, run, update, load]);
+  }, [streaming, llmReady, projectId, sessionId, handleEvent, run, update, load, providerOverride]);
 
   const setItemEditing = useCallback(
     (key: string, editing: boolean) => {
