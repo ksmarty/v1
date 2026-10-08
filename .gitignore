@@ -16,3 +16,6 @@ bin/
 
 # Local env overrides
 *.local
+
+# Local diagnostics exports (contain private transcript data)
+.herdr-web-ui/
