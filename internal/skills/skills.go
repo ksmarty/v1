@@ -248,6 +248,72 @@ func Install(ctx context.Context, gh *gitops.GHClient, s Skill, root string) (Sk
 	return s, nil
 }
 
+// previewPaths lists the repository paths a SKILL.md could live at, given the
+// path a marketplace entry points at, in the order worth trying. An entry names
+// either the skill's directory or its SKILL.md directly.
+func previewPaths(sourcePath string) []string {
+	prefix := strings.Trim(strings.TrimPrefix(strings.TrimSpace(sourcePath), "./"), "/")
+	if prefix == "." {
+		prefix = ""
+	}
+	lower := strings.ToLower(prefix)
+	if lower == "skill.md" {
+		prefix = ""
+	} else if strings.HasSuffix(lower, "/skill.md") {
+		prefix = strings.TrimSuffix(prefix[:len(prefix)-len("/skill.md")], "/")
+	}
+	paths := make([]string, 0, 2)
+	if prefix != "" {
+		paths = append(paths, prefix+"/SKILL.md")
+	}
+	// The repository root is the last resort: a marketplace path can point at a
+	// subdirectory while the SKILL.md itself sits at the top.
+	return append(paths, "SKILL.md")
+}
+
+// Preview fetches a skill's SKILL.md from its repository so the UI can show what
+// a skill does before the user installs it. Installed skills are read from disk
+// instead; this one has to go to the source.
+func Preview(ctx context.Context, s Skill) (string, error) {
+	if s.Owner == "" || s.Repo == "" {
+		return "", fmt.Errorf("skill source is missing owner/repo")
+	}
+	branch := s.Branch
+	if branch == "" {
+		branch = "main"
+	}
+	paths := previewPaths(s.SourcePath)
+
+	client := &http.Client{Timeout: 20 * time.Second}
+	for _, p := range paths {
+		url := fmt.Sprintf("https://raw.githubusercontent.com/%s/%s/%s/%s", s.Owner, s.Repo, branch, p)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if err != nil {
+			return "", err
+		}
+		req.Header.Set("User-Agent", "v1")
+		resp, err := client.Do(req)
+		if err != nil {
+			return "", err
+		}
+		body, readErr := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		resp.Body.Close()
+		if readErr != nil {
+			return "", readErr
+		}
+		switch {
+		case resp.StatusCode == http.StatusOK:
+			return string(body), nil
+		case resp.StatusCode == http.StatusNotFound:
+			continue // a wrong guess; the next candidate may be right
+		default:
+			// Rate limiting or a network fault will not be fixed by another path.
+			return "", fmt.Errorf("GitHub returned HTTP %d", resp.StatusCode)
+		}
+	}
+	return "", fmt.Errorf("no SKILL.md found in %s/%s", s.Owner, s.Repo)
+}
+
 func download(ctx context.Context, c *http.Client, url, dest string) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {

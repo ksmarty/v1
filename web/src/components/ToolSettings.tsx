@@ -119,27 +119,40 @@ function SkillPreviewDialog({
 }) {
   const [readme, setReadme] = useState<string | null>(null);
   const [readmeLoading, setReadmeLoading] = useState(false);
+  const [readmeError, setReadmeError] = useState<string | null>(null);
   useEffect(() => {
-    if (!target.installed) return;
+    // An installed skill is read from disk; anything else is fetched from its
+    // repository, so the SKILL.md can be read before committing to an install.
+    const installed = target.installed;
+    const candidate = target.result;
+    if (!installed && !candidate) return;
     setReadmeLoading(true);
-    api
-      .skillReadme(target.installed.id)
-      .then((r) => setReadme(r.content))
-      .catch(() => setReadme(null))
+    setReadme(null);
+    setReadmeError(null);
+    const load = installed
+      ? api.skillReadme(installed.id).then((r) => r.content)
+      : api.skillPreview(candidate!).then((r) => r.content);
+    load
+      .then((content) => setReadme(content))
+      .catch(() => {
+        setReadme(null);
+        setReadmeError('Could not load this skill\u2019s SKILL.md.');
+      })
       .finally(() => setReadmeLoading(false));
-  }, [target.installed]);
+  }, [target.installed, target.result]);
 
   return (
     <Dialog open onClose={onClose} title={target.name} wide fullScreen fixedBody align="top">
       <div className="flex h-full min-h-0 flex-col gap-3">
         <p className="text-xs text-subtle">by {target.author}</p>
         {target.description && <p className="text-sm text-text">{target.description}</p>}
-        {(readmeLoading || readme) && <div className="shrink-0 border-t border-border" />}
+        {(readmeLoading || readme || readmeError) && <div className="shrink-0 border-t border-border" />}
         {readmeLoading && (
           <div className="flex justify-center py-4">
             <Spinner className="h-4 w-4" />
           </div>
         )}
+        {readmeError && <p className="text-xs text-red-400">{readmeError}</p>}
         {readme && (
           <div className="fade-y min-h-0 flex-1 overflow-y-auto overscroll-contain rounded-lg border border-border bg-surface p-3">
             <Markdown text={readme} />

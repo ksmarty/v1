@@ -155,6 +155,25 @@ func (s *Server) handleSkillReadme(w http.ResponseWriter, r *http.Request) {
 	writeError(w, http.StatusNotFound, "skill not found")
 }
 
+// handleSkillPreview fetches a marketplace skill's SKILL.md from its repository
+// so the UI can show what a skill does before the user installs anything. This
+// reads the source repo, not the local install, which is the whole point: the
+// user is deciding whether to install it.
+func (s *Server) handleSkillPreview(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Skill skills.Skill `json:"skill"`
+	}
+	if !decodeJSON(w, r, &body) {
+		return
+	}
+	content, err := skills.Preview(r.Context(), body.Skill)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"content": content})
+}
+
 // handleSkillsRemove deletes an installed skill and its files.
 func (s *Server) handleSkillsRemove(w http.ResponseWriter, r *http.Request) {
 	var body struct {

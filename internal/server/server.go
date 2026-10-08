@@ -263,6 +263,7 @@ func (s *Server) routes(m *http.ServeMux) {
 	m.HandleFunc("POST /api/skills/search", s.handleSkillsSearch)
 	m.HandleFunc("POST /api/skills/install", s.handleSkillsInstall)
 	m.HandleFunc("GET /api/skills/{id}/readme", s.handleSkillReadme)
+	m.HandleFunc("POST /api/skills/preview", s.handleSkillPreview)
 	m.HandleFunc("POST /api/skills/remove", s.handleSkillsRemove)
 	m.HandleFunc("POST /api/skills/toggle", s.handleSkillsToggle)
 
