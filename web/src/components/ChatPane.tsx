@@ -1992,6 +1992,11 @@ export default function ChatPane({
   // viewer left mid-run and came back — the run survives the disconnect).
   // True while a generation is running server-side (seen from this client).
   const [runActive, setRunActive] = useState(false);
+  // Bumped when a run is live but nothing is streaming it. The watch effect's
+  // dependencies are otherwise unchanged, so a watch that dropped — a suspended
+  // app kills the connection silently — would never be re-attached and the chat
+  // would sit on "Generation still running…" until it was remounted.
+  const [watchTick, setWatchTick] = useState(0);
   // Context fill (tokens used vs budget) for the ring button + popup. The
   // ring only renders once a definitive value is in — a spinner shows while
   // the model-specific budget is still loading, so it never jumps between
@@ -2609,6 +2614,24 @@ export default function ChatPane({
       .catch(() => {});
   }, [projectId]);
 
+  // rememberSession records the session in localStorage and in the URL. The URL
+  // half matters: an iOS PWA can restore a stale page URL when it resumes, and a
+  // `?session=` there is a deep link that deliberately outranks the stored one
+  // (that is what makes a notification tap open the right chat). Leaving the URL
+  // pointing at whichever session the page was first opened with therefore made
+  // the app reopen that one instead of the one actually being worked in.
+  const rememberSession = useCallback(
+    (id: string) => {
+      localStorage.setItem(sessionStorageKey(projectId), id);
+      const url = new URL(window.location.href);
+      if (url.searchParams.get('session') !== id) {
+        url.searchParams.set('session', id);
+        window.history.replaceState(window.history.state, '', url);
+      }
+    },
+    [projectId],
+  );
+
   // Starts a fresh chat thread and switches to it.
   const createNewSession = useCallback(async () => {
     setCreatingSession(true);
@@ -2616,14 +2639,14 @@ export default function ChatPane({
       const res = await api.createSession(projectId);
       setSessions((prev) => [...prev, res.session]);
       setSessionId(res.session.id);
-      localStorage.setItem(sessionStorageKey(projectId), res.session.id);
+      rememberSession(res.session.id);
       onSessionsOpenChange(false);
     } catch {
       // leave the modal open; the list is unchanged
     } finally {
       setCreatingSession(false);
     }
-  }, [projectId, onSessionsOpenChange]);
+  }, [projectId, onSessionsOpenChange, rememberSession]);
 
   // Keep the queue block in sync while a run is active — messages drain to
   // follow-up turns as they finish. The status poll above refreshes it every
@@ -2678,6 +2701,12 @@ export default function ChatPane({
         if (wasRunning && !st.running && !streaming && !watchRef.current) {
           void load(); // the run finished while we were away — fetch the rest
         }
+        // A live run with nothing streaming it means the watch dropped, or never
+        // attached. Nudge the watch effect, which cannot notice this by itself:
+        // its dependencies are all unchanged.
+        if (st.running && !streamingRef.current && !watchRef.current && !resuming) {
+          setWatchTick((n) => n + 1);
+        }
         wasRunning = st.running;
       } catch {
         // transient — try again on the next tick
@@ -2694,7 +2723,7 @@ export default function ChatPane({
       if (timer) window.clearTimeout(timer);
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [projectId, sessionId, load, refreshQueue, streaming]);
+  }, [projectId, sessionId, load, refreshQueue, streaming, resuming]);
 
   const [bgRunning, setBgRunning] = useState<string[]>([]);
 
@@ -3273,31 +3302,53 @@ export default function ChatPane({
     if (!sessionId || !runActive || streamingRef.current || resuming) return;
     if (watchRef.current) return; // already attached
     let cancelled = false;
+    let retry: number | undefined;
+    let ctrl: AbortController | null = null;
     void api.chatStatus(projectId, sessionId).then((st) => {
       if (cancelled || !st.running) return;
-      const ctrl = new AbortController();
-      watchRef.current = ctrl;
+      ctrl = new AbortController();
+      const active = ctrl;
+      watchRef.current = active;
       setStreaming(true);
-      let done = false;
-      void watchChat(projectId, sessionId, handleEventRef.current, ctrl.signal)
-        .catch(() => {
-          // connection drop — the transcript refreshes below
-        })
-        .finally(() => {
-          if (watchRef.current === ctrl) watchRef.current = null;
-          setStreaming(false);
-          if (!done) void load();
-        });
-      return () => {
-        done = true;
-        ctrl.abort();
-        if (watchRef.current === ctrl) watchRef.current = null;
-      };
+      void (async () => {
+        try {
+          await watchChat(projectId, sessionId, handleEventRef.current, active.signal);
+        } catch {
+          // Connection drop — handled by the re-check below.
+        }
+        // The stream resolves on a mid-stream drop just as it does on a clean
+        // end, so its own outcome cannot say which happened. Ask the server: a
+        // run that is still live means the connection died and has to be
+        // re-attached.
+        let stillRunning = false;
+        try {
+          stillRunning = (await api.chatStatus(projectId, sessionId)).running;
+        } catch {
+          stillRunning = true; // status unreachable — assume the run is live
+        }
+        if (cancelled) return; // a newer attach owns this state now
+        if (watchRef.current === active) watchRef.current = null;
+        setStreaming(false);
+        if (stillRunning) void load();
+        // Nothing else re-runs this effect — its dependencies are unchanged —
+        // so a dropped watch reconnects itself. The delay keeps an attach that
+        // keeps failing from spinning.
+        if (stillRunning) retry = window.setTimeout(() => setWatchTick((n) => n + 1), 1500);
+      })();
     });
+    // The cleanup has to abort the stream, not just flag cancellation: React
+    // ignores a function returned from inside a promise callback, so the watch
+    // used to outlive its own effect being torn down and hold `watchRef` set,
+    // which made every later attach bail out at the guard above.
     return () => {
       cancelled = true;
+      if (retry) window.clearTimeout(retry);
+      const active = ctrl;
+      ctrl = null;
+      if (active && watchRef.current === active) watchRef.current = null;
+      active?.abort();
     };
-  }, [sessionId, runActive, resuming, projectId, load]);
+  }, [sessionId, runActive, resuming, projectId, load, watchTick]);
 
 
   // Leaving the page cancels any in-flight generation: the server aborts the
@@ -3375,6 +3426,20 @@ export default function ChatPane({
           if (await turnCompleted(projectId, sessionId)) {
             finish();
             return;
+          }
+          // The run can still be alive server-side — it outlives the connection
+          // by design — and then the right move is to attach to its live stream,
+          // which replays everything we missed. Resuming instead spins for up to
+          // three and a half minutes waiting on a run that is already fine, and
+          // leaves "Generation still running…" with nothing streaming it.
+          try {
+            if ((await api.chatStatus(projectId, sessionId)).running) {
+              setRunActive(true);
+              finish();
+              return;
+            }
+          } catch {
+            // Status unknown — fall through and try to resume.
           }
           setResuming(true);
           assistantKeyRef.current = null;
@@ -5148,7 +5213,7 @@ export default function ChatPane({
         activeId={sessionId}
         onSwitch={(id) => {
           setSessionId(id);
-          localStorage.setItem(sessionStorageKey(projectId), id);
+          rememberSession(id);
         }}
         onNew={() => void createNewSession()}
         onRename={(id, name) => {
