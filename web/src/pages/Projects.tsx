@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import type { ChatSession, GitHubRepo, Project, Provider, ProviderModel, SavedProvider } from '../types';
 import { errMsg, timeAgo } from '../utils';
+import { freshThinkingLevel } from '../thinking';
 import { Button, Dialog, ErrorBox, IconButton, Input, Spinner } from '../components/ui';
 import ModelPicker from '../components/ModelPicker';
 import {
@@ -17,7 +18,7 @@ import {
   IconTrash,
 } from '../components/icons';
 
-function CardMenu({ onDelete }: { onDelete: () => void }) {
+function CardMenu({ onNewSession, onDelete }: { onNewSession: () => void; onDelete: () => void }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -43,7 +44,18 @@ function CardMenu({ onDelete }: { onDelete: () => void }) {
         <IconDots className="h-4 w-4" />
       </IconButton>
       {open && (
-        <div className="absolute right-0 top-full z-30 mt-1 w-36 overflow-hidden rounded-lg border border-border bg-bg py-1 shadow-xl">
+        <div className="absolute right-0 top-full z-30 mt-1 w-40 overflow-hidden rounded-lg border border-border bg-bg py-1 shadow-xl">
+          <button
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-text hover:bg-border"
+            onClick={(e) => {
+              e.preventDefault();
+              setOpen(false);
+              onNewSession();
+            }}
+          >
+            <IconPlus className="h-4 w-4" />
+            New session
+          </button>
           <button
             className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-red-400 hover:bg-border"
             onClick={(e) => {
@@ -132,6 +144,10 @@ function NewProjectDialog({
     return out;
   }, [catalog, providers, providerId, baseURL]);
 
+  // The picker stores a model id; show the catalog's human title when there is
+  // one, and fall back to the id so an uncatalogued model still reads.
+  const selectedModelName = modelList.find((m) => m.id === model)?.name ?? '';
+
   // Thinking levels follow the model: fetched from the provider, like the
   // chat's thinking popup. An inapplicable selection resets to the account
   // default (or the model's lowest level).
@@ -153,8 +169,10 @@ function NewProjectDialog({
         setThinking((prev) => {
           const opts = off ? ['off', ...levels] : levels;
           if (prev === '' || opts.includes(prev)) return prev;
-          if (defaultThinking !== '' && opts.includes(defaultThinking)) return defaultThinking;
-          return opts[0] ?? '';
+          // The same rule the chat uses: a default this model does not offer
+          // escalates to the next level up rather than dropping to the lowest
+          // level the model happens to have.
+          return freshThinkingLevel(defaultThinking, { levels: opts, off });
         });
       })
       .catch(() => {
@@ -211,8 +229,10 @@ function NewProjectDialog({
             className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md border border-border bg-surface px-2 text-sm text-text transition-colors hover:border-border-strong"
           >
             <IconModel className="hidden h-3.5 w-3.5 shrink-0 text-dim sm:block" />
-            <span className="min-w-0 flex-1 truncate text-left font-mono text-xs">
-              {model || 'Select a model'}
+            <span
+              className={`min-w-0 flex-1 truncate text-left ${selectedModelName ? 'text-sm' : 'font-mono text-xs'}`}
+            >
+              {selectedModelName || model || 'Select a model'}
             </span>
             <IconChevronDown className="hidden h-3.5 w-3.5 shrink-0 text-faint sm:block" />
           </button>
@@ -461,6 +481,18 @@ export default function Projects() {
     }
   };
 
+  // A session is what you actually open, so the project's menu can start one
+  // without a detour through the project page.
+  const newSession = async (projectId: string) => {
+    setError(null);
+    try {
+      const r = await api.createSession(projectId);
+      navigate(`/project/${projectId}?session=${r.session.id}`);
+    } catch (e) {
+      setError(errMsg(e));
+    }
+  };
+
   return (
     <div className="v1-safe-top flex h-[max(var(--v1-app-height,0px),100dvh)] flex-col overflow-hidden">
       <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-3 md:h-12 md:px-5">
@@ -536,16 +568,15 @@ export default function Projects() {
                         title={p.preview.running ? 'Preview running' : 'Preview stopped'}
                       />
                     )}
-                    <Link
-                      to={`/project/${p.id}`}
-                      className="min-w-0 flex-1 truncate font-medium text-text transition-colors hover:text-accent"
-                    >
-                      {p.name}
-                    </Link>
+                    {/* The title labels the group; it is not a target. Opening
+                        a project without picking a session is never what you
+                        meant, and the rows beneath are the sessions. */}
+                    <span className="min-w-0 flex-1 truncate font-medium text-text">{p.name}</span>
                     {p.updatedAt && (
                       <span className="shrink-0 text-xs text-faint">{timeAgo(p.updatedAt)}</span>
                     )}
                     <CardMenu
+                      onNewSession={() => void newSession(p.id)}
                       onDelete={() => {
                         setDeleteError(null);
                         setDeleting(p);

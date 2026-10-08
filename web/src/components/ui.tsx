@@ -1,5 +1,7 @@
 import {
   useEffect,
+  useRef,
+  useState,
   type ButtonHTMLAttributes,
   type InputHTMLAttributes,
   type ReactNode,
@@ -220,6 +222,59 @@ export function Field({ label, children }: { label: string; children: ReactNode 
   );
 }
 
+// Transient confirmations. A module-level queue rather than a context: the
+// settings page alone has a dozen save rows, and threading a provider through
+// every one of them just to say "Saved" is more machinery than the message is
+// worth.
+type ToastItem = { id: number; message: string };
+
+let toastSeq = 0;
+let toastItems: ToastItem[] = [];
+const toastListeners = new Set<(items: ToastItem[]) => void>();
+
+function publishToasts() {
+  for (const listener of toastListeners) listener(toastItems);
+}
+
+/** Announce a completed action. Safe to call from anywhere. */
+export function toast(message: string, ms = 2400) {
+  const id = ++toastSeq;
+  toastItems = [...toastItems, { id, message }];
+  publishToasts();
+  window.setTimeout(() => {
+    toastItems = toastItems.filter((t) => t.id !== id);
+    publishToasts();
+  }, ms);
+}
+
+/** Renders the active toasts. Mount once, near the app root. */
+export function ToastHost() {
+  const [items, setItems] = useState<ToastItem[]>([]);
+  useEffect(() => {
+    toastListeners.add(setItems);
+    setItems(toastItems);
+    return () => {
+      toastListeners.delete(setItems);
+    };
+  }, []);
+  if (items.length === 0) return null;
+  return createPortal(
+    <div className="pointer-events-none fixed inset-x-0 bottom-[max(1rem,env(safe-area-inset-bottom))] z-[70] flex flex-col items-center gap-2 px-4">
+      {items.map((t) => (
+        <div
+          key={t.id}
+          role="status"
+          className="pointer-events-auto flex items-center gap-2 rounded-full border border-border-strong bg-bg px-3 py-1.5 text-xs text-text shadow-lg"
+        >
+          <IconCheck className="h-3.5 w-3.5 text-emerald-500" />
+          {t.message}
+        </div>
+      ))}
+    </div>,
+    document.body,
+  );
+}
+
 export function SaveRow({
   saving,
   saved,
@@ -237,22 +292,28 @@ export function SaveRow({
   /** Form validation — the button stays off until required fields are valid. */
   disabled?: boolean;
 }) {
+  // A save is a completed action, so it is announced once instead of being
+  // left as permanent text beside the button. Fires on the transition to saved,
+  // so a row that mounts already-saved stays quiet.
+  const wasSaved = useRef(false);
+  useEffect(() => {
+    if (saved && !wasSaved.current) toast('Saved');
+    wasSaved.current = saved;
+  }, [saved]);
+
   return (
     <div className="flex items-center gap-2">
       <Button
         type="submit"
         variant="outline"
-        disabled={saving || disabled}
+        // Nothing to write until something has changed, so Save stays off
+        // rather than offering a no-op round trip.
+        disabled={saving || disabled || !pulse}
         className={pulse && !disabled ? 'v1-save-breathe' : ''}
       >
         {saving ? <Spinner className="h-4 w-4" /> : 'Save'}
       </Button>
       {extra}
-      {saved && !saving && (
-        <span className="flex items-center gap-1 text-xs text-emerald-500">
-          <IconCheck className="h-3.5 w-3.5" /> Saved
-        </span>
-      )}
       {error && <span className="text-xs text-red-400">{error}</span>}
     </div>
   );

@@ -342,6 +342,8 @@ export interface InstalledExtension {
   name: string;
   description: string;
   enabled: boolean;
+  /** Bundled with v1: it can be disabled, never deleted. */
+  builtin?: boolean;
   createdAt?: string;
   updatedAt?: string;
   /** Why the sidecar could not load it, when it could not. */

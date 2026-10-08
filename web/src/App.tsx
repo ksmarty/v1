@@ -4,7 +4,7 @@ import { api } from './api';
 import type { AuthStatus } from './types';
 import { errMsg } from './utils';
 import { useAppHeight } from './hooks/useAppHeight';
-import { Button, Center, Spinner } from './components/ui';
+import { Button, Center, Spinner, ToastHost } from './components/ui';
 import { ExtensionDisplayProvider } from './extensionDisplay';
 import Login from './pages/Login';
 import Projects from './pages/Projects';
@@ -97,6 +97,9 @@ export default function App() {
         <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>
+      {/* Outside the router, so a toast survives navigating away from the page
+          that triggered it. */}
+      <ToastHost />
     </ExtensionDisplayProvider>
   );
 }

@@ -52,6 +52,7 @@ import {
   SaveRow,
   Section,
   Spinner,
+  toast,
 } from '../components/ui';
 import {
   IconAlert,
@@ -337,25 +338,16 @@ function ThinkingCollapsedControl() {
 }
 
 function ClearCacheControl() {
-  const [cleared, setCleared] = useState(false);
   return (
-    <div className="flex items-center gap-2">
-      <Button
-        variant="outline"
-        onClick={() => {
-          clearClientCaches();
-          setCleared(true);
-          window.setTimeout(() => setCleared(false), 2500);
-        }}
-      >
-        Clear caches
-      </Button>
-      {cleared && (
-        <span className="flex items-center gap-1 text-xs text-emerald-500">
-          <IconCheck className="h-3.5 w-3.5" /> Cleared — the catalog will refetch on next use
-        </span>
-      )}
-    </div>
+    <Button
+      variant="outline"
+      onClick={() => {
+        clearClientCaches();
+        toast('Caches cleared — the catalog will refetch on next use');
+      }}
+    >
+      Clear caches
+    </Button>
   );
 }
 
@@ -2481,16 +2473,9 @@ export default function Settings() {
             <div className={page === 'llm' ? 'flex flex-col gap-4' : 'hidden'}>
               <Section id="sec-llm" title="LLM" description="The OpenAI-compatible endpoint v1 uses to generate apps. The model is picked per project in the chat.">
           {editing === null && (
-            <div className="flex flex-col gap-3">
-              <Button variant="primary" onClick={startAdd} className="w-fit">
-                <IconPlus className="h-4 w-4" /> Add Provider
-              </Button>
-              <p className="text-xs text-subtle">
-                Provider fields stay hidden until you add one, so saving never
-                overwrites an existing provider. Add a new entry here, or pick
-                Edit on a saved provider below to change it.
-              </p>
-            </div>
+            <Button variant="primary" onClick={startAdd} className="w-fit">
+              <IconPlus className="h-4 w-4" /> Add Provider
+            </Button>
           )}
 
           <Dialog
@@ -2554,7 +2539,9 @@ export default function Settings() {
               // The endpoint is the one field a provider cannot work without:
               // saveLLM parses it to derive a name, and an empty value silently
               // stored a provider that could never serve a request.
-              disabled={baseURL.trim() === ''}
+              // An endpoint and a key are both needed to add a provider. The
+              // key looks prefilled when editing, where it may be left alone.
+              disabled={baseURL.trim() === '' || (editing === 'new' && apiKey.trim() === '')}
               pulse={
                 settings
                   ? baseURL !== settings.llm.baseURL ||

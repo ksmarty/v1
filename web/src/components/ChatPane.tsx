@@ -18,6 +18,7 @@ import {
   type ChatAttachmentInput,
 } from '../api';
 import type { ContextUsage } from '../types';
+import { freshThinkingLevel } from '../thinking';
 import type {
   ChatAttachmentMeta,
   ChatEvent,
@@ -124,20 +125,6 @@ const THINKING_LEVEL_COLORS: Record<string, { text: string; border: string }> = 
   high: { text: 'text-orange-500', border: 'border-orange-500/50' },
   xhigh: { text: 'text-red-500', border: 'border-red-500/50' },
   max: { text: 'text-red-500', border: 'border-red-500/50' },
-};
-
-// Canonical escalation order for thinking levels; unknown levels order by
-// their position in the model's list instead.
-const THINKING_LEVEL_RANK: Record<string, number> = {
-  off: 0,
-  none: 1,
-  minimal: 2,
-  low: 3,
-  medium: 4,
-  high: 5,
-  xhigh: 6,
-  max: 7,
-  on: 8,
 };
 
 // Human-readable labels for agent tool names shown in the chat; unknown
@@ -2685,7 +2672,7 @@ export default function ChatPane({
     const cached = m ? thinkingMetaCache.current.get(`${providerId}|${m}`) : undefined;
     if (cached) {
       setThinkingMeta(cached);
-      const lvl = freshThinkingLevel(cached);
+      const lvl = freshThinkingLevel(defaultThinking, cached);
       setThinking(lvl);
       persistSelection(providerId, m, lvl);
     } else {
@@ -2702,43 +2689,8 @@ export default function ChatPane({
     null,
   );
   const [thinkingLoading, setThinkingLoading] = useState(false);
-  const thinkingMetaCache = useRef(new Map<string, { levels: string[]; off: boolean }>());  // The level a fresh selection gets: the global default when the model
-  // supports it, otherwise the next highest available level (or the lowest
-  // when the default sits below everything the model offers).
-  // The level a fresh selection gets: the global default when the model
-  // supports it, otherwise the next highest available level (or the lowest
-  // when the default sits below everything the model offers). A non-"off"
-  // default always turns thinking on — it maps to the next available
-  // thinking level even when the model's list starts with "off".
-  const freshThinkingLevel = (meta: { levels: string[]; off: boolean }): string => {
-    if (defaultThinking === 'off' && (meta.off || meta.levels.includes('none'))) return 'off';
-    if (defaultThinking === '') return meta.levels[0] ?? '';
-    if (meta.levels.includes(defaultThinking)) return defaultThinking;
-    const reqRank = THINKING_LEVEL_RANK[defaultThinking] ?? -1;
-    // The effective level always matches or exceeds the requested default:
-    // pick the lowest available level that is at least as strong as it. Only
-    // when the model has nothing that strong, settle for its strongest level
-    // below the request. On/off rules are unchanged.
-    let best = '';
-    let bestRank = Infinity;
-    let fallback = '';
-    let fallbackRank = -Infinity;
-    meta.levels.forEach((lvl, i) => {
-      const rank = THINKING_LEVEL_RANK[lvl] ?? i + 10;
-      // Skip off/none when the default asks for thinking: a non-off default
-      // must not land on "off".
-      if (defaultThinking !== 'off' && (lvl === 'off' || lvl === 'none')) return;
-      if (rank >= reqRank && rank < bestRank) {
-        best = lvl;
-        bestRank = rank;
-      }
-      if (rank < reqRank && rank > fallbackRank) {
-        fallback = lvl;
-        fallbackRank = rank;
-      }
-    });
-    return best || fallback || (defaultThinking !== 'off' ? meta.levels.find((l) => l !== 'off' && l !== 'none') ?? '' : '') || meta.levels[0] || '';
-  };
+  const thinkingMetaCache = useRef(new Map<string, { levels: string[]; off: boolean }>());
+
   useEffect(() => {
     if (!model.trim()) {
       setThinkingMeta(null);
@@ -2767,7 +2719,7 @@ export default function ChatPane({
         setThinkingMeta(meta);
         // A fresh selection uses the global default thinking level when the
         // model supports it, otherwise its lowest level.
-        setThinking((prev) => (prev === '' ? freshThinkingLevel(meta) : prev));
+        setThinking((prev) => (prev === '' ? freshThinkingLevel(defaultThinking, meta) : prev));
       })
       .catch(() => {
         if (active) setThinkingMeta(null);

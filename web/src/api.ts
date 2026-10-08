@@ -532,9 +532,14 @@ export const api = {
       harness?: { loaded?: LoadedExtension[] };
     }>('/api/extensions'),
   extension: (id: string) =>
-    request<{ id: string; name: string; description: string; enabled: boolean; source: string }>(
-      `/api/extensions/${encodeURIComponent(id)}`,
-    ),
+    request<{
+      id: string;
+      name: string;
+      description: string;
+      enabled: boolean;
+      builtin: boolean;
+      source: string;
+    }>(`/api/extensions/${encodeURIComponent(id)}`),
   extensionSave: (body: {
     id: string;
     description: string;

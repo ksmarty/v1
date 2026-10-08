@@ -24,37 +24,6 @@ const TABS = [
   { id: 'perms', label: 'Permissions' },
 ] as const;
 
-// Starting point for a new extension, shown in the editor so the API is
-// discoverable without leaving the page.
-const EXTENSION_TEMPLATE = `// A v1 extension: the default export receives the extension API and returns
-// the extension. The sidecar loads this file when the extension is enabled.
-export default (pi) => ({
-  name: 'my-extension',
-
-  // Tools the agent can call, alongside its built-in ones.
-  tools: [
-    pi.defineTool({
-      name: 'my_tool',
-      description: 'What this tool does.',
-      parameters: {
-        type: 'object',
-        properties: {
-          input: { type: 'string', description: 'What to act on.' },
-        },
-        required: ['input'],
-      },
-      async execute(args) {
-        return { content: [{ type: 'text', text: 'got ' + args.input }] };
-      },
-    }),
-  ],
-
-  // Text injected into the system prompt before every request.
-  sections: [
-    pi.section('my-extension-note', () => 'Always prefer readable code.'),
-  ],
-});
-`;
 type Tab = (typeof TABS)[number]['id'];
 export type ToolsTab = Tab;
 
@@ -271,7 +240,16 @@ function ToolSettings({
     description: string;
     source: string;
     isNew: boolean;
+    /** Bundled with v1: offered for disabling, never for deleting. */
+    builtin: boolean;
+    /** The values as loaded, so Save can stay disabled until something changes. */
+    original: { description: string; source: string };
   } | null>(null);
+  // Saving back exactly what was loaded is never what you meant.
+  const extDirty =
+    extEditor !== null &&
+    (extEditor.description !== extEditor.original.description ||
+      extEditor.source !== extEditor.original.source);
 
   // Approval mode
   const [permissionMode, setPermissionMode] = useState<PermissionMode>(initialPermissionMode ?? 'ask');
@@ -691,11 +669,15 @@ function ToolSettings({
     setExtError(null);
     try {
       const r = await api.extension(id);
+      const description = r.description ?? '';
+      const source = r.source ?? '';
       setExtEditor({
         id: r.id,
-        description: r.description ?? '',
-        source: r.source ?? '',
+        description,
+        source,
         isNew: false,
+        builtin: r.builtin ?? false,
+        original: { description, source },
       });
     } catch (err) {
       setExtError(errMsg(err));
@@ -1094,17 +1076,6 @@ function ToolSettings({
           <Button
             variant="outline"
             className="h-7 shrink-0 px-2 text-xs"
-            title="Write the JavaScript yourself instead"
-            onClick={() => {
-              setExtError(null);
-              setExtEditor({ id: '', description: '', source: EXTENSION_TEMPLATE, isNew: true });
-            }}
-          >
-            Blank
-          </Button>
-          <Button
-            variant="outline"
-            className="h-7 shrink-0 px-2 text-xs"
             onClick={() => setNewExtOpen(true)}
           >
             New
@@ -1156,45 +1127,19 @@ function ToolSettings({
                 </Field>
               </div>
               <div className="min-w-0 flex-1">
+                {/* A textarea, not a one-line input: descriptions run to a
+                    sentence or two. It reads smaller than the dialog's title so
+                    the title stays the loudest thing on the sheet. */}
                 <Field label="Description">
-                  <Input
+                  <textarea
                     value={extEditor.description}
                     onChange={(e) => setExtEditor({ ...extEditor, description: e.target.value })}
                     placeholder="What this extension does"
-                    autoComplete="off"
+                    rows={2}
+                    className="w-full resize-y rounded-lg border border-border-strong bg-surface px-3 py-2 text-xs text-text outline-none transition-colors focus:border-subtle"
                   />
                 </Field>
               </div>
-            </div>
-            <div className="flex shrink-0 items-center gap-2">
-              <Button
-                variant="outline"
-                className="h-8 px-3 text-xs"
-                disabled={extBusy || extEditor.id.trim() === '' || extEditor.source.trim() === ''}
-                onClick={() => void saveExtension()}
-              >
-                {extBusy ? <Spinner className="h-4 w-4" /> : 'Save'}
-              </Button>
-              <Button
-                variant="outline"
-                className="h-8 px-3 text-xs"
-                onClick={() => {
-                  setExtEditor(null);
-                  setExtError(null);
-                }}
-              >
-                Cancel
-              </Button>
-              {!extEditor.isNew && (
-                <Button
-                  variant="outline"
-                  className="h-8 px-3 text-xs text-red-400"
-                  disabled={extBusy}
-                  onClick={() => void removeExtension(extEditor.id)}
-                >
-                  Delete
-                </Button>
-              )}
             </div>
             <div className="min-h-0 flex-1 overflow-hidden rounded-lg border border-border bg-surface">
               <CodeEditor
@@ -1202,6 +1147,51 @@ function ToolSettings({
                 onChange={(v) => setExtEditor({ ...extEditor, source: v })}
                 path={`${extEditor.id.trim() || 'extension'}.js`}
               />
+            </div>
+            {/* Below the code, so the actions read as what you do once you have
+                read it. Delete is destructive and sits apart on the left; Save
+                and Cancel are the pair you actually choose between. */}
+            <div className="flex shrink-0 items-center gap-2">
+              {!extEditor.isNew && !extEditor.builtin && (
+                <Button
+                  variant="danger"
+                  className="h-8 px-3 text-xs"
+                  disabled={extBusy}
+                  onClick={() => void removeExtension(extEditor.id)}
+                >
+                  Delete
+                </Button>
+              )}
+              {extEditor.builtin && (
+                <span className="text-[11px] text-faint">
+                  Bundled with v1 — it can be disabled but not removed.
+                </span>
+              )}
+              <div className="ml-auto flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  className="h-8 px-3 text-xs"
+                  onClick={() => {
+                    setExtEditor(null);
+                    setExtError(null);
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="primary"
+                  className="h-8 px-3 text-xs"
+                  disabled={
+                    extBusy ||
+                    !extDirty ||
+                    extEditor.id.trim() === '' ||
+                    extEditor.source.trim() === ''
+                  }
+                  onClick={() => void saveExtension()}
+                >
+                  {extBusy ? <Spinner className="h-4 w-4" /> : 'Save'}
+                </Button>
+              </div>
             </div>
           </div>
         </Dialog>
@@ -1225,7 +1215,7 @@ function ToolSettings({
                 className="min-w-0 flex-1 text-left"
               >
                 <div className="truncate text-sm text-text">{ext.id}</div>
-                <div className="truncate text-[11px] text-faint">
+                <div className="line-clamp-2 text-[11px] text-faint">
                   {ext.description !== '' ? ext.description : 'No description'}
                 </div>
               </button>
