@@ -459,7 +459,7 @@ export default function Projects() {
   };
 
   return (
-    <div className="v1-safe-top flex min-h-dvh flex-col">
+    <div className="v1-safe-top flex h-[max(var(--v1-app-height,0px),100dvh)] flex-col overflow-hidden">
       <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-3 md:h-12 md:px-5">
         <Link to="/" className="text-base font-semibold tracking-tight text-text">
           v1
@@ -481,7 +481,7 @@ export default function Projects() {
         </IconButton>
       </header>
 
-      <main className="flex-1 p-4 md:p-6">
+      <main className="min-h-0 flex-1 overflow-y-auto p-4 md:p-6">
         {projects === null && !error && (
           <div className="flex justify-center py-16">
             <Spinner className="h-6 w-6" />

@@ -1607,6 +1607,47 @@ function ToolResultBlock({ name, detail }: ToolCall) {
   );
 }
 
+// FileViewer shows a non-image attachment's contents. Images have
+// ImageLightbox; this covers everything else the composer accepts (text, code,
+// JSON, CSV), which until now showed only as a filename chip with no way to
+// read it.
+function FileViewer({ url, name, onClose }: { url: string; name: string; onClose: () => void }) {
+  const [text, setText] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetch(url, { credentials: 'same-origin' })
+      .then((res) => {
+        if (!res.ok) throw new Error(`Could not load the file (HTTP ${res.status}).`);
+        return res.text();
+      })
+      .then((body) => {
+        if (!cancelled) setText(body);
+      })
+      .catch((e) => {
+        if (!cancelled) setError(errMsg(e));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [url]);
+  return (
+    <Dialog open onClose={onClose} title={name} wide fixedBody>
+      {error && <ErrorBox message={error} />}
+      {!error && text === null && (
+        <div className="flex justify-center py-8">
+          <Spinner className="h-5 w-5" />
+        </div>
+      )}
+      {text !== null && (
+        <pre className="max-h-[70vh] overflow-auto whitespace-pre-wrap break-words rounded-lg border border-border bg-surface p-3 font-mono text-xs text-text">
+          {text}
+        </pre>
+      )}
+    </Dialog>
+  );
+}
+
 function ImageLightbox({
   url,
   name,
@@ -1710,6 +1751,7 @@ const MessageRow = memo(function MessageRow({
   onRetrySend,
   onEditStart,
   onImageClick,
+  onFileClick,
   onAskAnswered,
   onOpenBackground,
   currency,
@@ -1725,6 +1767,7 @@ const MessageRow = memo(function MessageRow({
   onRetrySend: (text: string) => void;
   onEditStart: (key: string, editing: boolean) => void;
   onImageClick: (url: string, name: string) => void;
+  onFileClick: (url: string, name: string) => void;
   onAskAnswered: (answers: AskAnswerView[]) => void;
   /** Open a finished background task's full output in the tasks modal. */
   onOpenBackground: (text: string) => void;
@@ -1799,13 +1842,17 @@ const MessageRow = memo(function MessageRow({
                     <img src={a.url} alt={a.name} loading="lazy" className="h-28 w-28 object-cover" />
                   </button>
                 ) : (
-                  <span
+                  <button
                     key={i}
-                    className="flex items-center gap-1 rounded-md bg-surface px-1.5 py-0.5 text-[10px] text-dim"
+                    type="button"
+                    onClick={() => a.url && onFileClick(a.url, a.name)}
+                    disabled={!a.url}
+                    title={a.url ? `View ${a.name}` : a.name}
+                    className="flex items-center gap-1 rounded-md bg-surface px-1.5 py-0.5 text-[10px] text-dim transition-colors enabled:hover:text-text disabled:cursor-default"
                   >
                     <IconPaperclip className="h-3 w-3 shrink-0 text-faint" />
                     <span className="max-w-[140px] truncate">{a.name}</span>
-                  </span>
+                  </button>
                 ),
               )}
             </div>
@@ -2028,6 +2075,8 @@ export default function ChatPane({
   // Mobile-only: the composer can cover the chat pane for long messages.
   const [expanded, setExpanded] = useState(false);
   const [lightbox, setLightbox] = useState<{ url: string; name: string } | null>(null);
+  // Non-image attachment opened for reading (the lightbox handles images).
+  const [fileView, setFileView] = useState<{ url: string; name: string } | null>(null);
   // Background tasks modal: the running list, or one finished job's output.
   const [bgTasksOpen, setBgTasksOpen] = useState(false);
   const [bgTaskOutput, setBgTaskOutput] = useState<{ title: string; text: string } | null>(null);
@@ -2140,6 +2189,7 @@ export default function ChatPane({
   onMemoriesRef.current = onMemories;
 
   const openLightbox = useCallback((url: string, name: string) => setLightbox({ url, name }), []);
+  const openFile = useCallback((url: string, name: string) => setFileView({ url, name }), []);
   const openBackgroundOutput = useCallback((text: string) => {
     setBgTaskOutput({ title: 'Background task', text });
     setBgTasksOpen(true);
@@ -2538,7 +2588,9 @@ export default function ChatPane({
             sentAt: Number(m.createdAt) * 1000,
             attachments: m.attachments?.map((a, i) => ({
               ...a,
-              url: a.kind === 'image' ? messageAttachmentUrl(projectId, m.id, i) : undefined,
+              // Every attachment gets its endpoint URL, not just images: the
+              // non-image chip opens a viewer that fetches this.
+              url: messageAttachmentUrl(projectId, m.id, i),
             })),
           });
           if (!background) lastUserAt = Number(m.createdAt);
@@ -3276,7 +3328,7 @@ export default function ChatPane({
               sentAt: Date.now(),
               attachments: ev.attachments?.map((a, i) => ({
                 ...a,
-                url: a.kind === 'image' && id > 0 ? messageAttachmentUrl(projectId, String(id), i) : undefined,
+                url: id > 0 ? messageAttachmentUrl(projectId, String(id), i) : undefined,
               })),
             },
           ]);
@@ -4514,6 +4566,7 @@ export default function ChatPane({
                         onRetrySend={sendText}
                         onEditStart={setItemEditing}
                         onImageClick={openLightbox}
+                        onFileClick={openFile}
                         onAskAnswered={(answer) => void answerAsk(answer)}
                         onOpenBackground={openBackgroundOutput}
                         currency={currency}
@@ -4555,6 +4608,7 @@ export default function ChatPane({
                       onRetrySend={sendText}
                       onEditStart={setItemEditing}
                       onImageClick={openLightbox}
+                      onFileClick={openFile}
                       onAskAnswered={(answer) => void answerAsk(answer)}
                       onOpenBackground={openBackgroundOutput}
                       currency={currency}
@@ -5293,6 +5347,10 @@ export default function ChatPane({
 
       {lightbox && (
         <ImageLightbox url={lightbox.url} name={lightbox.name} onClose={() => setLightbox(null)} />
+      )}
+
+      {fileView && (
+        <FileViewer url={fileView.url} name={fileView.name} onClose={() => setFileView(null)} />
       )}
 
       <BackgroundTasksModal
