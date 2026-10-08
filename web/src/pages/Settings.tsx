@@ -122,7 +122,7 @@ const SETTINGS_SEARCH: {
   { id: 'sec-system-prompt', page: 'llm', label: 'Global system prompt', hint: 'Extra instructions for every chat', keywords: 'prompt instructions behavior context rules system agent' },
   { id: 'sec-llm', page: 'llm', label: 'Default thinking level', hint: 'Off / low / medium / high / xhigh / max', keywords: 'thinking reasoning effort level default tokens model' },
   { id: 'sec-toon', page: 'llm', label: 'TOON', hint: 'Token-efficient tool result encoding', keywords: 'toon tokens efficient encode tool results format compact json' },
-  { id: 'sec-caveman', page: 'llm', label: 'Caveman mode', hint: 'Terse replies, technical facts kept', keywords: 'caveman terse style reply concise brief short answer first no fluff' },
+  { id: 'sec-tools-skills', page: 'tools', label: 'Caveman mode', hint: 'Now a skill: terse replies, technical facts kept', keywords: 'caveman terse style reply concise brief short answer first no fluff' },
   { id: 'sec-auto-push', page: 'llm', label: 'Auto-push new projects', hint: 'Default for newly created projects only', keywords: 'auto push commits github default new projects git remote' },
   { id: 'sec-context-threshold', page: 'llm', label: 'Context compaction', hint: 'Percent of context before auto compaction', keywords: 'context compaction threshold percent auto compact tokens' },
   { id: 'sec-turn-timeouts', page: 'llm', label: 'Turn timeouts', hint: 'Soft/hard run time limits in minutes', keywords: 'turn timeout soft hard deadline minutes abort warn run length' },
@@ -451,58 +451,6 @@ function ToonControl() {
     setError(null);
     try {
       await api.updateSettings({ toonEnabled: v });
-      setOn(v);
-    } catch (err) {
-      setError(errMsg(err));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div className="flex flex-col gap-2">
-      <div className="grid w-full max-w-xs grid-cols-2 gap-1 rounded-lg border border-border bg-surface p-1">
-        {([false, true] as const).map((v) => (
-          <button
-            key={String(v)}
-            type="button"
-            disabled={!loaded || busy}
-            onClick={() => void choose(v)}
-            className={`min-h-[36px] rounded-md text-sm transition-colors disabled:opacity-50 ${
-              on === v ? 'bg-border text-text' : 'text-dim hover:text-text'
-            }`}
-          >
-            {v ? 'On' : 'Off'}
-          </button>
-        ))}
-      </div>
-      {error && <p className="text-xs text-red-400">{error}</p>}
-    </div>
-  );
-}
-
-// CavemanControl toggles the terse "caveman" reply style for the agent.
-function CavemanControl() {
-  const [on, setOn] = useState(false);
-  const [loaded, setLoaded] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    api
-      .getSettings()
-      .then((s) => {
-        setOn(s.caveman ?? false);
-        setLoaded(true);
-      })
-      .catch(() => setLoaded(true));
-  }, []);
-
-  const choose = async (v: boolean) => {
-    setBusy(true);
-    setError(null);
-    try {
-      await api.updateSettings({ caveman: v });
       setOn(v);
     } catch (err) {
       setError(errMsg(err));
@@ -2753,7 +2701,7 @@ export default function Settings() {
         <Section
           id="sec-toon"
           title="Reply style"
-          description="How much the agent says, and how its tool results are encoded on the way to the model."
+          description="How tool results are encoded on the way to the model. Caveman mode — terse replies with every technical fact kept — is a skill now; find it under Skills."
         >
           <div className="flex flex-col gap-4">
             <div>
@@ -2764,17 +2712,6 @@ export default function Settings() {
               </p>
               <div className="mt-2">
                 <ToonControl />
-              </div>
-            </div>
-            {/* Keeps its own id: the settings search jumps straight here. */}
-            <div id="sec-caveman">
-              <div className="text-sm text-text">Caveman mode</div>
-              <p className="mt-0.5 text-xs text-subtle">
-                Terse replies: answer first, no fluff, and code, paths, numbers and errors kept
-                verbatim. Security warnings and destructive actions still use full sentences.
-              </p>
-              <div className="mt-2">
-                <CavemanControl />
               </div>
             </div>
           </div>

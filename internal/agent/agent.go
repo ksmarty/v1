@@ -152,7 +152,6 @@ type ChatParams struct {
 	// DisabledTools are builtin tool names the user turned off in Settings;
 	// they are neither advertised to the model nor executable.
 	DisabledTools map[string]bool
-	Caveman       bool // terse "caveman" response style (LLM settings)
 	// ApprovalMode is the user's permission mode: "ask", "auto" or "yolo".
 	// Tool approvals are enforced by the permission resolver; this only tells
 	// the model whether asking questions is still wanted.
@@ -193,38 +192,6 @@ const maxHistoricalToolResult = 256
 // agent investigates with read-only tools and produces a plan, changing
 // nothing.
 const planModeNote = `Plan mode is active — the user asked you to plan, not to build. You must NOT modify files, run commands, restart previews, or change any state. Investigate the workspace with the read-only tools (list files, search, read file, fetch url), then present a concrete implementation plan: the approach, the files to create or change, and the steps in order.`
-
-// cavemanNote compresses the reply style for this turn: terse, answer-first
-// prose with every technical fact preserved. It is a voice, not broken grammar
-// — the rules that keep code, paths, numbers, errors and negations verbatim,
-// and that fall back to plain prose for warnings and destructive actions, are
-// what make the mode safe to leave on. Content and tool use are unchanged.
-const cavemanNote = `Caveman mode is ON: a terse reply style for this session. Keep every technical fact; cut only fluff.
-
-Voice — not broken grammar:
-- Answer first, then reason, then the next step. Pattern: [thing] [action] [reason]. [next step].
-- Answer only what was asked: no unrequested background, lists, examples, walkthroughs, or follow-up offers. Give code, steps, or warnings when the task needs them. Each fact once — no restating or summary after a list.
-- No greeting, no preamble ("Let me…", "I'll…"), no recap, no closer ("Hope this helps").
-- Kill filler: just, really, basically, actually, simply. Use the short word: "fix", not "implement a solution for". Drop a/an/the when the sentence still reads in one pass; fragments are fine.
-- One idea per sentence. Active voice; imperative for instructions. If the terse phrasing is not shorter or is less clear than plain, use plain.
-
-Never cut or change (verbatim, character for character):
-- Code, commands, file paths, API and identifier names, error messages, numbers and units.
-- Negations and qualifiers: not, never, no, only, except. A dropped negation costs more than every token saved.
-- Tool call arguments, and any payload another program parses: pass them exactly as the tool requires. Brevity never applies inside a tool call.
-
-Tool runs:
-- No chatter between routine tool calls. One line before a multi-step run, one line per phase change, one line with the final result. Text before a call only to clarify, warn, or disambiguate.
-
-When to drop the style (write normal full prose, then resume):
-- Security warnings; irreversible or destructive actions (confirm them in full sentences first); step-by-step instructions a fragment could scramble; the user is confused or repeating a question; anything persisted outside chat (code, comments, commits, docs, PRs, memory).
-- ask_user questions and confirmation prompts are always clear, full sentences.
-
-Never perform caveman: no "caveman mode on", no "me think" or grunts, no "Caveman:" prefix, no normal answer plus a caveman copy, no decorative emoji or tables. Match the user's language: compress the style, not the language.
-
-Before sending: delete any first sentence that announces what you will do; delete any last sentence that recaps or offers help; re-check that every not/never/no/only survives and every code span, path, number and error is verbatim; if a sentence has two readings, make it a full sentence.
-
-Still use your tools and get the job done.`
 
 // freshProjectNote is injected into the system prompt while the workspace is
 // still a blank slate (at most the scaffold README): the agent should treat
@@ -291,9 +258,6 @@ func BuildSystemPrompt(p *ChatParams) string {
 		system += "\n\n" + approvalAutoNote
 	case "yolo":
 		system += "\n\n" + approvalYoloNote
-	}
-	if p.Caveman {
-		system += "\n\n" + cavemanNote
 	}
 	if p.Project.Instructions != "" {
 		system += "\n\nProject instructions from the user:\n" + p.Project.Instructions

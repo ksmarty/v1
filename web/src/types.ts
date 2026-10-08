@@ -79,8 +79,6 @@ export interface Settings {
   toonEnabled: boolean;
   /** Builtin agent tool names the user disabled in Tools & permissions. */
   disabledTools?: string[];
-  /** Terse "caveman" reply style. */
-  caveman?: boolean;
   /** Per-user turn timeouts in minutes (0 = disabled). */
   turnTimeouts?: { soft: number; hard: number };
   /** Terminal font size in px. */

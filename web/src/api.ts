@@ -221,7 +221,6 @@ export interface SettingsUpdate {
   defaultThinking?: string;
   toonEnabled?: boolean;
   disabledTools?: string[];
-  caveman?: boolean;
   turnTimeouts?: { soft: number; hard: number };
   terminalFontSize?: number;
   terminalWrap?: boolean;

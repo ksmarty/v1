@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -45,6 +46,65 @@ func (s *Server) saveSkills(list []skills.Skill) error {
 // skillsSystemPrompt renders the SKILL.md contents of enabled installed skills.
 func (s *Server) skillsSystemPrompt() string {
 	return skills.SystemPrompt(s.skillsRoot(), s.installedSkills())
+}
+
+// ensureBuiltinSkills seeds the skills every install should have, and migrates
+// the retired caveman setting onto its replacement skill. It runs once: the
+// guard is what lets a user remove a bundled skill without it coming back on
+// the next restart.
+func (s *Server) ensureBuiltinSkills() {
+	if v, ok, _ := s.st.GetSetting(keySkillsSeeded); ok && v == "1" {
+		return
+	}
+	installed := s.installedSkills()
+	has := func(id string) bool {
+		for _, sk := range installed {
+			if sk.ID == id || sk.Dir == id {
+				return true
+			}
+		}
+		return false
+	}
+	add := func(id string) {
+		b := skills.FindBuiltin(id)
+		if b == nil || has(id) {
+			return
+		}
+		if err := s.installBuiltinSkill(*b); err != nil {
+			log.Printf("skills: cannot install the bundled %s skill: %v", id, err)
+			return
+		}
+		installed = append(installed, b.Skill)
+	}
+
+	// caveman was a per-user toggle. Anyone who had it on gets the equivalent
+	// skill, because removing the setting without this would silently turn the
+	// style off for them. The setting is retired either way.
+	cavemanWanted := false
+	if users, err := s.st.ListUsers(); err == nil {
+		for _, u := range users {
+			if v, ok, _ := s.st.GetUserSetting(u.ID, keyCavemanLegacy); ok && v == "1" {
+				cavemanWanted = true
+			}
+			if err := s.st.DeleteUserSetting(u.ID, keyCavemanLegacy); err != nil {
+				log.Printf("skills: cannot clear the retired caveman setting: %v", err)
+			}
+		}
+	}
+	if cavemanWanted {
+		add("caveman")
+	}
+	// Session naming ships on: it is the behaviour that makes a session list
+	// readable, and it is a skill, so turning it off is one click.
+	add("session-naming")
+
+	if err := s.saveSkills(installed); err != nil {
+		log.Printf("skills: cannot persist the bundled skills: %v", err)
+		return
+	}
+	if err := s.st.SetSetting(keySkillsSeeded, "1"); err != nil {
+		log.Printf("skills: cannot record the bundled-skill seed: %v", err)
+	}
 }
 
 // handleSkillsSearch queries the SkillsMP marketplace.
