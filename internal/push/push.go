@@ -293,9 +293,11 @@ func (c *Client) Send(ctx context.Context, sub Subscription, msg Message) error 
 		return fmt.Errorf("push: send: %w", err)
 	}
 	defer res.Body.Close()
-	// Drain a little so the connection can be reused, but never read a large
-	// error page.
-	_, _ = io.Copy(io.Discard, io.LimitReader(res.Body, 4096))
+	// Read a little so the connection can be reused, but never a large error
+	// page. The body carries the reason: Apple answers a rejected VAPID token
+	// with {"reason":"BadJwtToken"}, which is the only way to tell a bad key
+	// from a bad claim.
+	detail, _ := io.ReadAll(io.LimitReader(res.Body, 4096))
 
 	switch {
 	case res.StatusCode >= 200 && res.StatusCode < 300:
@@ -303,7 +305,10 @@ func (c *Client) Send(ctx context.Context, sub Subscription, msg Message) error 
 	case res.StatusCode == http.StatusNotFound || res.StatusCode == http.StatusGone:
 		return ErrGone
 	default:
-		return fmt.Errorf("push: send: %s", res.Status)
+		if reason := strings.TrimSpace(string(detail)); reason != "" {
+			return fmt.Errorf("send: %s: %s", res.Status, reason)
+		}
+		return fmt.Errorf("send: %s", res.Status)
 	}
 }
 

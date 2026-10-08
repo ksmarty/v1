@@ -21,7 +21,14 @@ const keyVAPIDPrivate = "push_vapid_private"
 
 // pushSubject is the contact address handed to the push services, which
 // RFC 8292 requires. Nothing is ever sent to it.
-const pushSubject = "mailto:v1@localhost"
+//
+// Apple validates this claim and refuses a contact it considers unroutable:
+// `mailto:v1@localhost` is answered with 403 {"reason":"BadJwtToken"}, as is any
+// `.local` address, while a routable mailto or https URL is accepted. Because
+// only Apple is that strict, the rejection showed up as iOS going silent while
+// every other push service still delivered. example.com is reserved by RFC 2606,
+// so this can never reach a real inbox.
+const pushSubject = "https://example.com"
 
 // maxUserAgent caps the stored device label.
 const maxUserAgent = 200

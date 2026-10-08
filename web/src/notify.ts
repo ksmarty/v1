@@ -1,5 +1,4 @@
 import { getNotifyAsk, getNotifyEnabled, getNotifyOnlyBackground, getNotifyTurnDone, getNotifyTurnError } from './utils';
-import { pushActive } from './push';
 
 // Shows a notification through the service worker when one is registered
 // (the path iOS PWAs support), falling back to the page constructor. Returns
@@ -35,11 +34,13 @@ async function showNotification(
 // Common gating for turn notifications: master toggle, the specific
 // category toggle, and (by default) only when the window is not focused.
 //
-// The device's own push subscription is the final gate. Whenever it exists the
-// server pushes for turn events, and that push arrives even when iOS has
-// suspended the app — so showing the in-page notification as well delivers the
-// same turn twice. The in-page copy is the one that lands late, because the page
-// only discovers a finished turn when the user comes back to it.
+// It deliberately does NOT gate on the device having a push subscription.
+// Suppressing the in-page copy whenever a subscription exists makes push a
+// single point of failure: when delivery fails — as it did while Apple was
+// rejecting our VAPID contact — the page stays silent too and the user gets
+// nothing at all. Both paths use the same tag, so a redundant in-page
+// notification replaces the pushed one instead of stacking. A silent
+// replacement is a much better failure mode than silence.
 async function shouldNotify(
   category: boolean,
   sessionId: string,
@@ -49,8 +50,8 @@ async function shouldNotify(
 ) {
   if (!getNotifyEnabled() || !category) return;
   if (getNotifyOnlyBackground() && document.visibilityState === 'visible') return;
-  if (await pushActive()) return;
-  // Same tag as the push path, so a duplicate replaces instead of stacking.
+  // Same tag as the push path, so when both fire for one turn the second
+  // replaces the first rather than stacking.
   await showNotification(title, body, `v1-turn-${sessionId}`, url);
 }
 
