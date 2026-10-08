@@ -1181,7 +1181,7 @@ var tools = []llm.Tool{
 		Type: "function",
 		Function: llm.ToolFunction{
 			Name:        "remember",
-			Description: "Save a durable fact about this project (framework, styling rules, API endpoints, user preferences) to long-term memory. Memories are ranked against each turn by meaning, so write the fact out properly rather than in shorthand: there is no length limit, and a clear full sentence is retrieved far more reliably than a terse fragment. Categories: preference (user choices), episodic (what worked/failed before), fact (stable project knowledge), plan (working plan notes). Importance 0-3: 2+ pins the memory so it never decays; lower importance fades with disuse. Add tags: short technical terms (file names, symbols, technologies) that someone would search for later. They are matched separately from the prose and are a strong signal. A near-duplicate of an existing memory is refused automatically.",
+			Description: "Save a durable fact about this project (framework, styling rules, API endpoints, user preferences) to long-term memory. Memories are ranked against each turn by meaning, so write the fact out properly rather than in shorthand: there is no length limit, and a clear full sentence is retrieved far more reliably than a terse fragment. Anything inside <private>...</private> tags is stripped before saving, so a memory can record where a credential lives without storing the credential itself. Categories: preference (user choices), episodic (what worked/failed before), fact (stable project knowledge), plan (working plan notes). Importance 0-3: 2+ pins the memory so it never decays; lower importance fades with disuse. Add tags: short technical terms (file names, symbols, technologies) that someone would search for later. They are matched separately from the prose and are a strong signal. A near-duplicate of an existing memory is refused automatically.",
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -1221,6 +1221,32 @@ var tools = []llm.Tool{
 					},
 				},
 				"required": []string{"id"},
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: llm.ToolFunction{
+			Name:        "search_memories",
+			Description: "Search this project's long-term memory. The memories section of the system prompt lists only what ranked highest for the current message, so treat it as partial: search before debugging or investigating a problem, before answering a question about earlier work, and whenever the user says something was already decided, tried or fixed. Use technical keywords — file names, symbols, error text, tool names — and try different keywords if the first search is thin. Each result carries a relevance score; a low score means the memory is not really about the query. Save a new memory with remember, delete one by id with forget.",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"query": map[string]any{
+						"type":        "string",
+						"description": "Technical keywords, e.g. 'webhook retry policy' or 'sqlite migration'.",
+					},
+					"limit": map[string]any{
+						"type":        "number",
+						"description": "Maximum results; default 10, capped at 25.",
+					},
+					"category": map[string]any{
+						"type":        "string",
+						"enum":        []string{"preference", "episodic", "fact", "plan"},
+						"description": "Only search memories of this kind.",
+					},
+				},
+				"required": []string{"query"},
 			},
 		},
 	},

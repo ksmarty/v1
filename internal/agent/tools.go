@@ -225,6 +225,8 @@ func (e *Executor) Execute(ctx context.Context, name, argsJSON string) (string, 
 		return e.remember(argsJSON)
 	case "forget":
 		return e.forget(argsJSON)
+	case "search_memories":
+		return e.searchMemories(argsJSON)
 	case "ask_user":
 		return e.askUser(ctx, argsJSON)
 	case "verify_project":
@@ -310,6 +312,18 @@ func (e *Executor) mcpCall(ctx context.Context, name, argsJSON string) (string, 
 // store costs storage rather than context.
 const maxMemoriesPerProject = 2000
 
+// searchFloor is the relevance a memory must clear to come back from an
+// explicit search. It is far below memory.MinRelevance, the floor for
+// injection: an injected memory costs context on every turn, so it has to be
+// clearly on-topic, while a search is a direct question — a weak match is worth
+// returning with its score rather than hiding.
+const searchFloor = 0.05
+
+const (
+	searchDefaultLimit = 10
+	searchMaxLimit     = 25
+)
+
 // embedClient returns the turn's embedding client, or nil when no provider is
 // configured. Callers treat nil as "rank lexically".
 func (e *Executor) embedClient() *embed.Client {
@@ -357,9 +371,16 @@ func (e *Executor) remember(argsJSON string) (string, error) {
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 		return "", fmt.Errorf("invalid arguments: %w", err)
 	}
-	args.Content = strings.TrimSpace(args.Content)
-	if args.Content == "" {
+	if strings.TrimSpace(args.Content) == "" {
 		return "", fmt.Errorf("content is required")
+	}
+	// <private> sections are removed before anything else looks at the content,
+	// so a secret cannot reach the store (and from there the system prompt of
+	// every later turn) even when the model ignored the instruction not to
+	// store it.
+	args.Content = memory.StripPrivate(args.Content)
+	if args.Content == "" {
+		return "", toolFail("BAD_ARGUMENT", "the whole memory was inside <private> tags, so nothing was stored", true, "write the durable fact outside the <private> tags")
 	}
 	args.Category = strings.ToLower(strings.TrimSpace(args.Category))
 	if args.Category != "" && args.Category != "preference" && args.Category != "episodic" && args.Category != "fact" && args.Category != "plan" {
@@ -375,7 +396,7 @@ func (e *Executor) remember(argsJSON string) (string, error) {
 	if e.Store == nil {
 		return "", fmt.Errorf("memory store unavailable")
 	}
-	tags := normalizeTags(args.Tags)
+	tags := normalizeTags(memory.StripPrivate(args.Tags))
 	mems, err := e.Store.ListMemories(e.ProjectID)
 	if err != nil {
 		return "", err
@@ -466,6 +487,110 @@ func (e *Executor) nearestMemory(mems []store.Memory, vec []float32) (store.Memo
 		return store.Memory{}, 0, false
 	}
 	return mems[best], bestSim, true
+}
+
+// searchMemories ranks the project's memories against an explicit query.
+//
+// The system prompt carries only the memories that ranked highest for the
+// current message, so this is how the agent looks at the rest of the store —
+// the injected list is a hint, not the whole memory. It reuses the same ranker
+// as injection so a memory that would have been injected still scores highest
+// here, and touches what it returns so a memory that is actually retrieved
+// keeps its recency and frequency signal.
+func (e *Executor) searchMemories(argsJSON string) (string, error) {
+	var args struct {
+		Query    string `json:"query"`
+		Limit    int    `json:"limit"`
+		Category string `json:"category"`
+	}
+	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
+		return "", fmt.Errorf("invalid arguments: %w", err)
+	}
+	args.Query = strings.TrimSpace(args.Query)
+	if args.Query == "" {
+		return "", fmt.Errorf("query is required")
+	}
+	if e.Store == nil {
+		return "", fmt.Errorf("memory store unavailable")
+	}
+	limit := args.Limit
+	if limit <= 0 {
+		limit = searchDefaultLimit
+	}
+	if limit > searchMaxLimit {
+		limit = searchMaxLimit
+	}
+	args.Category = strings.ToLower(strings.TrimSpace(args.Category))
+
+	mems, err := e.Store.ListMemories(e.ProjectID)
+	if err != nil {
+		return "", err
+	}
+	// Vectors are fetched once for the whole store rather than per memory.
+	vectors, err := e.Store.MemoryVectors(e.ProjectID)
+	if err != nil {
+		vectors = nil
+	}
+	now := time.Now()
+	cands := make([]memory.Candidate, 0, len(mems))
+	for _, m := range mems {
+		if !m.Enabled || (args.Category != "" && m.Category != args.Category) {
+			continue
+		}
+		cands = append(cands, memory.Candidate{
+			ID:          m.ID,
+			Content:     m.Content,
+			Tags:        m.Tags,
+			Category:    m.Category,
+			Importance:  m.Importance,
+			LastAccess:  m.LastAccessed,
+			AccessCount: m.AccessCount,
+			Vector:      vectors[m.ID],
+		})
+	}
+	if len(cands) == 0 {
+		return toolResult(map[string]any{
+			"results": []any{},
+			"note":    "no memories are stored for this project",
+		}), nil
+	}
+
+	q := memory.Query{Text: args.Query, Now: now}
+	if client := e.embedClient(); client != nil {
+		// A search is only as good as its ranking, but an embedding failure
+		// should still return the lexical matches rather than nothing.
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		if v, err := client.EmbedQuery(ctx, args.Query); err == nil {
+			q.Vector = v
+		} else {
+			log.Printf("embedding a memory search failed: %v", err)
+		}
+	}
+
+	hits := memory.Rank(cands, q, limit, searchFloor)
+	out := make([]map[string]any, 0, len(hits))
+	for _, h := range hits {
+		row := map[string]any{
+			"id":        h.ID,
+			"category":  h.Category,
+			"content":   h.Content,
+			"relevance": math.Round(h.Relevance*100) / 100,
+		}
+		if h.Tags != "" {
+			row["tags"] = h.Tags
+		}
+		if h.Similarity != 0 {
+			row["similarity"] = math.Round(h.Similarity*100) / 100
+		}
+		out = append(out, row)
+		_ = e.Store.TouchMemory(h.ID)
+	}
+	res := map[string]any{"query": args.Query, "results": out}
+	if len(out) == 0 {
+		res["note"] = "nothing matched — try different keywords (a file name, a symbol, the error text), or the fact may not have been saved yet"
+	}
+	return toolResult(res), nil
 }
 
 func (e *Executor) forget(argsJSON string) (string, error) {

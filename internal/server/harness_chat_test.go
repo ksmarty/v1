@@ -761,7 +761,7 @@ func TestHarnessToolDefsMirrorTheBuiltinSet(t *testing.T) {
 		"read_file", "write_file", "edit_file", "list_files", "search_files",
 		"delete_file", "move_file", "fetch_url", "run_command", "run_command_background",
 		"restart_preview", "set_project_name", "set_session_name", "set_todos",
-		"remember", "forget", "ask_user", "git", "run_container", "verify_project",
+		"remember", "forget", "search_memories", "ask_user", "git", "run_container", "verify_project",
 		"make_plan", "update_plan",
 	} {
 		d, ok := byName[name]

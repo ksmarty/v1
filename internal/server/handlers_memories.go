@@ -144,7 +144,7 @@ func (s *Server) memoryPrompt(projectID, userID, userMessage string) string {
 	}
 
 	var sb strings.Builder
-	sb.WriteString("Project memories (ranked against the current message; use the forget tool with an id to delete one):")
+	sb.WriteString("Project memories (the best matches for this message, not the whole store — search_memories looks at the rest; forget with an id deletes one):")
 	total := sb.Len()
 	kept := 0
 	for _, h := range hits {
@@ -179,12 +179,18 @@ func (s *Server) planPrompt(projectID string) string {
 // where it is genuinely relevant and nothing otherwise — and a fact written out
 // properly retrieves better than the same fact compressed into shorthand.
 func memoryContent(w http.ResponseWriter, content string) (string, bool) {
-	content = strings.TrimSpace(content)
-	if content == "" {
+	if strings.TrimSpace(content) == "" {
 		writeError(w, http.StatusBadRequest, "content is required")
 		return "", false
 	}
-	return content, true
+	// <private> sections never reach the store, so a memory written through the
+	// UI cannot carry a secret into the system prompt of every later turn.
+	stripped := memory.StripPrivate(content)
+	if stripped == "" {
+		writeError(w, http.StatusBadRequest, "the memory was entirely inside <private> tags, so nothing was saved")
+		return "", false
+	}
+	return stripped, true
 }
 
 // handleCreateMemory adds a memory manually (same caps/dedup as remember).
