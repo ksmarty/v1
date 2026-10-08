@@ -388,7 +388,11 @@ const (
 	keyRewindApproval  = "rewind_approval"
 	keyThinkingDefault = "thinking_default"
 	keyToonEnabled     = "toon_enabled"
-	keyDisabledTools   = "disabled_tools"
+	// keyMemoryAutoCapture lets the agent save memories from a turn on its own,
+	// rather than only when it decides to call remember. Off unless set: it
+	// costs one extra model call per turn.
+	keyMemoryAutoCapture = "memory_auto_capture"
+	keyDisabledTools     = "disabled_tools"
 	// keyWebSearch is the user's LangSearch API key, which web_search runs on.
 	keyWebSearch = "web_search_key"
 	// The embedding provider backing memory retrieval, split across four keys so
@@ -666,6 +670,13 @@ func (s *Server) toonEnabled(userID string) bool {
 	if !ok || v == "" {
 		return true
 	}
+	return v == "1"
+}
+
+// memoryAutoCapture reports whether the agent should remember durable facts
+// from each turn without being asked. Off unless the user turns it on.
+func (s *Server) memoryAutoCapture(userID string) bool {
+	v, _ := s.userSetting(userID, keyMemoryAutoCapture)
 	return v == "1"
 }
 

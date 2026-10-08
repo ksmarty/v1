@@ -729,6 +729,16 @@ func (s *Server) streamChatTurn(w http.ResponseWriter, r *http.Request, p *store
 		s.notifyTurnPush(userID, p.ID, params.SessionID, p.Name, nil)
 		emit(agent.ChatEvent{Type: "done", Usage: turn.Usage})
 
+		// Remembering is not something the user should have to ask for: with
+		// capture on, the model reads back its own turn and keeps what will still
+		// matter later. It runs after the done event and off the request, so
+		// nobody waits on the extra model call. Arguments are copied out rather
+		// than the params struct being shared, because the next iteration of this
+		// loop reuses it while the capture is still running.
+		if s.memoryAutoCapture(userID) {
+			go s.captureMemories(p.ID, params.SessionID, params.LastUserID, params.Exec.EmbedConfig, userID)
+		}
+
 		// Messages queued during the run become follow-up turns in order, one
 		// per message; anything left drains next iteration. Unconsumed steers
 		// come first. A message being edited (held) is skipped by the drain;

@@ -236,20 +236,21 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 			"keySet":  s.langSearchKey(userID) != "",
 			"keyHint": apiKeyHint(s.langSearchKey(userID)),
 		},
-		"embedding":        s.embeddingSettings(userID),
-		"skills":           s.installedSkills(),
-		"rewindApproval":   s.rewindApproval(userID),
-		"defaultThinking":  s.defaultThinking(userID),
-		"toonEnabled":      s.toonEnabled(userID),
-		"disabledTools":    s.disabledTools(userID),
-		"turnTimeouts":     s.turnTimeoutMinutesForUI(userID),
-		"terminalFontSize": s.terminalFontSize(userID),
-		"terminalWrap":     s.terminalWrap(userID),
-		"autoPushDefault":  s.autoPushDefault(userID),
-		"contextThreshold": int(s.contextThreshold(userID) * 100),
-		"systemPrompt":     s.effectiveSystemPrompt(userID),
-		"version":          s.cfg.Version,
-		"commit":           s.cfg.Commit,
+		"embedding":         s.embeddingSettings(userID),
+		"skills":            s.installedSkills(),
+		"rewindApproval":    s.rewindApproval(userID),
+		"defaultThinking":   s.defaultThinking(userID),
+		"toonEnabled":       s.toonEnabled(userID),
+		"memoryAutoCapture": s.memoryAutoCapture(userID),
+		"disabledTools":     s.disabledTools(userID),
+		"turnTimeouts":      s.turnTimeoutMinutesForUI(userID),
+		"terminalFontSize":  s.terminalFontSize(userID),
+		"terminalWrap":      s.terminalWrap(userID),
+		"autoPushDefault":   s.autoPushDefault(userID),
+		"contextThreshold":  int(s.contextThreshold(userID) * 100),
+		"systemPrompt":      s.effectiveSystemPrompt(userID),
+		"version":           s.cfg.Version,
+		"commit":            s.cfg.Commit,
 	})
 }
 
@@ -276,6 +277,7 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		RewindApproval          *bool               `json:"rewindApproval"`
 		DefaultThinking         *string             `json:"defaultThinking"`
 		ToonEnabled             *bool               `json:"toonEnabled"`
+		MemoryAutoCapture       *bool               `json:"memoryAutoCapture"`
 		DisabledTools           *[]string           `json:"disabledTools"`
 		WebSearchKey            *string             `json:"webSearchKey"`
 		Embedding               *struct {
@@ -511,6 +513,16 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 			val = "1"
 		}
 		if err := s.st.SetUserSetting(userID, keyToonEnabled, val); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+	if body.MemoryAutoCapture != nil {
+		val := "0"
+		if *body.MemoryAutoCapture {
+			val = "1"
+		}
+		if err := s.st.SetUserSetting(userID, keyMemoryAutoCapture, val); err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}

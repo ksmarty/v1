@@ -354,6 +354,10 @@ function ToolSettings({
   // silently — which is exactly the failure this feature exists to avoid.
   const [emb, setEmb] = useState({ provider: '', model: '', baseUrl: '', apiKey: '' });
   const [embSaved, setEmbSaved] = useState<EmbeddingSettings | null>(null);
+  // Automatic remembering is a single switch saved the moment it is flipped:
+  // there is no draft to review, so a Save button would only add a step.
+  const [memAuto, setMemAuto] = useState(false);
+  const [memAutoSaving, setMemAutoSaving] = useState(false);
   const [embSaving, setEmbSaving] = useState(false);
   const [embError, setEmbError] = useState<string | null>(null);
   const [embTesting, setEmbTesting] = useState(false);
@@ -404,6 +408,27 @@ function ToolSettings({
       setEmbError(errMsg(e));
     } finally {
       setEmbSaving(false);
+    }
+  };
+
+  // Optimistic, like the tool switches: flip immediately and roll back if the
+  // save fails.
+  const toggleMemAuto = async () => {
+    const next = !memAuto;
+    setMemAuto(next);
+    setMemAutoSaving(true);
+    try {
+      await api.updateSettings({ memoryAutoCapture: next });
+      toast(
+        next
+          ? 'The agent will remember facts from each turn'
+          : 'The agent will only remember when asked',
+      );
+    } catch (e) {
+      setMemAuto(!next);
+      toast(errMsg(e));
+    } finally {
+      setMemAutoSaving(false);
     }
   };
 
@@ -466,6 +491,49 @@ function ToolSettings({
           )}
         </div>
         {webError && <p className="mt-1.5 text-xs text-red-400">{webError}</p>}
+      </div>
+      <div className="shrink-0 rounded-lg border border-border-strong bg-surface/50 p-3 shadow-sm">
+        <label className="flex items-start gap-3">
+          <span className="min-w-0 flex-1">
+            <span className="flex items-center gap-2">
+              <span className="text-sm text-text">Remember automatically</span>
+              <span
+                className={`rounded-full border px-1.5 py-0.5 text-[10px] ${
+                  memAuto
+                    ? 'border-accent/40 bg-accent/10 text-accent'
+                    : 'border-border bg-bg text-faint'
+                }`}
+              >
+                {memAuto ? 'on' : 'off'}
+              </span>
+            </span>
+            <span className="mt-0.5 block text-[11px] leading-relaxed text-faint">
+              Off by default. With this on, the agent reads back each finished turn and keeps what
+              will still matter later — decisions and their reasons, preferences, gotchas, what
+              failed — without being asked to. It costs one extra model call per turn. It reads
+              only that turn's exchange and never the transcript, so it cannot compound its own
+              earlier memories, and a fact the project already remembers is refused rather than
+              stored twice. Anything wrapped in <span className="text-subtle">&lt;private&gt;</span>{' '}
+              tags is stripped before saving.
+            </span>
+          </span>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={memAuto}
+            disabled={memAutoSaving}
+            onClick={() => void toggleMemAuto()}
+            className={`relative mt-0.5 h-5 w-9 shrink-0 rounded-full transition-colors disabled:opacity-50 ${
+              memAuto ? 'bg-accent' : 'bg-border'
+            }`}
+          >
+            <span
+              className={`absolute top-0.5 h-4 w-4 rounded-full bg-bg transition-all ${
+                memAuto ? 'left-[18px]' : 'left-0.5'
+              }`}
+            />
+          </button>
+        </label>
       </div>
       <div className="shrink-0 rounded-lg border border-border-strong bg-surface/50 p-3 shadow-sm">
         <div className="flex items-center gap-2">
@@ -670,6 +738,7 @@ function ToolSettings({
       setWebKeySet(s.webSearch?.keySet ?? false);
       setWebKeyHint(s.webSearch?.keyHint ?? '');
       setEmbSaved(s.embedding ?? null);
+      setMemAuto(s.memoryAutoCapture ?? false);
       setEmb({
         provider: s.embedding?.provider ?? '',
         model: s.embedding?.model ?? '',

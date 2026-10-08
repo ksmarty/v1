@@ -79,6 +79,7 @@ export interface Settings {
   rewindApproval: boolean;
   defaultThinking: string;
   toonEnabled: boolean;
+  memoryAutoCapture: boolean;
   /** Builtin agent tool names the user disabled in Tools & permissions. */
   disabledTools?: string[];
   /** LangSearch key state for the web_search tool; the key itself is never sent. */
