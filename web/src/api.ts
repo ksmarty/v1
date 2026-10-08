@@ -35,6 +35,7 @@ import type {
   VercelDeploymentsResponse,
   VercelUserInfo,
 } from './types';
+import type { LoadedExtension } from './types';
 import { debugBreadcrumb, debugError } from './debuglog';
 
 export class ApiError extends Error {
@@ -524,7 +525,12 @@ export const api = {
   // Extensions: JS modules the sidecar loads to extend the agent. An agent can
   // author these itself, which is how v1 grows new capabilities.
   extensions: () =>
-    request<{ extensions: InstalledExtension[]; errors?: string[] }>('/api/extensions'),
+    request<{
+      extensions: InstalledExtension[];
+      errors?: string[];
+      /** What the sidecar loaded, including how extensions want tools shown. */
+      harness?: { loaded?: LoadedExtension[] };
+    }>('/api/extensions'),
   extension: (id: string) =>
     request<{ id: string; name: string; description: string; enabled: boolean; source: string }>(
       `/api/extensions/${encodeURIComponent(id)}`,

@@ -85,6 +85,8 @@ import {
   IconWrench,
   IconX,
 } from './icons';
+import { useToolDisplay } from '../extensionDisplay';
+import type { ExtensionToolDisplay } from '../types';
 import { useMediaQuery } from '../hooks/useMediaQuery';
 import hljs from 'highlight.js/lib/core';
 import json from 'highlight.js/lib/languages/json';
@@ -165,9 +167,49 @@ const TOOL_LABELS: Record<string, string> = {
   git: 'Git',
 };
 
-function toolLabel(name: string): string {
-  return TOOL_LABELS[name] ?? name;
+function toolLabel(name: string, display?: ExtensionToolDisplay): string {
+  return TOOL_LABELS[name] ?? display?.title ?? name;
 }
+
+// Icons an extension may name, by the lowercased name it declares. A fixed set
+// rather than arbitrary markup, so an extension picks an icon but cannot inject
+// one; an unknown name falls back to the extension icon.
+const EXTENSION_ICONS: Record<string, typeof IconWrench> = {
+  'arrow-up': IconArrowUp,
+  bookmark: IconBookmark,
+  brain: IconBrain,
+  camera: IconCamera,
+  check: IconCheck,
+  'check-square': IconCheckSquare,
+  code: IconCode,
+  compress: IconCompress,
+  download: IconDownload,
+  expand: IconExpand,
+  extension: IconLayers,
+  file: IconFile,
+  flask: IconFlask,
+  git: IconGitBranch,
+  globe: IconGlobe,
+  layers: IconLayers,
+  list: IconList,
+  lock: IconLock,
+  map: IconMap,
+  model: IconModel,
+  paperclip: IconPaperclip,
+  pencil: IconPencil,
+  plan: IconMap,
+  plus: IconPlus,
+  refresh: IconRefresh,
+  search: IconSearch,
+  send: IconSend,
+  square: IconSquare,
+  terminal: IconTerminal,
+  test: IconFlask,
+  tool: IconWrench,
+  trash: IconTrash,
+  user: IconUser,
+  wrench: IconWrench,
+};
 
 // One icon per agent tool shown in the chat; unknown tools (e.g. mcp_*)
 // keep the generic wrench.
@@ -366,8 +408,15 @@ function streamErrorMsg(e: unknown): string {
   return errMsg(e);
 }
 
-function toolIcon(name: string): typeof IconWrench {
-  return TOOL_ICONS[name] ?? IconWrench;
+function toolIcon(name: string, display?: ExtensionToolDisplay): typeof IconWrench {
+  if (TOOL_ICONS[name]) return TOOL_ICONS[name];
+  if (display?.icon) {
+    const named = EXTENSION_ICONS[display.icon.trim().toLowerCase()];
+    if (named) return named;
+  }
+  // An extension's own tool reads as an extension rather than as an
+  // unclassified tool.
+  return display ? IconLayers : IconWrench;
 }
 
 // Renders user message text with @file / #skill tags pill-highlighted. Tag
@@ -540,7 +589,8 @@ function readAttachment(file: File): Promise<{ value: ChatAttachmentInput } | { 
 
 function ToolRow({ item }: { item: ToolItem }) {
   const [open, setOpen] = useState(false);
-  const Icon = toolIcon(item.name);
+  const display = useToolDisplay(item.name);
+  const Icon = toolIcon(item.name, display);
   return (
     <div className="rounded-md border border-border/80 bg-surface/50 text-[10px]">
       <button
@@ -554,7 +604,7 @@ function ToolRow({ item }: { item: ToolItem }) {
           <IconChevronRight className="h-3.5 w-3.5 shrink-0" />
         )}
         <Icon className="h-3 w-3 shrink-0 text-faint" />
-        <span className="shrink-0 font-mono text-text">{toolLabel(item.name)}</span>
+        <span className="shrink-0 font-mono text-text">{toolLabel(item.name, display)}</span>
         {item.detail && <span className="min-w-0 flex-1 truncate text-faint">{item.detail}</span>}
         {item.running ? (
           <Spinner className="h-3.5 w-3.5 shrink-0" />
@@ -687,9 +737,21 @@ function meaningfulDetail(detail: string): boolean {
 
 // The label shown on a plain tool chip: the meaningful arg (command, path)
 // rather than the raw JSON arguments.
-function chipLabel(detail: string): string {
+function chipLabel(detail: string, display?: ExtensionToolDisplay): string {
   try {
     const a = JSON.parse(detail) as Record<string, unknown>;
+    // An extension can name the argument that identifies a call, so its chip
+    // reads as what the tool did rather than as the tool's name.
+    if (display?.summary) {
+      const filled = display.summary
+        .replace(/\{(\w+)\}/g, (_, key: string) => {
+          const v = a[key];
+          if (v === undefined || v === null) return '';
+          return typeof v === 'string' ? v : JSON.stringify(v);
+        })
+        .trim();
+      if (filled) return filled;
+    }
     const v = a.command ?? a.path ?? a.query ?? a.url;
     if (typeof v === 'string') return v;
     if (Array.isArray(a.todos)) {
@@ -714,7 +776,8 @@ function chipLabel(detail: string): string {
 
 function ToolChip({ name, detail }: ToolCall) {
   const [open, setOpen] = useState(false);
-  const Icon = toolIcon(name);
+  const display = useToolDisplay(name);
+  const Icon = toolIcon(name, display);
   const diff = name === 'edit_file' ? parseEditDiff(detail) : null;
   // write_file expands to just the file content — the path is already in the
   // header, and the JSON envelope around the content is noise.
@@ -727,7 +790,7 @@ function ToolChip({ name, detail }: ToolCall) {
       return null;
     }
   }, [name, detail]);
-  const label = diff ? diff.path : chipLabel(detail);
+  const label = diff ? diff.path : chipLabel(detail, display);
   // set_todos / remember / write_file expand to a readable preview of their
   // arguments instead of the JSON envelope.
   const preview =
@@ -755,7 +818,7 @@ function ToolChip({ name, detail }: ToolCall) {
         <span className="w-3 shrink-0" />
       )}
       <Icon className="h-3 w-3 shrink-0 text-faint" />
-      <span className="shrink-0 text-text">{toolLabel(name)}</span>
+      <span className="shrink-0 text-text">{toolLabel(name, display)}</span>
       {label && <span className="min-w-0 flex-1 truncate text-faint">{label}</span>}
       {diff && (
         <span className="ml-auto flex shrink-0 items-center gap-1 font-mono">
@@ -880,8 +943,9 @@ function RunCommandBlock({
   result: ToolCall;
 }) {
   const [open, setOpen] = useState(false);
+  const display = useToolDisplay(name);
   const exitCode = runExitCode(result.detail);
-  const Icon = toolIcon(name);
+  const Icon = toolIcon(name, display);
   return (
     <div className="w-full overflow-hidden rounded-md border border-border bg-surface/50 font-mono text-[10px]">
       <button
@@ -895,7 +959,7 @@ function RunCommandBlock({
           <IconChevronRight className="h-3 w-3 shrink-0" />
         )}
         <Icon className="h-3 w-3 shrink-0 text-faint" />
-        <span className="shrink-0 text-text">{toolLabel(name)}</span>
+        <span className="shrink-0 text-text">{toolLabel(name, display)}</span>
         <span className="min-w-0 flex-1 truncate text-faint">{command}</span>
         {exitCode === 0 && <IconCheck className="h-3 w-3 shrink-0 text-emerald-500" />}
         {exitCode !== null && exitCode !== 0 && <IconX className="h-3 w-3 shrink-0 text-red-500" />}
@@ -1665,7 +1729,8 @@ function AskBlock({
 
 function ToolResultBlock({ name, detail }: ToolCall) {
   const [open, setOpen] = useState(false);
-  const Icon = toolIcon(name);
+  const display = useToolDisplay(name);
+  const Icon = toolIcon(name, display);
   return (
     <div className="rounded-md border border-border/80 bg-surface/50 text-[10px]">
       <button
@@ -1679,7 +1744,7 @@ function ToolResultBlock({ name, detail }: ToolCall) {
           <IconChevronRight className="h-3.5 w-3.5 shrink-0" />
         )}
         <Icon className="h-3 w-3 shrink-0 text-faint" />
-        <span className="shrink-0 font-mono text-text">{toolLabel(name)}</span>
+        <span className="shrink-0 font-mono text-text">{toolLabel(name, display)}</span>
         <span className="text-faint">result</span>
       </button>
       {open && <ToolBody detail={detail} />}

@@ -348,6 +348,25 @@ export interface InstalledExtension {
   errors?: string[];
 }
 
+/** How an extension wants one of its tool calls presented. */
+export interface ExtensionToolDisplay {
+  /** Shown instead of the tool's name. */
+  title?: string;
+  /** A name from v1's icon set. */
+  icon?: string;
+  /** Template for the chip's trailing text; `{field}` reads an argument. */
+  summary?: string;
+}
+
+/** One extension the sidecar actually loaded, as the harness reports it. */
+export interface LoadedExtension {
+  id: string;
+  name: string;
+  tools: string[];
+  sections: string[];
+  display?: Record<string, ExtensionToolDisplay>;
+}
+
 export interface SkillSearchResult {
   id: string;
   name: string;

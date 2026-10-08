@@ -28,7 +28,7 @@ import { writeModelCatalog } from "./modeldata.js";
 import { installProviderFetchLog } from "./providerlog.js";
 import { RpcError, createPeer } from "./rpc.js";
 import { createModelStore, registerProvider } from "./provider.js";
-import { bindToolToConversation, loadExtensions, sectionKeys, toolNames } from "./extensions.js";
+import { bindToolToConversation, loadExtensions, sectionKeys, toolDisplay, toolNames } from "./extensions.js";
 import { buildApprovalHook, buildHostTools } from "./tools.js";
 
 /** Bridge protocol revision; must equal `harness.ProtocolVersion` in Go. */
@@ -398,6 +398,10 @@ class Sidecar {
 				name: entry.name,
 				tools: toolNames(entry.extension),
 				sections: sectionKeys(entry.extension),
+				// How the extension wants its tool calls presented. Carried with the
+				// list rather than with each call, so v1 needs no new field on the
+				// tool event wire format to label a chip.
+				display: toolDisplay(entry.extension),
 			})),
 			enabled: this.enabledExtensionIds ? [...this.enabledExtensionIds] : null,
 			errors: this.extensionErrors,

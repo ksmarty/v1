@@ -5,6 +5,7 @@ import type { AuthStatus } from './types';
 import { errMsg } from './utils';
 import { useAppHeight } from './hooks/useAppHeight';
 import { Button, Center, Spinner } from './components/ui';
+import { ExtensionDisplayProvider } from './extensionDisplay';
 import Login from './pages/Login';
 import Projects from './pages/Projects';
 import Project from './pages/Project';
@@ -64,9 +65,10 @@ function RequireAuth({ children }: { children: ReactNode }) {
 export default function App() {
   useAppHeight();
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/login" element={<Login mode="login" />} />
+    <ExtensionDisplayProvider>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/login" element={<Login mode="login" />} />
         <Route path="/setup" element={<Login mode="setup" />} />
         <Route
           path="/"
@@ -93,7 +95,8 @@ export default function App() {
           }
         />
         <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </BrowserRouter>
+        </Routes>
+      </BrowserRouter>
+    </ExtensionDisplayProvider>
   );
 }

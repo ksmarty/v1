@@ -56,6 +56,35 @@ export function toolNames(extension) {
 	return tools.map((tool) => tool?.name).filter((name) => typeof name === "string");
 }
 
+/**
+ * Display metadata an extension declares for its tools.
+ *
+ * Kept separate from `toolNames` (a plain string list used for collision checks
+ * and reporting) so nothing consuming that has to change. An extension opts in by
+ * putting a `display` object on the tool:
+ *
+ *     defineTool({ name: "get_weather", display: { title: "Get weather",
+ *       icon: "globe", summary: "{city}" }, ... })
+ *
+ * Only recognised keys survive, so a typo costs a nicety rather than putting
+ * malformed metadata in front of v1.
+ */
+export function toolDisplay(extension) {
+	const tools = Array.isArray(extension?.tools) ? extension.tools : [];
+	const out = {};
+	for (const tool of tools) {
+		if (typeof tool?.name !== "string") continue;
+		const source = tool.display;
+		if (!source || typeof source !== "object") continue;
+		const entry = {};
+		if (typeof source.title === "string") entry.title = source.title;
+		if (typeof source.icon === "string") entry.icon = source.icon;
+		if (typeof source.summary === "string") entry.summary = source.summary;
+		if (Object.keys(entry).length > 0) out[tool.name] = entry;
+	}
+	return out;
+}
+
 /** The keys of the prompt sections an extension contributes. */
 export function sectionKeys(extension) {
 	const sections = Array.isArray(extension?.sections) ? extension.sections : [];

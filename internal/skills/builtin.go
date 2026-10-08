@@ -446,6 +446,34 @@ Rules that matter:
 - The description is what the model reads when deciding whether to call the
   tool. Say when to use it, not only what it does.
 
+### Presentation
+
+A tool call appears in the chat as a chip with an icon, a title and a trailing
+line. Declare a display object to control that, rather than leaving the reader
+with the tool's raw name:
+
+    pi.defineTool({
+      name: "get_weather",
+      display: {
+        title: "Get weather",
+        icon: "globe",
+        summary: "{city}",
+      },
+      ...
+    })
+
+- title replaces the tool's name in the chip.
+- icon picks from v1's own icon set by name: globe, map, plan, file, search,
+  terminal, flask, test, git, code, layers, extension, list, lock, model, user,
+  bookmark, brain, camera, download, refresh, send, trash, pencil, check, plus,
+  compress, expand, arrow-up, square, tool, wrench. An unknown name is not an
+  error - the call falls back to the extension icon.
+- summary is a template for the chip's trailing text. {field} is replaced with
+  that argument's value, so "{city}" shows the city the tool was called with.
+  Use it whenever one argument identifies the call: without it the chip falls
+  back to the usual command/path/query/url guesswork, which knows nothing about
+  your arguments.
+
 ### section
 
     pi.section("house-style", () => "Prefer tabs in this project.")
