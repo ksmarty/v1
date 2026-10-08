@@ -113,21 +113,25 @@ export function Dialog({
 
   if (!open) return null;
 
-  // Fullscreen mobile sheets fill the fixed overlay (h-full), whose top edge
-  // sits at the physical screen top in iOS standalone. They used to pad the top
-  // by the safe-area inset to clear the Dynamic Island, which left a gap above
-  // the title and close button several times the side padding. The header now
-  // sits the same distance from the top as from the sides; the island is
-  // centred, so the left-aligned title and right-aligned close button clear it.
-  // Bottom sheets are anchored mid-screen, so a top inset would just be dead
-  // space; they only need the bottom inset for the home indicator.
+  // Two different cases, deliberately treated differently.
+  //
+  // A fullscreen sheet fills the fixed overlay, whose top edge is the physical
+  // screen top in iOS standalone. It keeps the safe-area inset so its title
+  // clears the Dynamic Island, exactly like the app chrome (which uses
+  // .v1-safe-top for the same reason).
+  //
+  // A bottom sheet does not fill the screen, so an inset would be dead space.
+  // Its top padding is three quarters of its horizontal padding: the header row
+  // is taller than its text, so matching the raw numbers still reads as a wider
+  // gap above the title than beside it. Bottom sheets are anchored mid-screen,
+  // so they only need the bottom inset for the home indicator.
   const pad = fullScreen
     ? translucent
-      ? 'px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-4'
-      : 'px-4 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))]'
+      ? 'px-3 pt-[max(0.75rem,env(safe-area-inset-top))] pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-4'
+      : 'px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))]'
     : translucent
-      ? 'px-3 pt-3 pb-3 sm:px-4'
-      : 'px-4 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))]';
+      ? 'px-3 pt-2 pb-3 sm:px-4 sm:pt-3'
+      : 'px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))]';
   const desktopPad = translucent ? 'sm:px-6 sm:pb-8 sm:pt-6' : 'sm:px-5 sm:pt-5 sm:pb-5';
 
   // Portaled to document.body so the fixed overlay always uses the viewport as
@@ -150,7 +154,7 @@ export function Dialog({
         } ${
           fullScreen
             ? `h-full ${pad} sm:h-auto sm:max-h-[85vh] ${desktopPad}`
-            : `max-h-[85vh] rounded-t-2xl ${pad} pb-5`
+            : `max-h-[85vh] rounded-t-2xl ${pad}`
         } ${wide ? 'sm:max-w-2xl' : 'sm:max-w-md'} ${
           fixedBody ? 'flex min-h-0 flex-col overflow-hidden' : 'overflow-y-auto'
         }`}

@@ -182,9 +182,12 @@ export default function MemoriesPane({
                 </div>
                 {/* The toggle and the actions stack vertically. Side by side
                     they claimed over 100px of a narrow row, which is width the
-                    memory itself needs. The row id is deliberately not shown:
-                    it means nothing to the person reading their own memories. */}
-                <div className="flex shrink-0 flex-col items-center gap-1.5">
+                    memory itself needs. They spread across the full height of
+                    the row rather than clustering at the top, so a long memory
+                    does not leave the controls bunched against its first line.
+                    The row id is deliberately not shown: it means nothing to
+                    the person reading their own memories. */}
+                <div className="flex shrink-0 flex-col items-center justify-between gap-1.5 self-stretch">
                   <button
                     type="button"
                     role="switch"

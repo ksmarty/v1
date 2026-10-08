@@ -2536,7 +2536,14 @@ export default function Settings() {
                         ? '•••••••• (set — enter to replace)'
                         : 'Not set'
                   }
-                  autoComplete="off"
+                  // "off" is ignored for password inputs by every password
+                  // manager, which happily autofills a saved login into the
+                  // add-provider form. "new-password" is the signal they do
+                  // respect, and the data attributes cover the managers that
+                  // use their own markers.
+                  autoComplete="new-password"
+                  data-1p-ignore
+                  data-lpignore="true"
                 />
               </Field>
             </ProviderSelector>

@@ -362,8 +362,8 @@ function ToolSettings({
                 return (
                   <label
                     key={t.name}
-                    className={`flex items-center gap-2.5 rounded-lg border px-3 py-2.5 transition-colors ${
-                      off ? 'opacity-60' : 'border-border bg-surface/50'
+                    className={`flex items-center gap-2.5 rounded-lg border px-3 py-2.5 shadow-sm transition-colors ${
+                      off ? 'opacity-60' : 'border-border-strong bg-surface/50'
                     }`}
                   >
                     <div className="min-w-0 flex-1">
@@ -873,7 +873,7 @@ function ToolSettings({
               const st = status[srv.id];
               const enabled = srv.enabled !== false;
               return (
-                <li key={srv.id} className="flex flex-col gap-1.5 rounded-xl border border-border bg-surface p-3">
+                <li key={srv.id} className="flex flex-col gap-1.5 rounded-xl border border-border-strong bg-surface p-3 shadow-sm">
                   <div className="flex items-center gap-2">
                     <span
                       className={`h-2 w-2 shrink-0 rounded-full ${
@@ -1216,7 +1216,7 @@ function ToolSettings({
           {extensions.map((ext) => (
             <div
               key={ext.id}
-              className="flex items-center gap-2 rounded-xl border border-border bg-surface px-3 py-2"
+              className="flex items-center gap-2 rounded-xl border border-border-strong bg-surface px-3 py-2 shadow-sm"
             >
               <button
                 type="button"
@@ -1300,7 +1300,7 @@ function ToolSettings({
               .map((sk) => (
                 <li
                   key={sk.id}
-                  className="flex items-center gap-2 rounded-xl border border-border bg-surface/50 px-3 py-2"
+                  className="flex items-center gap-2 rounded-xl border border-border-strong bg-surface/50 px-3 py-2 shadow-sm"
                 >
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5">
@@ -1333,7 +1333,7 @@ function ToolSettings({
             {skillResults.map((sk) => (
               <li
                 key={sk.id}
-                className="flex items-center gap-2 rounded-xl border border-border bg-surface px-3 py-2"
+                className="flex items-center gap-2 rounded-xl border border-border-strong bg-surface px-3 py-2 shadow-sm"
               >
                 <button
                   type="button"
@@ -1389,7 +1389,7 @@ function ToolSettings({
               {skills.map((sk) => (
                 <li
                   key={sk.id}
-                  className="flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2"
+                  className="flex items-center gap-2 rounded-lg border border-border-strong bg-surface px-3 py-2 shadow-sm"
                 >
                   <button
                     type="button"

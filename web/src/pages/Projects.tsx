@@ -520,12 +520,12 @@ export default function Projects() {
           </div>
         )}
         {projects !== null && projects.length > 0 && (
-          <div className="mx-auto flex max-w-4xl flex-col gap-2">
+          <div className="mx-auto flex max-w-4xl flex-col gap-1.5">
             {projects.map((p) => {
               const sessions = (sessionsByProject[p.id] ?? []).filter((s) => !s.archived);
               return (
-                <section key={p.id} className="overflow-hidden rounded-xl border border-border bg-bg">
-                  <div className="flex items-center gap-2 border-b border-border px-4 py-2.5">
+                <section key={p.id} className="overflow-hidden rounded-xl border border-border bg-surface">
+                  <div className="flex items-center gap-2 border-b border-border px-4 py-1.5">
                     {/* A preview that is switched off is not stopped, it is absent:
                         saying so would report a state the project does not have. */}
                     {!p.previewDisabled && (
@@ -560,7 +560,7 @@ export default function Projects() {
                       <li key={s.id} className="border-b border-border/60 last:border-0">
                         <Link
                           to={`/project/${p.id}?session=${s.id}`}
-                          className="flex items-center gap-2 px-4 py-2.5 transition-colors hover:bg-surface"
+                          className="flex items-center gap-2 px-4 py-2.5 transition-colors hover:bg-bg/60"
                         >
                           <IconChat className="h-3.5 w-3.5 shrink-0 text-faint" />
                           <span className="min-w-0 flex-1 truncate text-sm text-dim">{s.name}</span>

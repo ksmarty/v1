@@ -69,6 +69,7 @@ import {
   IconList,
   IconLock,
   IconMap,
+  IconFlask,
   IconModel,
   IconMoveRight,
   IconPaperclip,
@@ -156,6 +157,12 @@ const TOOL_LABELS: Record<string, string> = {
   remember: 'Remember',
   forget: 'Forget',
   ask_user: 'Ask user',
+  make_plan: 'Make plan',
+  update_plan: 'Update plan',
+  verify_project: 'Verify project',
+  create_extension: 'Create extension',
+  run_container: 'Run container',
+  git: 'Git',
 };
 
 function toolLabel(name: string): string {
@@ -182,6 +189,11 @@ const TOOL_ICONS: Record<string, typeof IconWrench> = {
   remember: IconBookmark,
   forget: IconBookmarkOff,
   ask_user: IconUser,
+  make_plan: IconMap,
+  update_plan: IconCheckSquare,
+  verify_project: IconFlask,
+  create_extension: IconLayers,
+  run_container: IconTerminal,
 };
 
 // The most recent finished assistant reply or persisted error in a loaded
@@ -685,6 +697,15 @@ function chipLabel(detail: string): string {
     }
     // remember: show the remembered text (truncated) instead of the JSON.
     if (typeof a.content === 'string' && a.content.trim()) return a.content;
+    // make_plan / update_plan: the plan's first line is its heading, which is
+    // a far better summary than the escaped markdown.
+    if (typeof a.plan === 'string' && a.plan.trim()) {
+      const first = a.plan.trim().split('\n')[0].replace(/^#+\s*/, '');
+      if (first) return first;
+    }
+    // create_extension: the id names the thing being created. Keyed off
+    // `source`, which only this tool sends, so no other tool's id leaks here.
+    if (typeof a.source === 'string' && typeof a.id === 'string' && a.id) return a.id;
     return meaningfulDetail(detail) ? detail : '';
   } catch {
     return meaningfulDetail(detail) ? detail : '';
@@ -712,6 +733,10 @@ function ToolChip({ name, detail }: ToolCall) {
   const preview =
     name === 'set_todos' ? (
       <TodoListBlock detail={detail} />
+    ) : name === 'make_plan' || name === 'update_plan' ? (
+      <PlanBlock detail={detail} />
+    ) : name === 'create_extension' ? (
+      <ExtensionBlock detail={detail} />
     ) : name === 'remember' ? (
       <MemoryBlock detail={detail} />
     ) : null;
@@ -1047,6 +1072,49 @@ function EditFileError({ detail }: { detail: string }) {
 // Renders the inside of a set_todos tool chip when expanded: just the todo
 // list. The chip's header already shows the tool name and count, so this is
 // body-only — no repeating "Update todos N todos".
+// make_plan / update_plan carry a markdown plan in their arguments. Rendering
+// it as markdown is the difference between a readable plan and a wall of
+// escaped newlines in a monospace chip.
+function PlanBlock({ detail }: { detail: string }) {
+  const plan = useMemo(() => {
+    try {
+      const a = JSON.parse(detail) as { plan?: unknown };
+      return typeof a.plan === 'string' ? a.plan.trim() : '';
+    } catch {
+      return '';
+    }
+  }, [detail]);
+  if (!plan) return null;
+  return (
+    <div className="max-h-72 overflow-auto border-t border-border/80 px-2.5 py-2 font-sans text-[11px] leading-relaxed">
+      <Markdown text={plan} />
+    </div>
+  );
+}
+
+// create_extension's arguments are the whole source file, which is useless as a
+// one-line summary. The expanded body shows what the extension is instead.
+function ExtensionBlock({ detail }: { detail: string }) {
+  const info = useMemo(() => {
+    try {
+      const a = JSON.parse(detail) as { id?: unknown; description?: unknown };
+      return {
+        id: typeof a.id === 'string' ? a.id : '',
+        description: typeof a.description === 'string' ? a.description : '',
+      };
+    } catch {
+      return { id: '', description: '' };
+    }
+  }, [detail]);
+  if (!info.id && !info.description) return null;
+  return (
+    <div className="border-t border-border/80 px-2.5 py-2 font-sans text-[11px]">
+      {info.id && <div className="font-mono text-text">{info.id}</div>}
+      {info.description && <p className="mt-0.5 leading-relaxed text-dim">{info.description}</p>}
+    </div>
+  );
+}
+
 function TodoListBlock({ detail }: { detail: string }) {
   const todos = useMemo(() => {
     try {
