@@ -279,6 +279,9 @@ CREATE TABLE pending_asks_v2 (
 		// Vercel button kept working for them. New projects are inserted with an
 		// explicit 0 (see CreateProject), so Vercel is opt-in from now on.
 		"vercel_enabled": "ALTER TABLE projects ADD COLUMN vercel_enabled INTEGER NOT NULL DEFAULT 1",
+		// NULL means "decide from the repo URL": the GitHub tab is a property of
+		// the project being a GitHub repo, not something to ask about up front.
+		"github_tab": "ALTER TABLE projects ADD COLUMN github_tab TEXT",
 	})
 }
 
@@ -861,8 +864,12 @@ type Project struct {
 	// VercelEnabled is opt-in: the zero value is off, so a project only talks to
 	// Vercel after the toggle is switched on.
 	VercelEnabled bool
-	CreatedAt     int64
-	UpdatedAt     int64
+	// GitHubTab decides whether the chat offers the GitHub tab: "" (auto) shows
+	// it only for a project whose repoUrl is on GitHub, "on" shows it always,
+	// "off" never.
+	GitHubTab string
+	CreatedAt int64
+	UpdatedAt int64
 }
 
 // CreateProject inserts a project, stamping created_at/updated_at.
@@ -870,9 +877,9 @@ func (s *Store) CreateProject(p *Project) error {
 	t := now()
 	p.CreatedAt = t
 	p.UpdatedAt = t
-	_, err := s.db.Exec(`INSERT INTO projects (id, name, path, repo_url, preview_command, instructions, owner_id, auto_push, preview_disabled, vercel_enabled, created_at, updated_at)
-		VALUES (?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?, ?, ?, ?, ?)`,
-		p.ID, p.Name, p.Path, p.RepoURL, p.PreviewCommand, p.Instructions, p.OwnerID, boolInt(p.AutoPush), boolInt(p.PreviewDisabled), boolInt(p.VercelEnabled), p.CreatedAt, p.UpdatedAt)
+	_, err := s.db.Exec(`INSERT INTO projects (id, name, path, repo_url, preview_command, instructions, owner_id, auto_push, preview_disabled, vercel_enabled, github_tab, created_at, updated_at)
+		VALUES (?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?, ?, ?, NULLIF(?, ''), ?, ?)`,
+		p.ID, p.Name, p.Path, p.RepoURL, p.PreviewCommand, p.Instructions, p.OwnerID, boolInt(p.AutoPush), boolInt(p.PreviewDisabled), boolInt(p.VercelEnabled), p.GitHubTab, p.CreatedAt, p.UpdatedAt)
 	return err
 }
 
@@ -882,9 +889,9 @@ type scanner interface {
 
 func scanProject(row scanner) (*Project, error) {
 	var p Project
-	var repoURL, previewCmd, instructions, ownerID sql.NullString
+	var repoURL, previewCmd, instructions, ownerID, githubTab sql.NullString
 	var autoPush, previewDisabled, vercelEnabled int
-	if err := row.Scan(&p.ID, &p.Name, &p.Path, &repoURL, &previewCmd, &instructions, &ownerID, &autoPush, &previewDisabled, &vercelEnabled, &p.CreatedAt, &p.UpdatedAt); err != nil {
+	if err := row.Scan(&p.ID, &p.Name, &p.Path, &repoURL, &previewCmd, &instructions, &ownerID, &autoPush, &previewDisabled, &vercelEnabled, &githubTab, &p.CreatedAt, &p.UpdatedAt); err != nil {
 		return nil, err
 	}
 	p.RepoURL = repoURL.String
@@ -894,10 +901,11 @@ func scanProject(row scanner) (*Project, error) {
 	p.AutoPush = autoPush != 0
 	p.PreviewDisabled = previewDisabled != 0
 	p.VercelEnabled = vercelEnabled != 0
+	p.GitHubTab = githubTab.String
 	return &p, nil
 }
 
-const projectCols = `id, name, path, repo_url, preview_command, instructions, owner_id, auto_push, preview_disabled, vercel_enabled, created_at, updated_at`
+const projectCols = `id, name, path, repo_url, preview_command, instructions, owner_id, auto_push, preview_disabled, vercel_enabled, github_tab, created_at, updated_at`
 
 // UpdateProjectAutoPush toggles the per-project auto-push flag.
 func (s *Store) UpdateProjectAutoPush(id string, autoPush bool) error {
@@ -914,6 +922,13 @@ func (s *Store) UpdateProjectPreviewDisabled(id string, disabled bool) error {
 // UpdateProjectVercelEnabled toggles the per-project Vercel integration.
 func (s *Store) UpdateProjectVercelEnabled(id string, enabled bool) error {
 	_, err := s.db.Exec(`UPDATE projects SET vercel_enabled = ?, updated_at = ? WHERE id = ?`, boolInt(enabled), now(), id)
+	return err
+}
+
+// UpdateProjectGitHubTab sets the per-project GitHub tab preference: "" to
+// decide automatically from the repo URL, "on" or "off" to override it.
+func (s *Store) UpdateProjectGitHubTab(id, mode string) error {
+	_, err := s.db.Exec(`UPDATE projects SET github_tab = NULLIF(?, ''), updated_at = ? WHERE id = ?`, mode, now(), id)
 	return err
 }
 

@@ -27,6 +27,7 @@ type projectJSON struct {
 	AutoPush              bool   `json:"autoPush"`
 	PreviewDisabled       bool   `json:"previewDisabled"`
 	VercelEnabled         bool   `json:"vercelEnabled"`
+	GitHubTab             string `json:"githubTab"`
 	CreatedAt             int64  `json:"createdAt"`
 	UpdatedAt             int64  `json:"updatedAt"`
 }
@@ -42,6 +43,7 @@ func toProjectJSON(p *store.Project) projectJSON {
 		AutoPush:              p.AutoPush,
 		PreviewDisabled:       p.PreviewDisabled,
 		VercelEnabled:         p.VercelEnabled,
+		GitHubTab:             p.GitHubTab,
 		CreatedAt:             p.CreatedAt,
 		UpdatedAt:             p.UpdatedAt,
 	}
@@ -60,6 +62,8 @@ func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
 		AutoPush        *bool  `json:"autoPush"`
 		PreviewDisabled *bool  `json:"previewDisabled"`
 		VercelEnabled   *bool  `json:"vercelEnabled"`
+		// "auto", "on" or "off"; empty leaves it unchanged.
+		GitHubTab *string `json:"githubTab"`
 	}
 	if !decodeJSON(w, r, &body) {
 		return
@@ -90,6 +94,22 @@ func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.VercelEnabled != nil {
 		if err := s.st.UpdateProjectVercelEnabled(p.ID, *body.VercelEnabled); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+	if body.GitHubTab != nil {
+		mode := strings.TrimSpace(*body.GitHubTab)
+		switch mode {
+		case "", "auto", "on", "off":
+		default:
+			writeError(w, http.StatusBadRequest, `githubTab must be "auto", "on" or "off"`)
+			return
+		}
+		if mode == "auto" {
+			mode = ""
+		}
+		if err := s.st.UpdateProjectGitHubTab(p.ID, mode); err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}

@@ -5,7 +5,7 @@
 // undefined and never a rejected promise. A rejected respondWith surfaces as
 // "FetchEvent ... resulted in a network error response: the promise was
 // rejected" / "Failed to convert value to 'Response'" and kills the load.
-const VERSION = 'v1-cache-v5';
+const VERSION = 'v1-cache-v6';
 const SHELL_KEY = '/index.html';
 const APP_SHELL = ['/', '/index.html', '/manifest.json?v=3', '/icon-192.png?v=3', '/icon-512.png?v=3'];
 
@@ -156,29 +156,24 @@ self.addEventListener('fetch', (e) => {
   if (url.origin !== self.location.origin) return;
   if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/preview/')) return;
 
-  // Navigations: serve the cached app shell immediately (the SPA routes
-  // client-side) and refresh the shell in the background. The page load can
-  // never be sunk by a flaky network leg, and the shell is always present
-  // after the first successful load.
+  // Navigations: network first, so a reload picks up a newly deployed build
+  // immediately. This used to serve the cached shell first and refresh it in
+  // the background, which meant the page you just loaded was always one build
+  // behind — and an app left open never navigated again, so it ran the old
+  // bundle indefinitely while the version in Settings (fetched live from
+  // /api) already showed the new one. The cached shell is still the offline
+  // fallback, and `no-store` stops the browser's own HTTP cache from serving
+  // the stale copy we are trying to get past.
   if (req.mode === 'navigate') {
     e.respondWith(
-      caches.match(SHELL_KEY).then((cached) => {
-        if (cached) {
-          fetch(req)
-            .then((res) => cachePut(VERSION, SHELL_KEY, res))
-            .catch(() => {});
-          return cached;
-        }
-        // First visit (nothing cached yet): network, then cache the shell.
-        // On failure return a real Response instead of letting respondWith
-        // reject with an undefined value.
-        return fetch(req)
-          .then((res) => {
-            cachePut(VERSION, SHELL_KEY, res);
-            return res;
-          })
-          .catch(() => offlineResponse());
-      }),
+      fetch(req, { cache: 'no-store' })
+        .then((res) => {
+          cachePut(VERSION, SHELL_KEY, res);
+          return res;
+        })
+        .catch(() =>
+          caches.match(SHELL_KEY).then((cached) => cached || offlineResponse()),
+        ),
     );
     return;
   }

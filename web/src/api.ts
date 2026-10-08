@@ -317,7 +317,7 @@ export const api = {
   createProject: (body: { name?: string; description?: string }) =>
     post<Project>('/api/projects', body),
   getProject: (id: string) => request<Project>(`/api/projects/${id}`),
-  updateProject: (id: string, body: { name?: string; previewCommand?: string; instructions?: string; autoPush?: boolean; previewDisabled?: boolean; vercelEnabled?: boolean }) =>
+  updateProject: (id: string, body: { name?: string; previewCommand?: string; instructions?: string; autoPush?: boolean; previewDisabled?: boolean; vercelEnabled?: boolean; githubTab?: 'auto' | 'on' | 'off' }) =>
     patch<Project>(`/api/projects/${id}`, body),
   deleteProject: (id: string) => request<void>(`/api/projects/${id}`, { method: 'DELETE' }),
   importProject: (repoUrl: string, name?: string) =>

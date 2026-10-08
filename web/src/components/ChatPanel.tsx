@@ -78,10 +78,19 @@ export default function ChatPanel({
   // Active session name, reported up from ChatPane — shown as a subtitle under
   // the project name; clicking it opens the switcher.
   const [sessionName, setSessionName] = useState('');
+  // A project that is not a GitHub repo has nothing for the GitHub tab to show
+  // — it could only ever ask which repo to point at. Hide it unless the project
+  // overrides the guess (Project → GitHub tab). A project that has not loaded
+  // yet (null) keeps the tab: popping it in a moment later is worse than
+  // showing it briefly.
+  const showGitHubTab =
+    project === null ||
+    project.githubTab === 'on' ||
+    (project.githubTab !== 'off' && /github\.com[:/][^/]+\/[^/]+/.test(project.repoUrl));
   // Tabs in the user's chosen order, minus the ones they excluded.
-  const tabs = TABS.filter((t) => !tabLayout.hidden.includes(t.id)).sort(
-    (a, b) => tabLayout.order.indexOf(a.id) - tabLayout.order.indexOf(b.id),
-  );
+  const tabs = TABS.filter(
+    (t) => !tabLayout.hidden.includes(t.id) && (t.id !== 'github' || showGitHubTab),
+  ).sort((a, b) => tabLayout.order.indexOf(a.id) - tabLayout.order.indexOf(b.id));
   const initialTab = tabLayout.order[0] ?? 'chat';
   const [tab, setTab] = useState<ChatTab>(initialTab);
   // Live memory list pushed up from the chat stream when the agent uses the
@@ -99,6 +108,15 @@ export default function ChatPanel({
       return next;
     });
   }, [tab]);
+
+  // A tab can disappear underneath the view — the GitHub tab once the project
+  // loads and turns out not to be a GitHub repo. Never stay on a tab with no
+  // button, or there is no way back to anything else. Runs after every render;
+  // the check is trivial and it only sets state when it has to.
+  useEffect(() => {
+    if (tabs.some((t) => t.id === tab)) return;
+    setTab(tabs[0]?.id ?? 'chat');
+  });
 
   // The mobile bottom nav's Chat button returns the subtab to chat (or the
   // first visible tab when chat is hidden in the layout settings).

@@ -19,6 +19,7 @@ export default function ProjectPane({
   const [autoPush, setAutoPush] = useState(false);
   const [previewDisabled, setPreviewDisabled] = useState(false);
   const [vercelEnabled, setVercelEnabled] = useState(false);
+  const [githubTab, setGithubTab] = useState<'auto' | 'on' | 'off'>('auto');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -30,7 +31,8 @@ export default function ProjectPane({
     setAutoPush(project?.autoPush ?? false);
     setPreviewDisabled(project?.previewDisabled ?? false);
     setVercelEnabled(project?.vercelEnabled ?? false);
-  }, [project?.id, project?.name, project?.previewCommand, project?.instructions, project?.autoPush, project?.previewDisabled, project?.vercelEnabled]);
+    setGithubTab(project?.githubTab ?? 'auto');
+  }, [project?.id, project?.name, project?.previewCommand, project?.instructions, project?.autoPush, project?.previewDisabled, project?.vercelEnabled, project?.githubTab]);
 
   const save = async (e: FormEvent) => {
     e.preventDefault();
@@ -39,7 +41,7 @@ export default function ProjectPane({
     setSaved(false);
     setError(null);
     try {
-      const updated = await api.updateProject(project.id, { name, previewCommand, instructions, autoPush, previewDisabled, vercelEnabled });
+      const updated = await api.updateProject(project.id, { name, previewCommand, instructions, autoPush, previewDisabled, vercelEnabled, githubTab });
       onProjectChange({ ...project, ...updated });
       setSaved(true);
     } catch (err) {
@@ -58,7 +60,8 @@ export default function ProjectPane({
         instructions !== (project.instructions ?? '') ||
         autoPush !== project.autoPush ||
         previewDisabled !== (project.previewDisabled ?? false) ||
-        vercelEnabled !== (project.vercelEnabled ?? false)),
+        vercelEnabled !== (project.vercelEnabled ?? false) ||
+        githubTab !== (project.githubTab ?? 'auto')),
   );
 
   return (
@@ -108,6 +111,26 @@ export default function ProjectPane({
               <p className="mt-1.5 text-xs text-subtle">
                 Push this project's finished chat-turn commits to its GitHub
                 remote automatically.
+              </p>
+            </Field>
+            <Field label="GitHub tab">
+              <div className="grid w-full max-w-[260px] grid-cols-3 gap-1 rounded-lg border border-border bg-surface p-1">
+                {(['auto', 'on', 'off'] as const).map((v) => (
+                  <button
+                    key={v}
+                    type="button"
+                    onClick={() => setGithubTab(v)}
+                    className={`min-h-[32px] rounded-md text-sm transition-colors ${
+                      githubTab === v ? 'bg-border text-text' : 'text-dim hover:text-text'
+                    }`}
+                  >
+                    {v === 'auto' ? 'Auto' : v === 'on' ? 'Always' : 'Never'}
+                  </button>
+                ))}
+              </div>
+              <p className="mt-1.5 text-xs text-subtle">
+                Whether the chat offers the GitHub tab. Auto shows it when this project's repository
+                is on GitHub; use Always to point the tab at any repo, or Never to hide it.
               </p>
             </Field>
             <Field label="Preview">

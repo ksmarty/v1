@@ -201,6 +201,8 @@ export interface Project {
   autoPush: boolean;
   previewDisabled?: boolean;
   vercelEnabled: boolean;
+  /** "auto" (default) shows the GitHub tab only when repoUrl is a GitHub repo. */
+  githubTab?: 'auto' | 'on' | 'off';
   preview: PreviewInfo;
   updatedAt: string;
 }

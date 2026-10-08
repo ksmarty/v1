@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useState, type FormEvent } from 'react';
+import { memo, useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { api } from '../api';
 import type {
   InstalledExtension,
@@ -242,6 +242,8 @@ function ToolSettings({
     isNew: boolean;
     /** Bundled with v1: offered for disabling, never for deleting. */
     builtin: boolean;
+    /** The source is still on its way; the dialog is already open. */
+    loading?: boolean;
     /** The values as loaded, so Save can stay disabled until something changes. */
     original: { description: string; source: string };
   } | null>(null);
@@ -664,13 +666,78 @@ function ToolSettings({
     if (tab === 'extensions') void refreshExtensions();
   }, [tab, refreshExtensions]);
 
+  // Opening an extension used to wait for its source to arrive before the
+  // dialog appeared at all, which is what made it feel slow. The source is a
+  // small file we know we will need, so fetch the whole list as soon as it is
+  // on screen and open straight from here.
+  const extCache = useRef(
+    new Map<string, { id: string; description: string; source: string; builtin: boolean }>(),
+  );
+  useEffect(() => {
+    if (tab !== 'extensions') return;
+    let cancelled = false;
+    void (async () => {
+      // One at a time: this is a background nicety, not a reason to open six
+      // sockets at once.
+      for (const ext of extensions) {
+        if (cancelled) return;
+        if (extCache.current.has(ext.id)) continue;
+        try {
+          const r = await api.extension(ext.id);
+          if (cancelled) return;
+          extCache.current.set(ext.id, {
+            id: r.id,
+            description: r.description ?? '',
+            source: r.source ?? '',
+            builtin: r.builtin ?? false,
+          });
+        } catch {
+          // A failed prefetch only means the click fetches it instead.
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [tab, extensions]);
+
   const openExtension = async (id: string) => {
-    setExtBusy(true);
     setExtError(null);
+    const cached = extCache.current.get(id);
+    if (cached) {
+      setExtEditor({
+        id: cached.id,
+        description: cached.description,
+        source: cached.source,
+        isNew: false,
+        builtin: cached.builtin,
+        original: { description: cached.description, source: cached.source },
+      });
+      return;
+    }
+    // Not prefetched yet (a fresh install, or a click that beat the fetch):
+    // open immediately and fill the fields in when the source lands, so the
+    // click never looks like it did nothing.
+    const listed = extensions.find((e) => e.id === id);
+    setExtEditor({
+      id,
+      description: listed?.description ?? '',
+      source: '',
+      isNew: false,
+      builtin: listed?.builtin ?? false,
+      loading: true,
+      original: { description: listed?.description ?? '', source: '' },
+    });
     try {
       const r = await api.extension(id);
       const description = r.description ?? '';
       const source = r.source ?? '';
+      extCache.current.set(id, {
+        id: r.id,
+        description,
+        source,
+        builtin: r.builtin ?? false,
+      });
       setExtEditor({
         id: r.id,
         description,
@@ -681,8 +748,7 @@ function ToolSettings({
       });
     } catch (err) {
       setExtError(errMsg(err));
-    } finally {
-      setExtBusy(false);
+      setExtEditor(null);
     }
   };
 
@@ -1142,11 +1208,17 @@ function ToolSettings({
               </div>
             </div>
             <div className="min-h-0 flex-1 overflow-hidden rounded-lg border border-border bg-surface">
-              <CodeEditor
-                value={extEditor.source}
-                onChange={(v) => setExtEditor({ ...extEditor, source: v })}
-                path={`${extEditor.id.trim() || 'extension'}.js`}
-              />
+              {extEditor.loading ? (
+                <div className="flex h-full items-center justify-center gap-2 text-xs text-faint">
+                  <Spinner className="h-3.5 w-3.5" /> Loading source…
+                </div>
+              ) : (
+                <CodeEditor
+                  value={extEditor.source}
+                  onChange={(v) => setExtEditor({ ...extEditor, source: v })}
+                  path={`${extEditor.id.trim() || 'extension'}.js`}
+                />
+              )}
             </div>
             {/* Below the code, so the actions read as what you do once you have
                 read it. Delete is destructive and sits apart on the left; Save

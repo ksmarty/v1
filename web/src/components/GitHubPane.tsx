@@ -5,6 +5,15 @@ import { errMsg } from '../utils';
 import { Button, ErrorBox, Input, Spinner } from './ui';
 import { IconCheck, IconGitHub, IconRefresh } from './icons';
 
+// One entry per owner/name, kept for the life of the page. The pane is
+// remounted every time you switch back to this tab, and re-querying GitHub and
+// GHCR for data you were just looking at is the slow part — the Refresh button
+// and a fresh repo query both bypass this and hit the network.
+const repoCache = new Map<
+  string,
+  { workflows: GitHubWorkflowRun[]; images: GitHubContainerImage[]; error: string | null }
+>();
+
 // GitHub Actions runs + published container-image repos for any public repo
 // (private repos need a token configured in Settings). The repo is prefilled
 // from the linked project repo, but can point at any GitHub repository.
@@ -30,7 +39,16 @@ export default function GitHubPane({ repoUrl }: { repoUrl?: string }) {
       setOwner(suggested.split('/')[0] ?? '');
       if (autoLoaded.current !== suggested) {
         autoLoaded.current = suggested;
-        void loadRepo(suggested);
+        // Reopening the tab for the same repo shows what we already have
+        // instead of loading it again.
+        const hit = repoCache.get(suggested);
+        if (hit) {
+          setWorkflows(hit.workflows);
+          setImages(hit.images);
+          setError(hit.error);
+        } else {
+          void loadRepo(suggested);
+        }
       }
     }
   }, [suggested]);
@@ -52,13 +70,15 @@ export default function GitHubPane({ repoUrl }: { repoUrl?: string }) {
         api.githubWorkflows(repo),
         api.githubImages(repo),
       ]);
-      if (w.status === 'fulfilled') setWorkflows(w.value.workflows);
-      else setWorkflows([]);
-      if (im.status === 'fulfilled') setImages(im.value.images);
-      else setImages([]);
+      const wf = w.status === 'fulfilled' ? w.value.workflows : [];
+      const imgs = im.status === 'fulfilled' ? im.value.images : [];
       const e1 = w.status === 'rejected' ? errMsg(w.reason) : null;
       const e2 = im.status === 'rejected' ? errMsg(im.reason) : null;
-      if (e1 || e2) setError([e1, e2].filter(Boolean).join(' · '));
+      const merged = [e1, e2].filter(Boolean).join(' · ') || null;
+      setWorkflows(wf);
+      setImages(imgs);
+      if (merged) setError(merged);
+      repoCache.set(repo, { workflows: wf, images: imgs, error: merged });
     } catch (err) {
       setError(errMsg(err));
     } finally {
