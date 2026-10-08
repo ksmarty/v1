@@ -488,15 +488,22 @@ func (s *Server) handleWriteFile(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
-// handleActiveRuns reports the set of project IDs that currently have a chat
-// turn running, for the dashboard's live "generating" indicator.
+// handleActiveRuns reports which turns are running, for the dashboard's live
+// "generating" indicator. It answers with the sessions as well as the projects,
+// because a project with several sessions needs to show which one is running.
 func (s *Server) handleActiveRuns(w http.ResponseWriter, r *http.Request) {
-	active := s.turns.activeProjects()
-	ids := make([]string, 0, len(active))
-	for id := range active {
-		ids = append(ids, id)
+	runs := s.turns.activeRuns()
+	projects := make([]string, 0, len(runs))
+	sessions := make([]string, 0, len(runs))
+	seen := make(map[string]bool, len(runs))
+	for _, run := range runs {
+		if !seen[run.ProjectID] {
+			seen[run.ProjectID] = true
+			projects = append(projects, run.ProjectID)
+		}
+		sessions = append(sessions, run.SessionID)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"active": ids})
+	writeJSON(w, http.StatusOK, map[string]any{"active": projects, "sessions": sessions})
 }
 
 func (s *Server) handleDeleteFile(w http.ResponseWriter, r *http.Request) {

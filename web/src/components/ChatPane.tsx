@@ -4770,23 +4770,29 @@ export default function ChatPane({
                       Todos ({todos.filter((t) => !t.done).length} left)
                     </button>
                   )}
-                  <button
-                    type="button"
-                    disabled={thinkingOptions.length === 0}
-                    title={
-                      thinkingOptions.length === 0
-                        ? "This model doesn't support thinking levels"
-                        : 'Model thinking'
-                    }
-                    onClick={() => {
-                      setPlusOpen(false);
-                      setThinkingOpen(true);
-                    }}
-                    className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm text-text transition-colors hover:bg-border disabled:opacity-40"
-                  >
-                    <IconBrain className="h-4 w-4 shrink-0 text-dim" />
-                    Model thinking
-                  </button>
+                  {/* Collapsed, the composer has no thinking control of its
+                      own, so the menu is the only way in — but the expanded
+                      column shows the level inline, which makes a menu entry
+                      a second door to the same room. */}
+                  {expanded && (
+                    <button
+                      type="button"
+                      disabled={thinkingOptions.length === 0}
+                      title={
+                        thinkingOptions.length === 0
+                          ? "This model doesn't support thinking levels"
+                          : 'Model thinking'
+                      }
+                      onClick={() => {
+                        setPlusOpen(false);
+                        setThinkingOpen(true);
+                      }}
+                      className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm text-text transition-colors hover:bg-border disabled:opacity-40"
+                    >
+                      <IconBrain className="h-4 w-4 shrink-0 text-dim" />
+                      Model thinking
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => {

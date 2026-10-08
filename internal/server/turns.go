@@ -394,15 +394,22 @@ func (m *turnManager) running(projectID, sessionID string) bool {
 	return ok
 }
 
-// activeProjects returns the set of project IDs that currently have at least
-// one running chat turn (for the dashboard "currently generating" indicator).
-func (m *turnManager) activeProjects() map[string]bool {
+// activeRun identifies a turn that is currently running.
+type activeRun struct {
+	ProjectID string
+	SessionID string
+}
+
+// activeRuns reports the running turns as project/session pairs, so the
+// dashboard can mark the session that is actually generating rather than the
+// whole project. A project with several sessions needs the finer answer.
+func (m *turnManager) activeRuns() []activeRun {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	out := map[string]bool{}
+	out := make([]activeRun, 0, len(m.runs))
 	for key := range m.runs {
 		if i := strings.IndexByte(key, '/'); i > 0 {
-			out[key[:i]] = true
+			out = append(out, activeRun{ProjectID: key[:i], SessionID: key[i+1:]})
 		}
 	}
 	return out

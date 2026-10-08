@@ -386,14 +386,16 @@ export default function Projects() {
   const [deleteError, setDeleteError] = useState<string | null>(null);
   // Project IDs that currently have a chat turn running (the backend dashes
   // them under "generating" — polled so the dashboard stays live).
-  const [activeIds, setActiveIds] = useState<Set<string>>(new Set());
+  // Sessions with a running turn — a project can hold several sessions and
+  // only one of them generating, so the indicator belongs on the row.
+  const [activeSessionIds, setActiveSessionIds] = useState<Set<string>>(new Set());
   // Each project's chat threads, listed under its header on the dashboard.
   const [sessionsByProject, setSessionsByProject] = useState<Record<string, ChatSession[]>>({});
 
   const loadActive = useCallback(() => {
     api
       .activeProjects()
-      .then((r) => setActiveIds(new Set(r.active ?? [])))
+      .then((r) => setActiveSessionIds(new Set(r.sessions ?? [])))
       .catch(() => {});
   }, []);
 
@@ -515,12 +517,12 @@ export default function Projects() {
           </div>
         )}
         {projects !== null && projects.length > 0 && (
-          <div className="mx-auto flex max-w-4xl flex-col gap-4">
+          <div className="mx-auto flex max-w-4xl flex-col gap-2">
             {projects.map((p) => {
               const sessions = (sessionsByProject[p.id] ?? []).filter((s) => !s.archived);
               return (
                 <section key={p.id} className="overflow-hidden rounded-xl border border-border bg-bg">
-                  <div className="flex items-center gap-2 border-b border-border px-4 py-3">
+                  <div className="flex items-center gap-2 border-b border-border px-4 py-2.5">
                     {/* A preview that is switched off is not stopped, it is absent:
                         saying so would report a state the project does not have. */}
                     {!p.previewDisabled && (
@@ -537,15 +539,6 @@ export default function Projects() {
                     >
                       {p.name}
                     </Link>
-                    {activeIds.has(p.id) && (
-                      <span
-                        className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-accent"
-                        title="A chat turn is running in this project"
-                      >
-                        <Spinner className="h-3 w-3" />
-                        LLM running
-                      </span>
-                    )}
                     {p.updatedAt && (
                       <span className="shrink-0 text-xs text-faint">{timeAgo(p.updatedAt)}</span>
                     )}
@@ -568,6 +561,15 @@ export default function Projects() {
                         >
                           <IconChat className="h-3.5 w-3.5 shrink-0 text-faint" />
                           <span className="min-w-0 flex-1 truncate text-sm text-dim">{s.name}</span>
+                          {activeSessionIds.has(s.id) && (
+                            <span
+                              className="inline-flex shrink-0 items-center gap-1 text-[11px] font-medium text-accent"
+                              title="A chat turn is running in this session"
+                            >
+                              <Spinner className="h-3 w-3" />
+                              running
+                            </span>
+                          )}
                           <span className="shrink-0 text-xs text-faint">
                             {timeAgo(new Date(s.createdAt * 1000).toISOString())}
                           </span>

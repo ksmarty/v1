@@ -312,7 +312,7 @@ export const api = {
 
   // Projects
   listProjects: () => request<Project[]>('/api/projects'),
-  activeProjects: () => request<{ active: string[] }>('/api/projects/active'),
+  activeProjects: () => request<{ active: string[]; sessions: string[] }>('/api/projects/active'),
   createProject: (body: { name?: string; description?: string }) =>
     post<Project>('/api/projects', body),
   getProject: (id: string) => request<Project>(`/api/projects/${id}`),
