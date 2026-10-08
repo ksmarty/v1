@@ -83,6 +83,8 @@ export interface Settings {
   disabledTools?: string[];
   /** LangSearch key state for the web_search tool; the key itself is never sent. */
   webSearch?: { keySet: boolean; keyHint: string };
+  /** Memory retrieval's embedding provider; the key itself is never sent. */
+  embedding?: EmbeddingSettings;
   /** Per-user turn timeouts in minutes (0 = disabled). */
   turnTimeouts?: { soft: number; hard: number };
   /** Terminal font size in px. */
@@ -245,6 +247,24 @@ export interface Memory {
   content: string;
   enabled: boolean;
   createdAt: number;
+  /** Comma-separated short technical labels; matched separately from the prose. */
+  tags?: string;
+}
+
+/**
+ * The embedding provider backing memory retrieval. `enabled` is the server's own
+ * verdict — a provider and model with no usable endpoint is not enabled, so the
+ * UI can explain the fallback rather than pretending embeddings are running.
+ */
+export interface EmbeddingSettings {
+  provider: string;
+  model: string;
+  baseUrl: string;
+  keySet: boolean;
+  keyHint: string;
+  /** Vector width for the configured model, 0 when the model is unknown. */
+  dims: number;
+  enabled: boolean;
 }
 
 export interface ChatAttachmentMeta {

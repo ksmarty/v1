@@ -223,6 +223,8 @@ export interface SettingsUpdate {
   disabledTools?: string[];
   /** LangSearch API key for the web_search tool; "" clears it. */
   webSearchKey?: string;
+  /** Embedding provider for memory retrieval; "" clears a field. */
+  embedding?: { provider?: string; model?: string; baseUrl?: string; apiKey?: string };
   turnTimeouts?: { soft: number; hard: number };
   terminalFontSize?: number;
   terminalWrap?: boolean;

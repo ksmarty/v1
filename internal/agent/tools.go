@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log"
+	"math"
 	"net"
 	"net/http"
 	"net/url"
@@ -23,8 +25,10 @@ import (
 
 	"golang.org/x/net/html"
 
+	"v1/internal/embed"
 	"v1/internal/llm"
 	"v1/internal/mcp"
+	"v1/internal/memory"
 	"v1/internal/sanitize"
 	"v1/internal/store"
 	"v1/internal/websearch"
@@ -96,6 +100,11 @@ type Executor struct {
 	// WebSearchKey is the user's LangSearch API key. Empty means the web_search
 	// tool was not advertised for this turn.
 	WebSearchKey string
+	// EmbedConfig is the user's embedding provider. When it is not Enabled,
+	// memory retrieval ranks lexically, which is what v1 did before embeddings
+	// existed. embedC caches the client for the turn.
+	EmbedConfig embed.Config
+	embedC      *embed.Client
 	// CreateExtension installs an extension the agent wrote (the
 	// create_extension tool): it validates, writes, enables and reloads. Nil
 	// when extensions are unavailable, and the tool then says so.
@@ -293,12 +302,55 @@ func (e *Executor) mcpCall(ctx context.Context, name, argsJSON string) (string, 
 	return result, nil
 }
 
-// remember saves a project-scoped memory; forget deletes one by id. Entries
-// are short, deduped, and capped so the system prompt's memories section
-// stays small (it is re-sent with every request of every round).
+// maxMemoriesPerProject is the ceiling on stored memories.
+//
+// It is a safety net, not a working limit. opencode-mem has no global cap at all
+// (it rolls shards at 50,000), and the reason a cap was needed here before is
+// gone: retrieval is ranked now, so only the top matches reach a prompt. A large
+// store costs storage rather than context.
+const maxMemoriesPerProject = 2000
+
+// embedClient returns the turn's embedding client, or nil when no provider is
+// configured. Callers treat nil as "rank lexically".
+func (e *Executor) embedClient() *embed.Client {
+	if !e.EmbedConfig.Enabled() {
+		return nil
+	}
+	if e.embedC == nil {
+		e.embedC = embed.New(e.EmbedConfig)
+	}
+	return e.embedC
+}
+
+// normalizeTags cleans a comma-separated tag list: lowercased, trimmed,
+// deduped, and capped so a runaway list cannot bloat the row.
+func normalizeTags(s string) string {
+	seen := map[string]bool{}
+	var out []string
+	for _, part := range strings.Split(s, ",") {
+		t := strings.ToLower(strings.TrimSpace(part))
+		if t == "" || seen[t] {
+			continue
+		}
+		seen[t] = true
+		out = append(out, t)
+		if len(out) >= 12 {
+			break
+		}
+	}
+	return strings.Join(out, ", ")
+}
+
+// remember saves a project-scoped memory; forget deletes one by id.
+//
+// There is no length limit: the prompt carries only the memories the ranker
+// selects, so a long memory costs context only in the turns where it is
+// actually relevant, and a fact written out properly retrieves better than the
+// same fact compressed into shorthand.
 func (e *Executor) remember(argsJSON string) (string, error) {
 	var args struct {
 		Content    string   `json:"content"`
+		Tags       string   `json:"tags"`
 		Category   string   `json:"category"`
 		Importance *float64 `json:"importance"`
 	}
@@ -323,28 +375,97 @@ func (e *Executor) remember(argsJSON string) (string, error) {
 	if e.Store == nil {
 		return "", fmt.Errorf("memory store unavailable")
 	}
-	if len(args.Content) > 300 {
-		return "", fmt.Errorf("memory entries must be 300 characters or fewer — save a shorter fact")
-	}
+	tags := normalizeTags(args.Tags)
 	mems, err := e.Store.ListMemories(e.ProjectID)
 	if err != nil {
 		return "", err
 	}
+
+	// An exact restatement is refused by text before anything is embedded: it is
+	// certain, and it costs no API call.
 	normalized := strings.ToLower(strings.Join(strings.Fields(args.Content), " "))
 	for _, m := range mems {
 		if strings.ToLower(strings.Join(strings.Fields(m.Content), " ")) == normalized {
 			return toolResult(map[string]any{"ok": true, "id": m.ID, "note": "already remembered"}), nil
 		}
 	}
-	if len(mems) >= 200 {
-		return "", fmt.Errorf("memory is full (200 entries) — use the forget tool to delete one first")
+
+	// A near-duplicate is refused by meaning. This is where v1 deliberately
+	// diverges from opencode-mem, which only reports near-duplicates for a human
+	// to resolve and never merges at write time — so the same fact accumulates
+	// there. A single agent writes v1's memories, and every one of them is a
+	// candidate for injection, so a duplicate is worth refusing at the door.
+	var vec []float32
+	client := e.embedClient()
+	if client != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		v, err := client.EmbedDocument(ctx, args.Content)
+		if err != nil {
+			// An embedding failure must not lose the memory: it is still useful
+			// lexically, and the backfill embeds it on a later turn.
+			log.Printf("embedding a new memory failed: %v", err)
+		} else {
+			vec = v
+			if existing, sim, ok := e.nearestMemory(mems, vec); ok && sim >= memory.DedupThreshold {
+				return toolResult(map[string]any{
+					"ok":         true,
+					"id":         existing.ID,
+					"note":       "already remembered",
+					"similarity": math.Round(sim*100) / 100,
+				}), nil
+			}
+		}
+	}
+
+	if len(mems) >= maxMemoriesPerProject {
+		return "", fmt.Errorf("memory is full (%d entries) — use the forget tool to delete some first", maxMemoriesPerProject)
 	}
 	id, err := e.Store.AddMemory(e.ProjectID, args.Content, args.Category, importance)
 	if err != nil {
 		return "", err
 	}
+	if tags != "" {
+		if err := e.Store.SetMemoryTags(id, tags); err != nil {
+			return "", err
+		}
+	}
+	if len(vec) > 0 {
+		if err := e.Store.SetMemoryEmbedding(id, e.EmbedConfig.Model, vec); err != nil {
+			return "", err
+		}
+	}
 	e.emitMemories()
-	return toolResult(map[string]any{"ok": true, "id": id, "category": args.Category, "importance": importance}), nil
+	out := map[string]any{"ok": true, "id": id, "category": args.Category, "importance": importance}
+	if tags != "" {
+		out["tags"] = tags
+	}
+	return toolResult(out), nil
+}
+
+// nearestMemory finds the stored memory closest to a vector, skipping ones that
+// have no vector yet (which Cosine would score as 0 rather than as unknown).
+func (e *Executor) nearestMemory(mems []store.Memory, vec []float32) (store.Memory, float64, bool) {
+	stored, err := e.Store.MemoryVectors(e.ProjectID)
+	if err != nil {
+		return store.Memory{}, 0, false
+	}
+	best := -1
+	bestSim := 0.0
+	for i, m := range mems {
+		v := stored[m.ID]
+		if len(v) == 0 {
+			continue
+		}
+		s := memory.Cosine(v, vec)
+		if best < 0 || s > bestSim {
+			best, bestSim = i, s
+		}
+	}
+	if best < 0 {
+		return store.Memory{}, 0, false
+	}
+	return mems[best], bestSim, true
 }
 
 func (e *Executor) forget(argsJSON string) (string, error) {

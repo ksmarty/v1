@@ -235,6 +235,7 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 			"keySet":  s.langSearchKey(userID) != "",
 			"keyHint": apiKeyHint(s.langSearchKey(userID)),
 		},
+		"embedding":        s.embeddingSettings(userID),
 		"skills":           s.installedSkills(),
 		"rewindApproval":   s.rewindApproval(userID),
 		"defaultThinking":  s.defaultThinking(userID),
@@ -262,26 +263,32 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 			Providers    *[]llmProviderRecord `json:"providers"`
 			Currency     *string              `json:"currency"`
 		} `json:"llm"`
-		GitHubToken             *string                   `json:"githubToken"`
-		GitHubOAuthClientID     *string                   `json:"githubOAuthClientId"`
-		GitHubOAuthClientSecret *string                   `json:"githubOAuthClientSecret"`
-		VercelToken             *string                   `json:"vercelToken"`
-		VercelOAuthClientID     *string                   `json:"vercelOAuthClientId"`
-		VercelClientSecret      *string                   `json:"vercelOAuthClientSecret"`
-		Password                *string                   `json:"password"`
-		MCP                     *[]mcp.ServerConfig       `json:"mcp"`
-		PermissionMode          *string                   `json:"permissionMode"`
-		RewindApproval          *bool                     `json:"rewindApproval"`
-		DefaultThinking         *string                   `json:"defaultThinking"`
-		ToonEnabled             *bool                     `json:"toonEnabled"`
-		DisabledTools           *[]string                 `json:"disabledTools"`
-		WebSearchKey            *string                   `json:"webSearchKey"`
-		TurnTimeouts            *struct{ Soft, Hard int } `json:"turnTimeouts"`
-		TerminalFontSize        *int                      `json:"terminalFontSize"`
-		TerminalWrap            *bool                     `json:"terminalWrap"`
-		AutoPushDefault         *bool                     `json:"autoPushDefault"`
-		ContextThreshold        *float64                  `json:"contextThreshold"`
-		SystemPrompt            *string                   `json:"systemPrompt"`
+		GitHubToken             *string             `json:"githubToken"`
+		GitHubOAuthClientID     *string             `json:"githubOAuthClientId"`
+		GitHubOAuthClientSecret *string             `json:"githubOAuthClientSecret"`
+		VercelToken             *string             `json:"vercelToken"`
+		VercelOAuthClientID     *string             `json:"vercelOAuthClientId"`
+		VercelClientSecret      *string             `json:"vercelOAuthClientSecret"`
+		Password                *string             `json:"password"`
+		MCP                     *[]mcp.ServerConfig `json:"mcp"`
+		PermissionMode          *string             `json:"permissionMode"`
+		RewindApproval          *bool               `json:"rewindApproval"`
+		DefaultThinking         *string             `json:"defaultThinking"`
+		ToonEnabled             *bool               `json:"toonEnabled"`
+		DisabledTools           *[]string           `json:"disabledTools"`
+		WebSearchKey            *string             `json:"webSearchKey"`
+		Embedding               *struct {
+			Provider *string `json:"provider"`
+			Model    *string `json:"model"`
+			BaseURL  *string `json:"baseUrl"`
+			APIKey   *string `json:"apiKey"`
+		} `json:"embedding"`
+		TurnTimeouts     *struct{ Soft, Hard int } `json:"turnTimeouts"`
+		TerminalFontSize *int                      `json:"terminalFontSize"`
+		TerminalWrap     *bool                     `json:"terminalWrap"`
+		AutoPushDefault  *bool                     `json:"autoPushDefault"`
+		ContextThreshold *float64                  `json:"contextThreshold"`
+		SystemPrompt     *string                   `json:"systemPrompt"`
 	}
 	if !decodeJSON(w, r, &body) {
 		return
@@ -518,6 +525,34 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 			}
 		} else if err := s.st.SetUserSetting(userID, keyWebSearch, key); err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+	if body.Embedding != nil {
+		// An omitted field is left alone and an empty one clears the setting, the
+		// same convention as the web search key: that is how a user removes an
+		// embedding provider again without having to know which key it was.
+		set := func(setting string, v *string) bool {
+			if v == nil {
+				return true
+			}
+			val := strings.TrimSpace(*v)
+			var err error
+			if val == "" {
+				err = s.st.DeleteUserSetting(userID, setting)
+			} else {
+				err = s.st.SetUserSetting(userID, setting, val)
+			}
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return false
+			}
+			return true
+		}
+		if !set(keyEmbedProvider, body.Embedding.Provider) ||
+			!set(keyEmbedModel, body.Embedding.Model) ||
+			!set(keyEmbedBaseURL, body.Embedding.BaseURL) ||
+			!set(keyEmbedAPIKey, body.Embedding.APIKey) {
 			return
 		}
 	}

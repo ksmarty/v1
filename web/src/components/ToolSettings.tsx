@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { api } from '../api';
 import type {
+  EmbeddingSettings,
   InstalledExtension,
   InstalledSkill,
   MCPServer,
@@ -10,7 +11,7 @@ import type {
 } from '../types';
 import { errMsg, randomId } from '../utils';
 import { PERMISSION_MODES } from '../permissions';
-import { Button, Dialog, Field, Input, SaveRow, Spinner, toast } from './ui';
+import { Button, Dialog, Field, Input, SaveRow, Select, Spinner, toast } from './ui';
 import CodeEditor from './CodeEditor';
 import Markdown from './Markdown';
 import NewExtensionDialog from './NewExtensionDialog';
@@ -346,6 +347,45 @@ function ToolSettings({
     }
   };
 
+  // Memory retrieval's embedding provider. Entirely optional: with none set,
+  // memories are matched to the message lexically, which is what v1 did before
+  // embeddings existed. The form is a draft that only persists on Save, because
+  // a half-typed base URL would otherwise be stored and break retrieval
+  // silently — which is exactly the failure this feature exists to avoid.
+  const [emb, setEmb] = useState({ provider: '', model: '', baseUrl: '', apiKey: '' });
+  const [embSaved, setEmbSaved] = useState<EmbeddingSettings | null>(null);
+  const [embSaving, setEmbSaving] = useState(false);
+  const [embError, setEmbError] = useState<string | null>(null);
+
+  const embDirty =
+    emb.provider !== (embSaved?.provider ?? '') ||
+    emb.model !== (embSaved?.model ?? '') ||
+    emb.baseUrl !== (embSaved?.baseUrl ?? '') ||
+    emb.apiKey.trim() !== '';
+
+  const saveEmbedding = async (clearKey = false) => {
+    setEmbSaving(true);
+    setEmbError(null);
+    try {
+      await api.updateSettings({
+        embedding: {
+          provider: emb.provider,
+          model: emb.model,
+          baseUrl: emb.baseUrl,
+          apiKey: clearKey ? '' : emb.apiKey,
+        },
+      });
+      setEmb((e) => ({ ...e, apiKey: '' }));
+      const s = await api.getSettings();
+      setEmbSaved(s.embedding ?? null);
+      toast(clearKey ? 'Embedding key cleared' : 'Embedding provider saved');
+    } catch (e) {
+      setEmbError(errMsg(e));
+    } finally {
+      setEmbSaving(false);
+    }
+  };
+
   // Optimistic: flip the switch immediately, persist after (no Save button —
   // every change auto-saves).
   const toggleTool = (name: string) => {
@@ -405,6 +445,108 @@ function ToolSettings({
           )}
         </div>
         {webError && <p className="mt-1.5 text-xs text-red-400">{webError}</p>}
+      </div>
+      <div className="shrink-0 rounded-lg border border-border-strong bg-surface/50 p-3 shadow-sm">
+        <div className="flex items-center gap-2">
+          <p className="text-sm text-text">Memory embeddings</p>
+          <span
+            className={`rounded-full border px-1.5 py-0.5 text-[10px] ${
+              embSaved?.enabled
+                ? 'border-accent/40 bg-accent/10 text-accent'
+                : 'border-border bg-bg text-faint'
+            }`}
+          >
+            {embSaved?.enabled ? 'semantic' : 'lexical'}
+          </span>
+        </div>
+        <p className="mt-0.5 text-[11px] text-faint">
+          Optional. With a provider set, memories are matched to each message by meaning rather
+          than by shared words, so a memory written one way is found by a question asked another.
+          Without one, matching is lexical: it still works, it just misses a memory phrased
+          differently. Any OpenAI-compatible <span className="text-subtle">/embeddings</span>{' '}
+          endpoint works (Ollama, LM Studio, OpenAI), or a Hugging Face sentence-embedding model
+          such as{' '}
+          <a
+            href="https://huggingface.co/nomic-ai/nomic-embed-text-v1.5"
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-0.5 text-accent hover:underline"
+          >
+            nomic-embed-text-v1.5
+            <IconExternalLink className="h-3 w-3" />
+          </a>
+          .
+        </p>
+        <div className="mt-2 grid gap-2 sm:grid-cols-2">
+          <label className="flex flex-col gap-1">
+            <span className="text-[11px] text-faint">Provider</span>
+            <Select
+              value={emb.provider}
+              onChange={(e) => setEmb((v) => ({ ...v, provider: e.target.value }))}
+            >
+              <option value="">None (lexical matching)</option>
+              <option value="openai">OpenAI-compatible</option>
+              <option value="huggingface">Hugging Face</option>
+            </Select>
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-[11px] text-faint">Model</span>
+            <Input
+              value={emb.model}
+              onChange={(e) => setEmb((v) => ({ ...v, model: e.target.value }))}
+              placeholder="nomic-embed-text-v1.5"
+              autoComplete="off"
+            />
+          </label>
+          {emb.provider === 'openai' && (
+            <label className="flex flex-col gap-1 sm:col-span-2">
+              <span className="text-[11px] text-faint">Base URL</span>
+              <Input
+                value={emb.baseUrl}
+                onChange={(e) => setEmb((v) => ({ ...v, baseUrl: e.target.value }))}
+                placeholder="http://localhost:11434/v1"
+                autoComplete="off"
+              />
+            </label>
+          )}
+          <label className="flex flex-col gap-1 sm:col-span-2">
+            <span className="text-[11px] text-faint">
+              API key{emb.provider === 'openai' ? ' (optional for a local endpoint)' : ''}
+            </span>
+            <Input
+              type="password"
+              value={emb.apiKey}
+              onChange={(e) => setEmb((v) => ({ ...v, apiKey: e.target.value }))}
+              placeholder={
+                embSaved?.keySet
+                  ? embSaved.keyHint
+                    ? `${embSaved.keyHint}… (set — enter to replace)`
+                    : '•••••••• (set — enter to replace)'
+                  : 'Not set'
+              }
+              autoComplete="new-password"
+              data-1p-ignore
+              data-lpignore="true"
+            />
+          </label>
+        </div>
+        {embSaved?.enabled && embSaved.dims > 0 && (
+          <p className="mt-1.5 text-[11px] text-faint">
+            {embSaved.dims}-dimension vectors. Memories saved before this was configured are
+            embedded in the background over the next few turns.
+          </p>
+        )}
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <Button disabled={embSaving || !embDirty} onClick={() => void saveEmbedding()}>
+            Save
+          </Button>
+          {embSaved?.keySet && (
+            <Button variant="ghost" disabled={embSaving} onClick={() => void saveEmbedding(true)}>
+              Clear key
+            </Button>
+          )}
+        </div>
+        {embError && <p className="mt-1.5 text-xs text-red-400">{embError}</p>}
       </div>
       <p className="shrink-0 text-xs text-faint">
         Disable agent tools you don&apos;t want the model to use. Disabled tools
@@ -468,6 +610,13 @@ function ToolSettings({
       setDisabledTools(s.disabledTools ?? []);
       setWebKeySet(s.webSearch?.keySet ?? false);
       setWebKeyHint(s.webSearch?.keyHint ?? '');
+      setEmbSaved(s.embedding ?? null);
+      setEmb({
+        provider: s.embedding?.provider ?? '',
+        model: s.embedding?.model ?? '',
+        baseUrl: s.embedding?.baseUrl ?? '',
+        apiKey: '',
+      });
       const byId: Record<string, MCPServerStatus> = {};
       for (const sv of st.servers) byId[sv.id] = sv;
       setStatus(byId);

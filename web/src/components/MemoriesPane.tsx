@@ -106,9 +106,8 @@ export default function MemoriesPane({
             <Textarea
               value={newText}
               onChange={(e) => setNewText(e.target.value)}
-              placeholder="Add a memory (max 300 chars)…"
+              placeholder="Add a memory…"
               autoComplete="off"
-              maxLength={300}
               rows={2}
               className="resize-y"
             />
@@ -147,7 +146,6 @@ export default function MemoriesPane({
                       if (e.key === 'Escape') setEditing(null);
                     }}
                     autoFocus
-                    maxLength={300}
                     rows={3}
                     className="resize-y"
                   />
@@ -179,6 +177,25 @@ export default function MemoriesPane({
                   >
                     {m.content}
                   </p>
+                  {/* Tags are what the ranker matches separately from the
+                      prose, so they are worth showing: they are how the user
+                      sees why a memory will be found again. */}
+                  {m.tags && (
+                    <div className="mt-1.5 flex flex-wrap gap-1">
+                      {m.tags
+                        .split(',')
+                        .map((t) => t.trim())
+                        .filter(Boolean)
+                        .map((t) => (
+                          <span
+                            key={t}
+                            className="rounded-full border border-border bg-bg px-1.5 py-0.5 text-[10px] text-subtle"
+                          >
+                            {t}
+                          </span>
+                        ))}
+                    </div>
+                  )}
                 </div>
                 {/* The toggle and the actions stack vertically. Side by side
                     they claimed over 100px of a narrow row, which is width the

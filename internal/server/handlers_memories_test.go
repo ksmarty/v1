@@ -31,22 +31,21 @@ func TestMemoryPromptRanksByRelevance(t *testing.T) {
 	st, s, pid := memTestServer(t)
 	mustAdd(t, st, pid, "project uses pnpm", "fact", 1)
 	mustAdd(t, st, pid, "user prefers dark themes", "preference", 1)
-	got := s.memoryPrompt(pid, "please switch the app to a dark theme")
-	// The message mentions "dark"/"theme", so the dark-theme memory must rank
-	// above the pnpm one despite the memory id ordering.
-	di := strings.Index(got, "dark themes")
-	pi := strings.Index(got, "pnpm")
-	if di < 0 || pi < 0 {
-		t.Fatalf("missing memories in %q", got)
+	got := s.memoryPrompt(pid, "", "please switch the app to a dark theme")
+	// The message is about themes, so the dark-theme memory is injected and the
+	// unrelated pnpm one is dropped rather than padding the section out to a
+	// fixed size with whatever happens to be most important.
+	if !strings.Contains(got, "dark themes") {
+		t.Fatalf("the relevant memory was not injected: %q", got)
 	}
-	if di > pi {
-		t.Fatalf("relevance ranking failed: dark-theme memory should come first: %q", got)
+	if strings.Contains(got, "pnpm") {
+		t.Fatalf("an unrelated memory was injected: %q", got)
 	}
 }
 
 func TestMemoryPromptEmptyAndDisabled(t *testing.T) {
 	st, s, pid := memTestServer(t)
-	if got := s.memoryPrompt(pid, "hi"); got != "" {
+	if got := s.memoryPrompt(pid, "", "hi"); got != "" {
 		t.Fatalf("got %q, want empty", got)
 	}
 	mustAdd(t, st, pid, "stale fact", "fact", 1)
@@ -57,7 +56,7 @@ func TestMemoryPromptEmptyAndDisabled(t *testing.T) {
 	if err := st.SetMemoryEnabled(pid, mems[0].ID, false); err != nil {
 		t.Fatal(err)
 	}
-	if got := s.memoryPrompt(pid, "hi"); got != "" {
+	if got := s.memoryPrompt(pid, "", "hi"); got != "" {
 		t.Fatalf("disabled memory leaked: %q", got)
 	}
 }
@@ -67,13 +66,13 @@ func TestMemoryPromptTokensAndTouches(t *testing.T) {
 	for i := 1; i <= 12; i++ {
 		mustAdd(t, st, pid, string(rune('A'+i-1))+"-fact-"+strings.Repeat("x", 120), "fact", 1)
 	}
-	got := s.memoryPrompt(pid, "something")
+	got := s.memoryPrompt(pid, "", "fact")
 	if len(got) > memoryBudgetChars+400 {
 		t.Fatalf("prompt too large: %d chars", len(got))
 	}
-	// At most the top 5 are injected.
-	if n := strings.Count(got, "\n- ["); n > 5 {
-		t.Fatalf("injected %d memories, cap is 5", n)
+	// At most memoryTopK are injected.
+	if n := strings.Count(got, "\n- ["); n > memoryTopK {
+		t.Fatalf("injected %d memories, cap is %d", n, memoryTopK)
 	}
 	// Injected memories were touched (access_count bumped above 0).
 	mems, err := st.ListMemories(pid)
@@ -86,8 +85,8 @@ func TestMemoryPromptTokensAndTouches(t *testing.T) {
 			touched++
 		}
 	}
-	if touched == 0 || touched > 5 {
-		t.Fatalf("touched %d memories, want 1..5", touched)
+	if touched == 0 || touched > memoryTopK {
+		t.Fatalf("touched %d memories, want 1..%d", touched, memoryTopK)
 	}
 }
 
@@ -136,7 +135,7 @@ func TestMemoryDecayAndPin(t *testing.T) {
 			s.st.SetLastAccessed(m.ID, time.Now().Add(-40*24*time.Hour).Unix())
 		}
 	}
-	got := s.memoryPrompt(pid, "anything")
+	got := s.memoryPrompt(pid, "", "anything")
 	if !strings.Contains(got, "pinned preference") {
 		t.Fatalf("pinned memory vanished: %q", got)
 	}

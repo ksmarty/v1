@@ -584,7 +584,11 @@ func (s *Server) streamChatTurn(w http.ResponseWriter, r *http.Request, p *store
 	params.ApprovalMode = s.permissionMode(userID)
 	params.WebSearchKey = s.langSearchKey(userID)
 	params.SoftTimeout, params.HardTimeout = s.turnTimeouts(userID)
-	params.MemoriesPrompt = s.memoryPrompt(p.ID, params.Message)
+	params.MemoriesPrompt = s.memoryPrompt(p.ID, userID, params.Message)
+	params.EmbedConfig = s.embedConfigFor(userID)
+	// Memories written before an embedding provider was configured have no
+	// vector, so they are only findable lexically until this catches up.
+	s.backfillEmbeddings(p.ID, userID)
 	params.PlanPrompt = s.planPrompt(p.ID)
 	params.ContextBudget = s.cfg.ContextBudget
 	params.ContextThreshold = s.contextThreshold(userID)
@@ -635,6 +639,7 @@ func (s *Server) streamChatTurn(w http.ResponseWriter, r *http.Request, p *store
 		MCP:           s.mcp,
 		GithubToken:   s.githubToken(userID),
 		WebSearchKey:  params.WebSearchKey,
+		EmbedConfig:   params.EmbedConfig,
 		Perm:          &turnPerm{s: s, emit: emit, userID: userID},
 		DisabledTools: params.DisabledTools,
 		OnTodos: func(t []store.Todo) {

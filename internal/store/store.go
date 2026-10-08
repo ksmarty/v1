@@ -4,10 +4,12 @@ package store
 import (
 	"crypto/rand"
 	"database/sql"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -125,7 +127,10 @@ CREATE TABLE IF NOT EXISTS memories (
   category TEXT NOT NULL DEFAULT 'fact',
   importance REAL NOT NULL DEFAULT 1,
   last_accessed INTEGER NOT NULL DEFAULT 0,
-  access_count INTEGER NOT NULL DEFAULT 0
+  access_count INTEGER NOT NULL DEFAULT 0,
+  tags TEXT NOT NULL DEFAULT '',
+  embedding BLOB,
+  embedding_model TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_memories_project ON memories(project_id, id);
 CREATE TABLE IF NOT EXISTS plans (
@@ -243,6 +248,17 @@ CREATE TABLE pending_asks_v2 (
 		"importance":    "ALTER TABLE memories ADD COLUMN importance REAL NOT NULL DEFAULT 1",
 		"last_accessed": "ALTER TABLE memories ADD COLUMN last_accessed INTEGER NOT NULL DEFAULT 0",
 		"access_count":  "ALTER TABLE memories ADD COLUMN access_count INTEGER NOT NULL DEFAULT 0",
+	}); err != nil {
+		return err
+	}
+	// tags and embedding back the semantic retrieval added after memories
+	// shipped: tags are a separate short signal for the ranker, and embedding
+	// holds the packed float32 vector (empty for rows written before an
+	// embedding provider was configured).
+	if err := migrateAddColumns(db, "memories", map[string]string{
+		"tags":            "ALTER TABLE memories ADD COLUMN tags TEXT NOT NULL DEFAULT ''",
+		"embedding":       "ALTER TABLE memories ADD COLUMN embedding BLOB",
+		"embedding_model": "ALTER TABLE memories ADD COLUMN embedding_model TEXT NOT NULL DEFAULT ''",
 	}); err != nil {
 		return err
 	}
@@ -1376,6 +1392,42 @@ type Memory struct {
 	Importance   float64 `json:"importance"`
 	LastAccessed int64   `json:"lastAccessed"`
 	AccessCount  int     `json:"accessCount"`
+	// Tags are a comma-separated list of short technical labels. They are
+	// embedded separately from the content and are a strong retrieval signal:
+	// a tag hit is deliberate in a way that a word appearing in prose is not.
+	Tags string `json:"tags,omitempty"`
+	// Embedding is the packed float32 vector. It is never sent to the client —
+	// it is kilobytes per row and means nothing outside the ranker — and is only
+	// populated by the methods that need it.
+	Embedding      []float32 `json:"-"`
+	EmbeddingModel string    `json:"-"`
+}
+
+// encodeVector packs a vector little-endian for BLOB storage. A nil or empty
+// vector encodes to nil, which the column stores as NULL.
+func encodeVector(v []float32) []byte {
+	if len(v) == 0 {
+		return nil
+	}
+	b := make([]byte, len(v)*4)
+	for i, f := range v {
+		binary.LittleEndian.PutUint32(b[i*4:], math.Float32bits(f))
+	}
+	return b
+}
+
+// decodeVector unpacks a stored vector. A nil blob (a memory written before an
+// embedding provider was configured) decodes to nil, which the ranker reads as
+// "not comparable".
+func decodeVector(b []byte) []float32 {
+	if len(b) == 0 || len(b)%4 != 0 {
+		return nil
+	}
+	v := make([]float32, len(b)/4)
+	for i := range v {
+		v[i] = math.Float32frombits(binary.LittleEndian.Uint32(b[i*4:]))
+	}
+	return v
 }
 
 // AddMemory stores a memory for a project and returns its id.
@@ -1418,7 +1470,7 @@ func EffectiveImportance(m Memory, at time.Time) float64 {
 // dropped lazily, and all returned entries carry their effective importance
 // so ranking can use it without mutating.
 func (s *Store) ListMemories(projectID string) ([]Memory, error) {
-	rows, err := s.db.Query(`SELECT id, content, enabled, category, importance, last_accessed, access_count, created_at FROM memories WHERE project_id = ? ORDER BY id`, projectID)
+	rows, err := s.db.Query(`SELECT id, content, enabled, category, importance, last_accessed, access_count, created_at, tags FROM memories WHERE project_id = ? ORDER BY id`, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -1429,7 +1481,7 @@ func (s *Store) ListMemories(projectID string) ([]Memory, error) {
 	for rows.Next() {
 		var m Memory
 		var enabled int
-		if err := rows.Scan(&m.ID, &m.Content, &enabled, &m.Category, &m.Importance, &m.LastAccessed, &m.AccessCount, &m.CreatedAt); err != nil {
+		if err := rows.Scan(&m.ID, &m.Content, &enabled, &m.Category, &m.Importance, &m.LastAccessed, &m.AccessCount, &m.CreatedAt, &m.Tags); err != nil {
 			return nil, err
 		}
 		m.Enabled = enabled != 0
@@ -1454,6 +1506,74 @@ func (s *Store) ListMemories(projectID string) ([]Memory, error) {
 func (s *Store) TouchMemory(id int64) error {
 	_, err := s.db.Exec(`UPDATE memories SET last_accessed = ?, access_count = access_count + 1 WHERE id = ?`, now(), id)
 	return err
+}
+
+// SetMemoryTags rewrites a memory's tag list.
+func (s *Store) SetMemoryTags(id int64, tags string) error {
+	_, err := s.db.Exec(`UPDATE memories SET tags = ? WHERE id = ?`, tags, id)
+	return err
+}
+
+// SetMemoryEmbedding stores a memory's vector and the model that produced it.
+// The model is recorded so a provider or model change can be detected later:
+// vectors from two different models are not comparable, and comparing them
+// yields meaningless similarities rather than an error.
+func (s *Store) SetMemoryEmbedding(id int64, model string, vec []float32) error {
+	_, err := s.db.Exec(`UPDATE memories SET embedding = ?, embedding_model = ? WHERE id = ?`,
+		encodeVector(vec), model, id)
+	return err
+}
+
+// MemoryVectors returns id -> vector for every memory in a project that has one.
+// It is a separate query from ListMemories so the memories page and the prompt
+// injection path do not carry kilobytes of vectors they never read.
+func (s *Store) MemoryVectors(projectID string) (map[int64][]float32, error) {
+	rows, err := s.db.Query(`SELECT id, embedding FROM memories WHERE project_id = ? AND embedding IS NOT NULL`, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[int64][]float32{}
+	for rows.Next() {
+		var id int64
+		var blob []byte
+		if err := rows.Scan(&id, &blob); err != nil {
+			return nil, err
+		}
+		if v := decodeVector(blob); v != nil {
+			out[id] = v
+		}
+	}
+	return out, rows.Err()
+}
+
+// MemoriesMissingEmbeddings returns the ids of a project's memories that have no
+// vector, or whose vector came from a different model than the one configured
+// now. It is what the backfill walks: memories written before an embedding
+// provider existed are otherwise never searchable.
+func (s *Store) MemoriesMissingEmbeddings(projectID, model string) ([]int64, error) {
+	rows, err := s.db.Query(`SELECT id FROM memories
+		 WHERE project_id = ? AND (embedding IS NULL OR embedding_model <> ?)`, projectID, model)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
+// MemoryContent returns one memory's content, used by the backfill to embed it.
+func (s *Store) MemoryContent(id int64) (string, error) {
+	var content string
+	err := s.db.QueryRow(`SELECT content FROM memories WHERE id = ?`, id).Scan(&content)
+	return content, err
 }
 
 // SetLastAccessed rewrites a memory's last_accessed timestamp (used by the

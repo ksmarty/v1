@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"v1/internal/embed"
 	"v1/internal/llm"
 	"v1/internal/store"
 )
@@ -28,7 +29,7 @@ Rules:
 - Plan multi-step work: when the request is a task with several features, call make_plan before executing — {goal, features[{id, description, depends_on}], invariants, checkpoints[{step, action, verification}], estimated_turns}. Keep the plan current with update_plan as you progress (check off features and checkpoints); if you deviate from the plan, explain why in your reply; if the user changes scope, regenerate the plan from scratch with make_plan.
 - Use remember with a category (preference/episodic/fact/plan) and importance (2+ pins the memory so it never decays) for durable project facts.
 - Keep a visible todo list of your work using set_todos; add items up front and mark them done as they complete.
-- Save durable facts, decisions and user preferences with the remember tool; delete stale ones with forget.
+- Save durable facts, decisions and user preferences with the remember tool; delete stale ones with forget. Write each one as a clear sentence or short paragraph — there is no length limit, and the memory is only injected into the turns where it is relevant, so being precise costs nothing. Add tags (short technical terms like file names, symbols or technologies) to every memory: tags are matched separately from the prose and are the strongest signal that a memory is the right one for a question.
 - If something important is unclear or you need a decision, use ask_user instead of guessing.
 - Never inspect secrets: do not read process environments (/proc/*/environ) or credential files (.env, *.pem, auth.json) to discover configuration. They hold live credentials, and anything you print is stored in the transcript and sent to the model. Ask the user instead.
 - Keep your responses concise.`
@@ -183,6 +184,10 @@ type ChatParams struct {
 	// WebSearchKey is the user's LangSearch API key. The web_search tool is
 	// offered only when it is set.
 	WebSearchKey string
+	// EmbedConfig is the user's embedding provider for memory retrieval. When it
+	// is not Enabled, memories are ranked lexically instead — which is what v1
+	// did before embeddings existed, so this is an upgrade, not a requirement.
+	EmbedConfig embed.Config
 	// ApprovalMode is the user's permission mode: "ask", "auto" or "yolo".
 	// Tool approvals are enforced by the permission resolver; this only tells
 	// the model whether asking questions is still wanted.
@@ -1176,13 +1181,17 @@ var tools = []llm.Tool{
 		Type: "function",
 		Function: llm.ToolFunction{
 			Name:        "remember",
-			Description: "Save a durable fact about this project (framework, styling rules, API endpoints, user preferences) to long-term memory. It will be injected into future turns, ranked by relevance. Categories: preference (user choices), episodic (what worked/failed before), fact (stable project knowledge), plan (working plan notes). Importance 0-3: 2+ pins the memory so it never decays; lower importance fades with disuse. Keep entries short (300 chars max); dedupe happens automatically.",
+			Description: "Save a durable fact about this project (framework, styling rules, API endpoints, user preferences) to long-term memory. Memories are ranked against each turn by meaning, so write the fact out properly rather than in shorthand: there is no length limit, and a clear full sentence is retrieved far more reliably than a terse fragment. Categories: preference (user choices), episodic (what worked/failed before), fact (stable project knowledge), plan (working plan notes). Importance 0-3: 2+ pins the memory so it never decays; lower importance fades with disuse. Add tags: short technical terms (file names, symbols, technologies) that someone would search for later. They are matched separately from the prose and are a strong signal. A near-duplicate of an existing memory is refused automatically.",
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
 					"content": map[string]any{
 						"type":        "string",
-						"description": "The fact to remember, one short sentence.",
+						"description": "The fact to remember, written as a clear sentence or short paragraph.",
+					},
+					"tags": map[string]any{
+						"type":        "string",
+						"description": "Comma-separated short technical terms, e.g. 'sqlite, migrations, store.go'.",
 					},
 					"category": map[string]any{
 						"type":        "string",

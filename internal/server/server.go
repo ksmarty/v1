@@ -22,6 +22,7 @@ import (
 	"v1/internal/agent"
 	"v1/internal/auth"
 	"v1/internal/config"
+	v1embed "v1/internal/embed"
 	"v1/internal/harness"
 	"v1/internal/llm"
 	"v1/internal/mcp"
@@ -389,6 +390,13 @@ const (
 	keyDisabledTools   = "disabled_tools"
 	// keyWebSearch is the user's LangSearch API key, which web_search runs on.
 	keyWebSearch = "web_search_key"
+	// The embedding provider backing memory retrieval, split across four keys so
+	// a local endpoint (Ollama, LM Studio) is configurable with no key at all.
+	// All four are per user, like every other provider setting.
+	keyEmbedProvider = "embedding_provider"
+	keyEmbedModel    = "embedding_model"
+	keyEmbedBaseURL  = "embedding_base_url"
+	keyEmbedAPIKey   = "embedding_api_key"
 	// Retired: caveman mode is a bundled skill now. Read once, only to migrate
 	// whoever had it switched on, then deleted from each user's settings.
 	keyCavemanLegacy    = "caveman"
@@ -575,6 +583,42 @@ func (s *Server) langSearchKey(userID string) string {
 		sanitize.AddSecret(v)
 	}
 	return v
+}
+
+// embedConfigFor resolves the user's embedding provider. A zero Config (or one
+// that is not Enabled) means memory retrieval ranks lexically, which is what v1
+// did before embeddings existed — an embedding provider is an upgrade, not a
+// requirement.
+func (s *Server) embedConfigFor(userID string) v1embed.Config {
+	get := func(k string) string {
+		v, _ := s.userSetting(userID, k)
+		return strings.TrimSpace(v)
+	}
+	cfg := v1embed.Config{
+		Provider: get(keyEmbedProvider),
+		Model:    get(keyEmbedModel),
+		BaseURL:  get(keyEmbedBaseURL),
+		APIKey:   get(keyEmbedAPIKey),
+	}
+	if cfg.APIKey != "" {
+		sanitize.AddSecret(cfg.APIKey)
+	}
+	return cfg
+}
+
+// embeddingSettings is the settings page's view of the embedding provider. The
+// key is never returned, only whether one is set and a masked hint.
+func (s *Server) embeddingSettings(userID string) map[string]any {
+	cfg := s.embedConfigFor(userID)
+	return map[string]any{
+		"provider": cfg.Provider,
+		"model":    cfg.Model,
+		"baseUrl":  cfg.BaseURL,
+		"keySet":   cfg.APIKey != "",
+		"keyHint":  apiKeyHint(cfg.APIKey),
+		"dims":     v1embed.Dims(cfg.Model),
+		"enabled":  cfg.Enabled(),
+	}
 }
 
 // systemPromptFor resolves the system prompt override a user has set (their
