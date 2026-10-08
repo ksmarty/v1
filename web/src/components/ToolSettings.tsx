@@ -356,6 +356,27 @@ function ToolSettings({
   const [embSaved, setEmbSaved] = useState<EmbeddingSettings | null>(null);
   const [embSaving, setEmbSaving] = useState(false);
   const [embError, setEmbError] = useState<string | null>(null);
+  const [embTesting, setEmbTesting] = useState(false);
+  const [embTest, setEmbTest] = useState<{ ok: boolean; error?: string; dims?: number } | null>(null);
+
+  // A test result describes one provider+model pair, so changing either drops it
+  // rather than leaving a green "Ready" next to something untested.
+  const setEmbField = (patch: Partial<typeof emb>) => {
+    setEmb((v) => ({ ...v, ...patch }));
+    setEmbTest(null);
+  };
+
+  const testEmbedding = async () => {
+    setEmbTesting(true);
+    setEmbTest(null);
+    try {
+      setEmbTest(await api.testEmbedding({ provider: emb.provider, model: emb.model }));
+    } catch (e) {
+      setEmbTest({ ok: false, error: errMsg(e) });
+    } finally {
+      setEmbTesting(false);
+    }
+  };
 
   const embDirty =
     emb.provider !== (embSaved?.provider ?? '') ||
@@ -463,38 +484,58 @@ function ToolSettings({
           Optional. With a provider set, memories are matched to each message by meaning rather
           than by shared words, so a memory written one way is found by a question asked another.
           Without one, matching is lexical: it still works, it just misses a memory phrased
-          differently. Any OpenAI-compatible <span className="text-subtle">/embeddings</span>{' '}
-          endpoint works (Ollama, LM Studio, OpenAI), or a Hugging Face sentence-embedding model
-          such as{' '}
-          <a
-            href="https://huggingface.co/nomic-ai/nomic-embed-text-v1.5"
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-0.5 text-accent hover:underline"
-          >
-            nomic-embed-text-v1.5
-            <IconExternalLink className="h-3 w-3" />
-          </a>
-          .
+          differently. Pick <span className="text-subtle">Built-in</span> to run a
+          sentence-embedding model inside v1 — no key, and nothing leaves the machine — or point
+          at any OpenAI-compatible <span className="text-subtle">/embeddings</span> endpoint
+          (Ollama, LM Studio, OpenAI) or the Hugging Face inference API.
         </p>
+        {emb.provider === 'native' && (
+          <p className="mt-1.5 text-[11px] text-faint">
+            Any BERT-family encoder from{' '}
+            <a
+              href="https://huggingface.co/models?library=sentence-transformers&pipeline_tag=feature-extraction"
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-0.5 text-accent hover:underline"
+            >
+              Hugging Face
+              <IconExternalLink className="h-3 w-3" />
+            </a>{' '}
+            works: BERT, DistilBERT, MiniLM and NomicBERT derivatives such as{' '}
+            <span className="text-subtle">all-MiniLM-L6-v2</span>,{' '}
+            <span className="text-subtle">bge-small-en-v1.5</span>,{' '}
+            <span className="text-subtle">gte-small</span> or{' '}
+            <span className="text-subtle">nomic-embed-text-v1.5</span>. RoBERTa, MPNet, DeBERTa and
+            ModernBERT are refused rather than run incorrectly. Paste the model page URL or an{' '}
+            <span className="text-subtle">org/name</span> id; the weights are downloaded once and
+            cached on disk.
+          </p>
+        )}
         <div className="mt-2 grid gap-2 sm:grid-cols-2">
           <label className="flex flex-col gap-1">
             <span className="text-[11px] text-faint">Provider</span>
             <Select
               value={emb.provider}
-              onChange={(e) => setEmb((v) => ({ ...v, provider: e.target.value }))}
+              onChange={(e) => setEmbField({ provider: e.target.value })}
             >
               <option value="">None (lexical matching)</option>
+              <option value="native">Built-in (runs in v1)</option>
               <option value="openai">OpenAI-compatible</option>
               <option value="huggingface">Hugging Face</option>
             </Select>
           </label>
           <label className="flex flex-col gap-1">
-            <span className="text-[11px] text-faint">Model</span>
+            <span className="text-[11px] text-faint">
+              {emb.provider === 'native' ? 'Model (Hugging Face repo or URL)' : 'Model'}
+            </span>
             <Input
               value={emb.model}
-              onChange={(e) => setEmb((v) => ({ ...v, model: e.target.value }))}
-              placeholder="nomic-embed-text-v1.5"
+              onChange={(e) => setEmbField({ model: e.target.value })}
+              placeholder={
+                emb.provider === 'native'
+                  ? 'sentence-transformers/all-MiniLM-L6-v2'
+                  : 'nomic-embed-text-v1.5'
+              }
               autoComplete="off"
             />
           </label>
@@ -509,27 +550,45 @@ function ToolSettings({
               />
             </label>
           )}
-          <label className="flex flex-col gap-1 sm:col-span-2">
-            <span className="text-[11px] text-faint">
-              API key{emb.provider === 'openai' ? ' (optional for a local endpoint)' : ''}
-            </span>
-            <Input
-              type="password"
-              value={emb.apiKey}
-              onChange={(e) => setEmb((v) => ({ ...v, apiKey: e.target.value }))}
-              placeholder={
-                embSaved?.keySet
-                  ? embSaved.keyHint
-                    ? `${embSaved.keyHint}… (set — enter to replace)`
-                    : '•••••••• (set — enter to replace)'
-                  : 'Not set'
-              }
-              autoComplete="new-password"
-              data-1p-ignore
-              data-lpignore="true"
-            />
-          </label>
+          {emb.provider !== 'native' && (
+            <label className="flex flex-col gap-1 sm:col-span-2">
+              <span className="text-[11px] text-faint">
+                API key{emb.provider === 'openai' ? ' (optional for a local endpoint)' : ''}
+              </span>
+              <Input
+                type="password"
+                value={emb.apiKey}
+                onChange={(e) => setEmb((v) => ({ ...v, apiKey: e.target.value }))}
+                placeholder={
+                  embSaved?.keySet
+                    ? embSaved.keyHint
+                      ? `${embSaved.keyHint}… (set — enter to replace)`
+                      : '•••••••• (set — enter to replace)'
+                    : 'Not set'
+                }
+                autoComplete="new-password"
+                data-1p-ignore
+                data-lpignore="true"
+              />
+            </label>
+          )}
         </div>
+        {emb.provider === 'native' && (
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <Button variant="ghost" disabled={embTesting} onClick={() => void testEmbedding()}>
+              {embTesting ? 'Downloading…' : 'Download & test'}
+            </Button>
+            {embTest && (
+              <span
+                className={`text-[11px] ${embTest.ok ? 'text-accent' : 'text-red-400'}`}
+              >
+                {embTest.ok
+                  ? `Ready — ${embTest.dims}-dimension vectors`
+                  : embTest.error}
+              </span>
+            )}
+          </div>
+        )}
         {embSaved?.enabled && embSaved.dims > 0 && (
           <p className="mt-1.5 text-[11px] text-faint">
             {embSaved.dims}-dimension vectors. Memories saved before this was configured are

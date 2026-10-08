@@ -162,6 +162,7 @@ func (s *Server) routes(m *http.ServeMux) {
 	m.HandleFunc("GET /api/settings", s.handleGetSettings)
 	m.HandleFunc("PUT /api/settings", s.handlePutSettings)
 	m.HandleFunc("POST /api/settings/test-llm", s.handleTestLLM)
+	m.HandleFunc("POST /api/settings/test-embedding", s.handleTestEmbedding)
 
 	m.HandleFunc("GET /api/providers", s.handleListProviders)
 	m.HandleFunc("POST /api/providers/refresh", s.handleRefreshProviders)
@@ -616,7 +617,7 @@ func (s *Server) embeddingSettings(userID string) map[string]any {
 		"baseUrl":  cfg.BaseURL,
 		"keySet":   cfg.APIKey != "",
 		"keyHint":  apiKeyHint(cfg.APIKey),
-		"dims":     v1embed.Dims(cfg.Model),
+		"dims":     v1embed.DimsFor(cfg.Provider, cfg.Model),
 		"enabled":  cfg.Enabled(),
 	}
 }

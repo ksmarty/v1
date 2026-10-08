@@ -151,6 +151,31 @@ Env vars work too (and act as fallbacks for UI settings). Examples for `OPENAI_B
 
 If you already use a provider through its OpenAI-compatible endpoint (the way opencode users point at OpenRouter, Together, etc.), point v1 at the same endpoint with the same key and set `V1_MODEL` accordingly.
 
+### Memory embeddings
+
+Memory retrieval works with no configuration — it falls back to lexical
+matching. Point it at an embedding provider in **Settings → Tools & permissions
+→ Memory embeddings** and it matches by meaning instead, so a memory written one
+way is found by a question asked another. Three providers:
+
+- **Built-in** — a BERT-family encoder run inside v1, so nothing leaves the
+  machine and no key is needed. Any sentence-transformers model of the BERT
+  family works: BERT, DistilBERT, MiniLM and NomicBERT derivatives
+  (`all-MiniLM-L6-v2` by default, plus `bge-small-en-v1.5`, `gte-small`,
+  `nomic-embed-text-v1.5`, …). Paste a Hugging Face model page URL or an
+  `org/name` id. RoBERTa, MPNet, DeBERTa and ModernBERT are refused rather than
+  run incorrectly. Weights (~90 MB for the default) download on first use into
+  `V1_MODEL_CACHE` (default `~/.cache/v1/models`) and are reused after that,
+  including offline.
+- **OpenAI-compatible** — any `/embeddings` endpoint: Ollama, LM Studio,
+  llama.cpp, OpenAI.
+- **Hugging Face** — the hosted inference API.
+
+**Download & test** in the settings page fetches a built-in model up front and
+reports its vector width, so one that cannot run fails there rather than
+quietly degrading retrieval later. Memories without a vector are embedded in
+the background over the next few turns, and switching models re-embeds them.
+
 ## Auth
 
 v1 is multi-user: each person gets their own account, settings and projects.

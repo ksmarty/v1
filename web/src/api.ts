@@ -260,6 +260,13 @@ export const api = {
     if (body && 'llm' in body) expireProvidersCache(); // provider config changed
     return put<void>('/api/settings', body);
   },
+  /** Checks an embedding provider, downloading a native model on first use. */
+  testEmbedding: (body: { provider?: string; model?: string }) =>
+    request<{ ok: boolean; error?: string; dims?: number }>('/api/settings/test-embedding', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
   oidcSettings: () =>
     request<{
       issuer: string;

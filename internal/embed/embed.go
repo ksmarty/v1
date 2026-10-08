@@ -1,11 +1,17 @@
 // Package embed turns text into vectors using a configured provider.
 //
-// v1 is a single Go binary, so it cannot bundle a local ONNX embedding model the
-// way opencode-mem does with @huggingface/transformers. Embeddings therefore
-// come from an HTTP provider the user configures: any OpenAI-compatible
-// /embeddings endpoint, or the Hugging Face inference API for the sentence
-// embedding models published there (nomic-embed-text-v1.5, embeddinggemma, and
-// the like).
+// Three providers are supported:
+//
+//   - native: a BERT-family encoder run inside v1, with the weights fetched
+//     from Hugging Face on first use and cached on disk. This is the only
+//     provider that needs no external service, and the only one that works
+//     offline once its model is cached.
+//   - openai: any OpenAI-compatible /embeddings endpoint.
+//   - huggingface: the HF inference feature-extraction API.
+//
+// The native encoder is pure Go. v1 builds with CGO_ENABLED=0 (Dockerfile), so
+// an ONNX runtime is not an option — see bert.go for the forward pass and
+// native.go for the supported model set.
 //
 // Nothing here is required for memory to work. When no provider is configured
 // the caller ranks lexically, which is what v1 did before embeddings existed.
@@ -18,12 +24,15 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
 
 // Provider identifiers.
 const (
+	ProviderNative      = "native"      // in-process BERT encoder (see native.go)
 	ProviderOpenAI      = "openai"      // any OpenAI-compatible /embeddings
 	ProviderHuggingFace = "huggingface" // HF inference feature-extraction
 )
@@ -50,6 +59,10 @@ func (c Config) Enabled() bool {
 		return false
 	}
 	switch c.Provider {
+	case ProviderNative:
+		// The model is optional: DefaultNativeModel is used when none is named,
+		// and the weights are fetched on first use.
+		return true
 	case ProviderOpenAI:
 		// A base URL is the minimum: this provider is defined by its endpoint.
 		return strings.TrimSpace(c.BaseURL) != ""
@@ -109,6 +122,36 @@ func Dims(model string) int {
 	return 0
 }
 
+// DimsFor returns the width the configured provider produces.
+//
+// For native it reads the width out of the cached model, because an arbitrary
+// Hugging Face repository is not in the table above. Until that model has been
+// downloaded the answer is 0, which the settings page shows as unknown rather
+// than guessing a width that would then be wrong.
+func DimsFor(provider, model string) int {
+	if provider != ProviderNative {
+		return Dims(model)
+	}
+	repo, dir, err := parseModelRef(model)
+	if err != nil {
+		return 0
+	}
+	if dir == "" {
+		if dir, err = modelCacheDir(repo); err != nil {
+			return 0
+		}
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, "config.json"))
+	if err != nil {
+		return 0
+	}
+	var cfg bertConfig
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		return 0
+	}
+	return cfg.HiddenSize
+}
+
 // usesTaskPrefixes reports whether a model expects the retrieval instruction
 // prefixes from its model card. Nomic's embedding models are trained with them
 // and retrieve noticeably worse without: the prefix tells the model whether the
@@ -143,6 +186,8 @@ func (c *Client) Embed(ctx context.Context, texts []string) ([][]float32, error)
 		return nil, fmt.Errorf("no embedding provider is configured")
 	}
 	switch c.cfg.Provider {
+	case ProviderNative:
+		return nativeEmbed(ctx, c.cfg, texts)
 	case ProviderOpenAI:
 		return c.embedOpenAI(ctx, texts)
 	case ProviderHuggingFace:

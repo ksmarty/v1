@@ -15,6 +15,12 @@ React SPA (Vite + TypeScript), both built into a single binary.
 - `internal/server/` — HTTP API routes, handlers, embedded `dist/` (built SPA).
 - `internal/auth/` — multi-user auth: per-user accounts (bcrypt), sessions bound to a user, admin role, auth middleware (attaches the `*store.User` to the request context). The auth middleware protects `/api/*` and `/preview/*` (401 JSON) but serves the SPA shell + static assets publicly so unauthenticated browsers reach `/login` (password or OIDC); it still attaches the user to the context when a session exists. OIDC users carry an `oidc` flag on the `users` row (auto-set on OIDC sign-in) and can be granted admin via `V1_OIDC_ADMIN_EMAILS`; the Settings Auth page hides the password form for OIDC users (admins keep the OIDC config section). Settings are per-user (`user_settings` table) with a shared/global fallback — the server's `userSetting` helper layers them; instance-level keys (MCP, skills, providers cache, OAuth app credentials) stay global. Projects are strictly owner-scoped (`projects.owner_id`, 404 for non-owners); auth-disabled dev mode skips the ownership gate.
 - `internal/llm/` — OpenAI-compatible client + models.dev provider catalog.
+- `internal/embed/` — memory embeddings: the provider client (`embed.go`), a
+  pure-Go BERT-family encoder for the built-in provider (`bert.go`,
+  `wordpiece.go`, `safetensors.go`, `native.go` — no ONNX, because v1 builds
+  with `CGO_ENABLED=0`), and `Dims`/`DimsFor`. The encoder is verified against
+  the Hugging Face reference: `native_parity_test.go` (needs
+  `V1_EMBED_TEST_MODEL`) plus an offline golden-token-id test.
 - `internal/agent/` — the built-in chat agent loop (SSE) and its file/preview
   tools. Reachable with `V1_HARNESS=go`; it is no longer the default.
 - `internal/harness/` — supervises the pi-durable sidecar (newline-delimited

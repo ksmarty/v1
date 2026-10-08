@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"v1/internal/embed"
 	"v1/internal/llm"
 	"v1/internal/mcp"
 	"v1/internal/store"
@@ -675,4 +676,59 @@ func (s *Server) handleTestLLM(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// handleTestEmbedding checks an embedding provider before it is saved.
+//
+// For native this downloads the model on first use and runs one embedding, which
+// is the only honest way to answer the question the settings page is asking:
+// whether the Hugging Face repository named is one of the architectures this
+// build can run. A repository that is not fails here with a specific reason
+// instead of quietly degrading every memory lookup later.
+func (s *Server) handleTestEmbedding(w http.ResponseWriter, r *http.Request) {
+	userID := s.currentUser(r).ID
+	var body struct {
+		Provider string `json:"provider"`
+		Model    string `json:"model"`
+	}
+	if r.Body != nil {
+		data, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "reading body: "+err.Error())
+			return
+		}
+		if len(strings.TrimSpace(string(data))) > 0 {
+			if err := json.Unmarshal(data, &body); err != nil {
+				writeError(w, http.StatusBadRequest, "invalid JSON body: "+err.Error())
+				return
+			}
+		}
+	}
+	cfg := s.embedConfigFor(userID)
+	if body.Provider != "" {
+		cfg.Provider = body.Provider
+	}
+	if body.Model != "" {
+		cfg.Model = body.Model
+	}
+	if !cfg.Enabled() {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok":    false,
+			"error": "the provider is not configured completely yet",
+		})
+		return
+	}
+	// No extra deadline: a native model is downloaded here, and a first fetch
+	// can take minutes. The request context still cancels when the client
+	// gives up.
+	vecs, err := embed.New(cfg).Embed(r.Context(), []string{"v1 embedding check"})
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{"ok": false, "error": err.Error()})
+		return
+	}
+	dims := 0
+	if len(vecs) > 0 {
+		dims = len(vecs[0])
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "dims": dims})
 }
