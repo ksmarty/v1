@@ -2544,6 +2544,10 @@ export default function Settings() {
               saving={llmSaving}
               saved={llmSaved}
               error={llmError}
+              // The endpoint is the one field a provider cannot work without:
+              // saveLLM parses it to derive a name, and an empty value silently
+              // stored a provider that could never serve a request.
+              disabled={baseURL.trim() === ''}
               pulse={
                 settings
                   ? baseURL !== settings.llm.baseURL ||

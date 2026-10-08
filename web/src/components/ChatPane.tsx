@@ -3882,6 +3882,10 @@ export default function ChatPane({
     [rewindApproval, rewindTo],
   );
 
+  // Stopping throws away work in progress, so it asks first. The button sits
+  // next to Send, where a mis-tap is easy.
+  const [confirmStopOpen, setConfirmStopOpen] = useState(false);
+
   const stop = () => {
     // Runs survive the stream abort (they are detached server-side) — tell
     // the server to cancel explicitly, then drop the connection.
@@ -4082,7 +4086,7 @@ export default function ChatPane({
   );
   const stopButton = streaming && (
     <IconButton
-      onClick={stop}
+      onClick={() => setConfirmStopOpen(true)}
       aria-label="Stop generating"
       title="Stop generating"
       className="h-8! w-8! shrink-0 md:h-9! md:w-9!"
@@ -5163,6 +5167,31 @@ export default function ChatPane({
         }}
         creating={creatingSession}
       />
+
+      <Dialog
+        open={confirmStopOpen}
+        onClose={() => setConfirmStopOpen(false)}
+        title="Stop generating?"
+      >
+        <p className="text-sm text-dim">
+          The run stops where it is. Everything already written to the transcript is kept, and
+          any background commands it started keep running.
+        </p>
+        <div className="mt-4 flex justify-end gap-2">
+          <Button variant="ghost" onClick={() => setConfirmStopOpen(false)}>
+            Cancel
+          </Button>
+          <Button
+            variant="danger"
+            onClick={() => {
+              setConfirmStopOpen(false);
+              stop();
+            }}
+          >
+            Stop
+          </Button>
+        </div>
+      </Dialog>
 
       <Dialog
         open={rewindTarget !== null}
