@@ -120,7 +120,7 @@ const SETTINGS_SEARCH: {
 }[] = [
   { id: 'sec-llm', page: 'llm', label: 'LLM provider', hint: 'Base URL, API key, model', keywords: 'openai compatible endpoint api key base url model provider connection test' },
   { id: 'sec-system-prompt', page: 'llm', label: 'Global system prompt', hint: 'Extra instructions for every chat', keywords: 'prompt instructions behavior context rules system agent' },
-  { id: 'sec-thinking-default', page: 'llm', label: 'Default thinking level', hint: 'Off / low / medium / high / xhigh / max', keywords: 'thinking reasoning effort level default tokens model' },
+  { id: 'sec-llm', page: 'llm', label: 'Default thinking level', hint: 'Off / low / medium / high / xhigh / max', keywords: 'thinking reasoning effort level default tokens model' },
   { id: 'sec-toon', page: 'llm', label: 'TOON', hint: 'Token-efficient tool result encoding', keywords: 'toon tokens efficient encode tool results format compact json' },
   { id: 'sec-caveman', page: 'llm', label: 'Caveman mode', hint: 'Terse replies, technical facts kept', keywords: 'caveman terse style reply concise brief short answer first no fluff' },
   { id: 'sec-auto-push', page: 'llm', label: 'Auto-push new projects', hint: 'Default for newly created projects only', keywords: 'auto push commits github default new projects git remote' },
@@ -363,6 +363,11 @@ function ContextThresholdControl() {
       .then((s) => setValue(String(s.contextThreshold ?? 80)))
       .catch(() => {});
   }, []);
+  // The save announces itself rather than leaving permanent text beside the
+  // field; the state is kept so a later save announces again.
+  useEffect(() => {
+    if (saved) toast('Saved');
+  }, [saved]);
 
   const restore = () => {
     api
@@ -417,11 +422,6 @@ function ContextThresholdControl() {
         </div>
         <span className="text-xs text-dim">of the context window</span>
         {saving && <Spinner className="h-3.5 w-3.5" />}
-        {saved && !saving && (
-          <span className="flex items-center gap-1 text-xs text-emerald-500">
-            <IconCheck className="h-3.5 w-3.5" /> Saved
-          </span>
-        )}
       </div>
       {error && <p className="text-xs text-red-400">{error}</p>}
     </div>
@@ -1784,6 +1784,10 @@ export default function Settings() {
   const [defThinking, setDefThinking] = useState('');
   const [dtSaving, setDtSaving] = useState(false);
   const [dtSaved, setDtSaved] = useState(false);
+  // Announced as a toast, not as permanent text beside the control.
+  useEffect(() => {
+    if (dtSaved) toast('Saved');
+  }, [dtSaved]);
   const [dtError, setDtError] = useState<string | null>(null);
 
   // Editable system prompt — pre-filled with the effective prompt (server GET
@@ -1843,6 +1847,10 @@ export default function Settings() {
     setDefPicking(true);
   };
   const [dmSaved, setDmSaved] = useState(false);
+  // Announced as a toast, not as permanent text beside the field.
+  useEffect(() => {
+    if (dmSaved) toast('Saved');
+  }, [dmSaved]);
   const [dmError, setDmError] = useState<string | null>(null);
 
   const location = useLocation();
@@ -2673,14 +2681,29 @@ export default function Settings() {
               automatically from your saved providers. Choosing one here does not
               change any chat you&apos;ve already opened.
             </p>
-            <div className="mt-1.5 flex items-center gap-2 text-xs">
-              {dmSaved && (
-                <span className="flex items-center gap-1 text-emerald-500">
-                  <IconCheck className="h-3.5 w-3.5" /> Saved
-                </span>
-              )}
-              {dmError && <span className="text-red-400">{dmError}</span>}
-            </div>
+            {dmError && <p className="mt-1 text-xs text-red-400">{dmError}</p>}
+          </Field>
+
+          <Field label="Default thinking level">
+            <select
+              value={defThinking}
+              disabled={dtSaving}
+              onChange={(e) => void saveDefaultThinking(e.target.value)}
+              className="w-full min-w-0 max-w-xs rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text outline-none transition-colors focus:border-subtle disabled:opacity-60"
+            >
+              <option value="">Lowest</option>
+              <option value="off">Off</option>
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+              <option value="xhigh">XHigh</option>
+              <option value="max">Max</option>
+            </select>
+            <p className="mt-1 text-[11px] text-subtle">
+              Used when you pick a model. A model that does not offer the chosen level uses the
+              next one up; per-model selections in the chat override this.
+            </p>
+            {dtError && <p className="mt-1 text-xs text-red-400">{dtError}</p>}
           </Field>
         </Section>
 
@@ -2728,48 +2751,33 @@ export default function Settings() {
         </Section>
 
         <Section
-          id="sec-thinking-default"
-          title="Default thinking level"
-          description="The thinking level used when you pick a model. Falls back to the model's lowest level when it doesn't support the chosen one; per-model selections in the chat override this. Saves automatically."
+          id="sec-toon"
+          title="Reply style"
+          description="How much the agent says, and how its tool results are encoded on the way to the model."
         >
-          <div className="flex flex-col gap-2">
-            <select
-              value={defThinking}
-              disabled={dtSaving}
-              onChange={(e) => void saveDefaultThinking(e.target.value)}
-              className="w-full min-w-0 max-w-xs rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text outline-none transition-colors focus:border-subtle disabled:opacity-60"
-            >
-              <option value="">Lowest</option>
-              <option value="off">Off</option>
-              <option value="low">Low</option>
-              <option value="medium">Medium</option>
-              <option value="high">High</option>
-              <option value="xhigh">XHigh</option>
-              <option value="max">Max</option>
-            </select>
-            <div className="flex items-center gap-2 text-xs">
-              {dtSaved && (
-                <span className="flex items-center gap-1 text-emerald-500">
-                  <IconCheck className="h-3.5 w-3.5" /> Saved
-                </span>
-              )}
-              {dtError && <span className="text-red-400">{dtError}</span>}
+          <div className="flex flex-col gap-4">
+            <div>
+              <div className="text-sm text-text">TOON</div>
+              <p className="mt-0.5 text-xs text-subtle">
+                Encode tool results as TOON — a compact, token-efficient format — when feeding
+                them to the model. The chat keeps showing the original JSON either way.
+              </p>
+              <div className="mt-2">
+                <ToonControl />
+              </div>
+            </div>
+            {/* Keeps its own id: the settings search jumps straight here. */}
+            <div id="sec-caveman">
+              <div className="text-sm text-text">Caveman mode</div>
+              <p className="mt-0.5 text-xs text-subtle">
+                Terse replies: answer first, no fluff, and code, paths, numbers and errors kept
+                verbatim. Security warnings and destructive actions still use full sentences.
+              </p>
+              <div className="mt-2">
+                <CavemanControl />
+              </div>
             </div>
           </div>
-        </Section>
-        <Section
-          id="sec-toon"
-          title="TOON"
-          description="Encode tool results as TOON — a compact, token-efficient format — when feeding them to the model. The chat keeps showing the original JSON either way."
-        >
-          <ToonControl />
-        </Section>
-        <Section
-          id="sec-caveman"
-          title="Caveman mode"
-          description="Terse replies: answer first, no fluff, and code, paths, numbers and errors kept verbatim. Security warnings and destructive actions still use full sentences."
-        >
-          <CavemanControl />
         </Section>
         <Section
           id="sec-turn-timeouts"

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,19 +19,64 @@ type PlanDocument struct {
 	Features       []PlanFeature    `json:"features"`
 	Invariants     []string         `json:"invariants"`
 	Checkpoints    []PlanCheckpoint `json:"checkpoints"`
-	EstimatedTurns int              `json:"estimated_turns"`
+	EstimatedTurns flexInt          `json:"estimated_turns"`
 }
 
 type PlanFeature struct {
 	ID          string   `json:"id"`
 	Description string   `json:"description"`
 	DependsOn   []string `json:"depends_on,omitempty"`
+	Status      string   `json:"status,omitempty"`
 }
 
 type PlanCheckpoint struct {
-	Step         int    `json:"step"`
-	Action       string `json:"action"`
-	Verification string `json:"verification"`
+	Step         flexInt `json:"step"`
+	Action       string  `json:"action"`
+	Verification string  `json:"verification"`
+}
+
+// flexInt accepts a JSON number or a numeric string. Models send both —
+// `"step": 1` and `"step": "1"` — and a plan is worth more than the quoting of
+// a counter: rejecting the whole document over it costs a model round trip and
+// loses the plan. Anything unparseable reads as zero, so the field's own
+// validation still reports it.
+type flexInt int
+
+func (n *flexInt) UnmarshalJSON(b []byte) error {
+	var i int
+	if err := json.Unmarshal(b, &i); err == nil {
+		*n = flexInt(i)
+		return nil
+	}
+	var s string
+	if err := json.Unmarshal(b, &s); err == nil {
+		*n = flexInt(firstIntIn(s))
+		return nil
+	}
+	*n = 0
+	return nil
+}
+
+// firstIntIn pulls the first run of digits out of a string, so "3" and
+// "Step 3" both read as 3.
+func firstIntIn(s string) int {
+	start := -1
+	for i := 0; i <= len(s); i++ {
+		if i < len(s) && s[i] >= '0' && s[i] <= '9' {
+			if start < 0 {
+				start = i
+			}
+			continue
+		}
+		if start >= 0 {
+			n, err := strconv.Atoi(s[start:i])
+			if err != nil {
+				return 0
+			}
+			return n
+		}
+	}
+	return 0
 }
 
 // planPrompt is the lightweight planner's system prompt: minimal context,
@@ -123,7 +169,7 @@ func canonicalPlan(raw string) (string, error) {
 	}
 	for i := range doc.Checkpoints {
 		if doc.Checkpoints[i].Step == 0 {
-			doc.Checkpoints[i].Step = i + 1
+			doc.Checkpoints[i].Step = flexInt(i + 1)
 		}
 	}
 	out, err := json.Marshal(doc)

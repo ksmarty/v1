@@ -1939,19 +1939,20 @@ type planDocument struct {
 	Features       []planFeat  `json:"features"`
 	Invariants     []string    `json:"invariants"`
 	Checkpoints    []planCheck `json:"checkpoints"`
-	EstimatedTurns int         `json:"estimated_turns"`
+	EstimatedTurns flexInt     `json:"estimated_turns"`
 }
 
 type planFeat struct {
 	ID          string   `json:"id"`
 	Description string   `json:"description"`
 	DependsOn   []string `json:"depends_on"`
+	Status      string   `json:"status"`
 }
 
 type planCheck struct {
-	Step         int    `json:"step"`
-	Action       string `json:"action"`
-	Verification string `json:"verification"`
+	Step         flexInt `json:"step"`
+	Action       string  `json:"action"`
+	Verification string  `json:"verification"`
 }
 
 // validatePlan checks a plan against its schema and returns a structured
