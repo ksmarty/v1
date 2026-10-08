@@ -11,6 +11,7 @@ import type {
 import { errMsg, randomId } from '../utils';
 import { PERMISSION_MODES } from '../permissions';
 import { Button, Dialog, Field, Input, SaveRow, Spinner } from './ui';
+import CodeEditor from './CodeEditor';
 import Markdown from './Markdown';
 import NewExtensionDialog from './NewExtensionDialog';
 import { IconCheck, IconExternalLink, IconFlask, IconPencil, IconX } from './icons';
@@ -1127,63 +1128,68 @@ function ToolSettings({
           align="top"
         >
           <div className="flex h-full min-h-0 flex-col gap-3">
-            <div className="flex shrink-0 flex-wrap items-end gap-2">
-            <div className="w-40">
-              <Field label="Id">
-                <Input
-                  value={extEditor.id}
-                  onChange={(e) => setExtEditor({ ...extEditor, id: e.target.value })}
-                  placeholder="my-extension"
-                  autoComplete="off"
-                  disabled={!extEditor.isNew}
-                />
-              </Field>
+            {/* Fields stack on a phone: side by side, a fixed-width Id leaves the
+                description too narrow to read what you typed. */}
+            <div className="flex shrink-0 flex-col gap-2 sm:flex-row sm:items-end">
+              <div className="sm:w-40">
+                <Field label="Id">
+                  <Input
+                    value={extEditor.id}
+                    onChange={(e) => setExtEditor({ ...extEditor, id: e.target.value })}
+                    placeholder="my-extension"
+                    autoComplete="off"
+                    disabled={!extEditor.isNew}
+                  />
+                </Field>
+              </div>
+              <div className="min-w-0 flex-1">
+                <Field label="Description">
+                  <Input
+                    value={extEditor.description}
+                    onChange={(e) => setExtEditor({ ...extEditor, description: e.target.value })}
+                    placeholder="What this extension does"
+                    autoComplete="off"
+                  />
+                </Field>
+              </div>
             </div>
-            <div className="min-w-0 flex-1">
-              <Field label="Description">
-                <Input
-                  value={extEditor.description}
-                  onChange={(e) => setExtEditor({ ...extEditor, description: e.target.value })}
-                  placeholder="What this extension does"
-                  autoComplete="off"
-                />
-              </Field>
-            </div>
-            <Button
-              variant="outline"
-              className="h-[42px] shrink-0 px-3 text-xs sm:h-[38px]"
-              disabled={extBusy || extEditor.id.trim() === '' || extEditor.source.trim() === ''}
-              onClick={() => void saveExtension()}
-            >
-              {extBusy ? <Spinner className="h-4 w-4" /> : 'Save'}
-            </Button>
-            <Button
-              variant="outline"
-              className="h-[42px] shrink-0 px-3 text-xs sm:h-[38px]"
-              onClick={() => {
-                setExtEditor(null);
-                setExtError(null);
-              }}
-            >
-              Cancel
-            </Button>
-            {!extEditor.isNew && (
+            <div className="flex shrink-0 items-center gap-2">
               <Button
                 variant="outline"
-                className="h-[42px] shrink-0 px-3 text-xs text-red-400 sm:h-[38px]"
-                disabled={extBusy}
-                onClick={() => void removeExtension(extEditor.id)}
+                className="h-8 px-3 text-xs"
+                disabled={extBusy || extEditor.id.trim() === '' || extEditor.source.trim() === ''}
+                onClick={() => void saveExtension()}
               >
-                Delete
+                {extBusy ? <Spinner className="h-4 w-4" /> : 'Save'}
               </Button>
-            )}
-          </div>
-          <textarea
-            value={extEditor.source}
-            onChange={(e) => setExtEditor({ ...extEditor, source: e.target.value })}
-            spellCheck={false}
-            className="min-h-0 flex-1 resize-none rounded-lg border border-border bg-surface px-3 py-2 font-mono text-[12px] leading-relaxed text-text outline-none focus:border-accent"
-          />
+              <Button
+                variant="outline"
+                className="h-8 px-3 text-xs"
+                onClick={() => {
+                  setExtEditor(null);
+                  setExtError(null);
+                }}
+              >
+                Cancel
+              </Button>
+              {!extEditor.isNew && (
+                <Button
+                  variant="outline"
+                  className="h-8 px-3 text-xs text-red-400"
+                  disabled={extBusy}
+                  onClick={() => void removeExtension(extEditor.id)}
+                >
+                  Delete
+                </Button>
+              )}
+            </div>
+            <div className="min-h-0 flex-1 overflow-hidden rounded-lg border border-border bg-surface">
+              <CodeEditor
+                value={extEditor.source}
+                onChange={(v) => setExtEditor({ ...extEditor, source: v })}
+                path={`${extEditor.id.trim() || 'extension'}.js`}
+              />
+            </div>
           </div>
         </Dialog>
       )}

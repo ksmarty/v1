@@ -432,8 +432,14 @@ func (s *Server) handleChatRetry(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	// Re-run the last user turn with its stored model, falling back to the
-	// current client model when the stored message has none.
+	// Re-run the last user turn. The client's currently selected model wins over
+	// the one stored on the message: a retry is usually a reaction to whatever the
+	// last attempt just did, so switching model and retrying has to actually
+	// switch. An absent model keeps the stored one.
+	model := r.URL.Query().Get("model")
+	if model == "" {
+		model = last.Model
+	}
 	_, isPlan := planCommand(last.Content)
 	params := agent.ChatParams{
 		Store:        s.st,
@@ -442,9 +448,9 @@ func (s *Server) handleChatRetry(w http.ResponseWriter, r *http.Request) {
 		Message:      last.Content,
 		SessionID:    sessionID,
 		Attachments:  agent.ParseAttachments(last.Attachments),
-		Model:        last.Model,
+		Model:        model,
 		LastUserID:   last.ID,
-		Vision:       s.modelSupportsImages(userID, providerID, last.Model),
+		Vision:       s.modelSupportsImages(userID, providerID, model),
 		SkipSnapshot: true,
 		PlanMode:     isPlan,
 	}

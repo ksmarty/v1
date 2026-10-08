@@ -683,6 +683,7 @@ export function retryChat(
   projectId: string,
   sessionId: string,
   providerId: string,
+  model: string,
   onEvent: (ev: ChatEvent) => void,
   signal: AbortSignal,
 ): Promise<void> {
@@ -690,8 +691,16 @@ export function retryChat(
   // this the server falls back to the effective single-provider key, so a
   // provider whose key was just replaced would keep being called with the old
   // one.
+  //
+  // `model` overrides the model stored on the message. A retry is usually a
+  // reaction to the error the last attempt produced, so it should run on
+  // whatever the user has selected now — switching model and hitting retry has
+  // to actually switch. An empty string keeps the stored model, which is what a
+  // silent resume wants: it continues the same turn rather than starting a new
+  // attempt.
   const query = new URLSearchParams({ sessionId });
   if (providerId) query.set('providerId', providerId);
+  if (model) query.set('model', model);
   return streamChatEvents(
     `/api/projects/${projectId}/chat/retry?${query.toString()}`,
     undefined,
