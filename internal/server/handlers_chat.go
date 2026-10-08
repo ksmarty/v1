@@ -303,7 +303,10 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &body) {
 		return
 	}
-	if body.Message == "" {
+	// A turn needs something to act on, but an attachment is enough: sending a
+	// screenshot with no comment is a normal way to ask. The model still gets a
+	// user message — the attachment parts carry it.
+	if body.Message == "" && len(body.Attachments) == 0 {
 		writeError(w, http.StatusBadRequest, "message is required")
 		return
 	}

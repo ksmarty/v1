@@ -3822,7 +3822,9 @@ export default function ChatPane({
   const sendText = useCallback(
     (text: string) => {
       const trimmed = text.trim();
-      if (!trimmed || streaming || !llmReady || !modelOverride) return;
+      // An attachment on its own is a complete turn — the transcript shows the
+      // file with no caption — so only refuse when there is nothing at all.
+      if ((!trimmed && attachments.length === 0) || streaming || !llmReady || !modelOverride) return;
       setInput('');
       setAskPrompt(null); // a new turn supersedes any pending question
       const atts = attachments.length > 0 ? [...attachments] : undefined;
@@ -4580,7 +4582,7 @@ export default function ChatPane({
       disabled={!hasModel}
       aria-label="Queue for the next turn"
       title="Queue — waits for the next turn instead of steering this run"
-      className="h-8! w-8! shrink-0 md:h-9! md:w-9!"
+      className="h-8! w-8! shrink-0 bg-primary text-primary-text hover:opacity-90 hover:text-primary-text disabled:bg-border disabled:text-faint md:h-9! md:w-9!"
     >
       <IconList className="h-4 w-4" />
     </IconButton>
@@ -4588,7 +4590,7 @@ export default function ChatPane({
   const sendButton = (
     <IconButton
       onClick={() => void send()}
-      disabled={!input.trim() || !hasModel}
+      disabled={(!input.trim() && attachments.length === 0) || !hasModel}
       aria-label={streaming ? 'Steer the running turn' : 'Send message'}
       title={
         streaming

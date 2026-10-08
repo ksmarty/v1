@@ -70,7 +70,12 @@ func userMessage(content string, atts []Attachment) llm.Message {
 	if len(atts) == 0 {
 		return llm.Message{Role: "user", Content: content}
 	}
-	parts := []any{textPart(content)}
+	parts := []any{}
+	// An empty text part is a rejected content block, not a harmless no-op, so a
+	// turn carrying only an attachment omits it (see harnessUserContent).
+	if content != "" {
+		parts = append(parts, textPart(content))
+	}
 	for _, a := range atts {
 		switch a.Kind {
 		case "image":

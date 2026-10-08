@@ -91,7 +91,13 @@ func harnessUserContent(text string, atts []agent.Attachment) any {
 	if len(atts) == 0 {
 		return text
 	}
-	parts := []harness.InputPart{{Type: "text", Text: text}}
+	// An empty text part is omitted rather than sent as "": providers reject an
+	// empty text block (Anthropic is explicit that they must be non-empty), and a
+	// turn carrying only an attachment has nothing to put in it.
+	parts := []harness.InputPart{}
+	if text != "" {
+		parts = append(parts, harness.InputPart{Type: "text", Text: text})
+	}
 	for _, a := range atts {
 		if a.Kind == "image" {
 			// Image bytes are base64 and hold no control characters, so the
