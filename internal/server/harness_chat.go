@@ -680,6 +680,47 @@ func entryUsage(entry json.RawMessage) *harness.Usage {
 	return out
 }
 
+// contextTokens is a round's context-window fill, counted exactly as pi counts
+// it (pi-ai's calculateContextTokens): the provider's own total when it reports
+// one, otherwise input + output + both cache figures. `input` is only the
+// uncached prompt, so summing Input+Output omits the prompt served from cache —
+// on a long conversation, most of what the model actually read.
+func contextTokens(u *harness.Usage) int64 {
+	if u == nil {
+		return 0
+	}
+	if u.TotalTokens > 0 {
+		return u.TotalTokens
+	}
+	return u.Input + u.Output + u.CacheRead + u.CacheWrite
+}
+
+// harnessUsageJSON renders a round's usage in the shape the built-in loop stores
+// (agent.Usage), so the client's token and cost line and the context meter read
+// both paths identically.
+func harnessUsageJSON(u *harness.Usage, model string) string {
+	if u == nil {
+		return ""
+	}
+	out := map[string]any{
+		"input":   u.Input,
+		"output":  u.Output,
+		"model":   model,
+		"context": contextTokens(u),
+	}
+	if u.CacheRead > 0 {
+		out["cached"] = u.CacheRead
+	}
+	if u.Cost != nil && u.Cost.Total != nil {
+		out["cost"] = *u.Cost.Total
+	}
+	b, err := json.Marshal(out)
+	if err != nil {
+		return ""
+	}
+	return string(b)
+}
+
 // consumeHarnessTurn translates the sidecar's agent events into v1's SSE
 // events until the run ends.
 func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge, sidecarID string, q *harness.EventQueue, runner *harnessToolRunner, params agent.ChatParams, model string, emit func(agent.ChatEvent)) (*agent.TurnResult, error) {
@@ -695,11 +736,17 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge,
 	// tool_json; set when a round commits and consumed by persist.
 	var toolJSON string
 
-	persist := func() error {
+	persist := func(round *harness.Usage) error {
 		if text.Len() == 0 && reasoning.Len() == 0 && toolJSON == "" {
 			return nil
 		}
-		_, err := s.st.AddMessage(params.Project.ID, params.SessionID, "assistant", text.String(), toolJSON, model, reasoning.String(), "", "")
+		// The row carries its own round's usage, as the built-in loop's does. The
+		// context meter reads the newest assistant row's recorded context to report
+		// the window fill, and the client reads the same row for its token and cost
+		// line. Without it both fall back to counting the stored transcript, which
+		// on this path never shrinks when pi-durable folds older entries into a
+		// summary — so the meter reported a fill the provider never saw.
+		_, err := s.st.AddMessage(params.Project.ID, params.SessionID, "assistant", text.String(), toolJSON, model, reasoning.String(), harnessUsageJSON(round, model), "")
 		text.Reset()
 		reasoning.Reset()
 		toolJSON = ""
@@ -719,7 +766,7 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge,
 			cost += *u.Cost.Total
 			hasCost = true
 		}
-		lastContext = u.Input + u.Output
+		lastContext = contextTokens(u)
 	}
 	// The partial's usage, held until the round commits. pi-durable commits the
 	// in-flight partial at most once per progress.partialIntervalMs, so a fast
@@ -801,7 +848,7 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge,
 				// Keep what the model already produced; the rest is abandoned with
 				// the generation, exactly as the built-in loop drops its in-flight
 				// partial on a stop.
-				_ = persist()
+				_ = persist(partial)
 				return turn, context.Canceled
 			}
 			if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
@@ -809,7 +856,7 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge,
 			}
 			// The stream ended — the sidecar died, or the aborted turn finished
 			// winding down. Keep whatever the model already produced.
-			_ = persist()
+			_ = persist(partial)
 			return turn, err
 		}
 		done := false
@@ -848,14 +895,15 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge,
 				// A round that called tools carries them on the row, the way the
 				// built-in loop stores res.ToolCalls (agent.go:508).
 				toolJSON = entryToolJSON(ev.Entry)
-				if err := persist(); err != nil {
-					return turn, err
-				}
 				u := entryUsage(ev.Entry)
 				if u == nil {
 					// The partial is a fallback for a round that never committed
 					// (aborted or faulted after streaming).
 					u = partial
+				}
+				// Persist with the usage in hand, so the row records it.
+				if err := persist(u); err != nil {
+					return turn, err
 				}
 				addUsage(u)
 				partial = nil
@@ -908,7 +956,7 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge,
 				emit(agent.ChatEvent{Type: "info", Text: fmt.Sprintf("The model call failed; retrying automatically (attempt %d).", ev.Attempt)})
 			case "task_failed":
 				// The generation faulted (provider error, retries exhausted).
-				_ = persist()
+				_ = persist(partial)
 				return turn, errors.New(ev.ErrorMessage())
 			case "run_end":
 				done = true
@@ -918,7 +966,7 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge,
 			break
 		}
 	}
-	if err := persist(); err != nil {
+	if err := persist(partial); err != nil {
 		return turn, err
 	}
 	if in > 0 || out > 0 {

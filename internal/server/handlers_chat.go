@@ -828,12 +828,15 @@ func (s *Server) handleChatStop(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleContextUsage reports the context fill of the project's chat: tokens
-// used vs the budget, plus the compaction threshold. Used is the larger of the
-// byte-based estimate of the live history (excluding messages covered by a
-// compaction snapshot) and the final round's provider-reported prompt size
-// from the newest assistant message that recorded one — the estimate can't
-// account for the system prompt, tool definitions, or TOON re-encoding, so it
-// understates what the provider actually saw.
+// used vs the budget, plus the compaction threshold.
+//
+// Used is the newest assistant message's provider-reported context — the size
+// of the last request the provider actually saw — plus an estimate of whatever
+// was appended since. The byte-based estimate of the stored history is only the
+// fallback for a session with no usage yet: it cannot see the system prompt or
+// the tool definitions, and on the durable-harness path it also cannot see that
+// pi-durable folded older entries into a summary, so counting every stored row
+// reports a fill the provider never saw.
 func (s *Server) handleContextUsage(w http.ResponseWriter, r *http.Request) {
 	p := s.projectOr404(w, r)
 	if p == nil {
@@ -855,6 +858,9 @@ func (s *Server) handleContextUsage(w http.ResponseWriter, r *http.Request) {
 	// byte-based estimate below can't see (system prompt, tool definitions,
 	// TOON re-encoding) and so tends to understate.
 	var lastCtx int64
+	// Index in msgs of the message that recorded lastCtx, so the tokens appended
+	// after that request can be estimated on top of it.
+	var lastCtxIdx int
 	for _, m := range stored {
 		if m.ID <= coveredID {
 			continue
@@ -878,6 +884,7 @@ func (s *Server) handleContextUsage(w http.ResponseWriter, r *http.Request) {
 				}
 				if json.Unmarshal([]byte(m.Usage), &u) == nil && u.Context > 0 {
 					lastCtx = u.Context
+					lastCtxIdx = len(msgs)
 				}
 			}
 			msgs = append(msgs, msg)
@@ -931,9 +938,11 @@ func (s *Server) handleContextUsage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	threshold := s.contextThreshold(userID)
-	used := agent.EstimateTokens(msgs)
-	if lastCtx > int64(used) {
-		used = int(lastCtx)
+	var used int
+	if lastCtx > 0 {
+		used = int(lastCtx) + agent.EstimateTokens(msgs[lastCtxIdx+1:])
+	} else {
+		used = agent.EstimateTokens(msgs)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"used":      used,
