@@ -106,6 +106,19 @@ func (p ChatParams) ToolSet() []llm.Tool {
 		}
 		all = filtered
 	}
+	// Yolo means "do not check in": ask_user is not offered at all, so the
+	// model cannot stall a turn waiting for an answer the user asked not to be
+	// asked for. The prompt says the same thing in words; this makes it
+	// structural rather than advisory.
+	if p.ApprovalMode == "yolo" {
+		filtered := all[:0]
+		for _, t := range all {
+			if t.Function.Name != "ask_user" {
+				filtered = append(filtered, t)
+			}
+		}
+		all = filtered
+	}
 	if p.PlanMode {
 		all = planSafeTools(all)
 	}
@@ -139,9 +152,13 @@ type ChatParams struct {
 	// DisabledTools are builtin tool names the user turned off in Settings;
 	// they are neither advertised to the model nor executable.
 	DisabledTools map[string]bool
-	Caveman       bool            // terse "caveman" response style (LLM settings)
-	Steer         func() []string // drains mid-run user messages, injected next round
-	Background    *BackgroundManager
+	Caveman       bool // terse "caveman" response style (LLM settings)
+	// ApprovalMode is the user's permission mode: "ask", "auto" or "yolo".
+	// Tool approvals are enforced by the permission resolver; this only tells
+	// the model whether asking questions is still wanted.
+	ApprovalMode string
+	Steer        func() []string // drains mid-run user messages, injected next round
+	Background   *BackgroundManager
 	// PollBackground returns the session's finished background commands so the
 	// loop can inject their results into the conversation.
 	PollBackground func() []BackgroundResult
@@ -214,6 +231,16 @@ Still use your tools and get the job done.`
 // the project as a brand-new start, not an existing codebase to fit into.
 const freshProjectNote = `This is a brand-new project: this is the very first conversation and nothing has been built yet — the workspace holds nothing but a scaffold README at most. The rule about preferring the existing project structure does not apply here. Start from scratch: pick a sensible stack, scaffold the project, and build toward what the user asked for. If they already described what they want, begin building right away instead of asking clarifying questions first.`
 
+// The approval modes differ in more than whether tool calls are gated, and that
+// part is enforced by the permission resolver rather than described to the
+// model. What the model has to know is whether asking *questions* is still
+// wanted — without this, "don't ask for approvals" and "yolo" behave
+// identically, which is exactly what they used to do.
+const (
+	approvalAutoNote = `Approval mode is "don't ask for approvals": tool calls run without asking you first. That covers tool approvals only — ask_user still works and you should use it when a decision is genuinely the user's to make (which of two approaches they want, a name, a scope, a preference you cannot infer). Do not use it to confirm a step you were already asked to take.`
+	approvalYoloNote = `Approval mode is yolo: the user has asked you not to check in. Do not ask questions — decide for yourself, state the decision and the reason in one line, and carry on. ask_user is not available to you in this mode. Nothing else is loosened: irreversible or destructive actions still get a full-sentence warning before you take them.`
+)
+
 // freshProject reports whether the workspace is still a blank slate: empty,
 // or holding nothing but the scaffold README.md.
 func freshProject(dir string) bool {
@@ -258,6 +285,12 @@ func BuildSystemPrompt(p *ChatParams) string {
 	}
 	if p.PlanMode {
 		system += "\n\n" + planModeNote
+	}
+	switch p.ApprovalMode {
+	case "auto":
+		system += "\n\n" + approvalAutoNote
+	case "yolo":
+		system += "\n\n" + approvalYoloNote
 	}
 	if p.Caveman {
 		system += "\n\n" + cavemanNote
