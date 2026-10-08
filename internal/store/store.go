@@ -100,6 +100,7 @@ CREATE TABLE IF NOT EXISTS messages (
   created_at INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_messages_project_id ON messages(project_id, id);
+CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, id);
 CREATE TABLE IF NOT EXISTS chat_sessions (
   id TEXT PRIMARY KEY,
   project_id TEXT NOT NULL,
@@ -1243,11 +1244,20 @@ type ChatSession struct {
 	Name      string `json:"name"`
 	CreatedAt int64  `json:"createdAt"`
 	Archived  bool   `json:"archived"`
+	// LastTurnAt is when the agent last finished a turn here, 0 if it never has.
+	// The dashboard shows this instead of CreatedAt: for a session that has been
+	// used for weeks, when it was created says nothing about when it was last
+	// worked in.
+	LastTurnAt int64 `json:"lastTurnAt"`
 }
 
 // ListSessions returns a project's chat sessions, oldest first.
 func (s *Store) ListSessions(projectID string) ([]ChatSession, error) {
-	rows, err := s.db.Query(`SELECT id, name, created_at, archived FROM chat_sessions WHERE project_id = ? ORDER BY created_at, id`, projectID)
+	rows, err := s.db.Query(`
+		SELECT s.id, s.name, s.created_at, s.archived,
+		       COALESCE((SELECT MAX(m.created_at) FROM messages m
+		                  WHERE m.session_id = s.id AND m.role = 'assistant'), 0)
+		  FROM chat_sessions s WHERE s.project_id = ? ORDER BY s.created_at, s.id`, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -1256,7 +1266,7 @@ func (s *Store) ListSessions(projectID string) ([]ChatSession, error) {
 	for rows.Next() {
 		var cs ChatSession
 		var arch int
-		if err := rows.Scan(&cs.ID, &cs.Name, &cs.CreatedAt, &arch); err != nil {
+		if err := rows.Scan(&cs.ID, &cs.Name, &cs.CreatedAt, &arch, &cs.LastTurnAt); err != nil {
 			return nil, err
 		}
 		cs.Archived = arch != 0

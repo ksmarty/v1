@@ -18,6 +18,15 @@ import {
   IconTrash,
 } from '../components/icons';
 
+// When a session row shows a time it is when the agent last finished a turn, not
+// when the thread was created: on a project used for weeks, the creation date
+// says nothing about which session was last worked in. A session that has never
+// had a turn falls back to its creation time.
+function lastTurnISO(s: ChatSession): string {
+  const secs = s.lastTurnAt && s.lastTurnAt > 0 ? s.lastTurnAt : s.createdAt;
+  return new Date(secs * 1000).toISOString();
+}
+
 function CardMenu({ onNewSession, onDelete }: { onNewSession: () => void; onDelete: () => void }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -594,8 +603,16 @@ export default function Projects() {
                           className="flex items-center gap-2 px-4 py-2.5 transition-colors hover:bg-bg/60"
                         >
                           <IconChat className="h-3.5 w-3.5 shrink-0 text-faint" />
-                          <span className="min-w-0 flex-1 truncate text-sm text-dim">{s.name}</span>
-                          {activeSessionIds.has(s.id) && (
+                          <span
+                            className={`min-w-0 flex-1 truncate text-sm ${
+                              activeSessionIds.has(s.id) ? 'text-accent' : 'text-dim'
+                            }`}
+                          >
+                            {s.name}
+                          </span>
+                          {activeSessionIds.has(s.id) ? (
+                            // The spinner says everything a timestamp would and more,
+                            // so it replaces the time rather than sitting beside it.
                             <span
                               className="inline-flex shrink-0 items-center gap-1 text-[11px] font-medium text-accent"
                               title="A chat turn is running in this session"
@@ -603,10 +620,11 @@ export default function Projects() {
                               <Spinner className="h-3 w-3" />
                               running
                             </span>
+                          ) : (
+                            <span className="shrink-0 text-xs text-faint">
+                              {timeAgo(lastTurnISO(s))}
+                            </span>
                           )}
-                          <span className="shrink-0 text-xs text-faint">
-                            {timeAgo(new Date(s.createdAt * 1000).toISOString())}
-                          </span>
                         </Link>
                       </li>
                     ))}

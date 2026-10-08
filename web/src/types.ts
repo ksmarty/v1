@@ -21,6 +21,8 @@ export interface ChatSession {
   id: string;
   name: string;
   createdAt: number;
+  /** Unix seconds when the agent last finished a turn here; 0 if it never has. */
+  lastTurnAt?: number;
   archived?: boolean;
 }
 
