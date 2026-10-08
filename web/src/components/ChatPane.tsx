@@ -2379,6 +2379,9 @@ export default function ChatPane({
   // app kills the connection silently — would never be re-attached and the chat
   // would sit on "Generation still running…" until it was remounted.
   const [watchTick, setWatchTick] = useState(0);
+  // Set when the app becomes visible again. The transcript is re-checked on that
+  // tick even though no tick ever saw the run start — see the status poll below.
+  const returnedRef = useRef(false);
   // Context fill (tokens used vs budget) for the ring button + popup. The
   // ring only renders once a definitive value is in — a spinner shows while
   // the model-specific budget is still loading, so it never jumps between
@@ -3032,6 +3035,23 @@ export default function ChatPane({
     loadContext();
   }, [loadContext]);
 
+  // Auto-scroll on new content, but only while the user is already at (or near)
+  // the bottom — otherwise reading history during a stream gets yanked around.
+  // Declared here because the run-status effect below re-pins on return.
+  const nearBottomRef = useRef(true);
+  // The scrollTop our last pin landed on. Sticking is judged against this rather
+  // than against the distance to the bottom: a pin's own scroll event can arrive
+  // after React has committed another chunk of the stream, so measuring the gap
+  // there reads as "the user scrolled away" and disengages the pin partway
+  // through a run. A position at or below the last pin is either that pin or the
+  // user moving further down; only a position above it means they left.
+  const pinnedTopRef = useRef(0);
+  const pinBottom = useCallback((el: HTMLElement) => {
+    nearBottomRef.current = true;
+    el.scrollTop = el.scrollHeight;
+    pinnedTopRef.current = el.scrollTop;
+  }, []);
+
   // While a generation runs server-side (it survives client disconnects),
   // poll the run status: if a run is active and we are not already streaming
   // it, attach to its live stream — the chat then behaves exactly as if we
@@ -3050,7 +3070,13 @@ export default function ChatPane({
         const st = await api.chatStatus(projectId, sessionId);
         if (cancelled) return;
         setRunActive(st.running);
-        if (wasRunning && !st.running && !streaming && !watchRef.current) {
+        // A return from the background counts as "was running". The app can be
+        // suspended for an entire run, so no tick ever sees it start, and the
+        // transcript would keep missing the final tokens until the session was
+        // reopened.
+        const returned = returnedRef.current;
+        returnedRef.current = false;
+        if ((wasRunning || returned) && !st.running && !streaming && !watchRef.current) {
           void load(); // the run finished while we were away — fetch the rest
         }
         // A live run with nothing streaming it means the watch dropped, or never
@@ -3067,7 +3093,14 @@ export default function ChatPane({
     };
     void tick();
     const onVisible = () => {
-      if (!document.hidden) void tick();
+      if (document.hidden) return;
+      // Coming back to the app: re-pin the thread to the bottom, which is where
+      // a returning reader expects to be, and flag the tick to re-check the
+      // transcript even if it never saw the run.
+      returnedRef.current = true;
+      const el = scrollRef.current;
+      if (el) pinBottom(el);
+      void tick();
     };
     document.addEventListener('visibilitychange', onVisible);
     return () => {
@@ -3075,7 +3108,7 @@ export default function ChatPane({
       if (timer) window.clearTimeout(timer);
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [projectId, sessionId, load, refreshQueue, streaming, resuming]);
+  }, [projectId, sessionId, load, refreshQueue, streaming, resuming, pinBottom]);
 
   const [bgRunning, setBgRunning] = useState<string[]>([]);
 
@@ -3152,9 +3185,6 @@ export default function ChatPane({
     return (tag: string) => (tag[0] === '@' ? files.has(tag.slice(1)) : skills.has(tag.slice(1)));
   }, [fileList, skillList]);
 
-  // Auto-scroll on new content, but only while the user is already at (or near)
-  // the bottom — otherwise reading history during a stream gets yanked around.
-  const nearBottomRef = useRef(true);
   const [showJump, setShowJump] = useState(false);
   // Minimap: a dot strip with one dot per viewport "screen" of the thread
   // (messages are grouped by the screen their top falls into), so the strip
@@ -3216,9 +3246,12 @@ export default function ChatPane({
   const onScroll = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
-    const near = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
-    nearBottomRef.current = near;
-    setShowJump(!near);
+    const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
+    // Still near the bottom, or at/below where we last pinned — so the event is
+    // ours, or the user heading further down. Either way, keep following.
+    const stuck = gap < 80 || el.scrollTop >= pinnedTopRef.current - 4;
+    nearBottomRef.current = stuck;
+    setShowJump(!stuck);
     if (mapOpen) updateCurrent();
   }, [mapOpen, updateCurrent]);
   useEffect(() => {
@@ -3261,21 +3294,24 @@ export default function ChatPane({
   const jumpToBottom = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
-    // Re-engage the sticky zone so streaming keeps pinning after the jump.
+    // Re-engage the sticky zone so streaming keeps pinning after the jump. The
+    // anchor is where we start from, not the target: a smooth scroll only moves
+    // down, so every event it fires has to count as "not moved up".
     nearBottomRef.current = true;
+    pinnedTopRef.current = el.scrollTop;
     el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
     // Images and late layout shifts can grow scrollHeight — re-pin once the
     // smooth scroll settles so we land on the true bottom.
     window.setTimeout(() => {
       const el2 = scrollRef.current;
-      if (el2 && nearBottomRef.current) el2.scrollTop = el2.scrollHeight;
+      if (el2 && nearBottomRef.current) pinBottom(el2);
     }, 350);
-  }, []);
+  }, [pinBottom]);
   useEffect(() => {
     const el = scrollRef.current;
     if (!el || !nearBottomRef.current) return;
     const pin = () => {
-      if (nearBottomRef.current) el.scrollTop = el.scrollHeight;
+      if (nearBottomRef.current) pinBottom(el);
     };
     pin();
     // scrollHeight can keep growing after new content (images, async layout)
@@ -3286,7 +3322,7 @@ export default function ChatPane({
       cancelAnimationFrame(raf);
       timers.forEach(clearTimeout);
     };
-  }, [items]);
+  }, [items, pinBottom]);
 
   // Auto-grow the input textarea (full height while expanded on mobile).
   useEffect(() => {
