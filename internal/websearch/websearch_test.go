@@ -29,7 +29,7 @@ func TestSearchParsesResults(t *testing.T) {
 		_, _ = w.Write([]byte(`{
 			"code": 200, "msg": null,
 			"data": { "_type": "SearchResponse", "webPages": { "value": [
-				{"name": "Go", "url": "https://go.dev", "snippet": "the language", "summary": "Go is a language.", "siteName": "go.dev", "dateLastCrawled": "2024-01-02"},
+				{"name": "Go", "url": "https://go.dev", "snippet": "the language", "summary": "Go is a language.", "siteName": "go.dev", "datePublished": "2024-01-02"},
 				{"name": "No URL", "url": "", "snippet": "dropped"}
 			] } }
 		}`))
@@ -53,6 +53,36 @@ func TestSearchParsesResults(t *testing.T) {
 	}
 	if results[0].URL != "https://go.dev" || results[0].Title != "Go" {
 		t.Fatalf("unexpected first result %+v", results[0])
+	}
+	// The live API dates results with datePublished; reading the wrong key here
+	// silently drops the date from every citation.
+	if results[0].Date != "2024-01-02" {
+		t.Fatalf("date = %q, want it read from datePublished", results[0].Date)
+	}
+}
+
+// The live API returns error codes as quoted strings while its success code is
+// a bare number. Decoding straight into an int fails on the quoted form and the
+// failure reads as "response is not JSON", which hides the real problem.
+func TestSearchAcceptsAQuotedErrorCode(t *testing.T) {
+	serve(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"code":"429","message":"too many requests"}`))
+	})
+	_, err := Search(context.Background(), "k", "q", 5)
+	if err == nil || !strings.Contains(err.Error(), "too many requests") {
+		t.Fatalf("a quoted error code should still surface the provider message, got %v", err)
+	}
+}
+
+// Error responses name the message field `message`, success responses use `msg`.
+func TestSearchReadsTheMessageField(t *testing.T) {
+	serve(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"code":"400","message":"The API KEY is missing"}`))
+	})
+	_, err := Search(context.Background(), "k", "q", 5)
+	if err == nil || !strings.Contains(err.Error(), "API KEY is missing") {
+		t.Fatalf("error should carry the provider message field, got %v", err)
 	}
 }
 

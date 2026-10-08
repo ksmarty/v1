@@ -26,6 +26,7 @@ import (
 	"v1/internal/llm"
 	"v1/internal/mcp"
 	"v1/internal/preview"
+	"v1/internal/sanitize"
 	"v1/internal/store"
 	"v1/internal/terminal"
 	"v1/internal/vercel"
@@ -563,9 +564,17 @@ func (s *Server) githubToken(userID string) string {
 // langSearchKey resolves the user's LangSearch API key. The web_search tool is
 // only offered when this is non-empty, so an unset key hides the tool entirely
 // rather than letting the model call something that cannot work.
+//
+// Reading the key also teaches the redactor its value: this runs before a turn
+// starts, so anything the agent later prints that contains the key is scrubbed
+// before it reaches the transcript or a provider.
 func (s *Server) langSearchKey(userID string) string {
 	v, _ := s.userSetting(userID, keyWebSearch)
-	return strings.TrimSpace(v)
+	v = strings.TrimSpace(v)
+	if v != "" {
+		sanitize.AddSecret(v)
+	}
+	return v
 }
 
 // systemPromptFor resolves the system prompt override a user has set (their

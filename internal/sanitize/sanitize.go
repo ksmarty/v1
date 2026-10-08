@@ -90,6 +90,24 @@ func SetSecrets(values ...string) {
 	secretMu.Unlock()
 }
 
+// AddSecret registers one more literal secret, for credentials learned after
+// startup — a per-user API key read from settings, say. SetSecrets replaces the
+// whole set; this adds to it.
+func AddSecret(v string) {
+	v = strings.TrimSpace(v)
+	if len(v) < minSecretLen {
+		return
+	}
+	secretMu.Lock()
+	defer secretMu.Unlock()
+	for _, existing := range secretValues {
+		if existing == v {
+			return
+		}
+	}
+	secretValues = append(secretValues, v)
+}
+
 // redact replaces credentials: first the literal values this process knows,
 // then anything matching a known credential format (which covers secrets v1
 // never sees, such as a key sitting in a project's .env).

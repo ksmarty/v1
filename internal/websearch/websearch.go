@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -80,26 +81,21 @@ func Search(ctx context.Context, apiKey, query string, count int) ([]Result, err
 	if err != nil {
 		return nil, err
 	}
-	switch resp.StatusCode {
-	case http.StatusOK:
-	case http.StatusUnauthorized, http.StatusForbidden:
-		return nil, fmt.Errorf("LangSearch rejected the API key (HTTP %d); replace it in Settings", resp.StatusCode)
-	default:
-		return nil, fmt.Errorf("LangSearch returned HTTP %d: %s", resp.StatusCode, Truncate(string(raw), 200))
-	}
-
+	// Parse before checking the status: the provider explains its refusals in
+	// the body, and that message is more useful than a bare status code.
 	var payload struct {
-		Code int    `json:"code"`
-		Msg  string `json:"msg"`
-		Data struct {
+		Code    jsonInt `json:"code"`
+		Msg     string  `json:"msg"`
+		Message string  `json:"message"`
+		Data    struct {
 			WebPages struct {
 				Value []struct {
-					Name            string `json:"name"`
-					URL             string `json:"url"`
-					Snippet         string `json:"snippet"`
-					Summary         string `json:"summary"`
-					SiteName        string `json:"siteName"`
-					DateLastCrawled string `json:"dateLastCrawled"`
+					Name          string `json:"name"`
+					URL           string `json:"url"`
+					Snippet       string `json:"snippet"`
+					Summary       string `json:"summary"`
+					SiteName      string `json:"siteName"`
+					DatePublished string `json:"datePublished"`
 				} `json:"value"`
 			} `json:"webPages"`
 		} `json:"data"`
@@ -107,14 +103,31 @@ func Search(ctx context.Context, apiKey, query string, count int) ([]Result, err
 	if err := json.Unmarshal(raw, &payload); err != nil {
 		return nil, fmt.Errorf("LangSearch returned a response that is not JSON: %w", err)
 	}
-	// The API reports success as 200; treat 0 as success too so a provider that
-	// omits the field does not read as an error.
+	// The API uses `msg` on some responses and `message` on others.
+	providerMsg := payload.Msg
+	if providerMsg == "" {
+		providerMsg = payload.Message
+	}
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+	case http.StatusUnauthorized, http.StatusForbidden:
+		return nil, fmt.Errorf("LangSearch rejected the API key (HTTP %d); replace it in Settings", resp.StatusCode)
+	default:
+		if providerMsg != "" {
+			return nil, fmt.Errorf("LangSearch returned HTTP %d: %s", resp.StatusCode, providerMsg)
+		}
+		return nil, fmt.Errorf("LangSearch returned HTTP %d: %s", resp.StatusCode, Truncate(string(raw), 200))
+	}
+
+	// Success is 200; treat 0 as success too so a provider that omits the field
+	// does not read as an error.
 	if payload.Code != 0 && payload.Code != 200 {
-		msg := payload.Msg
+		msg := providerMsg
 		if msg == "" {
 			msg = "no message"
 		}
-		return nil, fmt.Errorf("LangSearch error %d: %s", payload.Code, msg)
+		return nil, fmt.Errorf("LangSearch error %d: %s", int(payload.Code), msg)
 	}
 
 	out := make([]Result, 0, len(payload.Data.WebPages.Value))
@@ -128,10 +141,28 @@ func Search(ctx context.Context, apiKey, query string, count int) ([]Result, err
 			Snippet: p.Snippet,
 			Summary: p.Summary,
 			Site:    strings.TrimSpace(p.SiteName),
-			Date:    strings.TrimSpace(p.DateLastCrawled),
+			Date:    strings.TrimSpace(p.DatePublished),
 		})
 	}
 	return out, nil
+}
+
+// jsonInt accepts a number or a quoted number. The API returns its error codes
+// as strings ("401") but its success code as a number (200); decoding straight
+// into an int fails on the quoted form, which would report a clear provider
+// error as "response is not JSON". An unparseable value reads as 0, which is
+// treated as success — the HTTP status still guards that path.
+type jsonInt int
+
+func (n *jsonInt) UnmarshalJSON(b []byte) error {
+	s := strings.Trim(strings.TrimSpace(string(b)), `"`)
+	v, err := strconv.Atoi(s)
+	if err != nil {
+		*n = 0
+		return nil
+	}
+	*n = jsonInt(v)
+	return nil
 }
 
 // Format renders results for the model. Every entry carries its URL: an answer
@@ -153,7 +184,7 @@ func Format(query string, results []Result) string {
 			fmt.Fprintf(&b, "   %s\n", text)
 		}
 		if r.Date != "" {
-			fmt.Fprintf(&b, "   (crawled %s)\n", r.Date)
+			fmt.Fprintf(&b, "   (published %s)\n", r.Date)
 		}
 	}
 	return b.String()

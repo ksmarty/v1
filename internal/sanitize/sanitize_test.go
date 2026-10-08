@@ -1,6 +1,9 @@
 package sanitize
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestText(t *testing.T) {
 	cases := []struct{ in, want string }{
@@ -30,5 +33,30 @@ func TestText(t *testing.T) {
 	}
 	if _, changed := Scrub("dirty\x1b[1mtext"); !changed {
 		t.Error("Scrub should report changes on dirty text")
+	}
+}
+
+// A credential learned after startup — a per-user API key read from settings —
+// must be redacted too, and registering it must not drop the ones SetSecrets
+// installed. SetSecrets replaces the whole set, so the two have to compose.
+func TestAddSecretRedactsLaterValues(t *testing.T) {
+	SetSecrets("startup-secret-value")
+	t.Cleanup(func() { SetSecrets() })
+
+	AddSecret("sk-livekey000000000000000000000000")
+	AddSecret("  sk-livekey000000000000000000000000  ") // trimmed, and a no-op duplicate
+
+	got := Text("key sk-livekey000000000000000000000000 and startup-secret-value")
+	if strings.Contains(got, "livekey") {
+		t.Fatalf("a secret added after startup survived: %q", got)
+	}
+	if strings.Contains(got, "startup-secret-value") {
+		t.Fatalf("AddSecret dropped the startup secrets: %q", got)
+	}
+
+	// A short value is not a secret worth mangling prose over.
+	AddSecret("short")
+	if got := Text("this short text stays"); got != "this short text stays" {
+		t.Fatalf("a too-short value should be ignored: %q", got)
 	}
 }
