@@ -514,6 +514,61 @@ func entryToolCalls(entry json.RawMessage) []llm.ToolCall {
 // call that ends in an error (bad request, exhausted retries) still commits an
 // entry, with stopReason "error" and the reason in errorMessage; a call the
 // client aborted commits one with stopReason "aborted".
+// recordToolResult persists one tool result as its own "tool" row, tagged with
+// the id of the call it answers. The built-in loop writes these as it goes and
+// the durable harness has to as well: the UI pairs a call with its result by
+// that id and renders the result only when it finds the pairing.
+func (s *Server) recordToolResult(projectID, sessionID, callID, name, text string) error {
+	meta, err := json.Marshal(map[string]any{"tool_call_id": callID, "name": name})
+	if err != nil {
+		return err
+	}
+	_, err = s.st.AddMessage(projectID, sessionID, "tool", text, string(meta), "", "", "", "")
+	return err
+}
+
+// entryToolResult extracts the text and error flag of the tool result
+// pi-durable committed on an entry. A result arrives as its own "toolResult"
+// message rather than as assistant content, so entryText does not see it.
+func entryToolResult(entry json.RawMessage) (string, bool) {
+	if len(entry) == 0 {
+		return "", false
+	}
+	var rec struct {
+		Model []struct {
+			Role    string          `json:"role"`
+			Content json.RawMessage `json:"content"`
+			IsError bool            `json:"isError"`
+		} `json:"model"`
+	}
+	if err := json.Unmarshal(entry, &rec); err != nil {
+		return "", false
+	}
+	var text strings.Builder
+	isError := false
+	for _, m := range rec.Model {
+		if m.Role != "toolResult" {
+			continue
+		}
+		if m.IsError {
+			isError = true
+		}
+		var parts []struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		}
+		if err := json.Unmarshal(m.Content, &parts); err != nil {
+			continue
+		}
+		for _, part := range parts {
+			if part.Type == "text" {
+				text.WriteString(part.Text)
+			}
+		}
+	}
+	return text.String(), isError
+}
+
 func entryFailure(entry json.RawMessage) (msg string, aborted bool) {
 	if len(entry) == 0 {
 		return "", false
@@ -820,7 +875,22 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge,
 				// An absent entry means the tool task faulted or was orphaned;
 				// a tool that ran and failed is reported by its own runner.
 				res := runner.result(ev.ToolCallID)
-				emit(agent.ChatEvent{Type: "tool_end", Name: ev.ToolName, OK: ev.Entry != nil && !res.IsError, Detail: toolSummary(res.Text)})
+				text, isError := res.Text, res.IsError
+				if text == "" {
+					// A tool the sidecar ran itself — an extension's, or anything else
+					// Go did not execute — leaves the runner empty. Its result lives
+					// only on the entry pi-durable committed, and without it the call
+					// renders in the transcript with nothing behind it.
+					if t, e := entryToolResult(ev.Entry); t != "" || e {
+						text, isError = t, e
+					}
+				}
+				// Record the result the way the built-in loop does, so the UI can pair
+				// it with its call and still show it after a reload.
+				if err := s.recordToolResult(params.Project.ID, params.SessionID, ev.ToolCallID, ev.ToolName, text); err != nil {
+					log.Printf("chat: recording a tool result: %v", err)
+				}
+				emit(agent.ChatEvent{Type: "tool_end", Name: ev.ToolName, OK: ev.Entry != nil && !isError, Detail: toolSummary(text)})
 			case "compaction_start":
 				// pi-durable compacts its own transcript (threshold, overflow, or a
 				// manual request). The built-in loop compacts in memory without a

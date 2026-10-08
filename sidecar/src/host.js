@@ -362,7 +362,32 @@ class Sidecar {
 			wrapTool,
 			log,
 			delegate: (input, context) => this.delegate(input, context),
+			session: { rename: (name) => this.renameSession(name) },
 		};
+	}
+
+	/**
+	 * Renames the chat session an extension is running in.
+	 *
+	 * v1 owns the session name, so this goes through the same host tool the agent
+	 * uses rather than writing anything directly: the rename then lands in v1's
+	 * store and reaches the UI exactly as if the agent had made it.
+	 */
+	async renameSession(name) {
+		const trimmed = String(name ?? "").trim();
+		if (!trimmed) throw new Error("session.rename: a name is required");
+		const conversationId = this.conversationContext.getStore() ?? this.activeConversationId;
+		if (!conversationId) throw new Error("session.rename: no active turn to rename from");
+		const reply = await this.bridge.call("tool.call", {
+			tool: "set_session_name",
+			arguments: { name: trimmed },
+			callId: "extension-rename-" + Date.now(),
+			conversationId: String(conversationId),
+		});
+		if (reply?.isError) {
+			throw new Error(reply.text || "session.rename: the rename was rejected");
+		}
+		return trimmed;
 	}
 
 	/** What is loaded right now, for Go and the UI. */

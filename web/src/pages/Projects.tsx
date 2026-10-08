@@ -103,7 +103,10 @@ function NewProjectDialog({
         .then((s) => {
           setProviders(s.llm.providers ?? []);
           setProviderId(s.llm.providers?.[0]?.id ?? '');
-          setModel(s.llm.model);
+          // The default model, not the plain one: a new project should start on
+          // the model the user chose as their default, and this is the picker
+          // whose value rides along as the project's initialModel.
+          setModel(s.llm.defaultModel ?? s.llm.model);
           setBaseURL(s.llm.baseURL);
           setDefaultThinking(s.defaultThinking ?? '');
           setThinking(s.defaultThinking ?? '');

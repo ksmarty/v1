@@ -407,6 +407,9 @@ The api object provides:
 - pi.defineExtension(extension) - identity, used only to type the object
 - pi.log - a logger with log.info(message, fields) and log.error(...)
 - pi.delegate({ task }, context) - run a sub-agent, returning { text, toolCalls }
+- pi.session.rename(name) - rename the chat session this extension is running in
+  (v1 owns the name, so this goes through the same host tool the agent uses:
+  the rename lands in v1's store and shows up in the UI immediately)
 
 ### defineTool
 

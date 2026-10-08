@@ -4237,6 +4237,10 @@ export default function ChatPane({
       <IconPaperclip className="h-4 w-4" />
     </IconButton>
   );
+  const todosDone = todos.filter((t) => t.done).length;
+  // The first unfinished item is what the agent is working on right now, so it is
+  // the one worth calling out; everything after it is still only planned.
+  const todosActive = todos.findIndex((t) => !t.done);
   const tasksButton = todos.length > 0 && (
     <IconButton
       onClick={() => {
@@ -5051,27 +5055,49 @@ export default function ChatPane({
                       : 'bottom-full left-2 mb-1 border-border shadow-lg'
                   }`}
                 >
-                  <div className="border-b border-border px-3 py-2 text-xs font-medium text-subtle">
-                    Todos
-                    <span className="ml-1.5 font-normal text-faint">
-                      {todos.filter((t) => !t.done).length} left
-                    </span>
+                  <div className="border-b border-border px-3 py-2.5">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="text-xs font-medium text-subtle">Plan</span>
+                      <span className="text-[11px] tabular-nums text-faint">
+                        {todosDone} of {todos.length}
+                      </span>
+                    </div>
+                    <div className="mt-2 h-1 overflow-hidden rounded-full bg-border">
+                      <div
+                        className="h-full rounded-full bg-emerald-500 transition-[width] duration-300"
+                        style={{ width: `${Math.round((todosDone / todos.length) * 100)}%` }}
+                      />
+                    </div>
                   </div>
-                  <ul className="fade-y max-h-64 overflow-y-auto overscroll-contain px-3 py-2">
+                  <ul className="fade-y max-h-72 overflow-y-auto overscroll-contain py-1">
                     {todos.map((t, i) => (
-                      <li key={i} className="flex items-start gap-2.5 py-1">
+                      <li
+                        key={i}
+                        className={`flex items-start gap-2.5 px-3 py-1.5 ${
+                          i === todosActive ? 'bg-border/40' : ''
+                        }`}
+                      >
                         <span
-                          className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
+                          className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${
                             t.done
                               ? 'border-emerald-500 bg-emerald-500 text-emerald-50'
-                              : 'border-border-strong'
+                              : i === todosActive
+                                ? 'border-emerald-500/60'
+                                : 'border-border-strong'
                           }`}
                         >
                           {t.done && <IconCheck className="h-3 w-3" />}
+                          {!t.done && i === todosActive && (
+                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                          )}
                         </span>
                         <span
-                          className={`min-w-0 text-sm ${
-                            t.done ? 'text-faint line-through' : 'text-text'
+                          className={`min-w-0 leading-snug ${
+                            t.done
+                              ? 'text-xs text-faint line-through'
+                              : i === todosActive
+                                ? 'text-[13px] text-text'
+                                : 'text-[13px] text-subtle'
                           }`}
                         >
                           {t.title}
