@@ -42,6 +42,10 @@ type Usage struct {
 	Output int64    `json:"output"`
 	Model  string   `json:"model"`
 	Cost   *float64 `json:"cost,omitempty"`
+	// Cached is how many prompt tokens the provider served from its prompt cache.
+	// Only the durable harness reports it; the built-in loop leaves it zero, and
+	// the client shows the share only when it is non-zero.
+	Cached int64 `json:"cached,omitempty"`
 	// Context is the final round's prompt size (prompt + completion tokens) —
 	// the real context-window fill at the end of the turn. Input/Output sum
 	// every round for billing, so they overstate the context fill; Context

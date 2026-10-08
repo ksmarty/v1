@@ -257,6 +257,18 @@ function formatCost(value: number, currency: string): string {
   return `${symOrCode}${amount}`;
 }
 
+// cachedShare is the share of this turn's prompt the provider served from its
+// prompt cache, or null when it reported no cache reads. Providers count cache
+// reads separately from the uncached input tokens, so the prompt is the two
+// together. A zero share is not worth the space, so it renders as nothing.
+function cachedShare(usage: { input: number; cached?: number }): number | null {
+  const cached = usage.cached ?? 0;
+  if (cached <= 0) return null;
+  const prompt = usage.input + cached;
+  if (prompt <= 0) return null;
+  return Math.min(100, Math.round((cached / prompt) * 100));
+}
+
 // Persisted thinking-metadata cache (localStorage): provider|model → levels
 // and off support, so reopening a project skips the /models round trip for
 // models already seen. Stale entries are pruned on write.
@@ -1964,7 +1976,10 @@ const MessageRow = memo(function MessageRow({
       {turnEnd && item.usage && !item.streaming && (
         <div className="text-[10px] text-faint">
           {item.usage.input.toLocaleString()} in · {item.usage.output.toLocaleString()} out
-          {typeof item.usage.cost === 'number' ? ` · ${formatCost(item.usage.cost, currency)}` : ''}
+          {/* A missing or zero cost means the provider reported nothing to bill,
+              so "$0.00" would be noise on every free or unpriced round. */}
+          {item.usage.cost ? ` · ${formatCost(item.usage.cost, currency)}` : ''}
+          {cachedShare(item.usage) != null ? ` · ${cachedShare(item.usage)}% cached` : ''}
           {item.usage.model ? ` · ${item.usage.model}` : ''}
           {item.elapsedMs != null ? ` · ${formatElapsed(item.elapsedMs)}` : ''}
           {item.sentAt ? ` · ${formatTime(item.sentAt)}` : ''}

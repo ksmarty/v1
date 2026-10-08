@@ -220,6 +220,8 @@ export interface ChatUsage {
   model?: string;
   /** Provider-supplied cost for this turn, in the user's configured currency. */
   cost?: number;
+  /** Prompt tokens the provider served from its prompt cache, when it reports them. */
+  cached?: number;
 }
 
 export interface ContextUsage {

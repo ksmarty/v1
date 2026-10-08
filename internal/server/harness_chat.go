@@ -633,6 +633,7 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge,
 	var in, out int64
 	var cost float64
 	var hasCost bool
+	var cached int64
 	var lastContext int64
 
 	// The assistant's tool calls, as the UI reads them back from the row's
@@ -658,6 +659,7 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge,
 		}
 		in += u.Input
 		out += u.Output
+		cached += u.CacheRead
 		if u.Cost != nil && u.Cost.Total != nil {
 			cost += *u.Cost.Total
 			hasCost = true
@@ -850,7 +852,7 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge,
 		return turn, err
 	}
 	if in > 0 || out > 0 {
-		u := &agent.Usage{Input: in, Output: out, Model: model, Context: lastContext}
+		u := &agent.Usage{Input: in, Output: out, Model: model, Context: lastContext, Cached: cached}
 		if hasCost {
 			u.Cost = &cost
 		}
