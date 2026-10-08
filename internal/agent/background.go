@@ -104,7 +104,7 @@ func (m *BackgroundManager) Start(dir, command string, timeout time.Duration, se
 	}
 	cmd := exec.Command("sh", "-c", command)
 	cmd.Dir = dir
-	cmd.Env = os.Environ()
+	cmd.Env = childEnv()
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	out := &limitWriter{max: backgroundOutputCap}
 	cmd.Stdout = out

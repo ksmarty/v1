@@ -25,6 +25,7 @@ import (
 
 	"v1/internal/llm"
 	"v1/internal/mcp"
+	"v1/internal/sanitize"
 	"v1/internal/store"
 )
 
@@ -1525,7 +1526,7 @@ func (e *Executor) runCommand(ctx context.Context, argsJSON string) (string, err
 	cmdLine := args.Command
 	cmd := exec.Command("sh", "-c", cmdLine)
 	cmd.Dir = e.Root
-	cmd.Env = os.Environ()
+	cmd.Env = childEnv()
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	out := &limitWriter{max: 512 * 1024}
 	cmd.Stdout = out
@@ -1644,7 +1645,7 @@ func (e *Executor) gitOp(ctx context.Context, argsJSON string) (string, error) {
 	defer cancel()
 	cmd := exec.CommandContext(execCtx, "git", full...)
 	if e.GithubToken != "" && isGitRemoteOp(fields[0]) {
-		cmd.Env = append(os.Environ(), "V1_GIT_TOKEN="+e.GithubToken)
+		cmd.Env = append(childEnv(), "V1_GIT_TOKEN="+e.GithubToken)
 	}
 	var out bytes.Buffer
 	cmd.Stdout = &out
@@ -1832,7 +1833,7 @@ func (e *Executor) runVerifyCmd(ctx context.Context, name, cmdline string, timeo
 	defer cancel()
 	cmd := exec.CommandContext(cctx, "sh", "-c", cmdline)
 	cmd.Dir = e.Root
-	cmd.Env = os.Environ()
+	cmd.Env = childEnv()
 	out := &limitWriter{max: maxVerifyOutput}
 	cmd.Stdout = out
 	cmd.Stderr = out
@@ -1845,19 +1846,9 @@ func (e *Executor) runVerifyCmd(ctx context.Context, name, cmdline string, timeo
 	return verifyStep{Name: name, Success: err == nil, Output: output, DurMS: time.Since(start).Milliseconds()}
 }
 
-// secretPatterns are high-precision, low-false-positive credentials. Anything
-// they match in project sources means a real secret is probably in the tree.
-var secretPatterns = []struct{ label, re string }{
-	{"OpenAI API key", `\bsk-[A-Za-z0-9]{20,}\b`},
-	{"Anthropic API key", `\bsk-ant-[A-Za-z0-9]{20,}\b`},
-	{"Google API key", `\bAIza[0-9A-Za-z_-]{35}\b`},
-	{"AWS access key", `\bAKIA[0-9A-Z]{16}\b`},
-	{"GitHub token", `\bgh[pousr]_[A-Za-z0-9]{36,}\b`},
-	{"GitHub fine-grained PAT", `\bgithub_pat_[A-Za-z0-9_]{20,}\b`},
-	{"Slack token", `\bxox[baprs]-[A-Za-z0-9-]{10,}\b`},
-	{"Stripe key", `\b(?:sk|pk)_(?:live|test)_[A-Za-z0-9]{16,}\b`},
-	{"Private key block", `-----BEGIN [A-Z ]*PRIVATE KEY-----`},
-}
+// The credential formats scanned for below live in
+// sanitize.CredentialPatterns, shared with the redaction applied to everything
+// sent to a provider, so the two lists cannot drift apart.
 
 // scanForSecrets walks the source tree (skipping vendors/builds/git) looking
 // for high-signal credential patterns, and checks .env is gitignored.
@@ -1869,9 +1860,10 @@ func (e *Executor) scanForSecrets() (verifyStep, []string) {
 		".next": true, "out": true, "target": true, "vendor": true,
 		"__pycache__": true, ".cache": true, ".venv": true, "venv": true,
 	}
-	regexes := make([]*regexp.Regexp, 0, len(secretPatterns))
-	for _, p := range secretPatterns {
-		regexes = append(regexes, regexp.MustCompile(p.re))
+	patterns := sanitize.CredentialPatterns()
+	regexes := make([]*regexp.Regexp, 0, len(patterns))
+	for _, p := range patterns {
+		regexes = append(regexes, p.Re)
 	}
 	visit := func(path string, d os.DirEntry, err error) error {
 		if err != nil {
@@ -1905,7 +1897,7 @@ func (e *Executor) scanForSecrets() (verifyStep, []string) {
 		for li, line := range lines {
 			for i, re := range regexes {
 				if m := re.FindString(line); m != "" {
-					findings = append(findings, fmt.Sprintf("%s (%s:%d): %s", secretPatterns[i].label, rel, li+1, maskSecret(m)))
+					findings = append(findings, fmt.Sprintf("%s (%s:%d): %s", patterns[i].Label, rel, li+1, maskSecret(m)))
 				}
 			}
 		}

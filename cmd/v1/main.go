@@ -16,6 +16,7 @@ import (
 
 	"v1/internal/config"
 	"v1/internal/harness"
+	"v1/internal/sanitize"
 	"v1/internal/server"
 	"v1/internal/store"
 )
@@ -46,6 +47,21 @@ func init() {
 
 func main() {
 	cfg := config.Load(version, commit)
+
+	// Register v1's own credentials so they are redacted from anything on its way
+	// to a provider. An agent can read a secret from anywhere — a project's .env,
+	// /proc/1/environ — and whatever it prints is persisted and sent to the model;
+	// matching on the value is what reliably stops that.
+	sanitize.SetSecrets(
+		cfg.Password,
+		cfg.GitHubToken,
+		cfg.GitHubOAuthClientSecret,
+		cfg.VercelToken,
+		cfg.VercelClientSecret,
+		cfg.VercelRefreshToken,
+		cfg.OIDCClientSecret,
+		cfg.OpenAIKey,
+	)
 
 	st, err := store.Open(cfg.DataDir)
 	if err != nil {
