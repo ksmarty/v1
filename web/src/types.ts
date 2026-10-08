@@ -288,7 +288,8 @@ export type ChatEvent =
       /** 'background' when the injected message is a finished background job. */
       tool?: string;
     }
-  | { type: 'background_started'; text?: string };
+  | { type: 'background_started'; text?: string }
+  | { type: 'background_done'; text?: string };
 
 /**
  * A detached command the agent started with run_command_background and that is

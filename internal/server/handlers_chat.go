@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"v1/internal/agent"
@@ -532,6 +533,7 @@ func (s *Server) streamChatTurn(w http.ResponseWriter, r *http.Request, p *store
 	// gone client simply fail and are ignored. The cancel function is
 	// registered so the stop endpoint can still abort it explicitly.
 	runID := store.NewID()
+	var emitMu sync.Mutex
 	emit := func(ev agent.ChatEvent) {
 		ev.TurnID = runID
 		if hub != nil {
@@ -541,6 +543,10 @@ func (s *Server) streamChatTurn(w http.ResponseWriter, r *http.Request, p *store
 		if err != nil {
 			return
 		}
+		// A detached background command reports its own completion through this
+		// same writer, from its own goroutine, so frames are serialized.
+		emitMu.Lock()
+		defer emitMu.Unlock()
 		fmt.Fprintf(w, "data: %s\n\n", b)
 		flusher.Flush()
 	}
@@ -591,6 +597,11 @@ func (s *Server) streamChatTurn(w http.ResponseWriter, r *http.Request, p *store
 			job.Text = text
 			job.MsgID = msgID
 		}
+		// The command runs detached from the turn, so this is the only signal
+		// that it stopped. Without it the running badge keeps counting a job
+		// that already finished, while the tasks modal — which asks the server
+		// what is actually running — shows nothing.
+		emit(agent.ChatEvent{Type: "background_done", Text: job.ID})
 	}
 	params.PollBackground = func() []agent.BackgroundResult {
 		var out []agent.BackgroundResult

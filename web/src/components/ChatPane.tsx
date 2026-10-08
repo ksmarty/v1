@@ -2697,6 +2697,28 @@ export default function ChatPane({
   }, [projectId, sessionId, load, refreshQueue, streaming]);
 
   const [bgRunning, setBgRunning] = useState<string[]>([]);
+
+  // A job can finish while this tab is not listening — the stream dropped, or
+  // the PWA was suspended — so the done event alone can be missed and the pill
+  // would keep counting it. While anything is in flight, reconcile against what
+  // the server is actually running.
+  useEffect(() => {
+    if (!sessionId || bgRunning.length === 0) return;
+    let cancelled = false;
+    const reconcile = async () => {
+      try {
+        const res = await api.listBackground(projectId, sessionId);
+        if (!cancelled) setBgRunning((res.jobs ?? []).map((j) => j.id));
+      } catch {
+        // Keep the current list; the next tick tries again.
+      }
+    };
+    const timer = window.setInterval(() => void reconcile(), 5000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [projectId, sessionId, bgRunning.length]);
   // Background result rows carry "[Background #<shortid>:" — matches a running
   // entry started earlier in this session.
   const clearFinishedBg = (text: string | undefined) => {
@@ -3123,9 +3145,16 @@ export default function ChatPane({
         }
         case 'background_started': {
           // A detached command was dispatched — show it in the running pill
-          // until its result row lands.
-          const id = ev.text;
+          // until it finishes. Short ids match what the tasks modal shows.
+          const id = (ev.text ?? '').slice(0, 8);
           if (id) setBgRunning((prev) => (prev.includes(id) ? prev : [...prev, id]));
+          break;
+        }
+        case 'background_done': {
+          // The command stopped (finished or cancelled) — drop it from the
+          // pill. Without this the badge counted every job ever started.
+          const id = (ev.text ?? '').slice(0, 8);
+          if (id) setBgRunning((prev) => prev.filter((x) => x !== id));
           break;
         }
         case 'info': {
