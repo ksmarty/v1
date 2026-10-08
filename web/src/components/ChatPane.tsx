@@ -3678,12 +3678,34 @@ export default function ChatPane({
     return true;
   }, [projectId, sessionId, streaming, load, loadContext]);
 
+  // Sends a mid-run message. `steer` hands it to the running turn, which is the
+  // send button's default; without it the message waits its turn in the queue.
+  // Either way it renders from the server's queue state, so the two paths differ
+  // only in when the agent sees it.
+  const enqueue = useCallback(
+    async (text: string, steer: boolean) => {
+      const res = await api.queueChat(projectId, sessionId, text, modelOverride, providerOverride);
+      if (!res.queued) {
+        // The run finished before this arrived, so it became a normal turn.
+        void refreshQueue();
+        return;
+      }
+      if (steer && res.id) {
+        // Promote it onto the steer stream. A failure leaves it queued, which is
+        // the right fallback: it still gets sent, just as the next turn.
+        await api.chatQueueSteer(projectId, sessionId, res.id).catch(() => {});
+        void refreshQueue();
+        return;
+      }
+      setQueued((prev) => [...prev, { id: res.id ?? '', text }]);
+    },
+    [projectId, sessionId, modelOverride, providerOverride, refreshQueue],
+  );
+
   const send = useCallback(async () => {
     if (await runLocalCommand(input)) return;
     if (streaming) {
-      // Mid-run: the server steers the message into the current turn or
-      // queues it as a follow-up; it renders via injected_message when
-      // consumed. Attachments can't ride along — they need a fresh turn.
+      // Attachments need a fresh turn, so they cannot ride along mid-run.
       const text = input.trim();
       if (!text) return;
       if (attachments.length > 0) {
@@ -3693,14 +3715,7 @@ export default function ChatPane({
       setInput('');
       setSuggestions([]);
       try {
-        const res = await api.queueChat(projectId, sessionId, text, modelOverride, providerOverride);
-        // Show it in the queue block right away; it drains in order when the
-        // run finishes (or can be steered into the current run).
-        if (res.queued) {
-          setQueued((prev) => [...prev, { id: res.id ?? '', text }]);
-        } else {
-          void refreshQueue();
-        }
+        await enqueue(text, true);
         setExpanded(false);
       } catch (e) {
         setInput(text);
@@ -3710,7 +3725,27 @@ export default function ChatPane({
     }
     sendText(input);
     setExpanded(false);
-  }, [input, streaming, attachments.length, runLocalCommand, sendText, projectId, sessionId, modelOverride, providerOverride, refreshQueue]);
+  }, [input, streaming, attachments.length, runLocalCommand, sendText, enqueue]);
+
+  // The secondary action beside Send: queue without steering, so the message
+  // waits for the next turn instead of joining the running one.
+  const queueInput = useCallback(async () => {
+    const text = input.trim();
+    if (!text || !streaming) return;
+    if (attachments.length > 0) {
+      setAttachError('Attachments can only be sent when no run is active.');
+      return;
+    }
+    setInput('');
+    setSuggestions([]);
+    try {
+      await enqueue(text, false);
+      setExpanded(false);
+    } catch (e) {
+      setInput(text);
+      setLoadError(errMsg(e));
+    }
+  }, [input, streaming, attachments.length, enqueue]);
 
   // Moves a queued message up/down (optimistically; the server is the source
   // of truth on the next refresh).
@@ -4233,11 +4268,24 @@ export default function ChatPane({
       <IconBrain className={`h-4 w-4 ${thinkingLoading ? 'animate-spin' : ''}`} />
     </IconButton>
   );
+  // Only while a run is active and there is something to send. Send steers, so
+  // this is the alternative for a message that should wait for the next turn.
+  const queueButton = streaming && input.trim() !== '' && (
+    <IconButton
+      onClick={() => void queueInput()}
+      disabled={!hasModel}
+      aria-label="Queue for the next turn"
+      title="Queue — waits for the next turn instead of steering this run"
+      className="h-8! w-8! shrink-0 md:h-9! md:w-9!"
+    >
+      <IconList className="h-4 w-4" />
+    </IconButton>
+  );
   const sendButton = (
     <IconButton
       onClick={() => void send()}
       disabled={!input.trim() || !hasModel}
-      aria-label={streaming ? 'Steer or queue for the next turn' : 'Send message'}
+      aria-label={streaming ? 'Steer the running turn' : 'Send message'}
       title={
         streaming
           ? 'Send to steer the current run — it becomes a follow-up turn if the run finishes first'
@@ -5179,6 +5227,7 @@ export default function ChatPane({
                       </div>
                       <div className="flex items-center gap-1.5">
                         {stopButton}
+                        {queueButton}
                         {sendButton}
                       </div>
                     </div>
@@ -5196,6 +5245,7 @@ export default function ChatPane({
                     )}
                     {textField}
                     {stopButton}
+                    {queueButton}
                     {sendButton}
                   </>
                 )}
