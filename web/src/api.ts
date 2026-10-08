@@ -390,8 +390,8 @@ export const api = {
   // Mid-run send: the same endpoint queues the message onto the active run
   // (steer/follow-up) instead of opening an SSE stream. When queued, the
   // response carries the queue entry's id.
-  queueChat: (id: string, sessionId: string, message: string, model?: string, providerId?: string) =>
-    post<{ queued?: boolean; id?: string }>(`/api/projects/${id}/chat`, { message, sessionId, model, providerId }),
+  queueChat: (id: string, sessionId: string, message: string, model?: string, providerId?: string, thinking?: string) =>
+    post<{ queued?: boolean; id?: string }>(`/api/projects/${id}/chat`, { message, sessionId, model, providerId, thinking }),
   chatStatus: (id: string, sessionId: string) =>
     request<{ running: boolean }>(
       `/api/projects/${id}/chat/status?sessionId=${encodeURIComponent(sessionId)}`,

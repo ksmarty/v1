@@ -132,7 +132,11 @@ export function Dialog({
     : translucent
       ? 'px-3 pt-2 pb-3 sm:px-4 sm:pt-3'
       : 'px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))]';
-  const desktopPad = translucent ? 'sm:px-6 sm:pb-8 sm:pt-6' : 'sm:px-5 sm:pt-5 sm:pb-5';
+  // The header row is taller than its text — the close button is 32px against a
+  // 24px line — so the title sits a few pixels below the padding edge. One step
+  // less on the top makes the visible gap above the title match the gap beside
+  // it, which is the comparison the eye actually makes.
+  const desktopPad = translucent ? 'sm:px-6 sm:pb-8 sm:pt-5' : 'sm:px-5 sm:pt-4 sm:pb-5';
 
   // Portaled to document.body so the fixed overlay always uses the viewport as
   // its containing block — no ancestor (scroll container, stacking context) can

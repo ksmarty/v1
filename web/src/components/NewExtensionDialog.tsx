@@ -60,12 +60,24 @@ export default function NewExtensionDialog({
           name: EXTENSIONS_PROJECT,
           description: 'Chats that build v1 extensions.',
         }));
+      // The account defaults, so the extension chat starts on the model and
+      // thinking level the user actually configured rather than the model's
+      // lowest level. This session is created outside the chat page, so nothing
+      // else applies them.
+      const settings = await api.getSettings().catch(() => null);
       const created = await api.createSession(project.id, sessionName(text));
       const sessionId = created.session.id;
       // Queued rather than sent from the chat page: the turn is already
       // running server-side by the time the page opens, so the reply streams
       // in instead of the message appearing to do nothing.
-      await api.queueChat(project.id, sessionId, STARTER(text));
+      await api.queueChat(
+        project.id,
+        sessionId,
+        STARTER(text),
+        settings?.llm.defaultModel ?? settings?.llm.model,
+        settings?.llm.providers?.[0]?.id,
+        settings?.defaultThinking || undefined,
+      );
       onClose();
       navigate(`/project/${project.id}?session=${sessionId}`);
     } catch (e) {

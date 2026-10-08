@@ -34,7 +34,7 @@ function CardMenu({ onDelete }: { onDelete: () => void }) {
     <div ref={ref} className="relative">
       <IconButton
         aria-label="Project menu"
-        className="h-9 w-9 md:h-8 md:w-8"
+        className="h-8 w-8 md:h-7 md:w-7"
         onClick={(e) => {
           e.preventDefault();
           setOpen((o) => !o);
@@ -520,12 +520,12 @@ export default function Projects() {
           </div>
         )}
         {projects !== null && projects.length > 0 && (
-          <div className="mx-auto flex max-w-4xl flex-col gap-1.5">
+          <div className="mx-auto flex max-w-4xl flex-col gap-3">
             {projects.map((p) => {
               const sessions = (sessionsByProject[p.id] ?? []).filter((s) => !s.archived);
               return (
                 <section key={p.id} className="overflow-hidden rounded-xl border border-border bg-surface">
-                  <div className="flex items-center gap-2 border-b border-border px-4 py-1.5">
+                  <div className="flex items-center gap-2 border-b border-border px-4 py-1">
                     {/* A preview that is switched off is not stopped, it is absent:
                         saying so would report a state the project does not have. */}
                     {!p.previewDisabled && (

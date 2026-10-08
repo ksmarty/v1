@@ -1136,22 +1136,168 @@ function EditFileError({ detail }: { detail: string }) {
 // Renders the inside of a set_todos tool chip when expanded: just the todo
 // list. The chip's header already shows the tool name and count, so this is
 // body-only — no repeating "Update todos N todos".
-// make_plan / update_plan carry a markdown plan in their arguments. Rendering
-// it as markdown is the difference between a readable plan and a wall of
-// escaped newlines in a monospace chip.
-function PlanBlock({ detail }: { detail: string }) {
-  const plan = useMemo(() => {
-    try {
-      const a = JSON.parse(detail) as { plan?: unknown };
-      return typeof a.plan === 'string' ? a.plan.trim() : '';
-    } catch {
-      return '';
+// make_plan / update_plan carry the plan as a strict JSON string in their
+// arguments. Rendering that string as markdown prints the JSON, so parse it and
+// show the plan itself: the goal, each feature with its status, the invariants
+// and the checkpoints. A plan that is not that shape falls back to markdown.
+type PlanView = {
+  goal: string;
+  features: { id: string; description: string; dependsOn: string[]; status: string }[];
+  invariants: string[];
+  checkpoints: { step: number; action: string; verification: string }[];
+  estimatedTurns: number | null;
+  deviations: string[];
+  markdown: string;
+};
+
+const PLAN_STATUS: Record<string, string> = {
+  done: 'text-emerald-500',
+  complete: 'text-emerald-500',
+  completed: 'text-emerald-500',
+  in_progress: 'text-accent',
+  active: 'text-accent',
+  blocked: 'text-red-500',
+};
+
+function parsePlan(detail: string): PlanView | null {
+  const empty: PlanView = {
+    goal: '',
+    features: [],
+    invariants: [],
+    checkpoints: [],
+    estimatedTurns: null,
+    deviations: [],
+    markdown: '',
+  };
+  let raw = '';
+  try {
+    const a = JSON.parse(detail) as { plan?: unknown };
+    if (typeof a.plan === 'string') raw = a.plan.trim();
+    else if (a.plan && typeof a.plan === 'object') raw = JSON.stringify(a.plan);
+  } catch {
+    return null;
+  }
+  if (!raw) return null;
+  const strings = (v: unknown) =>
+    Array.isArray(v) ? v.filter((s): s is string => typeof s === 'string') : [];
+  try {
+    const p = JSON.parse(raw) as Record<string, unknown>;
+    if (!p || typeof p !== 'object' || Array.isArray(p)) return { ...empty, markdown: raw };
+    const features = (Array.isArray(p.features) ? p.features : []).map((f) => {
+      const o = (f ?? {}) as Record<string, unknown>;
+      return {
+        id: typeof o.id === 'string' ? o.id : '',
+        description: typeof o.description === 'string' ? o.description : '',
+        dependsOn: strings(o.depends_on),
+        status: typeof o.status === 'string' ? o.status : '',
+      };
+    });
+    const checkpoints = (Array.isArray(p.checkpoints) ? p.checkpoints : []).map((c) => {
+      const o = (c ?? {}) as Record<string, unknown>;
+      return {
+        step: typeof o.step === 'number' ? o.step : 0,
+        action: typeof o.action === 'string' ? o.action : '',
+        verification: typeof o.verification === 'string' ? o.verification : '',
+      };
+    });
+    const goal = typeof p.goal === 'string' ? p.goal : '';
+    if (!goal && features.length === 0 && checkpoints.length === 0) {
+      return { ...empty, markdown: raw };
     }
-  }, [detail]);
+    return {
+      goal,
+      features,
+      invariants: strings(p.invariants),
+      checkpoints,
+      estimatedTurns: typeof p.estimated_turns === 'number' ? p.estimated_turns : null,
+      deviations: strings(p.deviations),
+      markdown: '',
+    };
+  } catch {
+    // A markdown plan rather than JSON.
+    return { ...empty, markdown: raw };
+  }
+}
+
+function PlanBlock({ detail }: { detail: string }) {
+  const plan = useMemo(() => parsePlan(detail), [detail]);
   if (!plan) return null;
+  if (plan.markdown) {
+    return (
+      <div className="max-h-72 overflow-auto border-t border-border/80 px-2.5 py-2 font-sans text-[11px] leading-relaxed">
+        <Markdown text={plan.markdown} />
+      </div>
+    );
+  }
   return (
     <div className="max-h-72 overflow-auto border-t border-border/80 px-2.5 py-2 font-sans text-[11px] leading-relaxed">
-      <Markdown text={plan} />
+      {plan.goal && <p className="text-text">{plan.goal}</p>}
+      {plan.features.length > 0 && (
+        <ul className="mt-1.5 flex flex-col gap-1">
+          {plan.features.map((f, i) => (
+            <li key={i} className="flex items-start gap-1.5">
+              {f.id && (
+                <span className="shrink-0 rounded bg-border/60 px-1 font-mono text-[10px] text-dim">
+                  {f.id}
+                </span>
+              )}
+              <span className="min-w-0 flex-1 text-subtle">{f.description}</span>
+              {f.dependsOn.length > 0 && (
+                <span className="shrink-0 text-[10px] text-faint">after {f.dependsOn.join(', ')}</span>
+              )}
+              <span
+                className={`shrink-0 text-[10px] font-medium ${PLAN_STATUS[f.status] ?? 'text-faint'}`}
+              >
+                {f.status || 'pending'}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {plan.invariants.length > 0 && (
+        <div className="mt-2">
+          <div className="text-[10px] font-medium uppercase tracking-wide text-faint">Invariants</div>
+          <ul className="mt-0.5 flex flex-col gap-0.5">
+            {plan.invariants.map((inv, i) => (
+              <li key={i} className="flex items-start gap-1.5 text-subtle">
+                <span className="mt-[5px] h-1 w-1 shrink-0 rounded-full bg-faint" />
+                <span className="min-w-0 flex-1">{inv}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {plan.checkpoints.length > 0 && (
+        <div className="mt-2">
+          <div className="text-[10px] font-medium uppercase tracking-wide text-faint">Checkpoints</div>
+          <ol className="mt-0.5 flex flex-col gap-0.5">
+            {plan.checkpoints.map((c, i) => (
+              <li key={i} className="flex items-start gap-1.5">
+                <span className="shrink-0 font-mono text-[10px] text-faint">{c.step || i + 1}.</span>
+                <span className="min-w-0 flex-1">
+                  <span className="text-subtle">{c.action}</span>
+                  {c.verification && <span className="block text-faint">{c.verification}</span>}
+                </span>
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
+      {plan.deviations.length > 0 && (
+        <div className="mt-2">
+          <div className="text-[10px] font-medium uppercase tracking-wide text-faint">Deviations</div>
+          <ul className="mt-0.5 flex flex-col gap-0.5">
+            {plan.deviations.map((d, i) => (
+              <li key={i} className="text-subtle">
+                {d}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {plan.estimatedTurns !== null && (
+        <div className="mt-2 text-[10px] text-faint">Estimated {plan.estimatedTurns} turns</div>
+      )}
     </div>
   );
 }
@@ -1727,10 +1873,64 @@ function AskBlock({
   );
 }
 
+// Whether a stored tool result reports a failure. Deliberately stricter than
+// toolErrorMessage, which treats any non-JSON text as an error: right for the
+// tools that always answer in JSON, wrong here, where a bare string is a normal
+// successful answer.
+function resultError(detail: string): string | null {
+  const t = detail.trim();
+  if (!t) return null;
+  if (/^error[:\s]/i.test(t)) return t;
+  if (t[0] !== '{') return null;
+  try {
+    const d = JSON.parse(t) as Record<string, unknown>;
+    if (!d || typeof d !== 'object') return null;
+    const e = d.error;
+    if (typeof e === 'string' && e) return e;
+    if (e && typeof e === 'object') {
+      const msg = (e as { message?: unknown }).message;
+      return typeof msg === 'string' && msg ? msg : t;
+    }
+    if (d.success === false || d.ok === false) return t;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 function ToolResultBlock({ name, detail }: ToolCall) {
   const [open, setOpen] = useState(false);
   const display = useToolDisplay(name);
   const Icon = toolIcon(name, display);
+  // A call that failed reads as a failure whatever the tool was: a red cross
+  // that opens to the reason, rather than a neutral "result" the reader has to
+  // open and judge for themselves.
+  const err = resultError(detail);
+  if (err !== null) {
+    return (
+      <div className="w-full overflow-hidden rounded-md border border-red-500/30 bg-surface/50 text-[10px]">
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          className="flex min-h-[26px] w-full items-center gap-1.5 px-2 py-1 text-left text-dim transition-colors hover:text-text"
+        >
+          {open ? (
+            <IconChevronDown className="h-3.5 w-3.5 shrink-0" />
+          ) : (
+            <IconChevronRight className="h-3.5 w-3.5 shrink-0" />
+          )}
+          <Icon className="h-3 w-3 shrink-0 text-faint" />
+          <span className="shrink-0 font-mono text-text">{toolLabel(name, display)}</span>
+          <IconX className="h-3 w-3 shrink-0 text-red-500" />
+        </button>
+        {open && (
+          <div className="border-t border-red-500/30 px-3 py-2 text-[11px] leading-relaxed text-red-400">
+            {err}
+          </div>
+        )}
+      </div>
+    );
+  }
   return (
     <div className="rounded-md border border-border/80 bg-surface/50 text-[10px]">
       <button
