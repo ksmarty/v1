@@ -386,6 +386,8 @@ const (
 	keyThinkingDefault = "thinking_default"
 	keyToonEnabled     = "toon_enabled"
 	keyDisabledTools   = "disabled_tools"
+	// keyWebSearch is the user's LangSearch API key, which web_search runs on.
+	keyWebSearch = "web_search_key"
 	// Retired: caveman mode is a bundled skill now. Read once, only to migrate
 	// whoever had it switched on, then deleted from each user's settings.
 	keyCavemanLegacy    = "caveman"
@@ -556,6 +558,14 @@ func (s *Server) githubToken(userID string) string {
 		return v
 	}
 	return s.cfg.GitHubToken
+}
+
+// langSearchKey resolves the user's LangSearch API key. The web_search tool is
+// only offered when this is non-empty, so an unset key hides the tool entirely
+// rather than letting the model call something that cannot work.
+func (s *Server) langSearchKey(userID string) string {
+	v, _ := s.userSetting(userID, keyWebSearch)
+	return strings.TrimSpace(v)
 }
 
 // systemPromptFor resolves the system prompt override a user has set (their

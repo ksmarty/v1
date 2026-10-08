@@ -10,7 +10,7 @@ import type {
 } from '../types';
 import { errMsg, randomId } from '../utils';
 import { PERMISSION_MODES } from '../permissions';
-import { Button, Dialog, Field, Input, SaveRow, Spinner } from './ui';
+import { Button, Dialog, Field, Input, SaveRow, Spinner, toast } from './ui';
 import CodeEditor from './CodeEditor';
 import Markdown from './Markdown';
 import NewExtensionDialog from './NewExtensionDialog';
@@ -288,7 +288,14 @@ function ToolSettings({
         { name: 'run_container', label: 'Run container', hint: 'Run a container for builds/tests' },
         { name: 'restart_preview', label: 'Restart preview', hint: 'Restart the app preview' },
         { name: 'screenshot_app', label: 'Screenshot app', hint: 'Capture the preview as an image' },
+      ],
+    },
+    {
+      id: 'web',
+      label: 'Web',
+      tools: [
         { name: 'fetch_url', label: 'Fetch URL', hint: 'Fetch and read a web page' },
+        { name: 'web_search', label: 'Web search', hint: 'Search the web (needs a LangSearch API key below)' },
       ],
     },
     {
@@ -313,6 +320,32 @@ function ToolSettings({
   const [disabledTools, setDisabledTools] = useState<string[]>([]);
   const [toolsError, setToolsError] = useState<string | null>(null);
 
+  // Web search runs on a LangSearch key. It is stored per user, and the tool is
+  // hidden from the agent entirely until one is set — the model should never be
+  // offered a tool that cannot work.
+  const [webKey, setWebKey] = useState('');
+  const [webKeySet, setWebKeySet] = useState(false);
+  const [webKeyHint, setWebKeyHint] = useState('');
+  const [webSaving, setWebSaving] = useState(false);
+  const [webError, setWebError] = useState<string | null>(null);
+
+  const saveWebKey = async (value: string) => {
+    setWebSaving(true);
+    setWebError(null);
+    try {
+      await api.updateSettings({ webSearchKey: value });
+      setWebKey('');
+      const s = await api.getSettings();
+      setWebKeySet(s.webSearch?.keySet ?? false);
+      setWebKeyHint(s.webSearch?.keyHint ?? '');
+      toast(value ? 'Web search key saved' : 'Web search key cleared');
+    } catch (e) {
+      setWebError(errMsg(e));
+    } finally {
+      setWebSaving(false);
+    }
+  };
+
   // Optimistic: flip the switch immediately, persist after (no Save button —
   // every change auto-saves).
   const toggleTool = (name: string) => {
@@ -326,6 +359,53 @@ function ToolSettings({
 
   const toolsSection = (
     <div className="flex h-full min-h-0 min-w-0 flex-col gap-2.5">
+      <div className="shrink-0 rounded-lg border border-border-strong bg-surface/50 p-3 shadow-sm">
+        <p className="text-sm text-text">Web search</p>
+        <p className="mt-0.5 text-[11px] text-faint">
+          The <span className="text-subtle">web_search</span> tool runs on LangSearch. Get an API
+          key at{' '}
+          <a
+            href="https://langsearch.com/api-keys"
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-0.5 text-accent hover:underline"
+          >
+            langsearch.com
+            <IconExternalLink className="h-3 w-3" />
+          </a>{' '}
+          and paste it here. Until a key is set the tool is not offered to the agent at all.
+        </p>
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <Input
+            type="password"
+            value={webKey}
+            onChange={(e) => setWebKey(e.target.value)}
+            placeholder={
+              webKeySet
+                ? webKeyHint
+                  ? `${webKeyHint}… (set — enter to replace)`
+                  : '•••••••• (set — enter to replace)'
+                : 'Not set'
+            }
+            autoComplete="new-password"
+            data-1p-ignore
+            data-lpignore="true"
+            className="min-w-0 flex-1"
+          />
+          <Button
+            disabled={webSaving || webKey.trim() === ''}
+            onClick={() => void saveWebKey(webKey.trim())}
+          >
+            Save
+          </Button>
+          {webKeySet && (
+            <Button variant="ghost" disabled={webSaving} onClick={() => void saveWebKey('')}>
+              Clear
+            </Button>
+          )}
+        </div>
+        {webError && <p className="mt-1.5 text-xs text-red-400">{webError}</p>}
+      </div>
       <p className="shrink-0 text-xs text-faint">
         Disable agent tools you don&apos;t want the model to use. Disabled tools
         are hidden from the model and refused if called anyway. Changes save
@@ -386,6 +466,8 @@ function ToolSettings({
       setRewindApproval(s.rewindApproval ?? false);
       setSavedRewind(s.rewindApproval ?? false);
       setDisabledTools(s.disabledTools ?? []);
+      setWebKeySet(s.webSearch?.keySet ?? false);
+      setWebKeyHint(s.webSearch?.keyHint ?? '');
       const byId: Record<string, MCPServerStatus> = {};
       for (const sv of st.servers) byId[sv.id] = sv;
       setStatus(byId);

@@ -82,6 +82,31 @@ type ChatEvent struct {
 }
 
 // ChatParams carries everything needed to run one chat turn.
+// webSearchTool searches the web through LangSearch. It is only offered when
+// the user has configured an API key: without one there is nothing to call, and
+// a tool the model cannot use is worse than a tool it never sees.
+var webSearchTool = llm.Tool{
+	Type: "function",
+	Function: llm.ToolFunction{
+		Name:        "web_search",
+		Description: "Search the web and return the top results as titles, URLs and summaries. Use it for current information, libraries, error messages and anything the workspace cannot answer; follow up with fetch_url to read a result in full.",
+		Parameters: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"query": map[string]any{
+					"type":        "string",
+					"description": "The search query.",
+				},
+				"count": map[string]any{
+					"type":        "integer",
+					"description": "How many results to return (1-20). Defaults to 10.",
+				},
+			},
+			"required": []string{"query"},
+		},
+	},
+}
+
 // ToolSet assembles the tools offered to the model for this turn: the builtin
 // set plus the per-turn additions (screenshot for vision models, dynamic MCP
 // tools), minus the ones the user disabled, restricted to the plan-safe subset
@@ -91,6 +116,9 @@ type ChatEvent struct {
 // can never advertise different schemas for the same tool.
 func (p ChatParams) ToolSet() []llm.Tool {
 	all := append(append(append(append([]llm.Tool{}, tools...), gitTool, containerTool), verifyProjectTool), makePlanTool, updatePlanTool)
+	if strings.TrimSpace(p.WebSearchKey) != "" {
+		all = append(all, webSearchTool)
+	}
 	if p.Vision {
 		all = append(all, screenshotAppTool)
 	}
@@ -152,6 +180,9 @@ type ChatParams struct {
 	// DisabledTools are builtin tool names the user turned off in Settings;
 	// they are neither advertised to the model nor executable.
 	DisabledTools map[string]bool
+	// WebSearchKey is the user's LangSearch API key. The web_search tool is
+	// offered only when it is set.
+	WebSearchKey string
 	// ApprovalMode is the user's permission mode: "ask", "auto" or "yolo".
 	// Tool approvals are enforced by the permission resolver; this only tells
 	// the model whether asking questions is still wanted.

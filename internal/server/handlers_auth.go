@@ -228,10 +228,14 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 			"clientSecretSet": s.vercelOAuthClientSecret() != "",
 			"source":          s.vercelTokenSource(userID),
 		},
-		"auth":             map[string]any{"disabled": s.cfg.AuthDisabled},
-		"mcp":              s.mcpServers(),
+		"auth":           map[string]any{"disabled": s.cfg.AuthDisabled},
+		"mcp":            s.mcpServers(),
+		"permissionMode": s.permissionMode(userID),
+		"webSearch": map[string]any{
+			"keySet":  s.langSearchKey(userID) != "",
+			"keyHint": apiKeyHint(s.langSearchKey(userID)),
+		},
 		"skills":           s.installedSkills(),
-		"permissionMode":   s.permissionMode(userID),
 		"rewindApproval":   s.rewindApproval(userID),
 		"defaultThinking":  s.defaultThinking(userID),
 		"toonEnabled":      s.toonEnabled(userID),
@@ -271,6 +275,7 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		DefaultThinking         *string                   `json:"defaultThinking"`
 		ToonEnabled             *bool                     `json:"toonEnabled"`
 		DisabledTools           *[]string                 `json:"disabledTools"`
+		WebSearchKey            *string                   `json:"webSearchKey"`
 		TurnTimeouts            *struct{ Soft, Hard int } `json:"turnTimeouts"`
 		TerminalFontSize        *int                      `json:"terminalFontSize"`
 		TerminalWrap            *bool                     `json:"terminalWrap"`
@@ -498,6 +503,20 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 			val = "1"
 		}
 		if err := s.st.SetUserSetting(userID, keyToonEnabled, val); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+	if body.WebSearchKey != nil {
+		// Clearing the key is how the tool gets removed again, so an empty
+		// value deletes the setting rather than storing a blank.
+		key := strings.TrimSpace(*body.WebSearchKey)
+		if key == "" {
+			if err := s.st.DeleteUserSetting(userID, keyWebSearch); err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+		} else if err := s.st.SetUserSetting(userID, keyWebSearch, key); err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}

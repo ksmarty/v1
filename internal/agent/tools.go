@@ -27,6 +27,7 @@ import (
 	"v1/internal/mcp"
 	"v1/internal/sanitize"
 	"v1/internal/store"
+	"v1/internal/websearch"
 )
 
 // PreviewStarter starts (or restarts) a project's preview and returns its URL.
@@ -92,6 +93,9 @@ type Executor struct {
 	// refused even if the model somehow sends one.
 	DisabledTools map[string]bool
 	GithubToken   string // user's GitHub token for the git tool's remote ops
+	// WebSearchKey is the user's LangSearch API key. Empty means the web_search
+	// tool was not advertised for this turn.
+	WebSearchKey string
 	// CreateExtension installs an extension the agent wrote (the
 	// create_extension tool): it validates, writes, enables and reloads. Nil
 	// when extensions are unavailable, and the tool then says so.
@@ -186,6 +190,8 @@ func (e *Executor) Execute(ctx context.Context, name, argsJSON string) (string, 
 		return e.moveFile(argsJSON)
 	case "fetch_url":
 		return e.fetchURL(ctx, argsJSON)
+	case "web_search":
+		return e.webSearch(ctx, argsJSON)
 	case "run_command":
 		return e.runCommand(ctx, argsJSON)
 	case "git":
@@ -1129,6 +1135,33 @@ func (e *Executor) moveFile(argsJSON string) (string, error) {
 		e.OnFileChange()
 	}
 	return toolResult(map[string]any{"ok": true, "path": args.Path, "newPath": args.NewPath}), nil
+}
+
+// webSearch runs the web_search tool through the user's LangSearch API key. The
+// tool is only advertised when a key is configured, so an empty key here means
+// the turn was assembled without one.
+func (e *Executor) webSearch(ctx context.Context, argsJSON string) (string, error) {
+	var args struct {
+		Query string `json:"query"`
+		Count int    `json:"count"`
+	}
+	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
+		return "", toolFail("BAD_ARGS", "invalid arguments: "+err.Error(), false, `pass {"query": "..."}`)
+	}
+	if strings.TrimSpace(args.Query) == "" {
+		return "", toolFail("BAD_ARGS", "query is required", false, "pass a non-empty query")
+	}
+	results, err := websearch.Search(ctx, e.WebSearchKey, args.Query, args.Count)
+	if err != nil {
+		return "", toolFail("SEARCH_FAILED", err.Error(), false, "check the LangSearch API key in Settings")
+	}
+	return toolResult(map[string]any{
+		"query":   args.Query,
+		"count":   len(results),
+		"results": results,
+		// Pre-rendered, so the model reads the same text a reader would.
+		"text": websearch.Format(args.Query, results),
+	}), nil
 }
 
 // fetchURL retrieves a web page's readable text (docs, READMEs, API

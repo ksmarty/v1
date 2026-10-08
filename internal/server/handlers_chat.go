@@ -579,6 +579,7 @@ func (s *Server) streamChatTurn(w http.ResponseWriter, r *http.Request, p *store
 	params.ToonEnabled = s.toonEnabled(userID)
 	params.DisabledTools = s.disabledTools(userID)
 	params.ApprovalMode = s.permissionMode(userID)
+	params.WebSearchKey = s.langSearchKey(userID)
 	params.SoftTimeout, params.HardTimeout = s.turnTimeouts(userID)
 	params.MemoriesPrompt = s.memoryPrompt(p.ID, params.Message)
 	params.PlanPrompt = s.planPrompt(p.ID)
@@ -630,6 +631,7 @@ func (s *Server) streamChatTurn(w http.ResponseWriter, r *http.Request, p *store
 		Store:         s.st,
 		MCP:           s.mcp,
 		GithubToken:   s.githubToken(userID),
+		WebSearchKey:  params.WebSearchKey,
 		Perm:          &turnPerm{s: s, emit: emit, userID: userID},
 		DisabledTools: params.DisabledTools,
 		OnTodos: func(t []store.Todo) {

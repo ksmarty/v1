@@ -221,6 +221,8 @@ export interface SettingsUpdate {
   defaultThinking?: string;
   toonEnabled?: boolean;
   disabledTools?: string[];
+  /** LangSearch API key for the web_search tool; "" clears it. */
+  webSearchKey?: string;
   turnTimeouts?: { soft: number; hard: number };
   terminalFontSize?: number;
   terminalWrap?: boolean;

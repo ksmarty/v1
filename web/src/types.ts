@@ -79,6 +79,8 @@ export interface Settings {
   toonEnabled: boolean;
   /** Builtin agent tool names the user disabled in Tools & permissions. */
   disabledTools?: string[];
+  /** LangSearch key state for the web_search tool; the key itself is never sent. */
+  webSearch?: { keySet: boolean; keyHint: string };
   /** Per-user turn timeouts in minutes (0 = disabled). */
   turnTimeouts?: { soft: number; hard: number };
   /** Terminal font size in px. */
