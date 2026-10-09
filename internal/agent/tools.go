@@ -685,6 +685,9 @@ const DefaultAskTimeout = 30 * time.Minute
 type AskQuestion struct {
 	Question string   `json:"question"`
 	Options  []string `json:"options"`
+	// Multi lets the user pick several of the options. The answer is then the
+	// picked options joined by ", ", so nothing downstream needs a new shape.
+	Multi bool `json:"multi,omitempty"`
 }
 
 type AskAnswer struct {
@@ -704,6 +707,7 @@ func (e *Executor) askUser(ctx context.Context, argsJSON string) (string, error)
 	var args struct {
 		Question  string        `json:"question"`
 		Options   []string      `json:"options"`
+		Multi     bool          `json:"multi"`
 		Questions []AskQuestion `json:"questions"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
@@ -713,7 +717,7 @@ func (e *Executor) askUser(ctx context.Context, argsJSON string) (string, error)
 	if len(args.Questions) > 0 {
 		qs = args.Questions
 	} else if strings.TrimSpace(args.Question) != "" {
-		qs = []AskQuestion{{Question: args.Question, Options: args.Options}}
+		qs = []AskQuestion{{Question: args.Question, Options: args.Options, Multi: args.Multi}}
 	} else {
 		return "", fmt.Errorf("question is required")
 	}

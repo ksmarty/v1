@@ -305,7 +305,8 @@ export type ChatEvent =
       requestId: string;
       text?: string;
       options?: string[];
-      questions?: { question: string; options?: string[] }[];
+      multi?: boolean;
+      questions?: { question: string; options?: string[]; multi?: boolean }[];
     }
   | { type: 'project_renamed'; text?: string }
   | { type: 'session_renamed'; text?: string }

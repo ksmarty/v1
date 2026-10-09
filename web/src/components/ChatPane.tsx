@@ -1693,7 +1693,7 @@ function ToolBlocks({ calls, results }: { calls: ToolCall[]; results: ToolCall[]
   return <div className="flex flex-col gap-1.5">{out}</div>;
 }
 
-type AskQuestionView = { question: string; options: string[] };
+type AskQuestionView = { question: string; options: string[]; multi?: boolean };
 type AskAnswerView = { question: string; answer: string };
 
 // Parses an ask_user tool call's arguments JSON into the question list
@@ -1701,12 +1701,22 @@ type AskAnswerView = { question: string; answer: string };
 // raw detail (a plain question string) when it isn't JSON.
 function askQuestions(detail: string): AskQuestionView[] {
   try {
-    const a = JSON.parse(detail) as { question?: unknown; options?: unknown; questions?: unknown };
-    const clean = (q: { question?: unknown; options?: unknown }): AskQuestionView | null => {
+    const a = JSON.parse(detail) as {
+      question?: unknown;
+      options?: unknown;
+      multi?: unknown;
+      questions?: unknown;
+    };
+    const clean = (q: {
+      question?: unknown;
+      options?: unknown;
+      multi?: unknown;
+    }): AskQuestionView | null => {
       if (typeof q.question !== 'string' || !q.question.trim()) return null;
       return {
         question: q.question,
         options: Array.isArray(q.options) ? q.options.filter((o): o is string => typeof o === 'string') : [],
+        multi: q.multi === true,
       };
     };
     if (Array.isArray(a.questions)) {
@@ -1776,6 +1786,9 @@ function AskBlock({
   const multi = questions.length > 1;
   const q = questions[Math.min(step, questions.length - 1)];
   const cur = drafts[step] ?? '';
+  // A multi question still answers with one string — the options picked so far,
+  // joined — so the drafts, the input and the submitted answers keep their shape.
+  const picked = q.multi ? cur.split(', ').filter(Boolean) : [];
   const allAnswered = drafts.every((d) => d.trim() !== '');
   const askSummary = multi ? `Asked ${questions.length} questions` : 'Asked 1 question';
 
@@ -1851,16 +1864,33 @@ function AskBlock({
           </div>
           {q.options.length > 0 && (
             <div className="mt-2.5 flex flex-wrap gap-1.5">
-              {q.options.map((o) => (
-                <Button
-                  key={o}
-                  variant="outline"
-                  className={`px-3 text-xs whitespace-normal break-words text-left ${cur === o ? 'border-accent text-text' : ''}`}
-                  onClick={() => setCur(o)}
-                >
-                  {o}
-                </Button>
-              ))}
+              {q.options.map((o) => {
+                const on = q.multi ? picked.includes(o) : cur === o;
+                return (
+                  <Button
+                    key={o}
+                    variant="outline"
+                    className={`px-3 text-xs whitespace-normal break-words text-left ${on ? 'border-accent text-text' : ''}`}
+                    onClick={() =>
+                      q.multi
+                        ? setCur(
+                            (picked.includes(o)
+                              ? picked.filter((x) => x !== o)
+                              : [...picked, o]
+                            ).join(', '),
+                          )
+                        : setCur(o)
+                    }
+                  >
+                    {q.multi && (
+                      <IconCheck
+                        className={`mr-1 inline h-3 w-3 shrink-0 ${on ? 'text-accent' : 'opacity-30'}`}
+                      />
+                    )}
+                    {o}
+                  </Button>
+                );
+              })}
             </div>
           )}
           <form
@@ -2851,7 +2881,11 @@ export default function ChatPane({
       if (p.pending && p.requestId && p.question) {
         const questions: AskQuestionView[] =
           p.questions && p.questions.length > 0
-            ? p.questions.map((q) => ({ question: q.question, options: q.options ?? [] }))
+            ? p.questions.map((q) => ({
+                question: q.question,
+                options: q.options ?? [],
+                multi: q.multi === true,
+              }))
             : [{ question: p.question, options: p.options ?? [] }];
         setAskPrompt({ requestId: p.requestId, questions });
       } else {
@@ -3601,7 +3635,11 @@ export default function ChatPane({
         case 'question_request': {
           const questions: AskQuestionView[] =
             ev.questions && ev.questions.length > 0
-              ? ev.questions.map((q) => ({ question: q.question, options: q.options ?? [] }))
+              ? ev.questions.map((q) => ({
+                  question: q.question,
+                  options: q.options ?? [],
+                  multi: q.multi === true,
+                }))
               : [{ question: ev.text ?? '', options: ev.options ?? [] }];
           setAskPrompt({ requestId: ev.requestId, questions });
           // Replace the bare ask_user tool row with the inline question block.

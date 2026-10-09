@@ -450,7 +450,8 @@ export const api = {
       requestId?: string;
       question?: string;
       options?: string[];
-      questions?: { question: string; options?: string[] }[];
+      multi?: boolean;
+      questions?: { question: string; options?: string[]; multi?: boolean }[];
     }>(`/api/projects/${id}/ask/pending?sessionId=${encodeURIComponent(sessionId)}`),
   // Background jobs: the detached commands still running for a session, and
   // stopping one. A finished job is read from its transcript row instead.

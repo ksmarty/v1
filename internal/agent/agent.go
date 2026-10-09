@@ -1258,7 +1258,7 @@ var tools = []llm.Tool{
 		Type: "function",
 		Function: llm.ToolFunction{
 			Name:        "ask_user",
-			Description: "Ask the user one or more questions and wait for their answers. Use when you need decisions, clarifications or preferences instead of guessing. Pass a single question in \"question\" (with optional \"options\"); to ask several in sequence, pass them in \"questions\" — the user steps through them and confirms all answers at once.",
+			Description: "Ask the user one or more questions and wait for their answers. Use when you need decisions, clarifications or preferences instead of guessing. Pass a single question in \"question\" (with optional \"options\"); to ask several in sequence, pass them in \"questions\" — the user steps through them and confirms all answers at once. Set multi to true on a question whose options are not mutually exclusive, so the user can pick several.",
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -1271,6 +1271,10 @@ var tools = []llm.Tool{
 						"description": "Optional 2-4 suggested answers for a single question.",
 						"items":       map[string]any{"type": "string"},
 					},
+					"multi": map[string]any{
+						"type":        "boolean",
+						"description": "Allow picking several options for a single question (checkboxes instead of one choice).",
+					},
 					"questions": map[string]any{
 						"type":        "array",
 						"description": "Multiple questions to ask in sequence (2-8). Each has a question and optional 2-4 options.",
@@ -1281,6 +1285,10 @@ var tools = []llm.Tool{
 								"options": map[string]any{
 									"type":  "array",
 									"items": map[string]any{"type": "string"},
+								},
+								"multi": map[string]any{
+									"type":        "boolean",
+									"description": "Allow picking several options for this question.",
 								},
 							},
 							"required": []string{"question"},
