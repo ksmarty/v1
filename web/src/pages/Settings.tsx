@@ -122,7 +122,7 @@ const SETTINGS_SEARCH: {
   { id: 'sec-system-prompt', page: 'llm', label: 'Global system prompt', hint: 'Extra instructions for every chat', keywords: 'prompt instructions behavior context rules system agent' },
   { id: 'sec-llm', page: 'llm', label: 'Default thinking level', hint: 'Off / low / medium / high / xhigh / max', keywords: 'thinking reasoning effort level default tokens model' },
   { id: 'sec-toon', page: 'llm', label: 'TOON', hint: 'Token-efficient tool result encoding', keywords: 'toon tokens efficient encode tool results format compact json' },
-  { id: 'sec-tools-skills', page: 'tools', label: 'Caveman mode', hint: 'Now a skill: terse replies, technical facts kept', keywords: 'caveman terse style reply concise brief short answer first no fluff' },
+  { id: 'sec-tools-skills', page: 'tools', label: 'Skills', hint: 'Installable instruction sets the agent loads', keywords: 'skills marketplace install prompt instructions' },
   { id: 'sec-auto-push', page: 'llm', label: 'Auto-push new projects', hint: 'Default for newly created projects only', keywords: 'auto push commits github default new projects git remote' },
   { id: 'sec-context-threshold', page: 'llm', label: 'Context compaction', hint: 'Percent of context before auto compaction', keywords: 'context compaction threshold percent auto compact tokens' },
   { id: 'sec-turn-timeouts', page: 'llm', label: 'Turn timeouts', hint: 'Soft/hard run time limits in minutes', keywords: 'turn timeout soft hard deadline minutes abort warn run length' },
@@ -2713,7 +2713,7 @@ export default function Settings() {
         <Section
           id="sec-toon"
           title="Reply style"
-          description="How tool results are encoded on the way to the model. Caveman mode — terse replies with every technical fact kept — is a skill now; find it under Skills."
+          description="How tool results are encoded on the way to the model."
         >
           <div className="flex flex-col gap-4">
             <div>

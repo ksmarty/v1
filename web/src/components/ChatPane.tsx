@@ -35,6 +35,7 @@ import { errMsg, diffLines, getDebugHud, getJsonPretty, getThinkingCollapsed, ge
 import { notifyTurnDone, notifyTurnError, notifyAsk } from '../notify';
 import { pushActive } from '../push';
 import { permissionMeta } from '../permissions';
+import { markSessionUnused, markSessionUsed, releaseUnusedSession } from '../sessionCleanup';
 
 // sessionStorageKey is the localStorage key remembering the last-used chat
 // session per project, so leaving a project and coming back reopens the same
@@ -272,12 +273,6 @@ function formatElapsed(ms: number): string {
   const s = Math.max(1, Math.round(ms / 1000));
   if (s < 60) return `${s}s`;
   return `${Math.floor(s / 60)}m ${s % 60}s`;
-}
-
-// Formats a queue wait estimate in seconds, e.g. "45s" or "2m".
-function fmtQueueWait(seconds: number): string {
-  if (seconds < 60) return `${Math.max(1, Math.round(seconds))}s`;
-  return `${Math.ceil(seconds / 60)}m`;
 }
 
 // Formats a timestamp as a short local time, e.g. "10:42 AM".
@@ -2522,6 +2517,16 @@ export default function ChatPane({
 
   // Report the active session name up to the header (project title + session
   // subtitle click to switch).
+  // Leaving a chat we started but never used removes it, so an accidental tap on
+  // "New session" does not leave an empty row in the list. The cleanup captures
+  // this effect's session, so switching sessions releases the one being left.
+  useEffect(() => {
+    const id = sessionId;
+    return () => {
+      void releaseUnusedSession(projectId, id);
+    };
+  }, [projectId, sessionId]);
+
   // The active session's name, for notification titles: a turn that finishes in
   // "Fix the login bug" should say so rather than naming the whole project.
   const sessionNameRef = useRef('');
@@ -3061,6 +3066,7 @@ export default function ChatPane({
     try {
       const res = await api.createSession(projectId);
       setSessions((prev) => [...prev, res.session]);
+      markSessionUnused(projectId, res.session.id);
       setSessionId(res.session.id);
       rememberSession(res.session.id);
       onSessionsOpenChange(false);
@@ -4102,6 +4108,9 @@ export default function ChatPane({
 
   const send = useCallback(async () => {
     if (await runLocalCommand(input)) return;
+    // Anything that really sends marks the session used, so leaving it later
+    // does not delete it as an unused one.
+    markSessionUsed(sessionId);
     if (streaming) {
       // Attachments need a fresh turn, so they cannot ride along mid-run.
       const text = input.trim();
@@ -4772,10 +4781,14 @@ export default function ChatPane({
             setSuggestions([]);
             return;
           }
+          // On desktop the send shortcut is Cmd/Ctrl+Enter, so a plain Enter is
+          // a newline there too — the composer is a markdown editor, and
+          // Enter-to-send made a multi-line paragraph impossible to write.
+          const sendCombo = isDesktop && (e.metaKey || e.ctrlKey);
           // Markdown list continuation: starting a new line inside a list
           // item autofills the bullet/number marker (keeping the indent);
           // an empty item ends the list instead.
-          if (e.key === 'Enter' && (e.shiftKey || !isDesktop)) {
+          if (e.key === 'Enter' && !sendCombo) {
             const ta = taRef.current;
             if (ta && suggestions.length === 0) {
               const selStart = ta.selectionStart;
@@ -4799,7 +4812,7 @@ export default function ChatPane({
               }
             }
           }
-          if (e.key === 'Enter' && !e.shiftKey && isDesktop) {
+          if (e.key === 'Enter' && sendCombo) {
             e.preventDefault();
             void send();
           }
@@ -5132,22 +5145,13 @@ export default function ChatPane({
             <div className="mb-1.5 flex items-center gap-1.5 px-1 text-[10px] font-medium uppercase tracking-wider text-faint">
               <IconSend className="h-3 w-3 text-accent" />
               Queued ({queued.length})
-              {queued.some((m) => m.estimatedWaitSeconds != null) && (
-                <span className="ml-auto normal-case tracking-normal text-dim">
-                  ~{fmtQueueWait(Math.max(...queued.map((m) => m.estimatedWaitSeconds ?? 0)))} to next turn
-                </span>
-              )}
             </div>
             {queued.map((m, i) => (
               <div
                 key={m.id}
                 className="mb-1 flex items-center gap-1 rounded-md border border-border/80 bg-surface/70 px-2 py-1.5 last:mb-0"
               >
-                {queued.length > 1 && (
-                  <span className="w-4 shrink-0 text-right font-mono text-[10px] text-faint">
-                    {i + 1}.
-                  </span>
-                )}
+                <IconList className="h-3 w-3 shrink-0 text-faint" />
                 {queueEditId === m.id ? (
                   <textarea
                     autoFocus

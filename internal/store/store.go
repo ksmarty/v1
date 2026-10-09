@@ -1719,3 +1719,14 @@ func (s *Store) ListMessages(projectID, sessionID string) ([]*Message, error) {
 	}
 	return out, rows.Err()
 }
+
+// SessionMessageCount reports how many messages a session holds. It answers the
+// one question the empty-session cleanup asks without loading the transcript.
+func (s *Store) SessionMessageCount(projectID, sessionID string) (int, error) {
+	var n int
+	err := s.db.QueryRow(
+		`SELECT COUNT(*) FROM messages WHERE project_id = ? AND session_id = ?`,
+		projectID, sessionID,
+	).Scan(&n)
+	return n, err
+}

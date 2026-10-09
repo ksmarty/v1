@@ -102,9 +102,26 @@ func (s *Server) handleDeleteSession(w http.ResponseWriter, r *http.Request) {
 	if p == nil {
 		return
 	}
-	if err := s.st.DeleteChatSession(p.ID, r.PathValue("sessionId")); err != nil {
+	sessionID := r.PathValue("sessionId")
+	// ifEmpty=1 is the cleanup path: a chat that was opened and left without
+	// anything being said in it. The check lives here rather than in the client
+	// because only the store knows whether a message landed in the meantime — a
+	// background command reports into its session whether or not anyone is
+	// looking at it.
+	if r.URL.Query().Get("ifEmpty") == "1" {
+		n, err := s.st.SessionMessageCount(p.ID, sessionID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if n > 0 {
+			writeJSON(w, http.StatusOK, map[string]any{"ok": true, "deleted": false})
+			return
+		}
+	}
+	if err := s.st.DeleteChatSession(p.ID, sessionID); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "deleted": true})
 }

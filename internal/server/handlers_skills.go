@@ -48,9 +48,8 @@ func (s *Server) skillsSystemPrompt() string {
 	return skills.SystemPrompt(s.skillsRoot(), s.installedSkills())
 }
 
-// ensureBuiltinSkills seeds the skills every install should have, and migrates
-// the retired caveman setting onto its replacement skill. It runs once: the
-// guard is what lets a user remove a bundled skill without it coming back on
+// ensureBuiltinSkills seeds the skills every install should have. It runs once:
+// the guard is what lets a user remove a bundled skill without it coming back on
 // the next restart.
 func (s *Server) ensureBuiltinSkills() {
 	if v, ok, _ := s.st.GetSetting(keySkillsSeeded); ok && v == "1" {
@@ -77,23 +76,6 @@ func (s *Server) ensureBuiltinSkills() {
 		installed = append(installed, b.Skill)
 	}
 
-	// caveman was a per-user toggle. Anyone who had it on gets the equivalent
-	// skill, because removing the setting without this would silently turn the
-	// style off for them. The setting is retired either way.
-	cavemanWanted := false
-	if users, err := s.st.ListUsers(); err == nil {
-		for _, u := range users {
-			if v, ok, _ := s.st.GetUserSetting(u.ID, keyCavemanLegacy); ok && v == "1" {
-				cavemanWanted = true
-			}
-			if err := s.st.DeleteUserSetting(u.ID, keyCavemanLegacy); err != nil {
-				log.Printf("skills: cannot clear the retired caveman setting: %v", err)
-			}
-		}
-	}
-	if cavemanWanted {
-		add("caveman")
-	}
 	// Session naming ships on: it is the behaviour that makes a session list
 	// readable, and it is a skill, so turning it off is one click.
 	add("session-naming")

@@ -115,8 +115,7 @@ func New(cfg config.Config, st *store.Store) *Server {
 	// The bundled agent extensions (currently the `delegate` sub-agent tool)
 	// are written to the data volume on startup, so a fresh install has them.
 	s.ensureBuiltinExtensions()
-	// The bundled skills are seeded the same way, and the caveman setting that
-	// used to live in the LLM card is migrated onto its skill here.
+	// The bundled skills are seeded the same way.
 	s.ensureBuiltinSkills()
 	mux := http.NewServeMux()
 	s.routes(mux)
@@ -380,8 +379,8 @@ const (
 	keyProvidersCustom         = "providers_custom"
 	keyMCP                     = "mcp_servers"
 	keySkills                  = "skills_installed"
-	// Set once the bundled skills have been seeded and the retired caveman
-	// setting migrated. Guarded so removing a bundled skill stays removed.
+	// Set once the bundled skills have been seeded. Guarded so removing a
+	// bundled skill stays removed.
 	keySkillsSeeded    = "skills_seeded"
 	keyExtensions      = "extensions_installed"
 	keyPermissionMode  = "permission_mode"
@@ -398,13 +397,10 @@ const (
 	// The embedding provider backing memory retrieval, split across four keys so
 	// a local endpoint (Ollama, LM Studio) is configurable with no key at all.
 	// All four are per user, like every other provider setting.
-	keyEmbedProvider = "embedding_provider"
-	keyEmbedModel    = "embedding_model"
-	keyEmbedBaseURL  = "embedding_base_url"
-	keyEmbedAPIKey   = "embedding_api_key"
-	// Retired: caveman mode is a bundled skill now. Read once, only to migrate
-	// whoever had it switched on, then deleted from each user's settings.
-	keyCavemanLegacy    = "caveman"
+	keyEmbedProvider    = "embedding_provider"
+	keyEmbedModel       = "embedding_model"
+	keyEmbedBaseURL     = "embedding_base_url"
+	keyEmbedAPIKey      = "embedding_api_key"
 	keySoftTimeout      = "turn_soft_timeout"  // minutes; 0 = disabled
 	keyHardTimeout      = "turn_hard_timeout"  // minutes; 0 = disabled
 	keyTerminalFontSize = "terminal_font_size" // px

@@ -369,8 +369,11 @@ export const api = {
     post<void>(`/api/projects/${id}/sessions/${sessionId}/archive`),
   unarchiveSession: (id: string, sessionId: string) =>
     post<void>(`/api/projects/${id}/sessions/${sessionId}/unarchive`),
-  deleteSession: (id: string, sessionId: string) =>
-    request<void>(`/api/projects/${id}/sessions/${sessionId}`, { method: 'DELETE' }),
+  deleteSession: (id: string, sessionId: string, onlyIfEmpty = false) =>
+    request<void>(
+      `/api/projects/${id}/sessions/${sessionId}${onlyIfEmpty ? '?ifEmpty=1' : ''}`,
+      { method: 'DELETE' },
+    ),
   // Context usage refreshes after every turn, but the value is stable for a
   // few seconds — cache it briefly so popup opens and re-renders don't
   // refetch it. force skips the cache (used right after a turn completes).

@@ -533,56 +533,6 @@ that the tool you intended is listed.
 	},
 }
 
-// caveman is the bundled "caveman" skill: the terse reply style that used to
-// live in the LLM settings as a toggle. As a skill the text is the same, but it
-// is now visible, editable and removable like any other instruction set, and it
-// only applies while it is enabled.
-var caveman = Builtin{
-	Skill: Skill{
-		ID:          "caveman",
-		Name:        "Caveman mode",
-		Author:      "v1",
-		Description: "Terse replies: answer first, no fluff, with code, paths, numbers and errors kept verbatim. Security warnings and destructive actions still use full sentences.",
-		Dir:         "caveman",
-		Enabled:     true,
-	},
-	Files: map[string]string{
-		"SKILL.md": `# Caveman mode
-
-A terse reply style. Keep every technical fact; cut only fluff.
-
-## Voice — not broken grammar
-
-- Answer first, then reason, then the next step. Pattern: [thing] [action] [reason]. [next step].
-- Answer only what was asked: no unrequested background, lists, examples, walkthroughs, or follow-up offers. Give code, steps, or warnings when the task needs them. Each fact once — no restating or summary after a list.
-- No greeting, no preamble ("Let me…", "I'll…"), no recap, no closer ("Hope this helps").
-- Kill filler: just, really, basically, actually, simply. Use the short word: "fix", not "implement a solution for". Drop a/an/the when the sentence still reads in one pass; fragments are fine.
-- One idea per sentence. Active voice; imperative for instructions. If the terse phrasing is not shorter or is less clear than plain, use plain.
-
-## Never cut or change (verbatim, character for character)
-
-- Code, commands, file paths, API and identifier names, error messages, numbers and units.
-- Negations and qualifiers: not, never, no, only, except. A dropped negation costs more than every token saved.
-- Tool call arguments, and any payload another program parses: pass them exactly as the tool requires. Brevity never applies inside a tool call.
-
-## Tool runs
-
-- No chatter between routine tool calls. One line before a multi-step run, one line per phase change, one line with the final result. Text before a call only to clarify, warn, or disambiguate.
-
-## When to drop the style (write normal full prose, then resume)
-
-- Security warnings; irreversible or destructive actions (confirm them in full sentences first); step-by-step instructions a fragment could scramble; the user is confused or repeating a question; anything persisted outside chat (code, comments, commits, docs, PRs, memory).
-- ask_user questions and confirmation prompts are always clear, full sentences.
-
-Never perform caveman: no "caveman mode on", no "me think" or grunts, no "Caveman:" prefix, no normal answer plus a caveman copy, no decorative emoji or tables. Match the user's language: compress the style, not the language.
-
-Before sending: delete any first sentence that announces what you will do; delete any last sentence that recaps or offers help; re-check that every not/never/no/only survives and every code span, path, number and error is verbatim; if a sentence has two readings, make it a full sentence.
-
-Still use your tools and get the job done.
-`,
-	},
-}
-
 // sessionNaming is the bundled "session-naming" skill: it has the agent name the
 // chat after what it is about, which is what makes the session list readable.
 // The rename goes through the set_session_name tool, so it lands in v1's store
@@ -631,7 +581,7 @@ session list immediately, so there is nothing to explain to the user.
 }
 
 func Builtins() []Builtin {
-	return []Builtin{githubWorkflows, persistentToolInstall, v1Extensions, caveman, sessionNaming}
+	return []Builtin{githubWorkflows, persistentToolInstall, v1Extensions, sessionNaming}
 }
 
 // FindBuiltin returns the builtin skill with the given id, or nil.

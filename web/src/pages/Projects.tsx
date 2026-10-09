@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import type { ChatSession, GitHubRepo, Project, Provider, ProviderModel, SavedProvider } from '../types';
 import { errMsg, timeAgo } from '../utils';
+import { markSessionUnused } from '../sessionCleanup';
 import { freshThinkingLevel } from '../thinking';
 import { Button, Dialog, ErrorBox, IconButton, Input, Spinner } from '../components/ui';
 import ModelPicker from '../components/ModelPicker';
@@ -496,6 +497,7 @@ export default function Projects() {
     setError(null);
     try {
       const r = await api.createSession(projectId);
+      markSessionUnused(projectId, r.session.id);
       navigate(`/project/${projectId}?session=${r.session.id}`);
     } catch (e) {
       setError(errMsg(e));
