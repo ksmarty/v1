@@ -8,7 +8,7 @@ import (
 )
 
 func TestBackgroundManagerLifecycle(t *testing.T) {
-	m := NewBackgroundManager()
+	m := NewBackgroundManager("")
 	var notified *BackgroundJob
 	id, err := m.Start(t.TempDir(), "echo hello && sleep 0.2 && echo world", 10*time.Second, "sess1", func(j *BackgroundJob) { notified = j })
 	if err != nil {
@@ -51,7 +51,7 @@ func TestBackgroundManagerLifecycle(t *testing.T) {
 // was told about. A finished job is not cancellable, and another session's job
 // is unreachable.
 func TestBackgroundRunningAndCancel(t *testing.T) {
-	m := NewBackgroundManager()
+	m := NewBackgroundManager("")
 	done := make(chan *BackgroundJob, 1)
 	id, err := m.Start(t.TempDir(), "sleep 30", 60*time.Second, "sessA", func(j *BackgroundJob) { done <- j })
 	if err != nil {
@@ -99,7 +99,7 @@ func TestBackgroundRunningAndCancel(t *testing.T) {
 // TestBackgroundCancelSession verifies that cancelling a session terminates
 // its running detached commands quickly instead of leaving them to run on.
 func TestBackgroundCancelSession(t *testing.T) {
-	m := NewBackgroundManager()
+	m := NewBackgroundManager("")
 	var notified *BackgroundJob
 	if _, err := m.Start(t.TempDir(), "sleep 30", 60*time.Second, "sessK", func(j *BackgroundJob) { notified = j }); err != nil {
 		t.Fatal(err)
@@ -124,7 +124,7 @@ func TestBackgroundCancelSession(t *testing.T) {
 // TestBackgroundKillAll verifies that shutting the manager down terminates
 // every running detached command regardless of session.
 func TestBackgroundKillAll(t *testing.T) {
-	m := NewBackgroundManager()
+	m := NewBackgroundManager("")
 	var n1, n2 *BackgroundJob
 	if _, err := m.Start(t.TempDir(), "sleep 30", 60*time.Second, "sessA", func(j *BackgroundJob) { n1 = j }); err != nil {
 		t.Fatal(err)
@@ -150,7 +150,7 @@ func TestBackgroundKillAll(t *testing.T) {
 }
 
 func TestBackgroundManagerTimeout(t *testing.T) {
-	m := NewBackgroundManager()
+	m := NewBackgroundManager("")
 	var notified *BackgroundJob
 	if _, err := m.Start(t.TempDir(), "sleep 30", 300*time.Millisecond, "s", func(j *BackgroundJob) { notified = j }); err != nil {
 		t.Fatal(err)
@@ -169,7 +169,7 @@ func TestBackgroundManagerTimeout(t *testing.T) {
 
 func TestRunCommandBackgroundTool(t *testing.T) {
 	e := newTestExecutor(t)
-	e.Background = NewBackgroundManager()
+	e.Background = NewBackgroundManager("")
 	var notified *BackgroundJob
 	e.BackgroundNotify = func(j *BackgroundJob) { notified = j }
 

@@ -83,12 +83,13 @@ const backgroundOutputCap = 32 * 1024
 // scoped to the chat session that started them, so results land in the right
 // transcript.
 type BackgroundManager struct {
-	mu   sync.Mutex
-	jobs map[string]*BackgroundJob
+	mu    sync.Mutex
+	jobs  map[string]*BackgroundJob
+	token string // GitHub token, for a background command that runs gh
 }
 
-func NewBackgroundManager() *BackgroundManager {
-	return &BackgroundManager{jobs: map[string]*BackgroundJob{}}
+func NewBackgroundManager(token string) *BackgroundManager {
+	return &BackgroundManager{jobs: map[string]*BackgroundJob{}, token: token}
 }
 
 // Start launches the command detached in dir. notify runs on completion
@@ -104,7 +105,7 @@ func (m *BackgroundManager) Start(dir, command string, timeout time.Duration, se
 	}
 	cmd := exec.Command("sh", "-c", command)
 	cmd.Dir = dir
-	cmd.Env = childEnv()
+	cmd.Env = commandEnv(command, m.token)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	out := &limitWriter{max: backgroundOutputCap}
 	cmd.Stdout = out

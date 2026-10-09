@@ -40,3 +40,31 @@ func childEnv() []string {
 	}
 	return out
 }
+
+// commandEnv is childEnv plus the GitHub token, for a command that runs the
+// GitHub CLI. gh reads its credentials from GH_TOKEN (GITHUB_TOKEN as a
+// fallback), so handing it the token is what makes `gh pr create` work.
+//
+// The token is added only when the command line actually invokes gh. Injecting
+// it into every command would undo the point of keeping credentials out of
+// child processes: any project script, or an `env` the agent runs while
+// debugging, would print a live token. Value-level redaction in the sanitize
+// package would still stop it reaching a transcript, but there is no reason to
+// hand it out. The check is a word match, so `cd app && gh pr list` works; a gh
+// invoked indirectly, through a script of the user's own, is not authenticated.
+func commandEnv(cmdline, token string) []string {
+	env := childEnv()
+	if token == "" || !invokesGH(cmdline) {
+		return env
+	}
+	return append(env, "GH_TOKEN="+token, "GITHUB_TOKEN="+token)
+}
+
+func invokesGH(cmdline string) bool {
+	for _, f := range strings.Fields(cmdline) {
+		if f == "gh" {
+			return true
+		}
+	}
+	return false
+}

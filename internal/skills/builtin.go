@@ -634,8 +634,67 @@ session list immediately, so there is nothing to explain to the user.
 	},
 }
 
+var githubCLI = Builtin{
+	Skill: Skill{
+		ID:          "github-cli",
+		Name:        "GitHub CLI",
+		Author:      "v1",
+		Description: "Work with issues, pull requests, releases and workflow runs through the authenticated gh CLI instead of hand-rolling API calls.",
+		Dir:         "github-cli",
+		Enabled:     true,
+	},
+	Files: map[string]string{
+		"SKILL.md": `# GitHub CLI
+
+v1 authenticates the ` + "`gh`" + ` CLI for you. Run it as normal — issues, pull
+requests, releases, workflow runs, reviews — and it acts as the account that
+owns the token configured in v1's settings. There is no login step, and the
+token is present only for the command you run, not for the rest of the shell.
+
+## Check it once per session
+
+    gh auth status
+
+If that reports a token, everything below works. If it says you are not
+logged in, the user has not configured a token: say so and point them at
+Settings → GitHub. Do not retry, and do not run gh auth login — it wants a
+browser and a code.
+
+## Common work
+
+    gh issue list --state open --limit 20
+    gh issue view 42 --comments
+    gh pr list --state open
+    gh pr view 7 --json title,body,state,statusCheckRollup
+    gh pr checks 7
+    gh pr create --fill --base main
+    gh run list --limit 10
+    gh run view <run-id> --log-failed
+    gh release list
+
+Prefer --json with --jq when you need to read a value rather than show a
+table: the table output is wide and easy to misread.
+
+## Use git for the code itself
+
+` + "`gh`" + ` is for a repository's meta — issues, pull requests, releases,
+workflow runs. To move code (status, diff, commit, push) use the git tool,
+which is authenticated the same way. Do not reach for ` + "`gh api`" + ` to read
+files or to write commits; the file tools and the git tool do that better.
+
+## Rules
+
+- Read before writing: look at the issue or pull request before commenting.
+- Never force-push, close an issue, or merge a pull request unless the user
+  asked for exactly that.
+- A pull request body explains what changed and why; the title is not enough.
+- Quote the failing step of a run, not its whole log.
+`,
+	},
+}
+
 func Builtins() []Builtin {
-	return []Builtin{githubWorkflows, persistentToolInstall, v1Extensions, sessionNaming}
+	return []Builtin{githubWorkflows, persistentToolInstall, v1Extensions, sessionNaming, githubCLI}
 }
 
 // FindBuiltin returns the builtin skill with the given id, or nil.

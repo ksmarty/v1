@@ -93,7 +93,7 @@ func New(cfg config.Config, st *store.Store) *Server {
 		previews:       preview.NewManager(cfg.MaxPreviews),
 		terminals:      terminal.NewManager(),
 		turns:          newTurnManager(),
-		background:     agent.NewBackgroundManager(),
+		background:     agent.NewBackgroundManager(cfg.GitHubToken),
 		oauthFlows:     map[string]*oauthFlow{},
 		oauthCodeFlows: map[string]*githubOAuthFlow{},
 		oidcFlows:      map[string]*oidcFlow{},

@@ -78,6 +78,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && ln -s "$(command -v fdfind)" /usr/local/bin/fd
 
+# GitHub CLI, so the agent can work with issues, pull requests and releases
+# instead of hand-rolling API calls. It is authenticated per command from
+# V1_GITHUB_TOKEN (see internal/agent/env.go) — the token is never baked into
+# the image, and only a command that actually invokes gh is given it.
+RUN apt-get update && apt-get install -y --no-install-recommends gnupg \
+    && mkdir -p -m 755 /etc/apt/keyrings \
+    && wget -qO /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+        https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+    && chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+        > /etc/apt/sources.list.d/github-cli.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends gh \
+    && rm -rf /var/lib/apt/lists/*
+
 # Chromium for the screenshot tool (large, changes rarely).
 RUN apt-get update && apt-get install -y --no-install-recommends chromium \
     && rm -rf /var/lib/apt/lists/*

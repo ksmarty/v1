@@ -1812,7 +1812,7 @@ func (e *Executor) runCommand(ctx context.Context, argsJSON string) (string, err
 	cmdLine := args.Command
 	cmd := exec.Command("sh", "-c", cmdLine)
 	cmd.Dir = e.Root
-	cmd.Env = childEnv()
+	cmd.Env = commandEnv(cmdLine, e.GithubToken)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	out := &limitWriter{max: 512 * 1024}
 	cmd.Stdout = out
