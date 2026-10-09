@@ -316,6 +316,7 @@ function ToolSettings({
         { name: 'set_todos', label: 'Update todos', hint: 'Keep the visible todo list' },
         { name: 'remember', label: 'Remember', hint: 'Save a durable project fact' },
         { name: 'forget', label: 'Forget', hint: 'Remove a saved fact' },
+        { name: 'search_memories', label: 'Search memories', hint: 'Search saved facts by meaning' },
         { name: 'ask_user', label: 'Ask user', hint: 'Ask you a question mid-turn' },
       ],
     },
@@ -323,6 +324,13 @@ function ToolSettings({
       id: 'git',
       label: 'Git',
       tools: [{ name: 'git', label: 'Git', hint: 'Stage, commit and push' }],
+    },
+    {
+      id: 'extensions',
+      label: 'Extensions',
+      tools: [
+        { name: 'delegate', label: 'Delegate', hint: 'Hand a task to a sub-agent in its own context' },
+      ],
     },
   ];
 
@@ -456,7 +464,7 @@ function ToolSettings({
   // cards left the list a zero-height box on a phone: the built-in tools were
   // unreachable rather than scrolled past.
   const toolsSection = (
-    <div className="flex min-w-0 flex-col gap-2.5">
+    <div className="flex h-full min-h-0 min-w-0 flex-col gap-2.5">
       <div className="shrink-0 rounded-lg border border-border-strong bg-surface/50 p-3 shadow-sm">
         <div className="flex items-center gap-2">
           <p className="text-sm text-text">Web search</p>
@@ -471,18 +479,28 @@ function ToolSettings({
           </span>
         </div>
         <p className="mt-0.5 text-[11px] text-faint">
-          The <span className="text-subtle">web_search</span> tool runs on LangSearch. Get an API
-          key at{' '}
-          <a
-            href="https://langsearch.com/api-keys"
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-0.5 text-accent hover:underline"
-          >
-            langsearch.com
-            <IconExternalLink className="h-3 w-3" />
-          </a>{' '}
-          and paste it here. Until a key is set the tool is not offered to the agent at all.
+          {webKeySet ? (
+            <>
+              Web search is on — the agent can look things up with the{' '}
+              <span className="text-subtle">web_search</span> tool. Paste a different key to
+              replace the one saved.
+            </>
+          ) : (
+            <>
+              The <span className="text-subtle">web_search</span> tool runs on LangSearch. Get an
+              API key at{' '}
+              <a
+                href="https://langsearch.com/api-keys"
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-0.5 text-accent hover:underline"
+              >
+                langsearch.com
+                <IconExternalLink className="h-3 w-3" />
+              </a>{' '}
+              and paste it here. Until a key is set the tool is not offered to the agent at all.
+            </>
+          )}
         </p>
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <Input
@@ -704,7 +722,11 @@ function ToolSettings({
         instantly.
       </p>
       {toolsError && <p className="shrink-0 text-xs text-red-400">{toolsError}</p>}
-      <div className="min-w-0">
+      {/* The list scrolls under the fixed cards, the way the Skills and
+          Extensions tabs do. As one long column in the tab's outer scroller the
+          cards pushed the list off the bottom, where it read as missing rather
+          than as something to scroll to. */}
+      <div className="fade-y min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain">
         {TOOL_GROUPS.map((g) => (
           <div key={g.id} className="mb-3">
             <h4 className="mb-1.5 text-xs font-medium text-subtle">{g.label}</h4>
@@ -1997,7 +2019,7 @@ function ToolSettings({
         {tab === 'extensions' && (
           <div className="flex h-full min-h-0 flex-col">{extensionsSection}</div>
         )}
-        {tab === 'tools' && toolsSection}
+        {tab === 'tools' && <div className="flex h-full min-h-0 flex-col">{toolsSection}</div>}
         {tab === 'perms' && permsSection}
       </div>
       {skillPreview && (
