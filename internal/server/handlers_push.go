@@ -202,26 +202,16 @@ func (s *Server) handlePushTest(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]int{"devices": len(subs)})
 }
 
-// collapseText flattens whitespace and truncates, so a notification body stays
-// one short line.
-func collapseText(s string, max int) string {
-	s = strings.Join(strings.Fields(s), " ")
-	if len(s) > max {
-		s = strings.TrimSpace(s[:max]) + "\u2026"
-	}
-	return s
-}
-
-// pushSnippet returns the assistant's last reply, so a push says something
-// useful rather than just "done".
-func (s *Server) pushSnippet(projectID, sessionID string) string {
-	msgs, err := s.st.ListMessages(projectID, sessionID)
+// sessionName names a session for a notification body, empty when it cannot be
+// read.
+func (s *Server) sessionName(projectID, sessionID string) string {
+	sessions, err := s.st.ListSessions(projectID)
 	if err != nil {
 		return ""
 	}
-	for i := len(msgs) - 1; i >= 0; i-- {
-		if msgs[i].Role == "assistant" && strings.TrimSpace(msgs[i].Content) != "" {
-			return collapseText(msgs[i].Content, 140)
+	for _, sess := range sessions {
+		if sess.ID == sessionID {
+			return sess.Name
 		}
 	}
 	return ""
@@ -244,18 +234,17 @@ func (s *Server) notifyTurnPush(userID, projectID, sessionID, projectName string
 	if title == "" {
 		title = "v1"
 	}
+	// The notification names the turn — project, session, outcome — and nothing
+	// else. The reply itself used to be the body, which made it a wall of text
+	// truncated mid-sentence that told you nothing you could not read by opening
+	// the notification.
+	outcome := "finished"
 	if turnErr != nil {
-		s.notifyPush(userID, push.Message{
-			Title: title,
-			Body:  "Turn failed: " + collapseText(turnErr.Error(), 120),
-			URL:   link,
-			Tag:   "v1-turn-" + sessionID,
-		})
-		return
+		outcome = "failed"
 	}
-	body := s.pushSnippet(projectID, sessionID)
-	if body == "" {
-		body = "Turn finished"
+	body := "Turn " + outcome
+	if name := s.sessionName(projectID, sessionID); name != "" {
+		body = name + " · " + outcome
 	}
 	s.notifyPush(userID, push.Message{Title: title, Body: body, URL: link, Tag: "v1-turn-" + sessionID})
 }

@@ -2019,10 +2019,22 @@ export default function Settings() {
 
   // The provider the form is currently editing, if any. The key hint comes from
   // the provider being edited, not from the effective key: otherwise editing
-  // one provider would report the state of another.
+  // one provider would report the state of another. A provider being added has
+  // no state at all — falling back to the active provider made a brand new
+  // entry look like it already had a token saved.
   const editingProvider =
     editing && editing !== 'new' ? providers.find((p) => p.id === editing) : undefined;
-  const formKeyHint = editingProvider ? editingProvider.apiKeyHint : settings?.llm.apiKeyHint;
+  const addingProvider = editing === 'new';
+  const formKeyHint = addingProvider
+    ? undefined
+    : editingProvider
+      ? editingProvider.apiKeyHint
+      : settings?.llm.apiKeyHint;
+  const formKeySet = addingProvider
+    ? false
+    : editingProvider
+      ? editingProvider.apiKeySet
+      : settings?.llm.apiKeySet;
 
   const saveCurrency = async (v: string) => {
     setCurrency(v);
@@ -2473,7 +2485,7 @@ export default function Settings() {
                   placeholder={
                     formKeyHint
                       ? `${formKeyHint}… (set — enter to replace)`
-                      : settings.llm.apiKeySet
+                      : formKeySet
                         ? '•••••••• (set — enter to replace)'
                         : 'Not set'
                   }

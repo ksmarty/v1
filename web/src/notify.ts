@@ -61,14 +61,18 @@ async function shouldNotify(
  * user is not watching the respond otherwise. Requires the Notifications
  * toggle and a granted browser permission.
  */
+// Notifications name the turn, not its output: the title is the project (the
+// home page's group) and the body is the session plus the outcome. Pasting the
+// reply in made the notification a wall of text that told you nothing you could
+// not read by opening it, and truncated mid-sentence anyway.
 export async function notifyTurnDone(
   projectId: string,
   sessionId: string,
   projectName: string,
-  text: string,
+  sessionName: string,
 ) {
-  const title = projectName ? `${projectName} — turn finished` : 'Turn finished';
-  const body = (text.replace(/\s+/g, ' ').trim() || 'Response complete.').slice(0, 140);
+  const title = projectName || 'v1';
+  const body = sessionName ? `${sessionName} · finished` : 'Turn finished';
   const url = `/project/${encodeURIComponent(projectId)}?session=${encodeURIComponent(sessionId)}`;
   await shouldNotify(getNotifyTurnDone(), sessionId, title, body, url);
 }
@@ -82,10 +86,10 @@ export async function notifyTurnError(
   projectId: string,
   sessionId: string,
   projectName: string,
-  message: string,
+  sessionName: string,
 ) {
-  const title = projectName ? `${projectName} — turn failed` : 'Turn failed';
-  const body = (message.replace(/\s+/g, ' ').trim() || 'Something went wrong.').slice(0, 140);
+  const title = projectName || 'v1';
+  const body = sessionName ? `${sessionName} · failed` : 'Turn failed';
   const url = `/project/${encodeURIComponent(projectId)}?session=${encodeURIComponent(sessionId)}`;
   await shouldNotify(getNotifyTurnError(), sessionId, title, body, url);
 }

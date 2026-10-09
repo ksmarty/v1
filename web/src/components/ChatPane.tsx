@@ -33,6 +33,7 @@ import type {
 } from '../types';
 import { errMsg, diffLines, getDebugHud, getJsonPretty, getThinkingCollapsed, getToolCallsCollapsed } from '../utils';
 import { notifyTurnDone, notifyTurnError, notifyAsk } from '../notify';
+import { pushActive } from '../push';
 import { permissionMeta } from '../permissions';
 
 // sessionStorageKey is the localStorage key remembering the last-used chat
@@ -2521,8 +2522,12 @@ export default function ChatPane({
 
   // Report the active session name up to the header (project title + session
   // subtitle click to switch).
+  // The active session's name, for notification titles: a turn that finishes in
+  // "Fix the login bug" should say so rather than naming the whole project.
+  const sessionNameRef = useRef('');
   useEffect(() => {
     const s = sessions.find((x) => x.id === sessionId);
+    sessionNameRef.current = s?.name ?? '';
     onSessionName?.(s?.name ?? '');
   }, [sessions, sessionId, onSessionName]);
 
@@ -2973,10 +2978,18 @@ export default function ChatPane({
           lastNotifiedRef.current = finished.key;
           try { localStorage.setItem(notifiedKey, finished.key); } catch {}
         } else if (finished.key !== lastNotifiedRef.current) {
-          if (finished.error) {
-            void notifyTurnError(projectId, sessionId, projectName, finished.content);
-          } else {
-            void notifyTurnDone(projectId, sessionId, projectName, finished.content);
+          // The server pushes a notification the moment a turn finishes, so by
+          // the time the user comes back it has already been delivered. The
+          // in-page copy is the fallback for a device with no push
+          // subscription — without the check it waits for the user to return
+          // (this code only runs when the page loads) and lands minutes after
+          // the turn ended, which is the delay people reported.
+          if (!(await pushActive())) {
+            if (finished.error) {
+              void notifyTurnError(projectId, sessionId, projectName, sessionNameRef.current);
+            } else {
+              void notifyTurnDone(projectId, sessionId, projectName, sessionNameRef.current);
+            }
           }
           lastNotifiedRef.current = finished.key;
           try { localStorage.setItem(notifiedKey, finished.key); } catch {}
@@ -3651,15 +3664,7 @@ export default function ChatPane({
               );
             }
           }
-          let snippet = '';
-          for (let i = itemsRef.current.length - 1; i >= 0; i--) {
-            const it = itemsRef.current[i];
-            if (it.kind === 'msg' && it.role === 'assistant') {
-              snippet = it.content;
-              break;
-            }
-          }
-          void notifyTurnDone(projectId, sessionId, projectName, snippet);
+          void notifyTurnDone(projectId, sessionId, projectName, sessionNameRef.current);
           // The live event notified — mark it so the reconnect load() path
           // does not notify a second time for the same turn.
           const doneKey = assistantKeyRef.current;
@@ -3680,7 +3685,7 @@ export default function ChatPane({
             ...prev,
             { kind: 'msg', key: `e${++counterRef.current}`, role: 'error', content: ev.error },
           ]);
-          void notifyTurnError(projectId, sessionId, projectName, ev.error ?? '');
+          void notifyTurnError(projectId, sessionId, projectName, sessionNameRef.current);
           const errorKey = `e${counterRef.current}`;
           lastNotifiedRef.current = errorKey;
           try { localStorage.setItem(notifiedKey, errorKey); } catch {}
