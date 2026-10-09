@@ -1374,9 +1374,15 @@ function ExtensionBlock({ detail }: { detail: string }) {
 function TodoListBlock({ detail }: { detail: string }) {
   const todos = useMemo(() => {
     try {
-      const a = JSON.parse(detail) as { todos?: { title?: string; done?: boolean }[] };
+      const a = JSON.parse(detail) as {
+        todos?: { title?: string; done?: boolean; status?: Todo['status'] }[];
+      };
       return Array.isArray(a.todos)
-        ? a.todos.map((t) => ({ title: typeof t.title === 'string' ? t.title : '', done: t.done === true }))
+        ? a.todos.map((t) => ({
+            title: typeof t.title === 'string' ? t.title : '',
+            done: t.done === true || t.status === 'done',
+            status: t.status,
+          }))
         : [];
     } catch {
       return [];
@@ -4631,7 +4637,10 @@ export default function ChatPane({
   const todosDone = todos.filter((t) => t.done).length;
   // The first unfinished item is what the agent is working on right now, so it is
   // the one worth calling out; everything after it is still only planned.
-  const todosActive = todos.findIndex((t) => !t.done);
+  // An explicit in_progress wins; otherwise the first unfinished item is the one
+  // being worked on, which is what a live list means.
+  const markedActive = todos.findIndex((t) => t.status === 'in_progress');
+  const todosActive = markedActive >= 0 ? markedActive : todos.findIndex((t) => !t.done);
   const tasksButton = todos.length > 0 && (
     <IconButton
       onClick={() => {

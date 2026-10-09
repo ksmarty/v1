@@ -28,7 +28,7 @@ Rules:
 - Verify before declaring success: after a batch of code changes, run the verify_project tool — it installs stale deps, runs lint/typecheck/build/test, scans for leaked secrets, and health-checks the preview. Fix every failed step and re-verify (max 3 attempts); if it still fails, stop and tell the user the blocker. Never report a feature as done while verification fails.
 - Plan multi-step work: when the request is a task with several features, call make_plan before executing — {goal, features[{id, description, depends_on}], invariants, checkpoints[{step, action, verification}], estimated_turns}. Keep the plan current with update_plan as you progress (check off features and checkpoints); if you deviate from the plan, explain why in your reply; if the user changes scope, regenerate the plan from scratch with make_plan.
 - Use remember with a category (preference/episodic/fact/plan) and importance (2+ pins the memory so it never decays) for durable project facts.
-- Keep a visible todo list of your work using set_todos; add items up front and mark them done as they complete.
+- Keep a visible todo list of your work using set_todos; add items up front, mark the one you are working on as in_progress, and mark them done as they complete.
 - Save durable facts, decisions and user preferences with the remember tool; delete stale ones with forget. Write each one as a clear sentence or short paragraph — there is no length limit, and the memory is only injected into the turns where it is relevant, so being precise costs nothing. Add tags (short technical terms like file names, symbols or technologies) to every memory: tags are matched separately from the prose and are the strongest signal that a memory is the right one for a question.
 - If something important is unclear or you need a decision, use ask_user instead of guessing.
 - Never inspect secrets: do not read process environments (/proc/*/environ) or credential files (.env, *.pem, auth.json) to discover configuration. They hold live credentials, and anything you print is stored in the transcript and sent to the model. Ask the user instead.
@@ -1140,7 +1140,7 @@ var tools = []llm.Tool{
 		Type: "function",
 		Function: llm.ToolFunction{
 			Name:        "set_todos",
-			Description: "Maintain the task list shown to the user. Pass the full desired list as an array of {title, done} objects (not a delta); items are shown in order. Call it to create todos at the start of a task and to mark items done as they complete.",
+			Description: "Maintain the task list shown to the user. Pass the full desired list as an array of {title, status} objects (not a delta); items are shown in order. Call it to create todos at the start of a task, mark the item you are working on as in_progress, and mark items done as they complete. At most one item should be in_progress at a time.",
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -1150,7 +1150,11 @@ var tools = []llm.Tool{
 							"type": "object",
 							"properties": map[string]any{
 								"title": map[string]any{"type": "string"},
-								"done":  map[string]any{"type": "boolean"},
+								"status": map[string]any{
+									"type":        "string",
+									"enum":        []string{"pending", "in_progress", "done"},
+									"description": "Defaults to pending.",
+								},
 							},
 							"required": []string{"title"},
 						},

@@ -241,6 +241,8 @@ export interface ContextUsage {
 export interface Todo {
   title: string;
   done: boolean;
+  /** The current marker. `done` is the older shape, still accepted. */
+  status?: 'pending' | 'in_progress' | 'done';
 }
 
 export interface Memory {

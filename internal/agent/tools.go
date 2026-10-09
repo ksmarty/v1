@@ -926,6 +926,9 @@ func (e *Executor) setTodos(argsJSON string) (string, error) {
 	if args.Todos == nil {
 		args.Todos = []store.Todo{}
 	}
+	for i := range args.Todos {
+		args.Todos[i] = args.Todos[i].Normalize()
+	}
 	if err := e.Store.SetTodos(e.ProjectID, args.Todos); err != nil {
 		return "", err
 	}

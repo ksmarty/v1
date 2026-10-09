@@ -693,6 +693,27 @@ func isUniqueErr(err error) bool {
 type Todo struct {
 	Title string `json:"title"`
 	Done  bool   `json:"done"`
+	// Status is the current marker: pending, in_progress or done. Done is kept for
+	// the older shape — the tool reported only that — and Normalize reconciles the
+	// two so a list written before the field existed still renders correctly.
+	Status string `json:"status,omitempty"`
+}
+
+// Normalize reconciles the two ways a todo can say where it stands, so every
+// reader sees one shape. An explicit in_progress wins over a stale done flag,
+// because a list that says an item is being worked on and also finished is the
+// in_progress one the model just wrote.
+func (t Todo) Normalize() Todo {
+	switch {
+	case t.Status == "in_progress":
+		t.Done = false
+	case t.Done || t.Status == "done":
+		t.Done = true
+		t.Status = "done"
+	default:
+		t.Status = "pending"
+	}
+	return t
 }
 
 // todoSettingKey returns the settings key backing a project's todo list.
@@ -707,6 +728,9 @@ func (s *Store) GetTodos(projectID string) ([]Todo, error) {
 	var out []Todo
 	if err := json.Unmarshal([]byte(v), &out); err != nil {
 		return []Todo{}, nil
+	}
+	for i := range out {
+		out[i] = out[i].Normalize()
 	}
 	return out, nil
 }
