@@ -700,11 +700,11 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 			if !ok {
 				result = formatToolError(execErr)
 			}
-			summary := result
-			if len(summary) > 300 {
-				summary = summary[:300] + "..."
-			}
-			p.Emit(ChatEvent{Type: "tool_end", Name: tc.Function.Name, OK: ok, Detail: summary})
+			// The result goes out whole, as the persisted row does: the client
+			// parses it to render the command output, the edit diff and the failure
+			// reason, so a truncated envelope shows as unparseable text until the
+			// next reload reads the full row back.
+			p.Emit(ChatEvent{Type: "tool_end", Name: tc.Function.Name, OK: ok, Detail: result})
 			tj, _ := json.Marshal(map[string]any{"tool_call_id": tc.ID, "name": tc.Function.Name})
 			if _, err := p.Store.AddMessage(p.Project.ID, p.SessionID, "tool", result, string(tj), "", "", "", ""); err != nil {
 				return nil, err

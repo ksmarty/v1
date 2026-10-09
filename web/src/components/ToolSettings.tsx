@@ -28,6 +28,14 @@ const TABS = [
 type Tab = (typeof TABS)[number]['id'];
 export type ToolsTab = Tab;
 
+// Web search is not registered at all without a key, so its row says which of
+// the two states this account is in rather than repeating a static "needs a
+// key" whatever the answer is.
+function toolHint(t: { name: string; hint: string }, webKeySet: boolean): string {
+  if (t.name === 'web_search' && !webKeySet) return 'Search the web — no API key';
+  return t.hint;
+}
+
 function ViewOnSkillsMP({ href, name }: { href: string; name: string }) {
   return (
     <a
@@ -296,7 +304,7 @@ function ToolSettings({
       label: 'Web',
       tools: [
         { name: 'fetch_url', label: 'Fetch URL', hint: 'Fetch and read a web page' },
-        { name: 'web_search', label: 'Web search', hint: 'Search the web (needs a LangSearch API key below)' },
+        { name: 'web_search', label: 'Web search', hint: 'Search the web' },
       ],
     },
     {
@@ -443,10 +451,25 @@ function ToolSettings({
     api.updateSettings({ disabledTools: next }).catch((e) => setToolsError(errMsg(e)));
   };
 
+  // Laid out at its natural height, with the tab's own container doing the
+  // scrolling. Constraining this to h-full with a flex-1 list under three tall
+  // cards left the list a zero-height box on a phone: the built-in tools were
+  // unreachable rather than scrolled past.
   const toolsSection = (
-    <div className="flex h-full min-h-0 min-w-0 flex-col gap-2.5">
+    <div className="flex min-w-0 flex-col gap-2.5">
       <div className="shrink-0 rounded-lg border border-border-strong bg-surface/50 p-3 shadow-sm">
-        <p className="text-sm text-text">Web search</p>
+        <div className="flex items-center gap-2">
+          <p className="text-sm text-text">Web search</p>
+          <span
+            className={`rounded-full border px-1.5 py-0.5 text-[10px] ${
+              webKeySet
+                ? 'border-accent/40 bg-accent/10 text-accent'
+                : 'border-border bg-bg text-faint'
+            }`}
+          >
+            {webKeySet ? 'enabled' : 'needs a key'}
+          </span>
+        </div>
         <p className="mt-0.5 text-[11px] text-faint">
           The <span className="text-subtle">web_search</span> tool runs on LangSearch. Get an API
           key at{' '}
@@ -681,7 +704,7 @@ function ToolSettings({
         instantly.
       </p>
       {toolsError && <p className="shrink-0 text-xs text-red-400">{toolsError}</p>}
-      <div className="fade-y min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain pr-0.5">
+      <div className="min-w-0">
         {TOOL_GROUPS.map((g) => (
           <div key={g.id} className="mb-3">
             <h4 className="mb-1.5 text-xs font-medium text-subtle">{g.label}</h4>
@@ -697,7 +720,7 @@ function ToolSettings({
                   >
                     <div className="min-w-0 flex-1">
                       <p className="text-sm text-text">{t.label}</p>
-                      <p className="truncate text-[11px] text-faint">{t.hint}</p>
+                      <p className="truncate text-[11px] text-faint">{toolHint(t, webKeySet)}</p>
                     </div>
                     <button
                       type="button"
@@ -1974,7 +1997,7 @@ function ToolSettings({
         {tab === 'extensions' && (
           <div className="flex h-full min-h-0 flex-col">{extensionsSection}</div>
         )}
-        {tab === 'tools' && <div className="flex h-full min-h-0 flex-col">{toolsSection}</div>}
+        {tab === 'tools' && toolsSection}
         {tab === 'perms' && permsSection}
       </div>
       {skillPreview && (

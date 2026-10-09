@@ -478,6 +478,9 @@ type ToolItem = {
   kind: 'tool';
   key: string;
   name: string;
+  /** The call's own arguments (a path, a command) as tool_start reported them. */
+  call?: string;
+  /** The result payload, once tool_end lands. */
   detail: string;
   running: boolean;
   ok?: boolean;
@@ -572,6 +575,66 @@ function readAttachment(file: File): Promise<{ value: ChatAttachmentInput } | { 
     reader.onerror = () => resolve({ error: `Could not read ${file.name}.` });
     reader.readAsText(file);
   });
+}
+
+// A finished background command's transcript row:
+// "[Background #<id>: <command>] finished (exit 0):\n\n<output>".
+function parseBackgroundResult(text: string): {
+  command: string;
+  status: string;
+  ok: boolean;
+  output: string;
+} {
+  const m = /^\[Background #([0-9a-z]+): ([\s\S]*?)\] finished \(([^)]*)\):\s*([\s\S]*)$/.exec(text);
+  // An unrecognised row still renders — it just has no command to name.
+  if (!m) return { command: 'finished', status: '', ok: true, output: text };
+  return { command: m[2], status: m[3], ok: m[3] === 'exit 0', output: m[4] };
+}
+
+// A finished background command, collapsed like any other tool call: the row
+// carries the command and its exit status, and expanding shows the output. It
+// used to render as a full-width amber panel of raw text in the middle of the
+// conversation, which read as something the user had said.
+function BackgroundResultRow({ text, onOpen }: { text: string; onOpen: (t: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const bg = parseBackgroundResult(text);
+  return (
+    <div className="rounded-md border border-border/80 bg-surface/50 text-[10px]">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex min-h-[26px] w-full items-center gap-1.5 px-2 py-1 text-left text-dim transition-colors hover:text-text"
+      >
+        {open ? (
+          <IconChevronDown className="h-3.5 w-3.5 shrink-0" />
+        ) : (
+          <IconChevronRight className="h-3.5 w-3.5 shrink-0" />
+        )}
+        <IconTerminal className="h-3 w-3 shrink-0 text-faint" />
+        <span className="shrink-0 font-mono text-text">Background</span>
+        <span className="min-w-0 flex-1 truncate font-mono text-faint">{bg.command}</span>
+        {bg.ok ? (
+          <IconCheck className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
+        ) : (
+          <IconX className="h-3.5 w-3.5 shrink-0 text-red-500" />
+        )}
+      </button>
+      {open && (
+        <div className="border-t border-border/80 px-3 py-2">
+          <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-subtle">
+            {bg.output}
+          </pre>
+          <button
+            type="button"
+            onClick={() => onOpen(text)}
+            className="mt-1.5 text-[10px] uppercase tracking-wide text-dim transition-colors hover:text-text"
+          >
+            Open full output
+          </button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function ToolRow({ item }: { item: ToolItem }) {
@@ -2105,7 +2168,19 @@ const MessageRow = memo(function MessageRow({
   onOpenBackground: (text: string) => void;
   currency: string;
 }) {
-  if (item.kind === 'tool') return <ToolRow item={item} />;
+  if (item.kind === 'tool') {
+    // While it runs the row is the call itself — the command, the path — with a
+    // spinner. Once the result lands it renders through the same paired blocks
+    // the reloaded transcript uses (command output, edit diff, failure reason),
+    // so what you see during the turn matches what you see after a reload.
+    if (item.running) return <ToolRow item={item} />;
+    return (
+      <ToolBlocks
+        calls={[{ name: item.name, detail: item.call ?? item.detail }]}
+        results={[{ name: item.name, detail: item.detail }]}
+      />
+    );
+  }
   if (item.kind === 'ask') {
     return (
       <AskBlock
@@ -2120,27 +2195,7 @@ const MessageRow = memo(function MessageRow({
     // Background job results are not the user speaking — render them on the
     // left with a branded "Recived bg task" header instead of a user bubble.
     if (item.background) {
-      return (
-        <div className="mr-auto flex w-full max-w-[85%] flex-col gap-1">
-          <span className="inline-flex items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-amber-300/80">
-            <IconTerminal className="h-3 w-3" />
-            Background task finished
-          </span>
-          <button
-            type="button"
-            onClick={() => onOpenBackground(item.content)}
-            title="Show the full output"
-            className="w-full cursor-pointer rounded-xl border border-amber-300/20 bg-amber-300/5 px-3.5 py-2 text-left text-sm text-text transition-colors hover:border-amber-300/40 hover:bg-amber-300/10"
-          >
-            <div className="whitespace-pre-wrap break-words font-mono text-[12px] leading-relaxed text-amber-100/90">
-              {item.content.length > 400 ? `${item.content.slice(0, 400)}…` : item.content}
-            </div>
-            <span className="mt-1 block text-[10px] uppercase tracking-wide text-amber-300/70">
-              Show output
-            </span>
-          </button>
-        </div>
-      );
+      return <BackgroundResultRow text={item.content} onOpen={onOpenBackground} />;
     }
     if (item.editing) {
       return (
@@ -3454,7 +3509,7 @@ export default function ChatPane({
           (toolStackRef.current[ev.name] ||= []).push(key);
           update((prev) => [
             ...prev,
-            { kind: 'tool', key, name: ev.name, detail: ev.detail, running: true },
+            { kind: 'tool', key, name: ev.name, call: ev.detail, detail: ev.detail, running: true },
           ]);
           break;
         }

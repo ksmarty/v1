@@ -428,15 +428,6 @@ func harnessKeepUserTurns(st *store.Store, projectID, sessionID string) int {
 	return users
 }
 
-// toolSummary is the one-line tool result shown in the transcript, matching
-// the built-in loop's cap.
-func toolSummary(result string) string {
-	if len(result) > 300 {
-		return result[:300] + "..."
-	}
-	return result
-}
-
 // reconcile brings the client's view in line with the text pi-durable actually
 // committed, and adopts the committed value for persistence. Deltas are the
 // live view of a throttled stream, so the committed text is usually a strict
@@ -944,7 +935,11 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge,
 				if err := s.recordToolResult(params.Project.ID, params.SessionID, ev.ToolCallID, ev.ToolName, text); err != nil {
 					log.Printf("chat: recording a tool result: %v", err)
 				}
-				emit(agent.ChatEvent{Type: "tool_end", Name: ev.ToolName, OK: ev.Entry != nil && !isError, Detail: toolSummary(text)})
+				// The result goes out whole, as the persisted row does: the client
+				// parses it to render the command output, the edit diff and the
+				// failure reason, so a truncated envelope shows as unparseable text
+				// until the next reload reads the full row back.
+				emit(agent.ChatEvent{Type: "tool_end", Name: ev.ToolName, OK: ev.Entry != nil && !isError, Detail: text})
 			case "compaction_start":
 				// pi-durable compacts its own transcript (threshold, overflow, or a
 				// manual request). The built-in loop compacts in memory without a
