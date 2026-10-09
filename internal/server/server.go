@@ -264,6 +264,7 @@ func (s *Server) routes(m *http.ServeMux) {
 	m.HandleFunc("GET /api/vercel/user", s.handleVercelUser)
 	m.HandleFunc("POST /api/projects/{id}/vercel/deploy", s.handleVercelDeploy)
 	m.HandleFunc("GET /api/projects/{id}/vercel/deployments", s.handleVercelDeployments)
+	m.HandleFunc("POST /api/projects/{id}/vercel/import", s.handleVercelImport)
 
 	m.HandleFunc("POST /api/skills/search", s.handleSkillsSearch)
 	m.HandleFunc("POST /api/skills/install", s.handleSkillsInstall)

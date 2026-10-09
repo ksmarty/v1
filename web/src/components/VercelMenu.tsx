@@ -88,6 +88,8 @@ export default function VercelMenu({
   const [data, setData] = useState<VercelDeploymentsResponse | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState<'preview' | 'production' | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [imported, setImported] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const buildingRef = useRef(false);
   const navigate = useNavigate();
@@ -143,6 +145,22 @@ export default function VercelMenu({
       setData((d) => (d ? { ...d, active: null } : d));
     } finally {
       setBusy(null);
+    }
+  };
+
+  // Importing links the project's GitHub repo to a Vercel project, so Vercel
+  // builds from git on every push instead of from an upload of the working tree.
+  const importRepo = async () => {
+    setImporting(true);
+    setErr(null);
+    try {
+      const r = await api.vercelImport(projectId);
+      setImported(r.project);
+      load();
+    } catch (e) {
+      setErr(errMsg(e));
+    } finally {
+      setImporting(false);
     }
   };
 
@@ -217,7 +235,23 @@ export default function VercelMenu({
                   {busy === 'production' ? <Spinner className="h-4 w-4" /> : null}
                   Deploy to production
                 </Button>
+                <Button
+                  variant="outline"
+                  className="w-full justify-start"
+                  disabled={busy !== null || importing || !isTerminal(activeState)}
+                  onClick={() => void importRepo()}
+                >
+                  {importing ? <Spinner className="h-4 w-4" /> : null}
+                  Import repo to Vercel
+                </Button>
               </div>
+
+              {imported && (
+                <p className="mt-2 text-xs leading-relaxed text-dim">
+                  Linked to the Vercel project <span className="text-text">{imported}</span>. Vercel
+                  now builds from the repository, so a push deploys without v1 uploading files.
+                </p>
+              )}
 
               {activeState && (
                 <div className="mt-2.5 flex items-center gap-2 rounded-lg border border-border px-3 py-2">

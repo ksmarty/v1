@@ -208,6 +208,58 @@ func ExchangeCode(ctx context.Context, clientID, clientSecret, code, redirectURI
 // ---- account ----
 
 // User returns the username of the authenticated account.
+// Project is the part of a Vercel project v1 needs: enough to remember which
+// project a v1 project deploys to.
+type Project struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// ImportProject links a Vercel project to a Git repository, which is how Vercel
+// builds from GitHub instead of from an upload. Vercel authorises GitHub on its
+// own side, so this only works when the account has GitHub connected; the error
+// it returns says so when it does not.
+//
+// A project that already exists is not an error: Vercel answers 409, and the
+// existing project is what the caller wanted anyway.
+func (c *Client) ImportProject(ctx context.Context, name, repo string) (*Project, error) {
+	body := map[string]any{
+		"name":          name,
+		"gitRepository": map[string]string{"type": "github", "repo": repo},
+	}
+	status, data, err := c.do(ctx, http.MethodPost, "/v11/projects", nil, body)
+	if err != nil {
+		if status == http.StatusConflict {
+			return c.Project(ctx, name)
+		}
+		return nil, err
+	}
+	var p Project
+	if err := json.Unmarshal(data, &p); err != nil {
+		return nil, err
+	}
+	if p.ID == "" {
+		return nil, fmt.Errorf("vercel: project response missing id")
+	}
+	return &p, nil
+}
+
+// Project looks a project up by name.
+func (c *Client) Project(ctx context.Context, name string) (*Project, error) {
+	_, data, err := c.do(ctx, http.MethodGet, "/v9/projects/"+url.PathEscape(name), nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	var p Project
+	if err := json.Unmarshal(data, &p); err != nil {
+		return nil, err
+	}
+	if p.ID == "" {
+		return nil, fmt.Errorf("vercel: project %q not found", name)
+	}
+	return &p, nil
+}
+
 func (c *Client) User(ctx context.Context) (string, error) {
 	_, data, err := c.do(ctx, http.MethodGet, "/www/user", nil, nil)
 	if err != nil {

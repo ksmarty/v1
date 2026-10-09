@@ -511,6 +511,13 @@ export const api = {
     post<{ started: boolean }>(`/api/projects/${id}/vercel/deploy`, target ? { target } : {}),
   vercelDeployments: (id: string) =>
     request<VercelDeploymentsResponse>(`/api/projects/${id}/vercel/deployments`),
+  // vercelImport links the project's GitHub repo to a Vercel project, so Vercel
+  // builds from git instead of from an upload.
+  vercelImport: (id: string, name?: string) =>
+    post<{ project: string; repo: string }>(
+      `/api/projects/${id}/vercel/import`,
+      name ? { name } : {},
+    ),
 
   // MCP
   mcpStatus: () =>

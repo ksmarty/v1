@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ProviderModel, SavedProvider } from '../types';
 import { fuzzyScore } from '../utils';
 import { Dialog, Input } from './ui';
@@ -111,18 +111,31 @@ export default function ModelPicker({
       .map((x) => x.m);
   }, [models, query, favs, model]);
 
+  // Bring the selected provider into view when the picker opens. With a dozen
+  // providers the chips used to wrap onto several rows, so the current one could
+  // sit below the fold and the model list was pushed down with it.
+  const activeChipRef = useRef<HTMLButtonElement | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    const t = window.setTimeout(() => {
+      activeChipRef.current?.scrollIntoView({ inline: 'center', block: 'nearest' });
+    }, 0);
+    return () => window.clearTimeout(t);
+  }, [open]);
+
   return (
     <Dialog open={open} onClose={onClose} title="Model" wide fullScreen fixedBody align="top">
       <div className="flex h-full min-h-0 flex-col gap-4">
         <section className="shrink-0">
           <h3 className="mb-2 text-xs font-medium text-subtle">Provider</h3>
-          <div className="flex flex-wrap gap-1.5">
+          <div className="flex gap-1.5 overflow-x-auto pb-1">
             {providers.map((p) => (
               <button
                 key={p.id}
                 type="button"
+                ref={p.id === providerId ? activeChipRef : undefined}
                 onClick={() => onProviderChange(p.id)}
-                className={`flex min-h-[36px] items-center gap-1.5 rounded-full border px-3 text-sm transition-colors ${
+                className={`flex min-h-[36px] shrink-0 items-center gap-1.5 rounded-full border px-3 text-sm transition-colors ${
                   p.id === providerId
                     ? 'border-accent bg-surface text-text'
                     : 'border-border text-subtle hover:border-border-strong hover:text-text'
@@ -135,7 +148,7 @@ export default function ModelPicker({
             <button
               type="button"
               onClick={() => onProviderChange('')}
-              className={`flex min-h-[36px] items-center gap-1.5 rounded-full border px-3 text-sm transition-colors ${
+              className={`flex min-h-[36px] shrink-0 items-center gap-1.5 rounded-full border px-3 text-sm transition-colors ${
                 providerId === ''
                   ? 'border-accent bg-surface text-text'
                   : 'border-border text-subtle hover:border-border-strong hover:text-text'

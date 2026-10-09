@@ -371,7 +371,7 @@ func (s *Server) handleVercelDeploy(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 12*time.Minute)
 		defer cancel()
-		dep, derr := s.vercelClient(userID).Deploy(ctx, slugify(p.Name), files, body.Target, framework)
+		dep, derr := s.vercelClient(userID).Deploy(ctx, vercelProjectName(p), files, body.Target, framework)
 		state.mu.Lock()
 		state.done = true
 		if derr != nil {
@@ -393,6 +393,80 @@ func (s *Server) handleVercelDeploy(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	writeJSON(w, http.StatusAccepted, map[string]any{"started": true})
+}
+
+// repoSlugRe pulls "owner/name" out of a GitHub remote URL, in either the https
+// or the ssh form. Vercel's API wants the slug, and repoUrl is whatever the user
+// connected the project with.
+var repoSlugRe = regexp.MustCompile(`github\.com[:/]+([^/]+)/([^/]+?)(?:\.git)?/?$`)
+
+func repoSlug(repoURL string) string {
+	m := repoSlugRe.FindStringSubmatch(strings.TrimSpace(repoURL))
+	if m == nil {
+		return ""
+	}
+	return m[1] + "/" + m[2]
+}
+
+// vercelProjectName is the Vercel project a v1 project deploys to: the one an
+// import linked it to, or a project named after the v1 project.
+func vercelProjectName(p *store.Project) string {
+	if p.VercelProject != "" {
+		return p.VercelProject
+	}
+	return slugify(p.Name)
+}
+
+// handleVercelImport links this project's GitHub repository to a Vercel project,
+// so Vercel builds from git rather than from an upload of the working tree. The
+// repository comes from the remote the project is connected to, and the Vercel
+// project takes the v1 project's name unless another is given.
+func (s *Server) handleVercelImport(w http.ResponseWriter, r *http.Request) {
+	p := s.projectOr404(w, r)
+	if p == nil {
+		return
+	}
+	if !p.VercelEnabled {
+		writeError(w, http.StatusForbidden, "Vercel is disabled for this project")
+		return
+	}
+	userID := s.currentUser(r).ID
+	if s.vercelToken(userID) == "" {
+		writeError(w, http.StatusBadRequest, "no Vercel token configured (connect Vercel in Settings)")
+		return
+	}
+	slug := repoSlug(p.RepoURL)
+	if slug == "" {
+		writeError(w, http.StatusBadRequest, "this project has no GitHub repository connected")
+		return
+	}
+	var body struct {
+		Name string `json:"name"`
+	}
+	if r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&body)
+	}
+	name := slugify(strings.TrimSpace(body.Name))
+	if name == "" {
+		name = slugify(p.Name)
+	}
+	if name == "" {
+		writeError(w, http.StatusBadRequest, "a Vercel project name is required")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	proj, err := s.vercelClient(userID).ImportProject(ctx, name, slug)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	// Record the link, so deploys and the deployment list target this project
+	// rather than one merely named after the v1 project.
+	if err := s.st.SetProjectVercelProject(p.ID, proj.Name); err != nil {
+		log.Printf("vercel: recording imported project: %v", err)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"project": proj.Name, "repo": slug})
 }
 
 // handleVercelDeployments reports the active deploy (in-memory) plus the
@@ -447,7 +521,7 @@ func (s *Server) handleVercelDeployments(w http.ResponseWriter, r *http.Request)
 
 	recent := []vercel.Deployment{}
 	if s.vercelToken(userID) != "" {
-		deps, err := s.vercelClient(userID).ListDeployments(r.Context(), slugify(p.Name), 10)
+		deps, err := s.vercelClient(userID).ListDeployments(r.Context(), vercelProjectName(p), 10)
 		if err != nil {
 			writeJSON(w, http.StatusOK, map[string]any{
 				"connected": true,
