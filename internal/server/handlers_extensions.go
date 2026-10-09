@@ -45,6 +45,102 @@ func (s *Server) saveExtensions(list []extensions.Extension) error {
 	return s.st.SetSetting(keyExtensions, string(raw))
 }
 
+// storedExtensionSettings returns every extension's saved values, keyed by
+// extension id. One blob rather than a key per extension, so the settings table
+// does not accumulate a row for every extension ever installed.
+func (s *Server) storedExtensionSettings() map[string]map[string]any {
+	out := map[string]map[string]any{}
+	if v, ok, _ := s.st.GetSetting(keyExtensionSettings); ok && v != "" {
+		_ = json.Unmarshal([]byte(v), &out)
+	}
+	return out
+}
+
+func (s *Server) saveExtensionSettings(all map[string]map[string]any) error {
+	if all == nil {
+		all = map[string]map[string]any{}
+	}
+	raw, err := json.Marshal(all)
+	if err != nil {
+		return err
+	}
+	return s.st.SetSetting(keyExtensionSettings, string(raw))
+}
+
+// extensionSchema reads the settings fields the harness reported for one
+// extension. The declaration lives in the loaded module, so an extension that is
+// disabled or broken reports nothing and its stored values are left alone.
+func extensionSchema(state map[string]any, id string) []any {
+	loaded, _ := state["loaded"].([]any)
+	for _, raw := range loaded {
+		entry, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		if entryID, _ := entry["id"].(string); entryID != id {
+			continue
+		}
+		fields, _ := entry["settings"].([]any)
+		return fields
+	}
+	return nil
+}
+
+// extensionSettingValues merges the declared defaults under the saved values, so
+// an extension reads what its author documented even before the user has saved
+// anything — and so a field added to a later version has a value.
+func extensionSettingValues(schema []any, stored map[string]any) map[string]any {
+	out := map[string]any{}
+	for _, raw := range schema {
+		field, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		key, _ := field["key"].(string)
+		if key == "" {
+			continue
+		}
+		if def, ok := field["default"]; ok {
+			out[key] = def
+		}
+	}
+	for k, v := range stored {
+		out[k] = v
+	}
+	return out
+}
+
+// cleanExtensionSettings keeps only the fields the extension declares, with the
+// type it declared. A stale key would otherwise sit in the form forever, and a
+// value of the wrong type would reach the extension as a surprise.
+func cleanExtensionSettings(schema []any, values map[string]any) map[string]any {
+	out := map[string]any{}
+	for _, raw := range schema {
+		field, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		key, _ := field["key"].(string)
+		if key == "" {
+			continue
+		}
+		value, present := values[key]
+		if !present {
+			continue
+		}
+		if field["type"] == "checkbox" {
+			if b, ok := value.(bool); ok {
+				out[key] = b
+			}
+			continue
+		}
+		if str, ok := value.(string); ok {
+			out[key] = str
+		}
+	}
+	return out
+}
+
 // ensureBuiltinExtensions writes the extensions v1 ships and registers them,
 // enabled, so a fresh install has a working sub-agent tool.
 //
@@ -120,7 +216,16 @@ func (s *Server) reloadExtensions(ctx context.Context) map[string]any {
 	}
 	callCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	result, err := harness.ExtensionsReload(callCtx, enabled)
+	// The declared defaults are merged in here rather than stored, so a field
+	// added by a later version of an extension has a value without the user
+	// having to open the form and save it.
+	stored := s.storedExtensionSettings()
+	state := s.extensionLoadState(ctx)
+	settings := map[string]map[string]any{}
+	for _, id := range enabled {
+		settings[id] = extensionSettingValues(extensionSchema(state, id), stored[id])
+	}
+	result, err := harness.ExtensionsReload(callCtx, enabled, settings)
 	if err != nil {
 		return map[string]any{"reloaded": false, "reason": err.Error()}
 	}
@@ -275,8 +380,29 @@ func extensionLoadErrors(state map[string]any) []string {
 
 func (s *Server) handleExtensionsList(w http.ResponseWriter, r *http.Request) {
 	state := s.extensionLoadState(r.Context())
+	stored := s.storedExtensionSettings()
+	list := s.installedExtensions()
+	out := make([]map[string]any, 0, len(list))
+	for _, ext := range list {
+		entry := map[string]any{
+			"id":          ext.ID,
+			"name":        ext.Name,
+			"description": ext.Description,
+			"enabled":     ext.Enabled,
+			"builtin":     ext.Builtin,
+			"createdAt":   ext.CreatedAt,
+			"updatedAt":   ext.UpdatedAt,
+		}
+		// The declared fields and their current values travel with the extension
+		// so the settings popup can render a form without a second request.
+		if schema := extensionSchema(state, ext.ID); len(schema) > 0 {
+			entry["settings"] = schema
+			entry["values"] = extensionSettingValues(schema, stored[ext.ID])
+		}
+		out = append(out, entry)
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"extensions": s.installedExtensions(),
+		"extensions": out,
 		"harness":    state,
 		"errors":     extensionLoadErrors(state),
 	})
@@ -316,11 +442,12 @@ func (s *Server) handleExtensionGet(w http.ResponseWriter, r *http.Request) {
 // handleExtensionSave creates or updates an extension.
 func (s *Server) handleExtensionSave(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		ID          string `json:"id"`
-		Name        string `json:"name"`
-		Description string `json:"description"`
-		Source      string `json:"source"`
-		Enabled     *bool  `json:"enabled"`
+		ID          string         `json:"id"`
+		Name        string         `json:"name"`
+		Description string         `json:"description"`
+		Source      string         `json:"source"`
+		Enabled     *bool          `json:"enabled"`
+		Settings    map[string]any `json:"settings"`
 	}
 	if !decodeJSON(w, r, &body) {
 		return
@@ -380,6 +507,19 @@ func (s *Server) handleExtensionSave(w http.ResponseWriter, r *http.Request) {
 	if err := s.saveExtensions(list); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	// The values are only kept when the caller sent some, so saving the source of
+	// an extension whose schema could not be read does not silently wipe what the
+	// user configured.
+	if body.Settings != nil {
+		if schema := extensionSchema(s.extensionLoadState(r.Context()), body.ID); len(schema) > 0 {
+			all := s.storedExtensionSettings()
+			all[body.ID] = cleanExtensionSettings(schema, body.Settings)
+			if err := s.saveExtensionSettings(all); err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"extensions": s.installedExtensions(),

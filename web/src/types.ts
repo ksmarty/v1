@@ -373,6 +373,25 @@ export interface InstalledExtension {
   updatedAt?: string;
   /** Why the sidecar could not load it, when it could not. */
   errors?: string[];
+  /** The settings fields the extension declares. Absent when it declares none. */
+  settings?: ExtensionSettingField[];
+  /** Saved values, with the declared defaults filled in. */
+  values?: Record<string, string | boolean>;
+}
+
+/**
+ * One settings field an extension declares, rendered as a form in its popup.
+ *
+ * The declaration lives in the extension's own module (`settings: [...]`), which
+ * is why the agent can add a configurable option at the same time as it writes
+ * the code that reads it.
+ */
+export interface ExtensionSettingField {
+  key: string;
+  type: 'text' | 'checkbox';
+  label?: string;
+  help?: string;
+  default?: string | boolean;
 }
 
 /** How an extension wants one of its tool calls presented. */

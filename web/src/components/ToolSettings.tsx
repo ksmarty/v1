@@ -2,6 +2,7 @@ import { memo, useCallback, useEffect, useRef, useState, type FormEvent } from '
 import { api } from '../api';
 import type {
   EmbeddingSettings,
+  ExtensionSettingField,
   InstalledExtension,
   InstalledSkill,
   MCPServer,
@@ -253,14 +254,25 @@ function ToolSettings({
     builtin: boolean;
     /** The source is still on its way; the dialog is already open. */
     loading?: boolean;
+    /** The fields the extension declares, in the order it listed them. */
+    schema: ExtensionSettingField[];
+    /** The values being edited, keyed by field. */
+    settings: Record<string, string | boolean>;
     /** The values as loaded, so Save can stay disabled until something changes. */
-    original: { description: string; source: string };
+    original: {
+      description: string;
+      source: string;
+      settings: Record<string, string | boolean>;
+    };
   } | null>(null);
   // Saving back exactly what was loaded is never what you meant.
   const extDirty =
     extEditor !== null &&
     (extEditor.description !== extEditor.original.description ||
-      extEditor.source !== extEditor.original.source);
+      extEditor.source !== extEditor.original.source ||
+      extEditor.schema.some(
+        (f) => extEditor.settings[f.key] !== extEditor.original.settings[f.key],
+      ));
 
   // Approval mode
   const [permissionMode, setPermissionMode] = useState<PermissionMode>(initialPermissionMode ?? 'ask');
@@ -1075,7 +1087,17 @@ function ToolSettings({
   // small file we know we will need, so fetch the whole list as soon as it is
   // on screen and open straight from here.
   const extCache = useRef(
-    new Map<string, { id: string; description: string; source: string; builtin: boolean }>(),
+    new Map<
+      string,
+      {
+        id: string;
+        description: string;
+        source: string;
+        builtin: boolean;
+        settings?: ExtensionSettingField[];
+        values?: Record<string, string | boolean>;
+      }
+    >(),
   );
   useEffect(() => {
     if (tab !== 'extensions') return;
@@ -1094,6 +1116,8 @@ function ToolSettings({
             description: r.description ?? '',
             source: r.source ?? '',
             builtin: r.builtin ?? false,
+            settings: ext.settings,
+            values: ext.values,
           });
         } catch {
           // A failed prefetch only means the click fetches it instead.
@@ -1115,7 +1139,13 @@ function ToolSettings({
         source: cached.source,
         isNew: false,
         builtin: cached.builtin,
-        original: { description: cached.description, source: cached.source },
+        schema: cached.settings ?? [],
+        settings: { ...(cached.values ?? {}) },
+        original: {
+          description: cached.description,
+          source: cached.source,
+          settings: { ...(cached.values ?? {}) },
+        },
       });
       return;
     }
@@ -1123,14 +1153,18 @@ function ToolSettings({
     // open immediately and fill the fields in when the source lands, so the
     // click never looks like it did nothing.
     const listed = extensions.find((e) => e.id === id);
+    const listedSchema = listed?.settings ?? [];
+    const listedValues = { ...(listed?.values ?? {}) };
     setExtEditor({
       id,
       description: listed?.description ?? '',
       source: '',
       isNew: false,
       builtin: listed?.builtin ?? false,
+      schema: listedSchema,
+      settings: { ...listedValues },
       loading: true,
-      original: { description: listed?.description ?? '', source: '' },
+      original: { description: listed?.description ?? '', source: '', settings: { ...listedValues } },
     });
     try {
       const r = await api.extension(id);
@@ -1148,7 +1182,9 @@ function ToolSettings({
         source,
         isNew: false,
         builtin: r.builtin ?? false,
-        original: { description, source },
+        schema: listedSchema,
+        settings: { ...listedValues },
+        original: { description, source, settings: { ...listedValues } },
       });
     } catch (err) {
       setExtError(errMsg(err));
@@ -1165,6 +1201,7 @@ function ToolSettings({
         id: extEditor.id.trim(),
         description: extEditor.description,
         source: extEditor.source,
+        settings: extEditor.schema.length > 0 ? extEditor.settings : undefined,
         enabled: true,
       });
       setExtensions(r.extensions ?? []);
@@ -1624,6 +1661,54 @@ function ToolSettings({
                 />
               )}
             </div>
+            {extEditor.schema.length > 0 && (
+              <div className="shrink-0 space-y-2.5 rounded-lg border border-border-strong bg-surface px-3 py-2.5">
+                <div className="text-[11px] font-medium text-subtle">Settings</div>
+                {extEditor.schema.map((field) => (
+                  <div key={field.key}>
+                    {field.type === 'checkbox' ? (
+                      <label className="flex items-center gap-2 text-xs text-text">
+                        <input
+                          type="checkbox"
+                          checked={extEditor.settings[field.key] === true}
+                          onChange={(e) =>
+                            setExtEditor((prev) =>
+                              prev
+                                ? {
+                                    ...prev,
+                                    settings: { ...prev.settings, [field.key]: e.target.checked },
+                                  }
+                                : prev,
+                            )
+                          }
+                          className="h-3.5 w-3.5 shrink-0 accent-accent"
+                        />
+                        <span className="min-w-0 truncate">{field.label ?? field.key}</span>
+                      </label>
+                    ) : (
+                      <label className="block text-[11px] text-subtle">
+                        {field.label ?? field.key}
+                        <input
+                          value={String(extEditor.settings[field.key] ?? '')}
+                          onChange={(e) =>
+                            setExtEditor((prev) =>
+                              prev
+                                ? {
+                                    ...prev,
+                                    settings: { ...prev.settings, [field.key]: e.target.value },
+                                  }
+                                : prev,
+                            )
+                          }
+                          className="mt-1 w-full rounded-md border border-border-strong bg-bg px-2 py-1 text-xs text-text outline-none focus:border-accent"
+                        />
+                      </label>
+                    )}
+                    {field.help && <p className="mt-0.5 text-[10px] text-faint">{field.help}</p>}
+                  </div>
+                ))}
+              </div>
+            )}
             {/* Below the code, so the actions read as what you do once you have
                 read it. Delete is destructive and sits apart on the left; Save
                 and Cancel are the pair you actually choose between. */}

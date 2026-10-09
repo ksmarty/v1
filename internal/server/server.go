@@ -381,12 +381,16 @@ const (
 	keySkills                  = "skills_installed"
 	// Set once the bundled skills have been seeded. Guarded so removing a
 	// bundled skill stays removed.
-	keySkillsSeeded    = "skills_seeded"
-	keyExtensions      = "extensions_installed"
-	keyPermissionMode  = "permission_mode"
-	keyRewindApproval  = "rewind_approval"
-	keyThinkingDefault = "thinking_default"
-	keyToonEnabled     = "toon_enabled"
+	keySkillsSeeded = "skills_seeded"
+	keyExtensions   = "extensions_installed"
+	// keyExtensionSettings holds every extension's configured values, keyed by
+	// extension id. They belong to v1 rather than to the extension so they survive
+	// a reload, a disable, and a container rebuild.
+	keyExtensionSettings = "extensions_settings"
+	keyPermissionMode    = "permission_mode"
+	keyRewindApproval    = "rewind_approval"
+	keyThinkingDefault   = "thinking_default"
+	keyToonEnabled       = "toon_enabled"
 	// keyMemoryAutoCapture lets the agent save memories from a turn on its own,
 	// rather than only when it decides to call remember. Off unless set: it
 	// costs one extra model call per turn.

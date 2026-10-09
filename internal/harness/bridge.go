@@ -417,12 +417,20 @@ func (b *Bridge) ExtensionsList(ctx context.Context) (map[string]any, error) {
 // on the next turn without restarting the harness. enabledIDs is the set the
 // user has enabled: a disabled extension is not loaded at all, so the set has to
 // travel with the reload rather than being filtered afterwards.
-func (b *Bridge) ExtensionsReload(ctx context.Context, enabledIDs []string) (map[string]any, error) {
+//
+// settings carries the values the user configured, keyed by extension id. They
+// belong to v1 — they outlive a disabled extension — but the only way an
+// extension can read them is the API the loader injects, so they ride along with
+// the load rather than being fetched from inside the sandbox.
+func (b *Bridge) ExtensionsReload(ctx context.Context, enabledIDs []string, settings map[string]map[string]any) (map[string]any, error) {
 	var out map[string]any
 	if enabledIDs == nil {
 		enabledIDs = []string{}
 	}
-	err := b.sup.Call(ctx, "extensions.reload", map[string]any{"enabled": enabledIDs}, &out)
+	if settings == nil {
+		settings = map[string]map[string]any{}
+	}
+	err := b.sup.Call(ctx, "extensions.reload", map[string]any{"enabled": enabledIDs, "settings": settings}, &out)
 	return out, err
 }
 

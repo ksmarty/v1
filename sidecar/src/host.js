@@ -321,9 +321,19 @@ class Sidecar {
 	 * Installing by name replaces in place, so a reload cannot accumulate
 	 * duplicate tools.
 	 */
-	async reloadExtensions(enabledIds) {
+	async reloadExtensions(enabledIds, settings) {
 		if (Array.isArray(enabledIds)) this.enabledExtensionIds = new Set(enabledIds);
-		const result = await loadExtensions(this.extensionsDir, this.extensionApi(), this.enabledExtensionIds);
+		// v1 owns the values, so they arrive with the reload and are handed to each
+		// factory. They are kept when a reload does not carry any, so a plain
+		// "reload after an edit" does not wipe what the user configured.
+		if (settings && typeof settings === "object") this.extensionSettings = settings;
+		const settingsFor = (id) => this.extensionSettings?.[id] ?? {};
+		const result = await loadExtensions(
+			this.extensionsDir,
+			this.extensionApi(),
+			this.enabledExtensionIds,
+			settingsFor,
+		);
 		const present = new Set();
 		for (const entry of result.extensions) {
 			present.add(entry.id);
@@ -402,6 +412,9 @@ class Sidecar {
 				// list rather than with each call, so v1 needs no new field on the
 				// tool event wire format to label a chip.
 				display: toolDisplay(entry.extension),
+				// The form v1 renders in the extension's settings popup. The values are
+				// v1's to store, so only the declaration travels here.
+				settings: entry.settings ?? [],
 			})),
 			enabled: this.enabledExtensionIds ? [...this.enabledExtensionIds] : null,
 			errors: this.extensionErrors,
@@ -766,7 +779,7 @@ class Sidecar {
 			case "watch.stop":
 				return await this.watchStop(params);
 			case "extensions.reload":
-				return await this.reloadExtensions(params?.enabled);
+				return await this.reloadExtensions(params?.enabled, params?.settings);
 			case "extensions.list":
 				return this.extensionsList();
 			default:

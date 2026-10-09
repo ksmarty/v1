@@ -496,6 +496,28 @@ Hooks attach to a task by name. Wrappers are pure functions applied where the
 wrapping extension is selected. Both are advanced - prefer a plain new tool
 unless the user needs to change something that already exists.
 
+## Settings fields
+
+An extension can declare settings the user fills in from its settings popup.
+List them on the object you return, and read the values off the api:
+
+    settings: [
+      { key: "limit", label: "Max words", type: "text", default: "500",
+        help: "Applies to word_count." },
+      { key: "strict", label: "Strict mode", type: "checkbox", default: false }
+    ]
+
+    const limit = Number(api.settings.limit ?? 500);
+
+Two field types: text and checkbox. A key must start with a letter and may use
+letters, digits, dashes and underscores. The values are stored by v1, so they
+survive a reload and an edit to the code, and a declared default applies until
+the user saves something.
+
+Only the factory form receives settings: an extension returned as a plain object
+cannot read them, because the loader does not yet know which extension it is.
+Reach for the factory form whenever the extension is configurable.
+
 ## The tools the agent already has
 
 An extension adds to this list, and wrapping or delegating needs the exact

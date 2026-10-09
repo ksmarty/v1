@@ -85,6 +85,47 @@ export function toolDisplay(extension) {
 	return out;
 }
 
+/**
+ * Settings fields an extension declares, for the form v1 renders in its
+ * settings popup.
+ *
+ * An extension opts in by listing fields:
+ *
+ *     settings: [
+ *       { key: "limit", label: "Max words", type: "text", default: "500" },
+ *       { key: "strict", label: "Strict mode", type: "checkbox" },
+ *     ]
+ *
+ * Two field types, text and checkbox, cover what an extension needs to be
+ * configurable without growing a form builder. Only recognised keys survive, so
+ * a typo costs a field rather than putting malformed input in front of v1.
+ *
+ * The values themselves live in v1's store, not in the extension, so they
+ * survive a reload and can be edited while the extension is disabled.
+ */
+export function settingsSchema(extension) {
+	const fields = Array.isArray(extension?.settings) ? extension.settings : [];
+	const out = [];
+	for (const field of fields) {
+		if (!field || typeof field !== "object") continue;
+		const key = field.key;
+		// The key indexes an object in v1's store and is shown to the user, so
+		// reject anything that could not round-trip through JSON as a name.
+		if (typeof key !== "string" || !/^[A-Za-z][A-Za-z0-9_-]*$/.test(key)) continue;
+		const type = field.type === "checkbox" ? "checkbox" : "text";
+		const entry = { key, type };
+		if (typeof field.label === "string" && field.label.trim()) entry.label = field.label.trim();
+		if (typeof field.help === "string" && field.help.trim()) entry.help = field.help.trim();
+		if (type === "checkbox") {
+			entry.default = field.default === true;
+		} else if (typeof field.default === "string") {
+			entry.default = field.default;
+		}
+		out.push(entry);
+	}
+	return out;
+}
+
 /** The keys of the prompt sections an extension contributes. */
 export function sectionKeys(extension) {
 	const sections = Array.isArray(extension?.sections) ? extension.sections : [];
@@ -105,7 +146,7 @@ export function sectionKeys(extension) {
  * that fails to load is reported in `errors` so the caller can surface it
  * without losing the extensions that did load.
  */
-export async function loadExtensions(root, api, enabledIds) {
+export async function loadExtensions(root, api, enabledIds, settingsFor) {
 	const extensions = [];
 	const errors = [];
 	if (!root) return { extensions, errors };
@@ -141,13 +182,23 @@ export async function loadExtensions(root, api, enabledIds) {
 			const module = await import(`${pathToFileURL(source).href}?v=${info.mtimeMs}`);
 			const exported = module.default ?? module.extension;
 			if (exported === undefined) throw new Error("the module has no default export");
-			const extension = typeof exported === "function" ? await exported(api) : exported;
+			// The values the user set in v1 are handed to the factory, because a
+			// module outside node_modules has no other way to reach them. Only the
+			// factory form gets them: the object form is constructed before the
+			// loader can know which extension it is.
+			const scoped = settingsFor ? { ...api, settings: settingsFor(id) } : api;
+			const extension = typeof exported === "function" ? await exported(scoped) : exported;
 			if (!extension || typeof extension !== "object") {
 				throw new Error("the extension must be an object, or a function returning one");
 			}
 			// The registry name is forced to the directory id, so what the agent
 			// sees cannot drift from what is on disk.
-			extensions.push({ id, name: id, extension: { ...extension, name: id } });
+			extensions.push({
+				id,
+				name: id,
+				extension: { ...extension, name: id },
+				settings: settingsSchema(extension),
+			});
 		} catch (error) {
 			const message = error?.message ?? String(error);
 			errors.push({ id, message });
