@@ -2649,11 +2649,10 @@ export default function ChatPane({
         setModel(sel.model);
         setThinking(typeof sel.thinking === 'string' ? sel.thinking : '');
         setDefaultThinking(s.defaultThinking ?? '');
-        try {
-          localStorage.setItem(selKey, JSON.stringify(sel));
-        } catch {
-          // storage unavailable — ignore
-        }
+        // Deliberately not persisted here. Writing the resolved selection on
+        // every open froze whatever the settings default was the first time a
+        // project was opened, so a later change to the default never showed up
+        // in the picker. Only an explicit pick (persistSelection) is remembered.
       })
       .catch(() => {
         // header falls back to the custom model input
@@ -5475,7 +5474,14 @@ export default function ChatPane({
                         >
                           {t.done && <IconCheck className="h-3 w-3" />}
                           {!t.done && i === todosActive && (
-                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                            // While the run is live the current step spins, so
+                            // the list says what is being worked on right now
+                            // rather than only what is done.
+                            streaming ? (
+                              <span className="h-2.5 w-2.5 animate-spin rounded-full border border-emerald-500 border-t-transparent" />
+                            ) : (
+                              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                            )
                           )}
                         </span>
                         <span

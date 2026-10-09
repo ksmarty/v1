@@ -496,6 +496,38 @@ Hooks attach to a task by name. Wrappers are pure functions applied where the
 wrapping extension is selected. Both are advanced - prefer a plain new tool
 unless the user needs to change something that already exists.
 
+## The tools the agent already has
+
+An extension adds to this list, and wrapping or delegating needs the exact
+name. The file and command primitives come from the harness (pi); the rest are
+v1's own:
+
+**Harness (pi):** read, write, edit, bash. A sub-agent runs through the
+task tool.
+
+**Files and commands:** read_file, write_file, edit_file, delete_file,
+move_file, list_files, search_files, run_command, run_command_background,
+run_container, git, verify_project.
+
+**Preview:** restart_preview, screenshot_app.
+
+**Plan and todos:** make_plan, update_plan, set_todos.
+
+**Session and project:** set_project_name, set_session_name, ask_user,
+create_extension.
+
+**Memory:** remember, forget, search_memories.
+
+**Web:** fetch_url, and web_search when a LangSearch key is configured.
+
+**Extensions:** delegate, from the bundled delegate extension - a sub-agent in
+its own context.
+
+Several tools are conditional: screenshot_app needs a vision-capable model,
+web_search needs an API key, and the whole files-and-commands group is
+refused in plan mode. A wrapper around a tool that is not loaded simply never
+runs, so check that a tool is available before depending on it.
+
 ## Installing it
 
 Call create_extension with the id, a one-line description and the complete
