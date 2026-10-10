@@ -72,8 +72,7 @@ export default function ChatPanel({
   chatResetSignal?: number;
 }) {
   const [tabLayout] = useState(() => getChatTabLayout());
-  // Shared with ChatPane: the + menu's Sessions entry and the project title
-  // both open the same session switcher.
+  // The project title opens the session switcher.
   const [sessionsOpen, setSessionsOpen] = useState(false);
   // Active session name, reported up from ChatPane — shown as a subtitle under
   // the project name; clicking it opens the switcher.
