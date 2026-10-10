@@ -823,11 +823,12 @@ function chipLabel(detail: string, display?: ExtensionToolDisplay): string {
   }
 }
 
-function ToolChip({ name, detail }: ToolCall) {
+function ToolChip({ name, detail, result }: { name: string; detail: string; result?: ToolCall }) {
   const [open, setOpen] = useState(false);
   const display = useToolDisplay(name);
   const Icon = toolIcon(name, display);
   const diff = name === 'edit_file' ? parseEditDiff(detail) : null;
+  const resultErr = result ? resultError(result.detail) : null;
   // write_file expands to just the file content — the path is already in the
   // header, and the JSON envelope around the content is noise.
   const writeContent = useMemo(() => {
@@ -854,7 +855,7 @@ function ToolChip({ name, detail }: ToolCall) {
     ) : null;
   // Nothing worth expanding (e.g. restart_preview with empty args) renders as
   // a static row — no chevron, no dropdown.
-  const expandable = diff !== null || writeContent !== null || preview !== null || meaningfulDetail(detail);
+  const expandable = diff !== null || writeContent !== null || preview !== null || meaningfulDetail(detail) || result != null;
   const header = (
     <>
       {expandable ? (
@@ -879,6 +880,12 @@ function ToolChip({ name, detail }: ToolCall) {
           </span>
         </span>
       )}
+      {result &&
+        (resultErr !== null ? (
+          <IconX className="h-3 w-3 shrink-0 text-red-500" />
+        ) : (
+          <IconCheck className="h-3 w-3 shrink-0 text-emerald-500" />
+        ))}
     </>
   );
   if (!expandable) {
@@ -899,31 +906,42 @@ function ToolChip({ name, detail }: ToolCall) {
       >
         {header}
       </button>
-      {open &&
-        (diff ? (
-          <StickToBottom className="max-h-60 overflow-auto border-t border-border/80 px-2 py-1.5 leading-relaxed">
-            <DiffContext lines={diff.before} side="before" />
-            {diff.removed.map((l, i) => (
-              <div key={i} className="whitespace-pre-wrap break-words bg-red-500/10 text-red-400">
-                - {l}
+      {open && (
+        <>
+          {diff ? (
+            <StickToBottom className="max-h-60 overflow-auto border-t border-border/80 px-2 py-1.5 leading-relaxed">
+              <DiffContext lines={diff.before} side="before" />
+              {diff.removed.map((l, i) => (
+                <div key={i} className="whitespace-pre-wrap break-words bg-red-500/10 text-red-400">
+                  - {l}
+                </div>
+              ))}
+              {diff.added.map((l, i) => (
+                <div key={i} className="whitespace-pre-wrap break-words bg-emerald-500/10 text-emerald-400">
+                  + {l}
+                </div>
+              ))}
+              <DiffContext lines={diff.after} side="after" />
+            </StickToBottom>
+          ) : writeContent !== null ? (
+            <StickToBottom className="max-h-60 overflow-auto whitespace-pre-wrap break-words border-t border-border/80 px-3 py-2 font-mono text-[11px] leading-relaxed text-subtle">
+              {writeContent}
+            </StickToBottom>
+          ) : preview !== null ? (
+            <>{preview}</>
+          ) : meaningfulDetail(detail) ? (
+            <ToolBody detail={detail} />
+          ) : null}
+          {result &&
+            (resultErr !== null ? (
+              <div className="border-t border-red-500/30 px-3 py-2 text-[11px] leading-relaxed text-red-400">
+                {resultErr}
               </div>
+            ) : (
+              <ToolBody detail={result.detail} />
             ))}
-            {diff.added.map((l, i) => (
-              <div key={i} className="whitespace-pre-wrap break-words bg-emerald-500/10 text-emerald-400">
-                + {l}
-              </div>
-            ))}
-            <DiffContext lines={diff.after} side="after" />
-          </StickToBottom>
-        ) : writeContent !== null ? (
-          <StickToBottom className="max-h-60 overflow-auto whitespace-pre-wrap break-words border-t border-border/80 px-3 py-2 font-mono text-[11px] leading-relaxed text-subtle">
-            {writeContent}
-          </StickToBottom>
-        ) : preview !== null ? (
-          <>{preview}</>
-        ) : (
-          meaningfulDetail(detail) && <ToolBody detail={detail} />
-        ))}
+        </>
+      )}
     </div>
   );
 }
@@ -1652,41 +1670,41 @@ function CollapsedToolsGroup({
 
 function ToolBlocks({ calls, results }: { calls: ToolCall[]; results: ToolCall[] }) {
   const out: ReactNode[] = [];
-  let next = 0;
-  calls.forEach((tc, j) => {
-    // Merge call + its result into one card for these tools.
-    if (tc.name === 'run_command' || tc.name === 'search_files' || tc.name === 'git' || tc.name === 'read_file') {
-      let k = next;
-      while (k < results.length && results[k].name !== tc.name) k++;
-      if (k < results.length) {
-        next = k + 1;
-        if (tc.name === 'run_command' || tc.name === 'git') {
-          out.push(
-            <RunCommandBlock
-              key={`c${j}`}
-              name={tc.name}
-              command={chipLabel(tc.detail)}
-              result={results[k]}
-            />,
-          );
-        } else if (tc.name === 'read_file') {
-          out.push(
-            <ReadFileBlock key={`c${j}`} path={chipLabel(tc.detail)} result={results[k]} />,
-          );
-        } else {
-          out.push(
-            <SearchFilesBlock key={`c${j}`} query={chipLabel(tc.detail)} result={results[k]} />,
-          );
-        }
-        return;
-      }
+  // Pair each call with its result by name (first unused match), so the call
+  // and its outcome render as one card instead of a call chip plus a separate
+  // "result" block. A call with no result (still in flight) falls back to a
+  // plain chip.
+  const used = new Array(results.length).fill(false);
+  const takeResult = (name: string): number => {
+    for (let k = 0; k < results.length; k++) {
+      if (!used[k] && results[k].name === name) return k;
     }
-    out.push(<ToolChip key={`c${j}`} {...tc} />);
+    return -1;
+  };
+  calls.forEach((tc, j) => {
+    const k = takeResult(tc.name);
+    const result = k >= 0 ? results[k] : undefined;
+    if (k >= 0) used[k] = true;
+    if (result && (tc.name === 'run_command' || tc.name === 'git')) {
+      out.push(
+        <RunCommandBlock
+          key={`c${j}`}
+          name={tc.name}
+          command={chipLabel(tc.detail)}
+          result={result}
+        />,
+      );
+    } else if (result && tc.name === 'read_file') {
+      out.push(<ReadFileBlock key={`c${j}`} path={chipLabel(tc.detail)} result={result} />);
+    } else if (result && tc.name === 'search_files') {
+      out.push(<SearchFilesBlock key={`c${j}`} query={chipLabel(tc.detail)} result={result} />);
+    } else {
+      out.push(<ToolChip key={`c${j}`} {...tc} result={result} />);
+    }
   });
   results.forEach((tr, j) => {
-    // results already merged into a merged block above are skipped
-    if (j < next && (tr.name === 'run_command' || tr.name === 'search_files' || tr.name === 'git' || tr.name === 'read_file')) return;
-    // A failed edit_file renders as a red ✗ row like a failed command.
+    if (used[j]) return;
+    // A failed edit_file with no matching call renders as a red ✗ row.
     if (tr.name === 'edit_file' && toolErrorMessage(tr.detail) !== null) {
       out.push(<EditFileError key={`r${j}`} detail={tr.detail} />);
     } else {
