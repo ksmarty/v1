@@ -66,6 +66,7 @@ type ChatEvent struct {
 	Type        string           `json:"type"`
 	TurnID      string           `json:"turn_id,omitempty"` // run-scoped id, same for every event of one turn
 	Text        string           `json:"text,omitempty"`
+	Replace     bool             `json:"replace,omitempty"` // text/reasoning replaces the live value instead of appending
 	Reasoning   string           `json:"reasoning,omitempty"`
 	Name        string           `json:"name,omitempty"`
 	Detail      string           `json:"detail,omitempty"`

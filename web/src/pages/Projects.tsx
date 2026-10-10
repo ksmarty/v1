@@ -792,6 +792,10 @@ export default function Projects() {
           v1
         </Link>
         <div className="flex-1" />
+        <Button variant="outline" onClick={() => setImportOpen(true)}>
+          <IconGitHub className="h-4 w-4" />
+          <span className="hidden sm:inline">Import</span>
+        </Button>
         <Button
           variant="outline"
           onClick={() => {
@@ -801,10 +805,6 @@ export default function Projects() {
         >
           <IconFlask className="h-4 w-4" />
           <span className="hidden sm:inline">Ephemeral</span>
-        </Button>
-        <Button variant="outline" onClick={() => setImportOpen(true)}>
-          <IconGitHub className="h-4 w-4" />
-          <span className="hidden sm:inline">Import</span>
         </Button>
         <Button
           onClick={() => {

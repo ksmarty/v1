@@ -152,6 +152,25 @@ or `make dev`), then report: (1) the new stamped build version (`v1 <version>
   TOON (spec: toon-format/spec) when fed to the model — encoder in
   `internal/agent/toon.go`, applied in `RunChat` history building. The model
   is told about the format in the system prompt.
+- Chat tool cards render through `ChatPane.tsx`'s `ToolBlocks`/`ToolChip`: a
+  result paired with its call becomes one card. Pure success acks
+  (`{"ok":true}` with no payload — `isNoiseResult`) are dropped in BOTH the
+  reload path and the live `tool_end` path, so an in-flight card matches the
+  reloaded one (no JSON envelope glued under a nice preview). Generic tools
+  show their raw JSON arguments collapsed behind an "Input" toggle when a
+  result is present; `search_files`/`search_memories`/`set_todos`/`remember`/
+  `make_plan`/`create_extension`/`set_project_name`/`set_session_name` render
+  purpose-built blocks instead. A `replace:true` on a `delta`/`reasoning`
+  event means the text replaces the live value rather than appending — the
+  harness sends it when a round's committed text is not an extension of what
+  streamed (retry/abort), so a stale fragment isn't glued on.
+- The GitHub tab's repo is auto-detected: `GET /api/projects/{id}` fills
+  `repoUrl` from the working tree's `origin` remote (`gitops.RemoteURL`) when
+  the user hasn't linked one, so `showGitHubTab` can offer the tab on its own;
+  linking or creating a repo in the Git tab refetches the project so the tab
+  appears immediately. Project settings save the text fields (name/instructions)
+  through a scoped Save button under them, while each toggle saves immediately.
+  Memories are edited in a full-screen `Dialog` with a tags field.
 - SQLite is accessed only through `internal/store`. Settings are key/value
   strings; env vars are fallbacks, sqlite overrides env. Prefix settings keys
   with a domain (`keyLLM...`, `keyGitHub...`).

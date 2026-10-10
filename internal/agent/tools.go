@@ -341,25 +341,6 @@ func (e *Executor) embedClient() *embed.Client {
 	return e.embedC
 }
 
-// normalizeTags cleans a comma-separated tag list: lowercased, trimmed,
-// deduped, and capped so a runaway list cannot bloat the row.
-func normalizeTags(s string) string {
-	seen := map[string]bool{}
-	var out []string
-	for _, part := range strings.Split(s, ",") {
-		t := strings.ToLower(strings.TrimSpace(part))
-		if t == "" || seen[t] {
-			continue
-		}
-		seen[t] = true
-		out = append(out, t)
-		if len(out) >= 12 {
-			break
-		}
-	}
-	return strings.Join(out, ", ")
-}
-
 // remember saves a project-scoped memory; forget deletes one by id.
 //
 // There is no length limit: the prompt carries only the memories the ranker
@@ -401,7 +382,7 @@ func (e *Executor) remember(argsJSON string) (string, error) {
 	if e.Store == nil {
 		return "", fmt.Errorf("memory store unavailable")
 	}
-	tags := normalizeTags(memory.StripPrivate(args.Tags))
+	tags := memory.NormalizeTags(memory.StripPrivate(args.Tags))
 	mems, err := e.Store.ListMemories(e.ProjectID)
 	if err != nil {
 		return "", err

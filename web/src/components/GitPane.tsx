@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api';
-import type { GitCommit, GitFileChange, GitInfo, GitStatus } from '../types';
+import type { GitCommit, GitFileChange, GitInfo, GitStatus, Project } from '../types';
 import { diffLines, errMsg } from '../utils';
 import {
   Button,
@@ -264,11 +264,13 @@ export default function GitPane({
   projectName,
   repoUrl,
   onPreviewRestart,
+  onProjectChange,
 }: {
   projectId: string;
   projectName: string;
   repoUrl: string;
   onPreviewRestart: () => void;
+  onProjectChange?: (p: Project) => void;
 }) {
   const [info, setInfo] = useState<GitInfo | null>(null);
   const [st, setSt] = useState<GitStatus | null>(null);
@@ -301,6 +303,18 @@ export default function GitPane({
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Linking or creating a repo changes the project's repoUrl, which decides
+  // whether the GitHub tab is offered — refresh the parent so it appears now.
+  const repoDone = () => {
+    void load();
+    if (onProjectChange) {
+      void api
+        .getProject(projectId)
+        .then(onProjectChange)
+        .catch(() => {});
+    }
+  };
 
   const act = async (fn: () => Promise<void>) => {
     setBusy(true);
@@ -431,13 +445,13 @@ export default function GitPane({
           onClose={() => setRepoDialog(null)}
           projectId={projectId}
           projectName={projectName}
-          onDone={() => void load()}
+          onDone={repoDone}
         />
         <LinkRepoDialog
           open={repoDialog === 'link'}
           onClose={() => setRepoDialog(null)}
           projectId={projectId}
-          onDone={() => void load()}
+          onDone={repoDone}
         />
       </div>
     );
@@ -611,13 +625,13 @@ export default function GitPane({
         onClose={() => setRepoDialog(null)}
         projectId={projectId}
         projectName={projectName}
-        onDone={() => void load()}
+        onDone={repoDone}
       />
       <LinkRepoDialog
         open={repoDialog === 'link'}
         onClose={() => setRepoDialog(null)}
         projectId={projectId}
-        onDone={() => void load()}
+        onDone={repoDone}
       />
 
       <div className="min-h-0 flex-1 overflow-y-auto">

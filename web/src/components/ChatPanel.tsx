@@ -236,6 +236,7 @@ export default function ChatPanel({
               projectName={project?.name ?? ''}
               repoUrl={project?.repoUrl ?? ''}
               onPreviewRestart={onPreviewRestart}
+              onProjectChange={onProjectChange}
             />
           </div>
         )}

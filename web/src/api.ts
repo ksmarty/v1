@@ -437,8 +437,8 @@ export const api = {
   getMemories: (id: string) => request<{ memories: Memory[] }>(`/api/projects/${id}/memories`),
   createMemory: (id: string, content: string) =>
     post<{ memories: Memory[] }>(`/api/projects/${id}/memories`, { content }),
-  updateMemory: (id: string, memId: number, content: string) =>
-    put<{ memories: Memory[] }>(`/api/projects/${id}/memories/${memId}`, { content }),
+  updateMemory: (id: string, memId: number, content: string, tags: string) =>
+    put<{ memories: Memory[] }>(`/api/projects/${id}/memories/${memId}`, { content, tags }),
   toggleMemory: (id: string, memId: number, enabled: boolean) =>
     post<{ memories: Memory[] }>(`/api/projects/${id}/memories/${memId}/toggle`, { enabled }),
   deleteMemory: (id: string, memId: number) =>

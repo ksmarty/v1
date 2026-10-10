@@ -247,7 +247,8 @@ func (s *Server) handleUpdateMemory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Content string `json:"content"`
+		Content string  `json:"content"`
+		Tags    *string `json:"tags"`
 	}
 	if !decodeJSON(w, r, &body) {
 		return
@@ -262,6 +263,13 @@ func (s *Server) handleUpdateMemory(w http.ResponseWriter, r *http.Request) {
 	} else if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	// UpdateMemory proved ownership, so the id-only tag setter is safe here.
+	if body.Tags != nil {
+		if err := s.st.SetMemoryTags(id, memory.NormalizeTags(*body.Tags)); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
 	}
 	s.respondMemories(w, p.ID)
 }

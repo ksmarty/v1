@@ -155,6 +155,9 @@ const TOOL_LABELS: Record<string, string> = {
   set_todos: 'Update todos',
   remember: 'Remember',
   forget: 'Forget',
+  search_memories: 'Search memories',
+  set_project_name: 'Set project name',
+  set_session_name: 'Set session name',
   ask_user: 'Ask user',
   make_plan: 'Make plan',
   update_plan: 'Update plan',
@@ -228,6 +231,9 @@ const TOOL_ICONS: Record<string, typeof IconWrench> = {
   set_todos: IconCheckSquare,
   remember: IconBookmark,
   forget: IconBookmarkOff,
+  search_memories: IconBrain,
+  set_project_name: IconPencil,
+  set_session_name: IconPencil,
   ask_user: IconUser,
   make_plan: IconMap,
   update_plan: IconCheckSquare,
@@ -793,6 +799,27 @@ function meaningfulDetail(detail: string): boolean {
   }
 }
 
+// A pure success ack ({"ok":true,...} with no payload) is noise: the call
+// chip already tells the story, and rendering the envelope as JSON under a
+// nice preview is exactly the "split screen" the user sees. Failures and
+// output-bearing results (read_file, run_command, search, …) are kept.
+function isNoiseResult(detail: string): boolean {
+  try {
+    const d = JSON.parse(detail) as Record<string, unknown> | null;
+    return (
+      d !== null &&
+      typeof d === 'object' &&
+      d.ok === true &&
+      !('error' in d) &&
+      !('content' in d) &&
+      !('output' in d) &&
+      !('results' in d)
+    );
+  } catch {
+    return false;
+  }
+}
+
 // The label shown on a plain tool chip: the meaningful arg (command, path)
 // rather than the raw JSON arguments.
 function chipLabel(detail: string, display?: ExtensionToolDisplay): string {
@@ -817,6 +844,8 @@ function chipLabel(detail: string, display?: ExtensionToolDisplay): string {
     }
     // remember: show the remembered text (truncated) instead of the JSON.
     if (typeof a.content === 'string' && a.content.trim()) return a.content;
+    // set_project_name / set_session_name: the new name is the whole story.
+    if (typeof a.name === 'string' && a.name.trim()) return a.name;
     // make_plan / update_plan: the plan's first line is its heading, which is
     // a far better summary than the escaped markdown.
     if (typeof a.plan === 'string' && a.plan.trim()) {
@@ -865,6 +894,10 @@ function ToolChip({ name, detail, result }: { name: string; detail: string; resu
       <ExtensionBlock detail={detail} />
     ) : name === 'remember' ? (
       <MemoryBlock detail={detail} />
+    ) : name === 'set_project_name' ? (
+      <NameBlock label="Rename project" detail={detail} />
+    ) : name === 'set_session_name' ? (
+      <NameBlock label="Rename session" detail={detail} />
     ) : null;
   // Nothing worth expanding (e.g. restart_preview with empty args) renders as
   // a static row — no chevron, no dropdown.
@@ -942,8 +975,6 @@ function ToolChip({ name, detail, result }: { name: string; detail: string; resu
             </StickToBottom>
           ) : preview !== null ? (
             <>{preview}</>
-          ) : meaningfulDetail(detail) ? (
-            <ToolBody detail={detail} />
           ) : null}
           {result &&
             (resultErr !== null ? (
@@ -966,8 +997,46 @@ function ToolChip({ name, detail, result }: { name: string; detail: string; resu
                 )}
               </>
             ))}
+          {/* A generic tool shows its raw JSON arguments. When there is also a
+              result, the arguments collapse behind a toggle — otherwise the
+              card is a nice result glued to a JSON input, which is what the
+              "split screen" complaint was about. */}
+          {diff === null &&
+            writeContent === null &&
+            preview === null &&
+            meaningfulDetail(detail) &&
+            (result ? (
+              <InputDetails>
+                <ToolBody detail={detail} />
+              </InputDetails>
+            ) : (
+              <ToolBody detail={detail} />
+            ))}
         </>
       )}
+    </div>
+  );
+}
+
+// The raw JSON arguments of a generic tool, hidden behind a toggle when the
+// card also shows a result, so a nice result is not glued to a JSON input.
+function InputDetails({ children }: { children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="border-t border-border/80">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center gap-1 px-2 py-1 text-left font-mono text-[10px] text-faint transition-colors hover:text-dim"
+      >
+        {open ? (
+          <IconChevronDown className="h-3 w-3" />
+        ) : (
+          <IconChevronRight className="h-3 w-3" />
+        )}
+        Input
+      </button>
+      {open && children}
     </div>
   );
 }
@@ -1090,10 +1159,24 @@ function RunCommandOutput({ command, detail }: { command: string; detail: string
 }
 
 // A search_files call and its result merged into one card: the header shows
-// the query, expanding shows the search results — one entry instead of a
-// call chip plus a separate "result" block.
+// the query and match count, expanding lists the file hits and the content
+// matches instead of the raw JSON envelope.
 function SearchFilesBlock({ query, result }: { query: string; result: ToolCall }) {
   const [open, setOpen] = useState(false);
+  const parsed = useMemo(() => {
+    try {
+      return JSON.parse(result.detail) as {
+        files?: string[];
+        matches?: { path: string; line: number; text: string }[];
+        note?: string;
+      };
+    } catch {
+      return null;
+    }
+  }, [result.detail]);
+  const files = parsed?.files ?? [];
+  const matches = parsed?.matches ?? [];
+  const count = files.length + matches.length;
   return (
     <div className="overflow-hidden rounded-md border border-border bg-surface/50 text-[10px]">
       <button
@@ -1109,12 +1192,158 @@ function SearchFilesBlock({ query, result }: { query: string; result: ToolCall }
         <IconSearch className="h-3 w-3 shrink-0 text-faint" />
         <span className="shrink-0 text-text">{toolLabel('search_files')}</span>
         <span className="min-w-0 flex-1 truncate text-faint">{query}</span>
+        <span className="shrink-0 text-faint">
+          {count > 0 ? `${count} match${count === 1 ? '' : 'es'}` : 'no matches'}
+        </span>
       </button>
       {open && (
-        <div className="border-t border-border/80">
-          <ToolBody detail={result.detail} />
+        <div className="border-t border-border/80 px-3 py-2">
+          {parsed === null ? (
+            <pre className="whitespace-pre-wrap break-words font-mono text-[11px] text-subtle">
+              {result.detail}
+            </pre>
+          ) : count === 0 ? (
+            <p className="text-[11px] text-faint">{parsed.note ?? 'No matches.'}</p>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {files.length > 0 && (
+                <div className="flex flex-col gap-0.5">
+                  <span className="font-sans text-[10px] uppercase tracking-wide text-faint">
+                    Files
+                  </span>
+                  {files.map((f, i) => (
+                    <span key={i} className="truncate font-mono text-[11px] text-subtle">
+                      {f}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {matches.length > 0 && (
+                <div className="flex flex-col gap-1">
+                  <span className="font-sans text-[10px] uppercase tracking-wide text-faint">
+                    Matches
+                  </span>
+                  {matches.map((m, i) => (
+                    <div key={i} className="min-w-0">
+                      <span className="font-mono text-[10px] text-faint">
+                        {m.path}:{m.line}
+                      </span>
+                      <div className="truncate font-mono text-[11px] text-subtle">{m.text}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
+    </div>
+  );
+}
+
+// A search_memories call and its result: the header shows the query and hit
+// count, expanding lists the matched memories with their relevance and tags
+// instead of the raw JSON.
+function SearchMemoriesBlock({ query, result }: { query: string; result: ToolCall }) {
+  const [open, setOpen] = useState(false);
+  const parsed = useMemo(() => {
+    try {
+      return JSON.parse(result.detail) as {
+        results?: {
+          id: number;
+          category?: string;
+          content: string;
+          relevance?: number;
+          tags?: string;
+        }[];
+        note?: string;
+      };
+    } catch {
+      return null;
+    }
+  }, [result.detail]);
+  const rows = parsed?.results ?? [];
+  return (
+    <div className="overflow-hidden rounded-md border border-border bg-surface/50 text-[10px]">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex min-h-[26px] w-full items-center gap-1.5 px-2 py-1 text-left text-dim transition-colors hover:text-text"
+      >
+        {open ? (
+          <IconChevronDown className="h-3 w-3 shrink-0" />
+        ) : (
+          <IconChevronRight className="h-3 w-3 shrink-0" />
+        )}
+        <IconBrain className="h-3 w-3 shrink-0 text-faint" />
+        <span className="shrink-0 text-text">{toolLabel('search_memories')}</span>
+        <span className="min-w-0 flex-1 truncate text-faint">{query}</span>
+        <span className="shrink-0 text-faint">
+          {rows.length > 0 ? `${rows.length} found` : 'none'}
+        </span>
+      </button>
+      {open && (
+        <div className="border-t border-border/80 px-3 py-2">
+          {parsed === null ? (
+            <pre className="whitespace-pre-wrap break-words font-mono text-[11px] text-subtle">
+              {result.detail}
+            </pre>
+          ) : rows.length === 0 ? (
+            <p className="text-[11px] text-faint">{parsed.note ?? 'No matching memories.'}</p>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {rows.map((r) => (
+                <div key={r.id} className="flex flex-col gap-1">
+                  <p className="whitespace-pre-wrap break-words text-[11px] text-text">
+                    {r.content}
+                  </p>
+                  <div className="flex flex-wrap items-center gap-1">
+                    {r.category && (
+                      <span className="rounded-full border border-border px-1.5 py-0.5 text-[10px] text-subtle">
+                        {r.category}
+                      </span>
+                    )}
+                    {typeof r.relevance === 'number' && (
+                      <span className="text-[10px] text-faint">
+                        {Math.round(r.relevance * 100)}%
+                      </span>
+                    )}
+                    {r.tags
+                      ?.split(',')
+                      .map((t) => t.trim())
+                      .filter(Boolean)
+                      .map((t) => (
+                        <span
+                          key={t}
+                          className="rounded-full border border-border bg-bg px-1.5 py-0.5 text-[10px] text-subtle"
+                        >
+                          {t}
+                        </span>
+                      ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// set_project_name / set_session_name render their new name instead of the
+// {"name":…} envelope.
+function NameBlock({ label, detail }: { label: string; detail: string }) {
+  let name = '';
+  try {
+    const a = JSON.parse(detail) as { name?: unknown };
+    if (typeof a.name === 'string') name = a.name;
+  } catch {
+    name = detail;
+  }
+  return (
+    <div className="border-t border-border/80 px-3 py-2 text-[11px] text-subtle">
+      {label} to <span className="text-text">{name}</span>
     </div>
   );
 }
@@ -1724,6 +1953,8 @@ function ToolBlocks({ calls, results }: { calls: ToolCall[]; results: ToolCall[]
       out.push(<ReadFileBlock key={`c${j}`} path={chipLabel(tc.detail)} result={result} />);
     } else if (result && tc.name === 'search_files') {
       out.push(<SearchFilesBlock key={`c${j}`} query={chipLabel(tc.detail)} result={result} />);
+    } else if (result && tc.name === 'search_memories') {
+      out.push(<SearchMemoriesBlock key={`c${j}`} query={chipLabel(tc.detail)} result={result} />);
     } else {
       out.push(<ToolChip key={`c${j}`} {...tc} result={result} />);
     }
@@ -1843,7 +2074,7 @@ function AskBlock({
     setDrafts((prev) => prev.map((d, i) => (i === step ? v : d)));
 
   if (answered && !open) {
-    const first = result![0]?.answer ?? '';
+    const answers = result!.map((r) => r.answer).filter(Boolean);
     return (
       <button
         type="button"
@@ -1851,10 +2082,9 @@ function AskBlock({
         className="flex min-h-[26px] w-full items-center gap-1.5 rounded-lg border border-accent/30 bg-surface px-2 py-1 text-left text-dim transition-colors hover:text-text"
       >
         <IconChevronRight className="h-3 w-3 shrink-0" />
-        <IconUser className="h-3 w-3 shrink-0 text-accent" />
+        <IconCheck className="h-3 w-3 shrink-0 text-emerald-400" />
         <span className="min-w-0 flex-1 truncate text-[10px] text-faint">
-          {askSummary}
-          {first ? ` · ${first}` : ''}
+          {answers.length > 0 ? answers.join(' · ') : askSummary}
         </span>
       </button>
     );
@@ -2283,10 +2513,15 @@ const MessageRow = memo(function MessageRow({
     // the reloaded transcript uses (command output, edit diff, failure reason),
     // so what you see during the turn matches what you see after a reload.
     if (item.running) return <ToolRow item={item} />;
+    // A pure success ack is dropped so the live card matches the reloaded one
+    // (the nice preview alone, no JSON envelope underneath).
+    const liveResults = isNoiseResult(item.detail)
+      ? []
+      : [{ name: item.name, detail: item.detail }];
     return (
       <ToolBlocks
         calls={[{ name: item.name, detail: item.call ?? item.detail }]}
-        results={[{ name: item.name, detail: item.detail }]}
+        results={liveResults}
       />
     );
   }
@@ -3052,19 +3287,7 @@ export default function ChatPane({
           // Pure success acks ({"ok":true,...} with no payload) are noise —
           // the call chip already tells the story. Failures and
           // output-bearing results (read_file, run_command, …) stay.
-          let noise = false;
-          try {
-            const d = JSON.parse(m.content) as Record<string, unknown>;
-            noise =
-              d !== null &&
-              d.ok === true &&
-              !('error' in d) &&
-              !('content' in d) &&
-              !('output' in d);
-          } catch {
-            // not JSON — keep it
-          }
-          if (noise) continue;
+          if (isNoiseResult(m.content)) continue;
           const last = mapped[mapped.length - 1];
           if (last && last.kind === 'msg' && last.role === 'assistant') {
             last.toolResults = [...(last.toolResults ?? []), { name, detail: m.content }];
@@ -3656,7 +3879,7 @@ export default function ChatPane({
             update((prev) =>
               prev.map((it) =>
                 it.kind === 'msg' && it.key === ck
-                  ? { ...it, reasoning: (it.reasoning ?? '') + ev.text }
+                  ? { ...it, reasoning: ev.replace ? ev.text : (it.reasoning ?? '') + ev.text }
                   : it,
               ),
             );
@@ -3677,13 +3900,15 @@ export default function ChatPane({
                   ? { ...it, reasoningCollapsed: it.key === nk ? it.reasoningCollapsed : true, streaming: false }
                   : it,
               ),
-              { kind: 'msg', key: nk, role: 'assistant', content: '', sentAt: Date.now(), streaming: true },
+              { kind: 'msg', key: nk, role: 'assistant', content: ev.replace ? ev.text : '', sentAt: Date.now(), streaming: true },
             ]);
           }
           const ck: string = k;
           update((prev) =>
             prev.map((it) =>
-              it.kind === 'msg' && it.key === ck ? { ...it, content: it.content + ev.text } : it,
+              it.kind === 'msg' && it.key === ck
+                ? { ...it, content: ev.replace ? ev.text : it.content + ev.text }
+                : it,
             ),
           );
           break;
@@ -3717,13 +3942,40 @@ export default function ChatPane({
           if (ev.name === 'ask_user') {
             // The question block already shows the answers optimistically on
             // confirm; fold the persisted confirmation in here. A failed ask
-            // (timeout, cancel) stops showing the answer controls.
+            // (timeout, cancel) stops showing the answer controls. If the
+            // question_request never replaced the bare tool row (a reconnect
+            // or timeout), convert that row into the ask block so it does not
+            // fall through to the raw-JSON tool renderer.
             const ans = ev.detail ? askAnswers(ev.detail) : [];
-            if (ans.length > 0) {
-              update((prev) => prev.map((it) => (it.kind === 'ask' ? { ...it, result: ans } : it)));
-            } else if (!ev.ok) {
-              update((prev) => prev.map((it) => (it.kind === 'ask' ? { ...it, failed: true } : it)));
-            }
+            const stack = toolStackRef.current['ask_user'] ?? [];
+            const pendingKey = stack.pop();
+            update((prev) => {
+              if (prev.some((it) => it.kind === 'ask')) {
+                return prev.map((it) =>
+                  it.kind === 'ask'
+                    ? ans.length > 0
+                      ? { ...it, result: ans }
+                      : !ev.ok
+                        ? { ...it, failed: true }
+                        : it
+                    : it,
+                );
+              }
+              if (pendingKey) {
+                return prev.map((it) =>
+                  it.kind === 'tool' && it.key === pendingKey
+                    ? {
+                        kind: 'ask' as const,
+                        key: it.key,
+                        questions: askQuestions(it.call ?? it.detail),
+                        result: ans.length > 0 ? ans : undefined,
+                        failed: ans.length === 0 && !ev.ok,
+                      }
+                    : it,
+                );
+              }
+              return prev;
+            });
             break;
           }
           if (ev.name === 'restart_preview' && ev.ok) restartRef.current();

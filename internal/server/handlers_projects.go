@@ -58,25 +58,39 @@ func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Name            string `json:"name"`
-		PreviewCommand  string `json:"previewCommand"`
-		Instructions    string `json:"instructions"`
-		AutoPush        *bool  `json:"autoPush"`
-		PreviewDisabled *bool  `json:"previewDisabled"`
-		VercelEnabled   *bool  `json:"vercelEnabled"`
+		Name            *string `json:"name"`
+		PreviewCommand  *string `json:"previewCommand"`
+		Instructions    *string `json:"instructions"`
+		AutoPush        *bool   `json:"autoPush"`
+		PreviewDisabled *bool   `json:"previewDisabled"`
+		VercelEnabled   *bool   `json:"vercelEnabled"`
 		// "auto", "on" or "off"; empty leaves it unchanged.
 		GitHubTab *string `json:"githubTab"`
 	}
 	if !decodeJSON(w, r, &body) {
 		return
 	}
-	name := strings.TrimSpace(body.Name)
-	if name == "" {
-		name = p.Name
-	}
-	if err := s.st.UpdateProjectSettings(p.ID, name, strings.TrimSpace(body.PreviewCommand), strings.TrimSpace(body.Instructions)); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
+	// Text fields are only written when the request carries at least one, so a
+	// toggle-only PATCH never wipes the custom instructions or preview command.
+	if body.Name != nil || body.PreviewCommand != nil || body.Instructions != nil {
+		name := p.Name
+		if body.Name != nil {
+			if trimmed := strings.TrimSpace(*body.Name); trimmed != "" {
+				name = trimmed
+			}
+		}
+		previewCommand := p.PreviewCommand
+		if body.PreviewCommand != nil {
+			previewCommand = strings.TrimSpace(*body.PreviewCommand)
+		}
+		instructions := p.Instructions
+		if body.Instructions != nil {
+			instructions = strings.TrimSpace(*body.Instructions)
+		}
+		if err := s.st.UpdateProjectSettings(p.ID, name, previewCommand, instructions); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
 	}
 	if body.AutoPush != nil {
 		if err := s.st.UpdateProjectAutoPush(p.ID, *body.AutoPush); err != nil {
@@ -268,6 +282,15 @@ func (s *Server) handleGetProject(w http.ResponseWriter, r *http.Request) {
 	p := s.projectOr404(w, r)
 	if p == nil {
 		return
+	}
+	// Detect the repository from the working tree's origin remote so the GitHub
+	// tab can decide on its own. Never overwrite a user-linked URL.
+	if p.RepoURL == "" {
+		if remote := gitops.RemoteURL(p.Path); repoSlug(remote) != "" {
+			if err := s.st.SetProjectRepoURL(p.ID, remote); err == nil {
+				p.RepoURL = remote
+			}
+		}
 	}
 	writeJSON(w, http.StatusOK, toProjectJSON(p))
 }

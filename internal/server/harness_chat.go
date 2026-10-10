@@ -463,9 +463,9 @@ func reconcile(streamed *strings.Builder, committed, typ string, emit func(agent
 		emit(agent.ChatEvent{Type: typ, Text: committed[len(prefix):]})
 	default:
 		// The committed text is not an extension of what streamed: the round was
-		// rewritten (a retry or an abort). Send it in full so the answer is
-		// visible; the live view may show a stale prefix until the next reload.
-		emit(agent.ChatEvent{Type: typ, Text: committed})
+		// rewritten (a retry or an abort). Replace the live value rather than
+		// appending, or the stale fragment would be glued to the full text.
+		emit(agent.ChatEvent{Type: typ, Text: committed, Replace: true})
 	}
 	streamed.Reset()
 	streamed.WriteString(committed)

@@ -296,8 +296,8 @@ export interface ChatMessage {
 }
 
 export type ChatEvent =
-  | { type: 'delta'; text: string; turn_id?: string }
-  | { type: 'reasoning'; text: string; turn_id?: string }
+  | { type: 'delta'; text: string; replace?: boolean; turn_id?: string }
+  | { type: 'reasoning'; text: string; replace?: boolean; turn_id?: string }
   | { type: 'info'; text: string }
   | { type: 'tool_start'; name: string; detail: string }
   | { type: 'tool_end'; name: string; ok: boolean; detail: string }

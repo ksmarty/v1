@@ -4,6 +4,8 @@ import type { Project } from '../types';
 import { errMsg } from '../utils';
 import { Field, Input, SaveRow, Section, Textarea } from './ui';
 
+type TogglePatch = Partial<Pick<Project, 'autoPush' | 'previewDisabled' | 'vercelEnabled' | 'githubTab'>>;
+
 // Per-project settings: name, preview command, and custom instructions that
 // are appended to the agent's system prompt for this project only.
 export default function ProjectPane({
@@ -23,6 +25,7 @@ export default function ProjectPane({
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [toggleBusy, setToggleBusy] = useState(false);
 
   useEffect(() => {
     setName(project?.name ?? '');
@@ -34,14 +37,15 @@ export default function ProjectPane({
     setGithubTab(project?.githubTab ?? 'auto');
   }, [project?.id, project?.name, project?.previewCommand, project?.instructions, project?.autoPush, project?.previewDisabled, project?.vercelEnabled, project?.githubTab]);
 
-  const save = async (e: FormEvent) => {
+  // The Save button only covers the text fields above it.
+  const saveText = async (e: FormEvent) => {
     e.preventDefault();
     if (!project) return;
     setSaving(true);
     setSaved(false);
     setError(null);
     try {
-      const updated = await api.updateProject(project.id, { name, previewCommand, instructions, autoPush, previewDisabled, vercelEnabled, githubTab });
+      const updated = await api.updateProject(project.id, { name, previewCommand, instructions });
       onProjectChange({ ...project, ...updated });
       setSaved(true);
     } catch (err) {
@@ -51,18 +55,35 @@ export default function ProjectPane({
     }
   };
 
-  // Glow the Save button while any field differs from what's persisted.
-  // Backend omits empty optional fields, so normalize undefined to ''.
-  const dirty = Boolean(
+  // Toggles persist the moment they are clicked.
+  const saveToggle = async (patch: TogglePatch) => {
+    if (!project || toggleBusy) return;
+    setToggleBusy(true);
+    setSaved(false);
+    setError(null);
+    try {
+      const updated = await api.updateProject(project.id, patch);
+      onProjectChange({ ...project, ...updated });
+      setSaved(true);
+    } catch (err) {
+      setError(errMsg(err));
+    } finally {
+      setToggleBusy(false);
+    }
+  };
+
+  // Glow Save only while a text field differs from what's persisted.
+  const textDirty = Boolean(
     project &&
       (name !== project.name ||
         previewCommand !== (project.previewCommand ?? '') ||
-        instructions !== (project.instructions ?? '') ||
-        autoPush !== project.autoPush ||
-        previewDisabled !== (project.previewDisabled ?? false) ||
-        vercelEnabled !== (project.vercelEnabled ?? false) ||
-        githubTab !== (project.githubTab ?? 'auto')),
+        instructions !== (project.instructions ?? '')),
   );
+
+  const toggleClass = (active: boolean) =>
+    `min-h-[32px] rounded-md text-sm transition-colors disabled:opacity-50 ${
+      active ? 'bg-border text-text' : 'text-dim hover:text-text'
+    }`;
 
   return (
     <div className="fade-y h-full overflow-y-auto p-3 md:p-4">
@@ -71,7 +92,7 @@ export default function ProjectPane({
           title="Project settings"
           description="Only affect this project. Instructions are appended to the agent's system prompt on every turn."
         >
-          <form onSubmit={(e) => void save(e)} className="flex flex-col gap-3">
+          <form onSubmit={(e) => void saveText(e)} className="flex flex-col gap-3">
             <Field label="Name">
               <Input value={name} onChange={(e) => setName(e.target.value)} autoComplete="off" />
             </Field>
@@ -93,16 +114,19 @@ export default function ProjectPane({
                 className="resize-y"
               />
             </Field>
+            <SaveRow saving={saving} saved={saved} error={error} pulse={textDirty} />
+          </form>
+
+          <div className="mt-4 flex flex-col gap-3 border-t border-border pt-4">
             <Field label="Auto-push commits">
               <div className="grid w-full max-w-[200px] grid-cols-2 gap-1 rounded-lg border border-border bg-surface p-1">
                 {([false, true] as const).map((v) => (
                   <button
                     key={String(v)}
                     type="button"
-                    onClick={() => setAutoPush(v)}
-                    className={`min-h-[32px] rounded-md text-sm transition-colors ${
-                      autoPush === v ? 'bg-border text-text' : 'text-dim hover:text-text'
-                    }`}
+                    disabled={toggleBusy}
+                    onClick={() => void saveToggle({ autoPush: v })}
+                    className={toggleClass(autoPush === v)}
                   >
                     {v ? 'On' : 'Off'}
                   </button>
@@ -119,10 +143,9 @@ export default function ProjectPane({
                   <button
                     key={v}
                     type="button"
-                    onClick={() => setGithubTab(v)}
-                    className={`min-h-[32px] rounded-md text-sm transition-colors ${
-                      githubTab === v ? 'bg-border text-text' : 'text-dim hover:text-text'
-                    }`}
+                    disabled={toggleBusy}
+                    onClick={() => void saveToggle({ githubTab: v })}
+                    className={toggleClass(githubTab === v)}
                   >
                     {v === 'auto' ? 'Auto' : v === 'on' ? 'Always' : 'Never'}
                   </button>
@@ -139,10 +162,9 @@ export default function ProjectPane({
                   <button
                     key={String(v)}
                     type="button"
-                    onClick={() => setPreviewDisabled(v)}
-                    className={`min-h-[36px] rounded-md text-sm transition-colors ${
-                      previewDisabled === v ? 'bg-border text-text' : 'text-dim hover:text-text'
-                    }`}
+                    disabled={toggleBusy}
+                    onClick={() => void saveToggle({ previewDisabled: v })}
+                    className={toggleClass(previewDisabled === v)}
                   >
                     {v ? 'Disabled' : 'Enabled'}
                   </button>
@@ -159,10 +181,9 @@ export default function ProjectPane({
                   <button
                     key={String(v)}
                     type="button"
-                    onClick={() => setVercelEnabled(v)}
-                    className={`min-h-[36px] rounded-md text-sm transition-colors ${
-                      vercelEnabled === v ? 'bg-border text-text' : 'text-dim hover:text-text'
-                    }`}
+                    disabled={toggleBusy}
+                    onClick={() => void saveToggle({ vercelEnabled: v })}
+                    className={toggleClass(vercelEnabled === v)}
                   >
                     {v ? 'Enabled' : 'Disabled'}
                   </button>
@@ -173,8 +194,7 @@ export default function ProjectPane({
                 project. Off by default.
               </p>
             </Field>
-            <SaveRow saving={saving} saved={saved} error={error} pulse={dirty} />
-          </form>
+          </div>
         </Section>
       </div>
     </div>

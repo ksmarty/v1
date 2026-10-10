@@ -191,6 +191,24 @@ func Clone(ctx context.Context, repoURL, token, dest string) error {
 	return err
 }
 
+// RemoteURL returns the URL of the "origin" remote for the working tree at
+// path, or "" when it is not a repository or has no origin remote.
+func RemoteURL(path string) string {
+	repo, err := git.PlainOpen(path)
+	if err != nil {
+		return ""
+	}
+	rem, err := repo.Remote("origin")
+	if err != nil {
+		return ""
+	}
+	urls := rem.Config().URLs
+	if len(urls) == 0 {
+		return ""
+	}
+	return urls[0]
+}
+
 // LinkRepo replaces the contents of dest with a fresh clone of repoURL, so the
 // project becomes a working checkout of the linked repository (origin is set,
 // so subsequent pushes target it).
