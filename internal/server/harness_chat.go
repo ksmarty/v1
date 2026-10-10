@@ -148,9 +148,9 @@ func harnessUserContent(text string, atts []agent.Attachment) any {
 // instructions and the tool definitions both come from the functions the
 // built-in loop uses — agent.BuildSystemPrompt and ChatParams.ToolSet — so a
 // turn's prompt and its tool set cannot depend on which harness runs it.
-func harnessEnsureRequest(params agent.ChatParams, model string) harness.EnsureRequest {
+func harnessEnsureRequest(params agent.ChatParams, model, exposure string) harness.EnsureRequest {
 	provider := harnessProviderSpec(params.Client, model)
-	return harness.EnsureRequest{
+	req := harness.EnsureRequest{
 		V1SessionID:   harnessConversationID(params.Project.ID, params.SessionID),
 		Cwd:           params.Project.Path,
 		Instructions:  scrubHarnessText(agent.BuildSystemPrompt(&params)),
@@ -158,7 +158,19 @@ func harnessEnsureRequest(params agent.ChatParams, model string) harness.EnsureR
 		Model:         harness.ModelRef{Provider: provider.ID, ModelID: model},
 		ThinkingLevel: params.ReasoningEffort,
 		ToolDefs:      harnessToolDefs(params),
+		ToolExposure:  exposure,
 	}
+	// MCP tools are the per-turn additions (ExtraTools); in search mode they stay
+	// hidden until search_tools reveals them. A name that is not in the advertised
+	// set is harmless — the sidecar simply never hides it.
+	if exposure == "search" {
+		deferred := make([]string, 0, len(params.ExtraTools))
+		for _, t := range params.ExtraTools {
+			deferred = append(deferred, t.Function.Name)
+		}
+		req.DeferredTools = deferred
+	}
+	return req
 }
 
 func harnessConversationID(projectID, sessionID string) string {
@@ -350,7 +362,7 @@ func (s *Server) runHarnessTurn(ctx context.Context, p *store.Project, params ag
 	}
 
 	convID := harnessConversationID(p.ID, params.SessionID)
-	req := harnessEnsureRequest(params, model)
+	req := harnessEnsureRequest(params, model, s.toolExposure(p.OwnerID))
 	// Rejoin the conversation this session already has, if any. pi-durable mints
 	// the id, so it has to be remembered across turns — and across a sidecar
 	// restart, where the sidecar's own v1SessionId map is gone and a fresh

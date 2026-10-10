@@ -223,6 +223,7 @@ export interface SettingsUpdate {
   defaultThinking?: string;
   toonEnabled?: boolean;
   memoryAutoCapture?: boolean;
+  toolExposure?: 'all' | 'search';
   disabledTools?: string[];
   /** LangSearch API key for the web_search tool; "" clears it. */
   webSearchKey?: string;

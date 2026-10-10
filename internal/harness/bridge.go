@@ -126,6 +126,13 @@ type EnsureRequest struct {
 	// them (agent.ChatParams.ToolSet) so the two harnesses can never advertise
 	// different schemas; the sidecar only proxies calls back to Go.
 	ToolDefs []ToolDef `json:"toolDefs,omitempty"`
+	// ToolExposure selects how the sidecar advertises tools: "all" sends every
+	// schema up front, "search" hides DeferredTools behind a search_tools tool
+	// so a large MCP/extension catalog does not cost tokens on every request.
+	ToolExposure string `json:"toolExposure,omitempty"`
+	// DeferredTools are the tool names hidden until search_tools reveals them;
+	// only meaningful when ToolExposure is "search".
+	DeferredTools []string `json:"deferredTools,omitempty"`
 }
 
 // ToolDef is one tool as the model sees it: the name, the description, and the

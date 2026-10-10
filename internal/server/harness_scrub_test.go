@@ -84,7 +84,7 @@ func TestHarnessEnsureRequestScrubsInstructions(t *testing.T) {
 		t.Fatal("fixture: the built prompt must carry the control bytes")
 	}
 
-	req := harnessEnsureRequest(params, "m")
+	req := harnessEnsureRequest(params, "m", "all")
 	if hasControlBytes(req.Instructions) {
 		t.Fatalf("instructions still carry control bytes: %q", req.Instructions)
 	}

@@ -145,3 +145,83 @@ export function buildContinuationHook() {
 		},
 	});
 }
+
+/**
+ * Tokenize a query or a tool's name/description for the catalog search. The
+ * catalog is small (tens of entries), so a token-overlap score is enough and
+ * avoids pulling in a search dependency.
+ */
+function tokenize(text) {
+	return String(text ?? "")
+		.toLowerCase()
+		.split(/[^a-z0-9_]+/)
+		.filter(Boolean);
+}
+
+function scoreTool(tool, terms) {
+	const name = String(tool.name ?? "").toLowerCase();
+	const description = String(tool.description ?? "").toLowerCase();
+	let score = 0;
+	for (const term of terms) {
+		if (name === term) score += 8;
+		else if (name.includes(term)) score += 4;
+		if (description.includes(term)) score += 1;
+	}
+	return score;
+}
+
+/**
+ * Rank a deferred-tool catalog against a query. Name matches outweigh
+ * description matches so `run_command` beats a tool that merely mentions
+ * "command" in prose.
+ */
+export function searchTools(catalog, query, limit = 8) {
+	const terms = [...new Set(tokenize(query))];
+	if (terms.length === 0) return [];
+	const count = Number.isFinite(limit) ? Math.max(1, Math.min(Math.trunc(limit), 20)) : 8;
+	return catalog
+		.map((tool) => ({ tool, score: scoreTool(tool, terms) }))
+		.filter((entry) => entry.score > 0)
+		.sort((a, b) => b.score - a.score || String(a.tool.name).localeCompare(String(b.tool.name)))
+		.slice(0, count)
+		.map((entry) => entry.tool);
+}
+
+/**
+ * The deferred-tool search. In "search" exposure mode the model sees a small
+ * core set; this tool ranks the hidden catalog and asks pi-durable to add the
+ * matches to the conversation, so their schemas are sent on the next round.
+ *
+ * @param {() => readonly {name: string, description?: string}[]} catalog
+ *        The currently hidden tools, resolved lazily so a later extension
+ *        reload is reflected without reinstalling this tool.
+ * @param {(conversationId: string, names: readonly string[]) => void} onMatch
+ *        Records the revealed names so a later turn keeps them exposed.
+ */
+export function buildSearchTool(catalog, onMatch) {
+	return defineTool({
+		name: "search_tools",
+		description:
+			"Search for additional tools that are not loaded yet (extension and MCP tools). " +
+			"Call this when a task needs a capability you do not currently see. The matching " +
+			"tools become available for your next action.",
+		parameters: Type.Object({
+			query: Type.String({ description: "What you want to do, in a few words." }),
+			limit: Type.Optional(Type.Number({ description: "How many tools to reveal (1-20, default 8)." })),
+		}),
+		execute: async (args, api) => {
+			const query = String(args?.query ?? "").trim();
+			const matches = searchTools(catalog(), query, args?.limit);
+			if (matches.length === 0) {
+				return { content: [{ type: "text", text: `No tools matched "${query}". Try different words.` }] };
+			}
+			const names = matches.map((tool) => tool.name);
+			onMatch(String(api.conversationId), names);
+			const lines = matches.map((tool) => `- ${tool.name}: ${tool.description ?? ""}`.trim());
+			return {
+				content: [{ type: "text", text: `These tools are now available for your next action:\n${lines.join("\n")}` }],
+				control: { addTools: names },
+			};
+		},
+	});
+}

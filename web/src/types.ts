@@ -68,6 +68,9 @@ export interface GitHubSettings {
 
 export type PermissionMode = 'ask' | 'auto' | 'yolo';
 
+/** How the harness advertises tools: every schema up front, or on demand. */
+export type ToolExposure = 'all' | 'search';
+
 export interface Settings {
   llm: LLMSettings;
   github: GitHubSettings;
@@ -80,6 +83,8 @@ export interface Settings {
   defaultThinking: string;
   toonEnabled: boolean;
   memoryAutoCapture: boolean;
+  /** How the harness advertises tools: 'all' up front, or 'search' on demand. */
+  toolExposure: ToolExposure;
   /** Builtin agent tool names the user disabled in Tools & permissions. */
   disabledTools?: string[];
   /** LangSearch key state for the web_search tool; the key itself is never sent. */

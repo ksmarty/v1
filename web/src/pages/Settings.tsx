@@ -4,7 +4,7 @@ import { SiVercel } from 'react-icons/si';
 import { api, clearClientCaches, type SettingsUpdate } from '../api';
 import { testNotification } from '../notify';
 import { pushSupported, registerPush } from '../push';
-import type { Settings as SettingsType, UserInfo, Provider, ProviderModel } from '../types';
+import type { Settings as SettingsType, UserInfo, Provider, ProviderModel, ToolExposure } from '../types';
 import {
   errMsg,
   getChatSide,
@@ -122,6 +122,7 @@ const SETTINGS_SEARCH: {
   { id: 'sec-system-prompt', page: 'llm', label: 'Global system prompt', hint: 'Extra instructions for every chat', keywords: 'prompt instructions behavior context rules system agent' },
   { id: 'sec-llm', page: 'llm', label: 'Default thinking level', hint: 'Off / low / medium / high / xhigh / max', keywords: 'thinking reasoning effort level default tokens model' },
   { id: 'sec-toon', page: 'llm', label: 'TOON', hint: 'Token-efficient tool result encoding', keywords: 'toon tokens efficient encode tool results format compact json' },
+  { id: 'sec-tool-exposure', page: 'llm', label: 'Tool exposure', hint: 'All schemas up front, or search on demand', keywords: 'tool exposure search tools deferred schema context mcp extension discover on demand' },
   { id: 'sec-tools-skills', page: 'tools', label: 'Skills', hint: 'Installable instruction sets the agent loads', keywords: 'skills marketplace install prompt instructions' },
   { id: 'sec-auto-push', page: 'llm', label: 'Auto-push new projects', hint: 'Default for newly created projects only', keywords: 'auto push commits github default new projects git remote' },
   { id: 'sec-context-threshold', page: 'llm', label: 'Context compaction', hint: 'Percent of context before auto compaction', keywords: 'context compaction threshold percent auto compact tokens' },
@@ -473,6 +474,60 @@ function ToonControl() {
             }`}
           >
             {v ? 'On' : 'Off'}
+          </button>
+        ))}
+      </div>
+      {error && <p className="text-xs text-red-400">{error}</p>}
+    </div>
+  );
+}
+
+// Whether the harness advertises every tool schema up front or lets the model
+// discover extension and MCP tools on demand via search_tools. Server-backed so
+// the agent loop reads it too.
+function ToolExposureControl() {
+  const [mode, setMode] = useState<ToolExposure>('all');
+  const [loaded, setLoaded] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    api
+      .getSettings()
+      .then((s) => {
+        setMode(s.toolExposure ?? 'all');
+        setLoaded(true);
+      })
+      .catch(() => setLoaded(true));
+  }, []);
+
+  const choose = async (v: ToolExposure) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.updateSettings({ toolExposure: v });
+      setMode(v);
+    } catch (err) {
+      setError(errMsg(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="grid w-full max-w-md grid-cols-2 gap-1 rounded-lg border border-border bg-surface p-1">
+        {([['all', 'All tools'], ['search', 'Search on demand']] as const).map(([v, label]) => (
+          <button
+            key={v}
+            type="button"
+            disabled={!loaded || busy}
+            onClick={() => void choose(v)}
+            className={`min-h-[36px] rounded-md text-sm transition-colors disabled:opacity-50 ${
+              mode === v ? 'bg-border text-text' : 'text-dim hover:text-text'
+            }`}
+          >
+            {label}
           </button>
         ))}
       </div>
@@ -2724,6 +2779,26 @@ export default function Settings() {
               </p>
               <div className="mt-2">
                 <ToonControl />
+              </div>
+            </div>
+          </div>
+        </Section>
+        <Section
+          id="sec-tool-exposure"
+          title="Tool exposure"
+          description="How the model is told about tools: every schema up front, or a small core set plus search_tools to discover extension and MCP tools on demand."
+        >
+          <div className="flex flex-col gap-4">
+            <div>
+              <div className="text-sm text-text">Tool exposure</div>
+              <p className="mt-0.5 text-xs text-subtle">
+                “All tools” sends every tool schema with each request. “Search on demand” sends
+                only the core tools (files, commands, plan, questions, delegation) and lets the
+                model call search_tools to load the rest, which keeps the request smaller when
+                many extensions or MCP servers are installed.
+              </p>
+              <div className="mt-2">
+                <ToolExposureControl />
               </div>
             </div>
           </div>

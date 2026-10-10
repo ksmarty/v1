@@ -45,7 +45,13 @@ React SPA (Vite + TypeScript), both built into a single binary.
   extensions are materialized into the extensions dir at startup; a copy the
   user has not edited is upgraded when v1 ships a new source (the last shipped
   hash is recorded in `.v1-builtins.json`), so a fix to a builtin reaches an
-  existing install instead of staying stale. A tool
+  existing install instead of staying stale. Tool exposure is per user
+  (`tool_exposure`, Settings → Tool exposure): `all` (the default) sends every
+  host and extension tool schema each turn; `search` exposes only the core host
+  tools plus the eager `delegate`, and hides the project's MCP tools and the
+  user's extension tools behind a sidecar `search_tools` tool. A match is
+  returned with pi-durable's `control.addTools`, and the host records the
+  revealed names per conversation so a later turn keeps them exposed. A tool
   call cut off by the output
   limit is dropped with an info event and a model-visible note (never
   silently), so the model switches to the path form instead of re-inlining.

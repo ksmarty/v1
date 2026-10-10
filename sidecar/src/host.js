@@ -29,7 +29,7 @@ import { installProviderFetchLog } from "./providerlog.js";
 import { RpcError, createPeer } from "./rpc.js";
 import { createModelStore, registerProvider } from "./provider.js";
 import { bindToolToConversation, extensionConflicts, hookNames, loadExtensions, sectionKeys, toolDisplay, toolNames } from "./extensions.js";
-import { buildApprovalHook, buildContinuationHook, buildHostTools } from "./tools.js";
+import { buildApprovalHook, buildContinuationHook, buildHostTools, buildSearchTool } from "./tools.js";
 
 /** Bridge protocol revision; must equal `harness.ProtocolVersion` in Go. */
 const PROTOCOL_VERSION = 1;
@@ -37,6 +37,15 @@ const PROTOCOL_VERSION = 1;
 const SCHEMA_VERSION = 1;
 /** node:sqlite (used by pi-durable's storage) needs a recent Node. */
 const MIN_NODE = [22, 19, 0];
+
+/** Prompt guidance shown only in "search" tool-exposure mode. */
+const TOOL_SEARCH_GUIDANCE =
+	"Some tools are not loaded up front. When a task needs a capability you do not see among " +
+	"your current tools (an extension's tool or an MCP tool), call search_tools with a short " +
+	"query; the matching tools become available for your next action. File, command, plan and " +
+	"question tools are always available, so search only when you need something beyond them.";
+/** Extension tools that stay eager in search mode: delegation is a core capability the prompt tells the model to reach for. */
+const EAGER_EXTENSION_TOOLS = new Set(["delegate"]);
 
 const require = createRequire(import.meta.url);
 
@@ -147,6 +156,12 @@ class Sidecar {
 		this.enabledExtensionIds = null;
 		/** Tool names Go owns, so an extension cannot shadow one. */
 		this.hostToolNames = new Set();
+		/** The exposure mode the last ensure selected: "all" or "search". */
+		this.toolExposure = "all";
+		/** Host tool defs hidden in search mode (MCP tools), refreshed per ensure. */
+		this.deferredHostDefs = [];
+		/** conversationId → Set(toolName) revealed by search_tools, so a later turn keeps them. */
+		this.discoveredTools = new Map();
 		/** The conversation the most recent turn belongs to; a delegate inherits from it. */
 		this.activeConversationId = null;
 		// Carries the invoking conversation into a tool call, which pi-durable does
@@ -207,7 +222,7 @@ class Sidecar {
 
 	/** `conversation.ensure` and `conversation.configure` share this path. */
 	async ensure(params) {
-		const { v1SessionId, conversationId, cwd, instructions, provider, model, thinkingLevel, toolDefs } = params ?? {};
+		const { v1SessionId, conversationId, cwd, instructions, provider, model, thinkingLevel, toolDefs, toolExposure, deferredTools } = params ?? {};
 		if (!v1SessionId && !conversationId) {
 			throw new RpcError(-32602, "conversation.ensure: v1SessionId or conversationId is required");
 		}
@@ -220,7 +235,12 @@ class Sidecar {
 		// Go owns the tool definitions, and it has already applied vision, the
 		// user's disabled tools, plan mode and the project's MCP tools, so the
 		// set installed here is exactly what the built-in loop would advertise.
-		this.installHostTools(toolDefs);
+		this.toolExposure = toolExposure === "search" ? "search" : "all";
+		if (Array.isArray(toolDefs)) {
+			const deferred = new Set(Array.isArray(deferredTools) ? deferredTools : []);
+			this.deferredHostDefs = toolDefs.filter((def) => deferred.has(def.name));
+		}
+		this.installHostTools(toolDefs, this.toolExposure);
 		// An extension tool has to know which conversation called it, and the
 		// conversation is only resolved below — a new session is created with this
 		// very change. The box is filled in as soon as the id is known, which is
@@ -235,13 +255,10 @@ class Sidecar {
 			// ensure (a rejoin that rebinds the model) must not empty them.
 			...(Array.isArray(toolDefs)
 				? {
-						// Go's tools plus whatever the user's extensions contribute. Without
-						// the union an extension tool is silently dropped: AgentState.tools
-						// is set to exactly this list.
-						tools: [
-							...(this.resolveTools(toolDefs.map((def) => def.name)) ?? []),
-							...this.extensionTools(binding),
-						],
+						// "all": Go's tools plus the extensions' tools. "search": a removal
+						// list that hides the deferred catalog until search_tools reveals it.
+						// AgentState.tools is set to exactly this value.
+						tools: this.exposedTools(toolDefs, binding, conversationId),
 					}
 				: {}),
 		});
@@ -284,25 +301,34 @@ class Sidecar {
 	 * resolves the same names, and Go re-sends the definitions on every ensure,
 	 * so the schemas cannot drift from v1's Go definitions.
 	 */
-	installHostTools(defs) {
+	installHostTools(defs, exposure = "all") {
 		// A partial ensure (a rejoin that only rebinds the model, or a configure)
 		// carries no toolDefs. Treating that as "no tools" would silently strip
 		// every tool the conversation had, so only an explicit list installs.
 		if (!Array.isArray(defs)) return;
 		const tools = buildHostTools(this.bridge, defs, (id) => this.resolveConversation(id));
+		const sections = [
+			// The cwd section is a placeholder: v1's real prompt blocks
+			// (base prompt, memories, plan, tool guidance) arrive as the
+			// conversation's `instructions` from Go.
+			section("v1-cwd", (input) => input.env?.cwd, { tag: false }),
+		];
+		if (exposure === "search") {
+			// The catalog search is a sidecar tool: the hidden catalog lives here, and
+			// its result asks pi-durable to add the matches to the conversation.
+			tools.push(buildSearchTool(() => this.toolSearchCatalog(), (id, names) => this.recordDiscovered(id, names)));
+			sections.push(section("v1-tool-search", () => TOOL_SEARCH_GUIDANCE, { tag: false }));
+		}
 		this.hostToolNames = new Set(tools.map((tool) => tool.name));
 		this.registry.install(
 			defineExtension({
 				name: "v1-host-tools",
 				tools,
 				hooks: [buildApprovalHook(this.bridge, (id) => this.resolveConversation(id)), buildContinuationHook()],
-				// The cwd section is a placeholder: v1's real prompt blocks
-				// (base prompt, memories, plan, tool guidance) arrive as the
-				// conversation's `instructions` from Go.
-				sections: [section("v1-cwd", (input) => input.env?.cwd, { tag: false })],
+				sections,
 			}),
 		);
-		log.debug("host tools installed", { count: tools.length });
+		log.debug("host tools installed", { count: tools.length, exposure });
 	}
 
 	/**
@@ -484,6 +510,58 @@ class Sidecar {
 	}
 
 	/**
+	 * The conversation's tool set for one ensure. In "all" mode it is the explicit
+	 * list of host and extension tools. In "search" mode it is a removal list:
+	 * every deferred tool is hidden except the ones this conversation has already
+	 * discovered, so the model starts with the core set and grows it on demand.
+	 */
+	exposedTools(toolDefs, binding, conversationId) {
+		if (this.toolExposure !== "search") {
+			// Go's tools plus whatever the user's extensions contribute. Without the
+			// union an extension tool is silently dropped: AgentState.tools is set to
+			// exactly this list.
+			return [...(this.resolveTools(toolDefs.map((def) => def.name)) ?? []), ...this.extensionTools(binding)];
+		}
+		const deferred = new Set(this.deferredHostDefs.map((def) => def.name));
+		for (const tool of this.deferredExtensionTools()) deferred.add(tool.name);
+		const discovered = this.discoveredTools.get(String(conversationId ?? "")) ?? new Set();
+		return { remove: [...deferred].filter((name) => !discovered.has(name)) };
+	}
+
+	/**
+	 * Extension tools that search mode defers. A host-shadowed name is dropped
+	 * (Go's definition wins), and a tool in EAGER_EXTENSION_TOOLS stays loaded.
+	 */
+	deferredExtensionTools() {
+		const out = [];
+		for (const entry of this.loadedExtensions) {
+			for (const tool of entry.extension.tools ?? []) {
+				if (this.hostToolNames.has(tool.name) || EAGER_EXTENSION_TOOLS.has(tool.name)) continue;
+				out.push({ name: tool.name, description: tool.description ?? "" });
+			}
+		}
+		return out;
+	}
+
+	/** The hidden catalog `search_tools` ranks: MCP tools plus extension tools. */
+	toolSearchCatalog() {
+		const catalog = this.deferredHostDefs.map((def) => ({ name: def.name, description: def.description ?? "" }));
+		for (const tool of this.deferredExtensionTools()) catalog.push(tool);
+		return catalog;
+	}
+
+	/** Remember the tools search_tools revealed, so a later ensure keeps them. */
+	recordDiscovered(conversationId, names) {
+		const key = String(conversationId);
+		let set = this.discoveredTools.get(key);
+		if (!set) {
+			set = new Set();
+			this.discoveredTools.set(key, set);
+		}
+		for (const name of names) set.add(name);
+	}
+
+	/**
 	 * The conversation Go should run a tool for. A delegated child conversation
 	 * resolves to the parent turn that spawned it, whose runner Go has registered;
 	 * every other conversation is its own runner.
@@ -519,10 +597,13 @@ class Sidecar {
 		}
 		// The child inherits the parent's agent but not the delegate tool itself: a
 		// sub-agent that can delegate again spawns an unbounded chain, and every
-		// level costs a full model call.
+		// level costs a full model call. In "all" mode the tool list is an array to
+		// filter; in "search" mode it is a removal list, so the name is added there.
 		const tools = Array.isArray(inherited.tools)
 			? inherited.tools.filter((tool) => tool.name !== "delegate")
-			: undefined;
+			: inherited.tools && typeof inherited.tools === "object"
+				? { remove: [...new Set([...(inherited.tools.remove ?? []), "delegate"])] }
+				: undefined;
 		const child = await this.harness.createConversation(
 			{ ownership: { kind: "ownerless" }, agent: tools ? { ...inherited, tools } : { ...inherited } },
 			this.ctx,

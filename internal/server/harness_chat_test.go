@@ -428,7 +428,7 @@ func TestHarnessInstructionsMatchTheBuiltInPrompt(t *testing.T) {
 		MemoriesPrompt: "MEMORIES-MARKER",
 		ToonEnabled:    true,
 	}
-	got := harnessEnsureRequest(params, "test-model").Instructions
+	got := harnessEnsureRequest(params, "test-model", "all").Instructions
 	want := agent.BuildSystemPrompt(&params)
 	if got != want {
 		t.Fatalf("instructions differ from the built-in prompt:\n got %q\nwant %q", got, want)
@@ -830,6 +830,37 @@ func TestHarnessToolDefsIncludeVisionAndMCP(t *testing.T) {
 	}
 	if !seen["mcp_search"] {
 		t.Fatal("dynamic MCP tools must reach the sidecar")
+	}
+}
+
+// In search mode the sidecar must be told which tool names to hide until
+// search_tools reveals them; MCP tools are the per-turn additions. In all mode
+// nothing is deferred.
+func TestHarnessEnsureRequestDefersMCPToolsInSearchMode(t *testing.T) {
+	s, p, sessionID := newHarnessTestServer(t)
+	params := agent.ChatParams{
+		Project:    p,
+		SessionID:  sessionID,
+		Store:      s.st,
+		Client:     &llm.Client{BaseURL: "https://example.test/v1", APIKey: "k", Model: "test-model"},
+		ExtraTools: []llm.Tool{mcpEchoTool()},
+	}
+	search := harnessEnsureRequest(params, "test-model", "search")
+	if search.ToolExposure != "search" {
+		t.Fatalf("ToolExposure = %q, want search", search.ToolExposure)
+	}
+	found := false
+	for _, name := range search.DeferredTools {
+		if name == "mcp_echo" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("DeferredTools = %v, want mcp_echo", search.DeferredTools)
+	}
+	all := harnessEnsureRequest(params, "test-model", "all")
+	if all.ToolExposure != "all" || len(all.DeferredTools) != 0 {
+		t.Fatalf("all mode = exposure %q deferred %v, want all/none", all.ToolExposure, all.DeferredTools)
 	}
 }
 

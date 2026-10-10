@@ -241,6 +241,7 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 		"rewindApproval":    s.rewindApproval(userID),
 		"defaultThinking":   s.defaultThinking(userID),
 		"toonEnabled":       s.toonEnabled(userID),
+		"toolExposure":      s.toolExposure(userID),
 		"memoryAutoCapture": s.memoryAutoCapture(userID),
 		"disabledTools":     s.disabledTools(userID),
 		"turnTimeouts":      s.turnTimeoutMinutesForUI(userID),
@@ -277,6 +278,7 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		RewindApproval          *bool               `json:"rewindApproval"`
 		DefaultThinking         *string             `json:"defaultThinking"`
 		ToonEnabled             *bool               `json:"toonEnabled"`
+		ToolExposure            *string             `json:"toolExposure"`
 		MemoryAutoCapture       *bool               `json:"memoryAutoCapture"`
 		DisabledTools           *[]string           `json:"disabledTools"`
 		WebSearchKey            *string             `json:"webSearchKey"`
@@ -513,6 +515,16 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 			val = "1"
 		}
 		if err := s.st.SetUserSetting(userID, keyToonEnabled, val); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+	if body.ToolExposure != nil {
+		val := "all"
+		if *body.ToolExposure == "search" {
+			val = "search"
+		}
+		if err := s.st.SetUserSetting(userID, keyToolExposure, val); err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}

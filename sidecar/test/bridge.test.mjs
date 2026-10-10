@@ -31,7 +31,7 @@ import { fileURLToPath } from "node:url";
 import { createPeer } from "../src/rpc.js";
 import { bindToolToConversation, extensionConflicts, hookNames, loadExtensions, toolNames } from "../src/extensions.js";
 import { endpointHeaders } from "../src/provider.js";
-import { buildHostTools } from "../src/tools.js";
+import { buildHostTools, buildSearchTool, searchTools } from "../src/tools.js";
 
 const run = promisify(execFile);
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -716,6 +716,34 @@ async function checkToolResultMapping() {
 }
 
 /**
+ * In search exposure mode the model discovers hidden tools through search_tools.
+ * The result must carry pi-durable's `control.addTools` so the schemas are sent
+ * on the next round, and onMatch must record the names so a later turn keeps
+ * them exposed.
+ */
+async function checkSearchTool() {
+	const catalog = [
+		{ name: "mcp_echo", description: "Echo a value back (from an MCP server)." },
+		{ name: "web_search", description: "Search the web for current information." },
+	];
+	const seen = [];
+	const tool = buildSearchTool(
+		() => catalog,
+		(conversationId, names) => seen.push([conversationId, names]),
+	);
+	const result = await tool.execute({ query: "echo a value" }, { conversationId: "conv-9" });
+	check("search_tools reveals a match", result.control?.addTools?.includes("mcp_echo"), JSON.stringify(result.control));
+	check("search_tools records the match", seen.length === 1 && seen[0][0] === "conv-9" && seen[0][1].includes("mcp_echo"));
+	check("search_tools result names the tool", String(result.content?.[0]?.text ?? "").includes("mcp_echo"));
+
+	const none = await tool.execute({ query: "zzzzz" }, { conversationId: "conv-9" });
+	check("search_tools reports no match", !none.control && /No tools matched/.test(String(none.content?.[0]?.text ?? "")));
+
+	const ranked = searchTools(catalog, "search the web");
+	check("search_tools ranks by relevance", ranked[0]?.name === "web_search", ranked.map((t) => t.name).join(","));
+}
+
+/**
  * turn.submit accepts both a plain message and content parts. The Go side sends
  * parts for a turn with attachments, so the sidecar must forward them rather
  * than expect a string.
@@ -732,4 +760,5 @@ await checkExtensionLoading();
 checkExtensionConflicts();
 await checkConversationBinding();
 await checkToolResultMapping();
+await checkSearchTool();
 await main();

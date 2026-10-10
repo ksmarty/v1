@@ -398,6 +398,10 @@ const (
 	// costs one extra model call per turn.
 	keyMemoryAutoCapture = "memory_auto_capture"
 	keyDisabledTools     = "disabled_tools"
+	// keyToolExposure selects how the harness advertises tools: "all" (default)
+	// sends every schema up front; "search" hides MCP and extension tools behind
+	// a search_tools tool so a large catalog does not cost tokens every request.
+	keyToolExposure = "tool_exposure"
 	// keyWebSearch is the user's LangSearch API key, which web_search runs on.
 	keyWebSearch = "web_search_key"
 	// The embedding provider backing memory retrieval, split across four keys so
@@ -698,6 +702,16 @@ func (s *Server) disabledTools(userID string) map[string]bool {
 		out[n] = true
 	}
 	return out
+}
+
+// toolExposure resolves how the harness advertises tools. "all" (the default)
+// sends every schema up front; "search" hides MCP and extension tools behind a
+// search_tools tool that reveals them on demand.
+func (s *Server) toolExposure(userID string) string {
+	if v, ok := s.userSetting(userID, keyToolExposure); ok && v == "search" {
+		return "search"
+	}
+	return "all"
 }
 
 // turnTimeouts resolves the user's soft/hard turn timeouts in minutes. Both
