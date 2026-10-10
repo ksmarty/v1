@@ -529,6 +529,21 @@ class Sidecar {
 		);
 		// Route the child's host-tool and approval calls to this turn's Go runner.
 		this.delegateParents.set(String(child.id), String(parentId));
+		// Tell Go as well. pi hands a tool the conversation it is running in, so the
+		// child's calls arrive carrying the child's id; Go resolves that through
+		// this alias to the runner of the turn that spawned it. Without it every
+		// call the sub-agent makes is answered "no active turn".
+		try {
+			await this.bridge.call("delegate.attach", {
+				conversationId: String(child.id),
+				parentId: String(parentId),
+			});
+		} catch (error) {
+			log.warn("delegate: attaching the sub-agent to this turn failed", {
+				conversationId: String(child.id),
+				error: String(error),
+			});
+		}
 		try {
 			await child.submit(
 				{
@@ -563,7 +578,9 @@ class Sidecar {
 				if (message?.role !== "assistant") continue;
 				const blocks = Array.isArray(message.content) ? message.content : [];
 				for (const block of blocks) {
-					if (typeof block?.type === "string" && block.type.startsWith("toolcall")) toolCalls += 1;
+					if (typeof block?.type === "string" && block.type.toLowerCase().startsWith("toolcall")) {
+					toolCalls += 1;
+				}
 				}
 				if (text) continue;
 				const joined = blocks

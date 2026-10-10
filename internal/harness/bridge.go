@@ -191,6 +191,10 @@ type Bridge struct {
 
 	mu      sync.Mutex
 	runners map[string]ToolRunner
+	// aliases maps a delegated child's conversation to the turn that spawned it.
+	// A child runs in a conversation of its own, so the id its tool calls carry
+	// is not the one the runner was registered under.
+	aliases map[string]string
 	streams map[string]*EventQueue
 }
 
@@ -204,6 +208,7 @@ func NewBridge(sup *Supervisor, logf func(string, ...any)) *Bridge {
 		sup:     sup,
 		logf:    logf,
 		runners: map[string]ToolRunner{},
+		aliases: map[string]string{},
 		streams: map[string]*EventQueue{},
 	}
 	sup.SetHandler(b.Handle)
@@ -233,6 +238,22 @@ func (b *Bridge) Handle(ctx context.Context, method string, params json.RawMessa
 		}
 		q.Push(p.Events)
 		return nil, nil
+	case "delegate.attach":
+		// A delegated child runs in a pi conversation of its own, and pi hands a
+		// tool the conversation it is running in — so the child's tool calls carry
+		// an id no runner was registered under, and every one of them was answered
+		// with "no active turn". The sidecar asks for the alias explicitly rather
+		// than depending on it having rewritten the id, so a call resolves whichever
+		// of the two ids it arrives with.
+		var p struct {
+			ConversationID string `json:"conversationId"`
+			ParentID       string `json:"parentId"`
+		}
+		if err := json.Unmarshal(params, &p); err != nil {
+			return nil, &HandlerError{Code: CodeInvalidParams, Message: err.Error()}
+		}
+		b.Attach(p.ConversationID, p.ParentID)
+		return map[string]any{"ok": true}, nil
 	case "tool.call":
 		call, err := decodeToolCall(params)
 		if err != nil {
@@ -283,7 +304,24 @@ func decodeToolCall(params json.RawMessage) (ToolCall, error) {
 func (b *Bridge) runner(conversationID string) ToolRunner {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return b.runners[conversationID]
+	if r := b.runners[conversationID]; r != nil {
+		return r
+	}
+	// A delegated child's id resolves to the turn that spawned it.
+	if parent, ok := b.aliases[conversationID]; ok {
+		return b.runners[parent]
+	}
+	return nil
+}
+
+// Attach makes conversationID's tool calls resolve to parentID's runner.
+func (b *Bridge) Attach(conversationID, parentID string) {
+	if conversationID == "" || parentID == "" || conversationID == parentID {
+		return
+	}
+	b.mu.Lock()
+	b.aliases[conversationID] = parentID
+	b.mu.Unlock()
 }
 
 // Register makes runner answer this conversation's tool calls until the
@@ -297,6 +335,12 @@ func (b *Bridge) Register(conversationID string, runner ToolRunner) func() {
 		b.mu.Lock()
 		if b.runners[conversationID] == runner {
 			delete(b.runners, conversationID)
+			// Aliases only mean anything while the turn they point at is running.
+			for child, parent := range b.aliases {
+				if parent == conversationID {
+					delete(b.aliases, child)
+				}
+			}
 		}
 		b.mu.Unlock()
 	}

@@ -75,6 +75,22 @@ export default (pi) => ({
 			},
 		}),
 	],
+	// The tool description says what delegate does; this says when to reach for
+	// it. Without it the model tends to do every search and review itself, and
+	// the conversation fills with output nobody reads.
+	sections: [
+		pi.section(
+			"delegate",
+			() =>
+				"Delegation: when a job would flood this conversation with intermediate output " +
+				"- a broad search across the codebase, a review of a large diff, a multi-step " +
+				"investigation - call delegate with a complete, self-contained task instead of " +
+				"doing it here. The sub-agent cannot see this conversation, so state everything " +
+				"it needs and ask it to summarise what it found. Delegate the reading, searching " +
+				"and reviewing; do the editing yourself.",
+			{ tag: false },
+		),
+	],
 });
 `,
 }
