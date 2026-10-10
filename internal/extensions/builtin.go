@@ -82,12 +82,14 @@ export default (pi) => ({
 		pi.section(
 			"delegate",
 			() =>
-				"Delegation: when a job would flood this conversation with intermediate output " +
-				"- a broad search across the codebase, a review of a large diff, a multi-step " +
-				"investigation - call delegate with a complete, self-contained task instead of " +
-				"doing it here. The sub-agent cannot see this conversation, so state everything " +
-				"it needs and ask it to summarise what it found. Delegate the reading, searching " +
-				"and reviewing; do the editing yourself.",
+				"Delegation: reach for the delegate tool early. A broad search across the " +
+				"codebase, a review of a large diff, or any investigation that would take " +
+				"more than a couple of read-only tool calls is a delegation candidate: " +
+				"call delegate with a complete, self-contained task instead of doing it " +
+				"here, so the intermediate output stays out of this conversation. The " +
+				"sub-agent cannot see this conversation, so state everything it needs and " +
+				"ask it to summarise what it found. Delegate the reading, searching and " +
+				"reviewing; do the editing yourself.",
 			{ tag: false },
 		),
 	],

@@ -41,7 +41,11 @@ React SPA (Vite + TypeScript), both built into a single binary.
   reports cross-extension name conflicts (a tool name, section key or display
   title two extensions both claim, or a tool name that shadows a host tool):
   `create_extension` refuses a colliding extension, and the Extensions settings
-  list shows a warning, instead of the last install silently winning. A tool
+  list shows a warning, instead of the last install silently winning. Bundled
+  extensions are materialized into the extensions dir at startup; a copy the
+  user has not edited is upgraded when v1 ships a new source (the last shipped
+  hash is recorded in `.v1-builtins.json`), so a fix to a builtin reaches an
+  existing install instead of staying stale. A tool
   call cut off by the output
   limit is dropped with an info event and a model-visible note (never
   silently), so the model switches to the path form instead of re-inlining.

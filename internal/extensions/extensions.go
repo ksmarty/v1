@@ -10,6 +10,9 @@ package extensions
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -224,20 +227,81 @@ func FindBuiltin(id string) *Builtin {
 	return nil
 }
 
-// Materialize writes any builtin whose source is missing.
+// builtinManifest records the hash of each builtin's last shipped source, so a
+// later startup can tell an untouched copy from one the user edited.
+const builtinManifest = ".v1-builtins.json"
+
+// Materialize installs the builtins v1 ships, upgrading a copy the user has not
+// touched so a shipped fix reaches an existing install.
 //
-// A builtin that already exists is left alone: the user may have edited it, and
-// silently restoring the shipped copy would discard their change. Deleting the
-// file is therefore how you get the original back.
+// A builtin the user edited is left alone: the shipped source is only rewritten
+// when the on-disk file still matches the hash recorded the last time v1 wrote
+// it. Deleting the file is therefore how you get the original back. A copy that
+// predates the manifest has no recorded hash, so it is upgraded once (keeping
+// the old source beside it as index.js.bak) rather than left stale forever.
 func Materialize(root string, enabled map[string]bool) error {
+	manifest := loadBuiltinManifest(root)
+	dirty := false
 	for _, builtin := range Builtins() {
-		path := SourcePath(root, builtin.Extension.ID)
-		if _, err := os.Stat(path); err == nil {
+		id := builtin.Extension.ID
+		want := sourceHash(builtin.Source)
+		onDisk, err := Read(root, id)
+		if err != nil {
+			return fmt.Errorf("cannot read the %s extension: %w", id, err)
+		}
+		recorded, tracked := manifest[id]
+		if onDisk != "" && tracked && recorded != sourceHash(onDisk) {
+			// The user edited it; leave it alone.
 			continue
 		}
-		if err := Write(root, builtin.Extension.ID, builtin.Source); err != nil {
-			return fmt.Errorf("cannot install the %s extension: %w", builtin.Extension.ID, err)
+		if onDisk != "" && !tracked && onDisk != builtin.Source {
+			// Written before v1 tracked builtin hashes. Keep the old copy next
+			// to the file so an edit made before tracking began is not lost.
+			_ = os.WriteFile(SourcePath(root, id)+".bak", []byte(onDisk), 0o644)
 		}
+		if onDisk == builtin.Source {
+			if recorded != want {
+				manifest[id] = want
+				dirty = true
+			}
+			continue
+		}
+		if err := Write(root, id, builtin.Source); err != nil {
+			return fmt.Errorf("cannot install the %s extension: %w", id, err)
+		}
+		manifest[id] = want
+		dirty = true
+	}
+	if dirty {
+		return saveBuiltinManifest(root, manifest)
 	}
 	return nil
+}
+
+func loadBuiltinManifest(root string) map[string]string {
+	data, err := os.ReadFile(filepath.Join(root, builtinManifest))
+	if err != nil {
+		return map[string]string{}
+	}
+	out := map[string]string{}
+	if err := json.Unmarshal(data, &out); err != nil {
+		return map[string]string{}
+	}
+	return out
+}
+
+func saveBuiltinManifest(root string, manifest map[string]string) error {
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(root, builtinManifest), data, 0o644)
+}
+
+func sourceHash(code string) string {
+	sum := sha256.Sum256([]byte(code))
+	return hex.EncodeToString(sum[:])
 }

@@ -138,8 +138,8 @@ func TestMaterializeWritesBuiltinOnce(t *testing.T) {
 		t.Fatalf("the materialized delegate does not define a tool:\n%s", source)
 	}
 
-	// A builtin that is already present is left alone, so a user's edit is not
-	// silently reverted on the next start.
+	// A builtin the user edited is left alone, so an edit is not silently
+	// reverted on the next start.
 	const edited = "// edited by the user\n"
 	if err := Write(root, "delegate", edited); err != nil {
 		t.Fatal(err)
@@ -153,6 +153,68 @@ func TestMaterializeWritesBuiltinOnce(t *testing.T) {
 	}
 	if got != edited {
 		t.Fatalf("Materialize overwrote an edited builtin:\n%s", got)
+	}
+}
+
+// A builtin the user has not touched must be upgraded when v1 ships a new copy,
+// or a fix to a bundled extension never reaches an existing install.
+func TestMaterializeUpgradesUntouchedBuiltin(t *testing.T) {
+	root := t.TempDir()
+	if err := Materialize(root, nil); err != nil {
+		t.Fatal(err)
+	}
+	builtin := FindBuiltin("delegate")
+	if builtin == nil {
+		t.Fatal("the delegate builtin is missing")
+	}
+	// Simulate a file v1 shipped earlier: the on-disk copy and the manifest
+	// agree, so the user cannot have edited it.
+	const previous = "// a previous shipped copy\n"
+	if err := Write(root, "delegate", previous); err != nil {
+		t.Fatal(err)
+	}
+	manifest := loadBuiltinManifest(root)
+	manifest["delegate"] = sourceHash(previous)
+	if err := saveBuiltinManifest(root, manifest); err != nil {
+		t.Fatal(err)
+	}
+	if err := Materialize(root, nil); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Read(root, "delegate")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != builtin.Source {
+		t.Fatalf("Materialize did not upgrade an untouched builtin:\n%s", got)
+	}
+}
+
+// A copy written before v1 tracked builtin hashes is upgraded once, keeping the
+// old source beside it rather than leaving it stale forever.
+func TestMaterializeUpgradesLegacyBuiltin(t *testing.T) {
+	root := t.TempDir()
+	const legacy = "// a copy from before the manifest\n"
+	if err := Write(root, "delegate", legacy); err != nil {
+		t.Fatal(err)
+	}
+	if err := Materialize(root, nil); err != nil {
+		t.Fatal(err)
+	}
+	builtin := FindBuiltin("delegate")
+	got, err := Read(root, "delegate")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != builtin.Source {
+		t.Fatalf("Materialize did not upgrade a legacy builtin:\n%s", got)
+	}
+	backup, err := os.ReadFile(SourcePath(root, "delegate") + ".bak")
+	if err != nil {
+		t.Fatalf("the pre-manifest copy was not kept: %v", err)
+	}
+	if string(backup) != legacy {
+		t.Fatalf("the backup does not hold the old copy:\n%s", backup)
 	}
 }
 
