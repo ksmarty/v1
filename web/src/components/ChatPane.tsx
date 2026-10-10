@@ -1,6 +1,8 @@
 import {
+  createContext,
   memo,
   useCallback,
+  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -49,6 +51,11 @@ import Markdown from './Markdown';
 import ModelPicker from './ModelPicker';
 import SessionsModal from './SessionsModal';
 import BackgroundTasksModal from './BackgroundTasksModal';
+import DelegateTranscriptDialog from './DelegateTranscript';
+
+// Lets a deeply nested tool block open a sub-agent's transcript without
+// threading a callback through every collapse/block layer.
+const DelegateOpenContext = createContext<(conversationId: string) => void>(() => {});
 import TrackBorder, { TRACK_DEFAULTS } from './TrackBorder';
 import {
   IconArrowUp,
@@ -85,6 +92,7 @@ import {
   IconTerminal,
   IconTrash,
   IconUser,
+  IconUsers,
   IconWrench,
   IconX,
 } from './icons';
@@ -297,13 +305,14 @@ function formatCost(value: number, currency: string): string {
 }
 
 // cachedShare is the share of this turn's prompt the provider served from its
-// prompt cache, or null when it reported no cache reads. Providers count cache
-// reads separately from the uncached input tokens, so the prompt is the two
-// together. A zero share is not worth the space, so it renders as nothing.
+// prompt cache, or null when it reported no cache reads. The stored input
+// already includes the cached tokens (both the built-in loop's PromptTokens and
+// the harness's summed prompt), so the prompt is the input alone. A zero share
+// is not worth the space, so it renders as nothing.
 function cachedShare(usage: { input: number; cached?: number }): number | null {
   const cached = usage.cached ?? 0;
   if (cached <= 0) return null;
-  const prompt = usage.input + cached;
+  const prompt = usage.input;
   if (prompt <= 0) return null;
   return Math.min(100, Math.round((cached / prompt) * 100));
 }
@@ -827,6 +836,10 @@ function ToolChip({ name, detail, result }: { name: string; detail: string; resu
   const [open, setOpen] = useState(false);
   const display = useToolDisplay(name);
   const Icon = toolIcon(name, display);
+  const openDelegate = useContext(DelegateOpenContext);
+  // A sub-agent result carries the child conversation id as a trailing marker;
+  // hide it from the text and offer the full transcript instead.
+  const sub = name === 'delegate' && result ? subagentId(result.detail) : null;
   const diff = name === 'edit_file' ? parseEditDiff(detail) : null;
   const resultErr = result ? resultError(result.detail) : null;
   // write_file expands to just the file content — the path is already in the
@@ -938,7 +951,20 @@ function ToolChip({ name, detail, result }: { name: string; detail: string; resu
                 {resultErr}
               </div>
             ) : (
-              <ToolBody detail={result.detail} />
+              <>
+                <ToolBody detail={sub ? sub.text : result.detail} />
+                {sub?.id && (
+                  <div className="border-t border-border/80 px-2 py-1.5">
+                    <button
+                      type="button"
+                      onClick={() => openDelegate(sub.id as string)}
+                      className="inline-flex items-center gap-1 rounded border border-border px-2 py-1 font-mono text-[10px] text-dim transition-colors hover:bg-border hover:text-text"
+                    >
+                      <IconUsers className="h-3 w-3" /> View sub-agent transcript
+                    </button>
+                  </div>
+                )}
+              </>
             ))}
         </>
       )}
@@ -2001,10 +2027,25 @@ function resultError(detail: string): string | null {
   }
 }
 
+// A sub-agent result ends with `[v1-subagent:<conversationId>]`. Split it off
+// so the transcript can be fetched on demand and the marker never reaches the
+// visible text.
+const SUBAGENT_MARKER = /\n*\[v1-subagent:([^\]\s]+)\]\s*$/;
+function subagentId(detail: string): { id: string | null; text: string } {
+  const m = detail.match(SUBAGENT_MARKER);
+  if (!m) return { id: null, text: detail };
+  return { id: m[1], text: detail.slice(0, m.index).trimEnd() };
+}
+
 function ToolResultBlock({ name, detail }: ToolCall) {
   const [open, setOpen] = useState(false);
   const display = useToolDisplay(name);
   const Icon = toolIcon(name, display);
+  const openDelegate = useContext(DelegateOpenContext);
+  // A sub-agent result carries the child conversation id as a trailing marker;
+  // hide it from the text and offer the full transcript instead.
+  const sub = name === 'delegate' ? subagentId(detail) : null;
+  const body = sub ? sub.text : detail;
   // A call that failed reads as a failure whatever the tool was: a red cross
   // that opens to the reason, rather than a neutral "result" the reader has to
   // open and judge for themselves.
@@ -2050,7 +2091,22 @@ function ToolResultBlock({ name, detail }: ToolCall) {
         <span className="shrink-0 font-mono text-text">{toolLabel(name, display)}</span>
         <span className="text-faint">result</span>
       </button>
-      {open && <ToolBody detail={detail} />}
+      {open && (
+        <>
+          <ToolBody detail={body} />
+          {sub?.id && (
+            <div className="border-t border-border/80 px-2 py-1.5">
+              <button
+                type="button"
+                onClick={() => openDelegate(sub.id as string)}
+                className="inline-flex items-center gap-1 rounded border border-border px-2 py-1 font-mono text-[10px] text-dim transition-colors hover:bg-border hover:text-text"
+              >
+                <IconUsers className="h-3 w-3" /> View sub-agent transcript
+              </button>
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }
@@ -2526,6 +2582,8 @@ export default function ChatPane({
   // Background tasks modal: the running list, or one finished job's output.
   const [bgTasksOpen, setBgTasksOpen] = useState(false);
   const [bgTaskOutput, setBgTaskOutput] = useState<{ title: string; text: string } | null>(null);
+  // Sub-agent transcript opened from a delegate tool result.
+  const [delegateConv, setDelegateConv] = useState<string | null>(null);
   const track = TRACK_DEFAULTS;
   const [permissionMode, setPermissionMode] = useState<PermissionMode>('ask');
   const [rewindApproval, setRewindApproval] = useState(false);
@@ -2658,6 +2716,7 @@ export default function ChatPane({
     setBgTaskOutput(null);
     setBgTasksOpen(true);
   }, []);
+  const openDelegate = useCallback((conversationId: string) => setDelegateConv(conversationId), []);
 
   const update = useCallback((fn: (prev: Item[]) => Item[]) => {
     itemsRef.current = fn(itemsRef.current);
@@ -3180,6 +3239,9 @@ export default function ChatPane({
   // through a run. A position at or below the last pin is either that pin or the
   // user moving further down; only a position above it means they left.
   const pinnedTopRef = useRef(0);
+  // The scrollTop of the previous scroll event, so a scroll can be classified
+  // as the user moving up (reveal the jump button) or a pin moving down.
+  const prevTopRef = useRef(0);
   const pinBottom = useCallback((el: HTMLElement) => {
     nearBottomRef.current = true;
     el.scrollTop = el.scrollHeight;
@@ -3381,11 +3443,19 @@ export default function ChatPane({
     const el = scrollRef.current;
     if (!el) return;
     const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
+    // A pin's own scroll event moves down; only a scrollTop that moved up is
+    // the user leaving the bottom. Tracking the direction keeps the jump
+    // button honest even when content grew after the last pin and left the
+    // pinned anchor stale — which used to make the user scroll far up before
+    // the button appeared.
+    const scrolledUp = el.scrollTop < prevTopRef.current - 1;
+    prevTopRef.current = el.scrollTop;
     // Still near the bottom, or at/below where we last pinned — so the event is
     // ours, or the user heading further down. Either way, keep following.
     const stuck = gap < 80 || el.scrollTop >= pinnedTopRef.current - 4;
     nearBottomRef.current = stuck;
-    setShowJump(!stuck);
+    if (gap < 24) setShowJump(false);
+    else if (scrolledUp) setShowJump(true);
     if (mapOpen) updateCurrent();
   }, [mapOpen, updateCurrent]);
   useEffect(() => {
@@ -4895,6 +4965,7 @@ export default function ChatPane({
   const ctxBorder = `hsl(${ctxHue} 70% 50% / 0.45)`;
 
   return (
+    <DelegateOpenContext.Provider value={openDelegate}>
     <div className="relative flex h-full min-h-0 flex-col">
       {llmReady && (
         <div className="shrink-0 px-3 py-1.5 md:px-4">
@@ -5896,6 +5967,16 @@ export default function ChatPane({
         sessionId={sessionId}
         output={bgTaskOutput}
       />
+
+      {delegateConv && (
+        <DelegateTranscriptDialog
+          open
+          onClose={() => setDelegateConv(null)}
+          projectId={projectId}
+          conversationId={delegateConv}
+        />
+      )}
     </div>
+    </DelegateOpenContext.Provider>
   );
 }

@@ -5,6 +5,7 @@ import type {
   ChatMessage,
   ChatSession,
   ContextUsage,
+  DelegateTranscript,
   DeviceFlowPoll,
   DeviceFlowStart,
   FileEntry,
@@ -358,6 +359,10 @@ export const api = {
 
   getMessages: (id: string, sessionId: string) =>
     request<ChatMessage[]>(`/api/projects/${id}/messages?sessionId=${encodeURIComponent(sessionId)}`),
+  getDelegateMessages: (id: string, conversationId: string) =>
+    request<DelegateTranscript>(
+      `/api/projects/${id}/delegate/${encodeURIComponent(conversationId)}/messages`,
+    ),
   // Chat sessions: independent threads per project.
   listSessions: (id: string) =>
     request<{ sessions: ChatSession[] }>(`/api/projects/${id}/sessions`),

@@ -160,7 +160,7 @@ func TestConsumeHarnessTurnReadsTextAndUsageFromCommittedEntry(t *testing.T) {
 		{Type: "message_start"},
 		{Type: "message_end", Entry: json.RawMessage(`{"id":1,"kind":"assistant","model":[{"role":"assistant",` +
 			`"content":[{"type":"thinking","thinking":"pondering"},{"type":"text","text":"the answer"}],` +
-			`"usage":{"input":8000,"output":50,"cacheRead":100,"totalTokens":8050,"cost":{"total":0.002}}}]}`)},
+			`"usage":{"input":8000,"output":50,"cacheRead":100,"totalTokens":8150,"cost":{"total":0.002}}}]}`)},
 	})
 	q.Push([]harness.Event{{Type: "run_end"}})
 
@@ -196,7 +196,10 @@ func TestConsumeHarnessTurnReadsTextAndUsageFromCommittedEntry(t *testing.T) {
 	if turn.Usage == nil {
 		t.Fatal("no usage reported")
 	}
-	if turn.Usage.Input != 8000 || turn.Usage.Output != 50 || turn.Usage.Context != 8050 {
+	// pi-ai's input is the uncached prompt; cacheRead is the rest of it, so the
+	// turn's Input is the whole prompt (8000 + 100). totalTokens is the full
+	// context fill (uncached + cache + output).
+	if turn.Usage.Input != 8100 || turn.Usage.Output != 50 || turn.Usage.Context != 8150 {
 		t.Fatalf("usage = %+v", turn.Usage)
 	}
 	if turn.Usage.Cost == nil || *turn.Usage.Cost != 0.002 {

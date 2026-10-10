@@ -152,6 +152,33 @@ func DimsFor(provider, model string) int {
 	return cfg.HiddenSize
 }
 
+// Downloaded reports whether a native model's files are already on disk. The
+// settings page uses it to say "downloaded" and offer a test instead of a fresh
+// download, so the answer has to reflect the files the encoder actually needs
+// (config, a tokenizer, and the weights), not merely that the directory exists.
+func Downloaded(provider, model string) bool {
+	if provider != ProviderNative {
+		return false
+	}
+	repo, dir, err := parseModelRef(model)
+	if err != nil {
+		return false
+	}
+	if dir == "" {
+		if dir, err = modelCacheDir(repo); err != nil {
+			return false
+		}
+	}
+	if !fileExists(filepath.Join(dir, "config.json")) {
+		return false
+	}
+	if !fileExists(filepath.Join(dir, "tokenizer.json")) && !fileExists(filepath.Join(dir, "vocab.txt")) {
+		return false
+	}
+	return fileExists(filepath.Join(dir, "model.safetensors")) ||
+		fileExists(filepath.Join(dir, "model.safetensors.index.json"))
+}
+
 // usesTaskPrefixes reports whether a model expects the retrieval instruction
 // prefixes from its model card. Nomic's embedding models are trained with them
 // and retrieve noticeably worse without: the prefix tells the model whether the

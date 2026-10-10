@@ -85,16 +85,23 @@ func parseModelRef(raw string) (repo, dir string, err error) {
 	return s, "", nil
 }
 
-// modelCacheDir is where downloaded weights live. They are re-downloadable, so
-// they belong in the user cache rather than in the v1 data directory.
+// modelCacheDir is where downloaded weights live. The weights are large and
+// slow to fetch, so the default is under the v1 data directory, which the
+// container mounts as a volume and which survives a redeploy; the OS user cache
+// is the fallback for a checkout without V1_DATA_DIR. V1_MODEL_CACHE overrides
+// both.
 func modelCacheDir(repo string) (string, error) {
 	root := os.Getenv("V1_MODEL_CACHE")
 	if root == "" {
-		base, err := os.UserCacheDir()
-		if err != nil {
-			base = os.TempDir()
+		if data := os.Getenv("V1_DATA_DIR"); data != "" {
+			root = filepath.Join(data, "models")
+		} else {
+			base, err := os.UserCacheDir()
+			if err != nil {
+				base = os.TempDir()
+			}
+			root = filepath.Join(base, "v1", "models")
 		}
-		root = filepath.Join(base, "v1", "models")
 	}
 	if repo == "" {
 		return root, nil

@@ -59,6 +59,56 @@ export function IconButton({
   );
 }
 
+/**
+ * A small `?` that reveals one paragraph of help on hover, focus or tap.
+ *
+ * Rendered in a portal with fixed coordinates: the settings cards sit in
+ * scrolling, `overflow-hidden` columns, where an in-flow tooltip would be
+ * clipped or would widen the row.
+ */
+export function InfoTip({ text, className = '' }: { text: string; className?: string }) {
+  const ref = useRef<HTMLButtonElement>(null);
+  const [pos, setPos] = useState<{ left: number; top: number; width: number } | null>(null);
+
+  const show = () => {
+    const r = ref.current?.getBoundingClientRect();
+    if (!r) return;
+    const width = Math.min(288, window.innerWidth - 16);
+    let left = r.left + r.width / 2 - width / 2;
+    left = Math.max(8, Math.min(left, window.innerWidth - width - 8));
+    setPos({ left, top: r.bottom + 6, width });
+  };
+
+  return (
+    <>
+      <button
+        ref={ref}
+        type="button"
+        aria-label={text}
+        onMouseEnter={show}
+        onMouseLeave={() => setPos(null)}
+        onFocus={show}
+        onBlur={() => setPos(null)}
+        onClick={show}
+        className={`inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-border-strong text-[10px] font-semibold leading-none text-faint transition-colors hover:border-subtle hover:text-subtle ${className}`}
+      >
+        ?
+      </button>
+      {pos &&
+        createPortal(
+          <span
+            role="tooltip"
+            style={{ left: pos.left, top: pos.top, width: pos.width }}
+            className="pointer-events-none fixed z-[100] rounded-lg border border-border-strong bg-bg px-2.5 py-2 text-[11px] leading-relaxed text-subtle shadow-lg"
+          >
+            {text}
+          </span>,
+          document.body,
+        )}
+    </>
+  );
+}
+
 const fieldClasses =
   'w-full min-w-0 rounded-lg border border-border bg-surface px-3 py-2 text-base text-text outline-none transition-colors placeholder:text-faint focus:border-subtle sm:text-sm';
 

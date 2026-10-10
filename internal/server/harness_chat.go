@@ -7,7 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -66,6 +68,38 @@ func (s *Server) harnessBridge() *harness.Bridge {
 // harnessEnabled reports whether chat turns should run on the sidecar.
 func (s *Server) harnessEnabled() bool {
 	return s.cfg.HarnessEnabled() && s.harnessBridge() != nil
+}
+
+// handleDelegateMessages returns a delegated sub-agent's durable transcript.
+// The child is a sidecar conversation v1 never opens as a chat session, so the
+// UI fetches it on demand by the id carried in the delegate tool result.
+func (s *Server) handleDelegateMessages(w http.ResponseWriter, r *http.Request) {
+	p := s.projectOr404(w, r)
+	if p == nil {
+		return
+	}
+	b := s.harnessBridge()
+	if b == nil {
+		writeError(w, http.StatusServiceUnavailable, "the harness is not running")
+		return
+	}
+	conversationID := r.PathValue("conversationId")
+	if conversationID == "" {
+		writeError(w, http.StatusBadRequest, "a conversation id is required")
+		return
+	}
+	limit := 200
+	if v := r.URL.Query().Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 1000 {
+			limit = n
+		}
+	}
+	page, err := b.Entries(r.Context(), conversationID, limit, r.URL.Query().Get("cursor"))
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, page)
 }
 
 // harnessConversationID is the pi-durable conversation behind one v1 chat
@@ -701,7 +735,11 @@ func harnessUsageJSON(u *harness.Usage, model string) string {
 		return ""
 	}
 	out := map[string]any{
-		"input":   u.Input,
+		// Input is the whole prompt, cached tokens included, matching the
+		// built-in loop's PromptTokens. pi-ai reports only the uncached part as
+		// Input, so adding the cache figures keeps "N in" the same number on both
+		// paths — and correct when a proxy serves most of the prompt from cache.
+		"input":   u.Input + u.CacheRead + u.CacheWrite,
 		"output":  u.Output,
 		"model":   model,
 		"context": contextTokens(u),
@@ -769,7 +807,11 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge,
 		if u == nil {
 			return
 		}
-		in += u.Input
+		// pi-ai's Input is the uncached prompt only; the cache figures are the
+		// rest of it. Sum the whole prompt so "N in" matches the built-in loop's
+		// PromptTokens and does not collapse to a handful of tokens when a
+		// compression proxy serves the history from its cache.
+		in += u.Input + u.CacheRead + u.CacheWrite
 		out += u.Output
 		cached += u.CacheRead
 		if u.Cost != nil && u.Cost.Total != nil {

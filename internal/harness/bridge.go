@@ -309,6 +309,23 @@ func (b *Bridge) Ensure(ctx context.Context, req EnsureRequest) (EnsureResult, e
 	return out, err
 }
 
+// Entries reads a conversation's durable transcript. It is used to show a
+// sub-agent's chat history: a delegated child is a conversation v1 never opens
+// as a session, so it is fetched on demand by the id the delegate result
+// carries. The reply is the sidecar's raw `{conversationId, items, cursor}`.
+func (b *Bridge) Entries(ctx context.Context, conversationID string, limit int, cursor string) (map[string]any, error) {
+	params := map[string]any{"conversationId": conversationID}
+	if limit > 0 {
+		params["limit"] = limit
+	}
+	if cursor != "" {
+		params["cursor"] = cursor
+	}
+	var out map[string]any
+	err := b.sup.Call(ctx, "conversation.entries", params, &out)
+	return out, err
+}
+
 // Watch starts a subscription for one conversation and returns the queue its
 // events land on. The returned stop function ends the subscription.
 func (b *Bridge) Watch(ctx context.Context, subscriptionID, conversationID string) (*EventQueue, func(), error) {

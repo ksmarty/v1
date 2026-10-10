@@ -127,6 +127,13 @@ class Sidecar {
 		this.conversations = new Map();
 		/** Last agent change applied per conversation, reused when forking a rewind. */
 		this.changes = new Map();
+		/**
+		 * String(childConversationId) → String(parentConversationId) for a running
+		 * delegate. A child runs in its own conversation but must reach the parent
+		 * turn's Go tool runner, so host-tool and approval calls resolve through
+		 * this map. Cleared when the delegate finishes.
+		 */
+		this.delegateParents = new Map();
 		this.closed = false;
 		this.closing = null;
 		/** Extensions the user wrote, keyed by id, and their load errors. */
@@ -280,13 +287,13 @@ class Sidecar {
 		// carries no toolDefs. Treating that as "no tools" would silently strip
 		// every tool the conversation had, so only an explicit list installs.
 		if (!Array.isArray(defs)) return;
-		const tools = buildHostTools(this.bridge, defs);
+		const tools = buildHostTools(this.bridge, defs, (id) => this.resolveConversation(id));
 		this.hostToolNames = new Set(tools.map((tool) => tool.name));
 		this.registry.install(
 			defineExtension({
 				name: "v1-host-tools",
 				tools,
-				hooks: [buildApprovalHook(this.bridge), buildContinuationHook()],
+				hooks: [buildApprovalHook(this.bridge, (id) => this.resolveConversation(id)), buildContinuationHook()],
 				// The cwd section is a placeholder: v1's real prompt blocks
 				// (base prompt, memories, plan, tool guidance) arrive as the
 				// conversation's `instructions` from Go.
@@ -451,6 +458,15 @@ class Sidecar {
 	}
 
 	/**
+	 * The conversation Go should run a tool for. A delegated child conversation
+	 * resolves to the parent turn that spawned it, whose runner Go has registered;
+	 * every other conversation is its own runner.
+	 */
+	resolveConversation(conversationId) {
+		return this.delegateParents.get(String(conversationId)) ?? conversationId;
+	}
+
+	/**
 	 * Run a task in a child conversation and return its answer.
 	 *
 	 * This lives on the host because only the host can do it: a `Context` carries
@@ -485,6 +501,8 @@ class Sidecar {
 			{ ownership: { kind: "ownerless" }, agent: tools ? { ...inherited, tools } : { ...inherited } },
 			this.ctx,
 		);
+		// Route the child's host-tool and approval calls to this turn's Go runner.
+		this.delegateParents.set(String(child.id), String(parentId));
 		try {
 			await child.submit(
 				{
@@ -500,6 +518,7 @@ class Sidecar {
 		} finally {
 			// This path never registers the child, but drop the caches anyway so a
 			// later change cannot leave it resolvable.
+			this.delegateParents.delete(String(child.id));
 			this.conversations.delete(String(child.id));
 			this.changes.delete(String(child.id));
 		}

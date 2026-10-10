@@ -627,7 +627,11 @@ func (e *Executor) forget(argsJSON string) (string, error) {
 // extension should be written to the project first and installed by path:
 // re-emitting a 20 KB source as a tool-call argument is where a large
 // create_extension call gets truncated, and the file on disk is the copy the
-// agent can edit and re-install.
+// agent can edit and re-install. Anything over inlineSourceLimit is refused
+// inline rather than truncated, so the model gets a clear instruction instead
+// of a mystery.
+const inlineSourceLimit = 8192
+
 func (e *Executor) createExtension(ctx context.Context, argsJSON string) (string, error) {
 	if e.CreateExtension == nil {
 		return "", toolFail("UNAVAILABLE", "extensions are not available in this session", false, "ask the user to start the agent harness, then retry")
@@ -660,6 +664,12 @@ func (e *Executor) createExtension(ctx context.Context, argsJSON string) (string
 	}
 	if args.Source == "" {
 		return "", toolFail("BAD_ARGUMENT", "source or path is required", true, "pass the complete index.js source, or write it to a workspace file and pass its path")
+	}
+	// Refuse a large inline source instead of letting the tool-call argument
+	// truncate mid-call: the model cannot see what landed and burns turns
+	// probing the install. Point it at the file path.
+	if args.Path == "" && len(args.Source) > inlineSourceLimit {
+		return "", toolFail("SOURCE_TOO_LARGE", fmt.Sprintf("source is %d bytes; the inline limit is %d", len(args.Source), inlineSourceLimit), true, "write the source to a workspace file with write_file, then call create_extension with `path` (not `source`)")
 	}
 	message, err := e.CreateExtension(ctx, args.ID, args.Description, args.Source)
 	if err != nil {

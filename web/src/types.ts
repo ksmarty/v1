@@ -271,6 +271,8 @@ export interface EmbeddingSettings {
   keyHint: string;
   /** Vector width for the configured model, 0 when the model is unknown. */
   dims: number;
+  /** A native model's files are on disk, so it won't be fetched again. */
+  downloaded: boolean;
   enabled: boolean;
 }
 
@@ -527,4 +529,44 @@ export interface GitHubImages {
   owner: string;
   count: number;
   images: GitHubContainerImage[];
+}
+
+/**
+ * A sub-agent's durable transcript, fetched on demand for the delegate tool's
+ * transcript dialog. The shape is the sidecar's raw `conversation.entries`
+ * page: application-facing `kind` plus the model-facing `model` messages.
+ */
+export type DelegateContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'thinking'; thinking: string }
+  | { type: 'image'; mimeType: string; data: string };
+
+export type DelegateToolCall = {
+  type: 'toolCall';
+  id: string;
+  name: string;
+  arguments?: Record<string, unknown>;
+};
+
+export type DelegateMessage =
+  | { role: 'user'; content: string | DelegateContentPart[] }
+  | { role: 'assistant'; content: Array<DelegateContentPart | DelegateToolCall> }
+  | {
+      role: 'toolResult';
+      toolCallId: string;
+      toolName: string;
+      content: DelegateContentPart[];
+      isError?: boolean;
+    };
+
+export interface DelegateTranscriptEntry {
+  id: string;
+  kind: string;
+  model?: DelegateMessage[];
+}
+
+export interface DelegateTranscript {
+  conversationId: string;
+  items: DelegateTranscriptEntry[];
+  cursor?: string | null;
 }

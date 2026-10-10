@@ -224,6 +224,7 @@ func (s *Server) routes(m *http.ServeMux) {
 	m.HandleFunc("POST /api/projects/{id}/chat/stop", s.handleChatStop)
 	m.HandleFunc("GET /api/projects/{id}/chat/status", s.handleChatStatus)
 	m.HandleFunc("GET /api/projects/{id}/chat/watch", s.handleChatWatch)
+	m.HandleFunc("GET /api/projects/{id}/delegate/{conversationId}/messages", s.handleDelegateMessages)
 
 	m.HandleFunc("GET /api/projects/{id}/preview/status", s.handlePreviewStatus)
 	m.HandleFunc("POST /api/projects/{id}/preview/start", s.handlePreviewStart)
@@ -623,6 +624,7 @@ func (s *Server) embeddingSettings(userID string) map[string]any {
 		"keySet":   cfg.APIKey != "",
 		"keyHint":  apiKeyHint(cfg.APIKey),
 		"dims":     v1embed.DimsFor(cfg.Provider, cfg.Model),
+		"downloaded": v1embed.Downloaded(cfg.Provider, cfg.Model),
 		"enabled":  cfg.Enabled(),
 	}
 }

@@ -12,7 +12,7 @@ import type {
 } from '../types';
 import { errMsg, randomId } from '../utils';
 import { PERMISSION_MODES } from '../permissions';
-import { Button, Dialog, Field, Input, SaveRow, Select, Spinner, toast } from './ui';
+import { Button, Dialog, Field, InfoTip, Input, SaveRow, Select, Spinner, toast } from './ui';
 import CodeEditor from './CodeEditor';
 import Markdown from './Markdown';
 import NewExtensionDialog from './NewExtensionDialog';
@@ -28,6 +28,13 @@ const TABS = [
 
 type Tab = (typeof TABS)[number]['id'];
 export type ToolsTab = Tab;
+
+const MEM_AUTO_HELP =
+  'Off by default. The agent reads back each finished turn and keeps what will still matter later — decisions and their reasons, preferences, gotchas, what failed. It reads only that turn\'s exchange and never the transcript, so it cannot compound its own earlier memories, and a fact the project already remembers is refused rather than stored twice. Anything wrapped in <private> tags is stripped before saving.';
+const EMBED_HELP =
+  'With a provider set, a memory written one way is found by a question asked another. Without one, matching is lexical — it still works, it just misses a memory phrased differently. Built-in needs no key and nothing leaves the machine; or point at any OpenAI-compatible /embeddings endpoint (Ollama, LM Studio, OpenAI) or the Hugging Face inference API.';
+const EMBED_NATIVE_HELP =
+  'Paste the model page URL or an org/name id. Compatible families: BERT, DistilBERT, MiniLM and NomicBERT derivatives such as all-MiniLM-L6-v2, bge-small-en-v1.5, gte-small or nomic-embed-text-v1.5. RoBERTa, MPNet, DeBERTa and ModernBERT are refused rather than run incorrectly. Weights are downloaded once and cached in the data volume, so they survive a redeploy.';
 
 // Web search is not registered at all without a key, so its row says which of
 // the two states this account is in rather than repeating a static "needs a
@@ -273,6 +280,9 @@ function ToolSettings({
       extEditor.schema.some(
         (f) => extEditor.settings[f.key] !== extEditor.original.settings[f.key],
       ));
+  // Which pane the extension dialog is showing: the detail (description,
+  // settings), the source popup, or the full-height description editor.
+  const [extView, setExtView] = useState<'detail' | 'code' | 'description'>('detail');
 
   // Approval mode
   const [permissionMode, setPermissionMode] = useState<PermissionMode>(initialPermissionMode ?? 'ask');
@@ -561,15 +571,11 @@ function ToolSettings({
               >
                 {memAuto ? 'on' : 'off'}
               </span>
+              <InfoTip text={MEM_AUTO_HELP} />
             </span>
             <span className="mt-0.5 block text-[11px] leading-relaxed text-faint">
-              Off by default. With this on, the agent reads back each finished turn and keeps what
-              will still matter later — decisions and their reasons, preferences, gotchas, what
-              failed — without being asked to. It costs one extra model call per turn. It reads
-              only that turn's exchange and never the transcript, so it cannot compound its own
-              earlier memories, and a fact the project already remembers is refused rather than
-              stored twice. Anything wrapped in <span className="text-subtle">&lt;private&gt;</span>{' '}
-              tags is stripped before saving.
+              The agent keeps decisions, preferences and gotchas from each finished turn. One
+              extra model call per turn.
             </span>
           </span>
           <button
@@ -602,37 +608,31 @@ function ToolSettings({
           >
             {embSaved?.enabled ? 'semantic' : 'lexical'}
           </span>
+          <InfoTip text={EMBED_HELP} />
         </div>
         <p className="mt-0.5 text-[11px] text-faint">
-          Optional. With a provider set, memories are matched to each message by meaning rather
-          than by shared words, so a memory written one way is found by a question asked another.
-          Without one, matching is lexical: it still works, it just misses a memory phrased
-          differently. Pick <span className="text-subtle">Built-in</span> to run a
-          sentence-embedding model inside v1 — no key, and nothing leaves the machine — or point
-          at any OpenAI-compatible <span className="text-subtle">/embeddings</span> endpoint
-          (Ollama, LM Studio, OpenAI) or the Hugging Face inference API.
+          Optional. Matches memories by meaning instead of shared words. Pick{' '}
+          <span className="text-subtle">Built-in</span> to run a model inside v1, or point at any{' '}
+          <span className="text-subtle">/embeddings</span> endpoint.
         </p>
         {emb.provider === 'native' && (
-          <p className="mt-1.5 text-[11px] text-faint">
-            Any BERT-family encoder from{' '}
-            <a
-              href="https://huggingface.co/models?library=sentence-transformers&pipeline_tag=feature-extraction"
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-0.5 text-accent hover:underline"
-            >
-              Hugging Face
-              <IconExternalLink className="h-3 w-3" />
-            </a>{' '}
-            works: BERT, DistilBERT, MiniLM and NomicBERT derivatives such as{' '}
-            <span className="text-subtle">all-MiniLM-L6-v2</span>,{' '}
-            <span className="text-subtle">bge-small-en-v1.5</span>,{' '}
-            <span className="text-subtle">gte-small</span> or{' '}
-            <span className="text-subtle">nomic-embed-text-v1.5</span>. RoBERTa, MPNet, DeBERTa and
-            ModernBERT are refused rather than run incorrectly. Paste the model page URL or an{' '}
-            <span className="text-subtle">org/name</span> id; the weights are downloaded once and
-            cached on disk.
-          </p>
+          <div className="mt-1.5 flex items-start gap-1.5">
+            <p className="min-w-0 text-[11px] text-faint">
+              Any BERT-family encoder from{' '}
+              <a
+                href="https://huggingface.co/models?library=sentence-transformers&pipeline_tag=feature-extraction"
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-0.5 text-accent hover:underline"
+              >
+                Hugging Face
+                <IconExternalLink className="h-3 w-3" />
+              </a>{' '}
+              works (MiniLM, bge, gte, nomic). RoBERTa, MPNet, DeBERTa and ModernBERT are
+              refused. Weights download once and are cached.
+            </p>
+            <InfoTip text={EMBED_NATIVE_HELP} />
+          </div>
         )}
         <div className="mt-2 grid gap-2 sm:grid-cols-2">
           <label className="flex flex-col gap-1">
@@ -699,8 +699,14 @@ function ToolSettings({
         {emb.provider === 'native' && (
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <Button variant="ghost" disabled={embTesting} onClick={() => void testEmbedding()}>
-              {embTesting ? 'Downloading…' : 'Download & test'}
+              {embTesting ? 'Downloading…' : embSaved?.downloaded ? 'Test' : 'Download & test'}
             </Button>
+            {embSaved?.downloaded && (
+              <span className="inline-flex items-center gap-1 text-[11px] text-accent">
+                <IconCheck className="h-3 w-3" /> Downloaded
+                {embSaved.dims > 0 ? ` — ${embSaved.dims}-dim` : ''}
+              </span>
+            )}
             {embTest && (
               <span
                 className={`text-[11px] ${embTest.ok ? 'text-accent' : 'text-red-400'}`}
@@ -1133,6 +1139,7 @@ function ToolSettings({
 
   const openExtension = async (id: string) => {
     setExtError(null);
+    setExtView('detail');
     const cached = extCache.current.get(id);
     if (cached) {
       setExtEditor({
@@ -1194,6 +1201,12 @@ function ToolSettings({
     }
   };
 
+  const closeExtEditor = () => {
+    setExtEditor(null);
+    setExtError(null);
+    setExtView('detail');
+  };
+
   const saveExtension = async () => {
     if (!extEditor) return;
     setExtBusy(true);
@@ -1208,6 +1221,7 @@ function ToolSettings({
       });
       setExtensions(r.extensions ?? []);
       setExtEditor(null);
+      setExtView('detail');
       await refreshExtensions();
     } catch (err) {
       setExtError(errMsg(err));
@@ -1234,6 +1248,7 @@ function ToolSettings({
       const r = await api.extensionRemove(id);
       setExtensions(r.extensions ?? []);
       setExtEditor(null);
+      setExtView('detail');
       await refreshExtensions();
     } catch (err) {
       setExtError(errMsg(err));
@@ -1610,135 +1625,165 @@ function ToolSettings({
       {extEditor !== null && (
         <Dialog
           open
-          onClose={() => {
-            setExtEditor(null);
-            setExtError(null);
-          }}
-          title={extEditor.isNew ? 'New extension' : `Edit ${extEditor.id}`}
+          onClose={closeExtEditor}
+          title={
+            extView === 'code'
+              ? `Source — ${extEditor.id || 'extension'}`
+              : extView === 'description'
+                ? 'Description'
+                : extEditor.isNew
+                  ? 'New extension'
+                  : `Edit ${extEditor.id}`
+          }
           wide
           fullScreen
           fixedBody
           align="top"
         >
           <div className="flex h-full min-h-0 flex-col gap-3">
-            {/* Fields stack on a phone: side by side, a fixed-width Id leaves the
-                description too narrow to read what you typed. */}
-            <div className="flex shrink-0 flex-col gap-2 sm:flex-row sm:items-end">
-              <div className="sm:w-40">
-                <Field label="Id">
-                  <Input
-                    value={extEditor.id}
-                    onChange={(e) => setExtEditor({ ...extEditor, id: e.target.value })}
-                    placeholder="my-extension"
-                    autoComplete="off"
-                    disabled={!extEditor.isNew}
-                  />
-                </Field>
-              </div>
-              <div className="min-w-0 flex-1">
-                {/* A textarea, not a one-line input: descriptions run to a
-                    sentence or two. It reads smaller than the dialog's title so
-                    the title stays the loudest thing on the sheet. */}
-                <Field label="Description">
-                  <textarea
-                    value={extEditor.description}
-                    onChange={(e) => setExtEditor({ ...extEditor, description: e.target.value })}
-                    placeholder="What this extension does"
-                    rows={2}
-                    className="w-full resize-y rounded-lg border border-border-strong bg-surface px-3 py-2 text-xs text-text outline-none transition-colors focus:border-subtle"
-                  />
-                </Field>
-              </div>
-            </div>
-            <div className="min-h-0 flex-1 overflow-hidden rounded-lg border border-border bg-surface">
-              {extEditor.loading ? (
-                <div className="flex h-full items-center justify-center gap-2 text-xs text-faint">
-                  <Spinner className="h-3.5 w-3.5" /> Loading source…
-                </div>
-              ) : (
-                <CodeEditor
-                  value={extEditor.source}
-                  onChange={(v) => setExtEditor({ ...extEditor, source: v })}
-                  path={`${extEditor.id.trim() || 'extension'}.js`}
-                />
-              )}
-            </div>
-            {extEditor.schema.length > 0 && (
-              <div className="shrink-0 space-y-2.5 rounded-lg border border-border-strong bg-surface px-3 py-2.5">
-                <div className="text-[11px] font-medium text-subtle">Settings</div>
-                {extEditor.schema.map((field) => (
-                  <div key={field.key}>
-                    {field.type === 'checkbox' ? (
-                      <label className="flex items-center gap-2 text-xs text-text">
-                        <input
-                          type="checkbox"
-                          checked={extEditor.settings[field.key] === true}
-                          onChange={(e) =>
-                            setExtEditor((prev) =>
-                              prev
-                                ? {
-                                    ...prev,
-                                    settings: { ...prev.settings, [field.key]: e.target.checked },
-                                  }
-                                : prev,
-                            )
-                          }
-                          className="h-3.5 w-3.5 shrink-0 accent-accent"
-                        />
-                        <span className="min-w-0 truncate">{field.label ?? field.key}</span>
-                      </label>
-                    ) : (
-                      <label className="block text-[11px] text-subtle">
-                        {field.label ?? field.key}
-                        <input
-                          value={String(extEditor.settings[field.key] ?? '')}
-                          onChange={(e) =>
-                            setExtEditor((prev) =>
-                              prev
-                                ? {
-                                    ...prev,
-                                    settings: { ...prev.settings, [field.key]: e.target.value },
-                                  }
-                                : prev,
-                            )
-                          }
-                          className="mt-1 w-full rounded-md border border-border-strong bg-bg px-2 py-1 text-xs text-text outline-none focus:border-accent"
-                        />
-                      </label>
-                    )}
-                    {field.help && <p className="mt-0.5 text-[10px] text-faint">{field.help}</p>}
+            {extView === 'code' ? (
+              /* The source is a wall of code, so it lives behind a button rather
+                 than in the middle of the settings. */
+              <div className="min-h-0 flex-1 overflow-hidden rounded-lg border border-border bg-surface">
+                {extEditor.loading ? (
+                  <div className="flex h-full items-center justify-center gap-2 text-xs text-faint">
+                    <Spinner className="h-3.5 w-3.5" /> Loading source…
                   </div>
-                ))}
+                ) : (
+                  <CodeEditor
+                    value={extEditor.source}
+                    onChange={(v) => setExtEditor({ ...extEditor, source: v })}
+                    path={`${extEditor.id.trim() || 'extension'}.js`}
+                  />
+                )}
               </div>
+            ) : extView === 'description' ? (
+              /* A full-height editor: the point is that the text has the whole
+                 sheet to be read and rewritten in. */
+              <textarea
+                value={extEditor.description}
+                onChange={(e) => setExtEditor({ ...extEditor, description: e.target.value })}
+                placeholder="What this extension does"
+                autoFocus
+                className="min-h-0 w-full flex-1 resize-none rounded-lg border border-border-strong bg-surface px-3 py-2 text-sm text-text outline-none transition-colors focus:border-subtle"
+              />
+            ) : (
+              <>
+                {/* Fields stack on a phone: side by side, a fixed-width Id
+                    leaves the description too narrow to read. */}
+                <div className="flex shrink-0 flex-col gap-2 sm:flex-row sm:items-end">
+                  <div className="sm:w-40">
+                    <Field label="Id">
+                      <Input value={extEditor.id} disabled autoComplete="off" />
+                    </Field>
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <Field label="Description">
+                      <p className="min-h-[2.25rem] rounded-lg border border-border-strong bg-surface px-3 py-2 text-xs leading-relaxed text-text">
+                        {extEditor.description !== '' ? extEditor.description : 'No description'}
+                      </p>
+                    </Field>
+                  </div>
+                </div>
+                <div className="flex shrink-0 flex-wrap items-center gap-2">
+                  <Button
+                    variant="outline"
+                    className="h-8 px-3 text-xs"
+                    onClick={() => setExtView('description')}
+                  >
+                    <IconPencil className="h-3.5 w-3.5" /> Edit description
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="h-8 px-3 text-xs"
+                    onClick={() => setExtView('code')}
+                  >
+                    View source
+                  </Button>
+                </div>
+                {extEditor.schema.length > 0 && (
+                  <div className="shrink-0 space-y-2.5 rounded-lg border border-border-strong bg-surface px-3 py-2.5">
+                    <div className="text-[11px] font-medium text-subtle">Settings</div>
+                    {extEditor.schema.map((field) => (
+                      <div key={field.key}>
+                        {field.type === 'checkbox' ? (
+                          <label className="flex items-center gap-2 text-xs text-text">
+                            <input
+                              type="checkbox"
+                              checked={extEditor.settings[field.key] === true}
+                              onChange={(e) =>
+                                setExtEditor((prev) =>
+                                  prev
+                                    ? {
+                                        ...prev,
+                                        settings: { ...prev.settings, [field.key]: e.target.checked },
+                                      }
+                                    : prev,
+                                )
+                              }
+                              className="h-3.5 w-3.5 shrink-0 accent-accent"
+                            />
+                            <span className="min-w-0 truncate">{field.label ?? field.key}</span>
+                          </label>
+                        ) : (
+                          <label className="block text-[11px] text-subtle">
+                            {field.label ?? field.key}
+                            <input
+                              value={String(extEditor.settings[field.key] ?? '')}
+                              onChange={(e) =>
+                                setExtEditor((prev) =>
+                                  prev
+                                    ? {
+                                        ...prev,
+                                        settings: { ...prev.settings, [field.key]: e.target.value },
+                                      }
+                                    : prev,
+                                )
+                              }
+                              className="mt-1 w-full rounded-md border border-border-strong bg-bg px-2 py-1 text-xs text-text outline-none focus:border-accent"
+                            />
+                          </label>
+                        )}
+                        {field.help && <p className="mt-0.5 text-[10px] text-faint">{field.help}</p>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
             )}
-            {/* Below the code, so the actions read as what you do once you have
-                read it. Delete is destructive and sits apart on the left; Save
-                and Cancel are the pair you actually choose between. */}
+            {/* The actions read as what you do once you have read the detail.
+                Delete is destructive and sits apart on the left; Save and Cancel
+                are the pair you actually choose between. */}
             <div className="flex shrink-0 items-center gap-2">
-              {!extEditor.isNew && !extEditor.builtin && (
-                <Button
-                  variant="danger"
-                  className="h-8 px-3 text-xs"
-                  disabled={extBusy}
-                  onClick={() => void removeExtension(extEditor.id)}
-                >
-                  Delete
-                </Button>
-              )}
-              {extEditor.builtin && (
-                <span className="text-[11px] text-faint">
-                  Bundled with v1 — it can be disabled but not removed.
-                </span>
-              )}
-              <div className="ml-auto flex items-center gap-2">
+              {extView !== 'detail' ? (
                 <Button
                   variant="ghost"
                   className="h-8 px-3 text-xs"
-                  onClick={() => {
-                    setExtEditor(null);
-                    setExtError(null);
-                  }}
+                  onClick={() => setExtView('detail')}
                 >
+                  Back
+                </Button>
+              ) : (
+                <>
+                  {!extEditor.isNew && !extEditor.builtin && (
+                    <Button
+                      variant="danger"
+                      className="h-8 px-3 text-xs"
+                      disabled={extBusy}
+                      onClick={() => void removeExtension(extEditor.id)}
+                    >
+                      Delete
+                    </Button>
+                  )}
+                  {extEditor.builtin && (
+                    <span className="text-[11px] text-faint">
+                      Bundled with v1 — it can be disabled but not removed.
+                    </span>
+                  )}
+                </>
+              )}
+              <div className="ml-auto flex items-center gap-2">
+                <Button variant="ghost" className="h-8 px-3 text-xs" onClick={closeExtEditor}>
                   Cancel
                 </Button>
                 <Button

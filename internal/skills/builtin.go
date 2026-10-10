@@ -584,6 +584,48 @@ web_search needs an API key, and the whole files-and-commands group is
 refused in plan mode. A wrapper around a tool that is not loaded simply never
 runs, so check that a tool is available before depending on it.
 
+## A complete example
+
+A minimal but complete module - a configurable tool and a section, ready to
+copy:
+
+    export default (pi) => {
+      const limit = Number(pi.settings.limit ?? 500);
+      return {
+        name: "word-count",
+        settings: [
+          { key: "limit", label: "Warn above", type: "text", default: "500" },
+        ],
+        tools: [
+          pi.defineTool({
+            name: "word_count",
+            description:
+              "Count the words in a string and say whether it is over the " +
+              "configured limit. Use when the user asks how long a piece of " +
+              "text is.",
+            parameters: {
+              type: "object",
+              properties: { text: { type: "string", description: "The text to count." } },
+              required: ["text"],
+            },
+            async execute(args) {
+              const words = (args?.text ?? "")
+                .trim()
+                .split(/\s+/)
+                .filter(Boolean).length;
+              return {
+                content: [{ type: "text", text: words + " words (limit " + limit + ")" }],
+              };
+            },
+          }),
+        ],
+        sections: [pi.section("word-count", () => "Prefer concise prose.")],
+      };
+    };
+
+Start from this shape and add only the pieces you need. The loader registers
+what the returned object lists; anything not listed is ignored.
+
 ## Installing it
 
 Write the module to the workspace first (write_file), then install it by path:
@@ -604,19 +646,23 @@ For a small extension, pass the source inline instead:
 
 Prefer the path form for anything more than a few lines: re-emitting a large
 source as a tool-call argument is where a big create_extension call gets
-truncated, and the file on disk is the copy you can edit and install again.
+truncated, and the file on disk is the copy you can edit and install again. A
+source over 8 KB is refused inline outright, with an error telling you to use
+the path form - so write the file first.
 
 It validates the id, syntax-checks the source with node, writes it, enables it
 and reloads the harness, then reports what loaded - its tools, sections and
-hooks. Installing an id that already exists replaces its source. A new tool
-becomes available on the next turn, so tell the user to send another message
-before expecting to use it.
+hooks - plus the sha256 of the source it wrote. Installing an id that already
+exists replaces its source. A new tool becomes available on the next turn, so
+tell the user to send another message before expecting to use it.
 
 Read the result of create_extension rather than assuming the extension loaded.
 If it reports an error, fix the source and call it again. Use list_extensions
 to confirm what is installed and loaded at any time: it reports each
-extension's tools, sections, hooks and settings, plus any load error, so you
-do not need to inspect the host.
+extension's tools, sections, hooks and settings, plus any load error and the
+sha256 and size of the source on disk - compare that sha256 with the one
+create_extension returned to prove the file that landed is the file you wrote,
+without inspecting the host.
 
 ## Failure modes to check before you install
 

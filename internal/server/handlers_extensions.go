@@ -2,6 +2,8 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -11,6 +13,15 @@ import (
 
 	"v1/internal/extensions"
 )
+
+// sourceDigest is the short sha256 of an extension's source. create_extension
+// reports it and list_extensions repeats it, so the agent can confirm the file
+// on disk is the one it wrote without shelling out to inspect the host. Twelve
+// hex characters is ample to tell two installs apart.
+func sourceDigest(source string) string {
+	sum := sha256.Sum256([]byte(source))
+	return hex.EncodeToString(sum[:])[:12]
+}
 
 // extensionsRoot is the directory extensions live in.
 func (s *Server) extensionsRoot() string {
@@ -280,7 +291,7 @@ func (s *Server) createExtension(ctx context.Context, id, description, source st
 	if outcome.err != "" {
 		return "", fmt.Errorf("extension %q was written but the harness could not load it: %s", id, outcome.err)
 	}
-	message := fmt.Sprintf("installed extension %q and enabled it", id)
+	message := fmt.Sprintf("installed extension %q and enabled it (source sha256:%s, %d bytes)", id, sourceDigest(source), len(source))
 	if len(outcome.tools) > 0 {
 		message += "; tools: " + strings.Join(outcome.tools, ", ")
 	}
@@ -344,6 +355,10 @@ func (s *Server) listExtensions(ctx context.Context) (string, error) {
 		}
 		if msg := loadErrs[ext.ID]; msg != "" {
 			row["error"] = msg
+		}
+		if src, err := extensions.Read(s.extensionsRoot(), ext.ID); err == nil && src != "" {
+			row["sourceSha"] = sourceDigest(src)
+			row["sourceBytes"] = len(src)
 		}
 		rows = append(rows, row)
 	}

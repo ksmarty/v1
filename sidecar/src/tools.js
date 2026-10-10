@@ -40,8 +40,13 @@ function toResult(reply) {
  * @param {{ call: (method: string, params: any, options?: any) => Promise<any> }} bridge
  * @param {readonly {name: string, description: string, parameters: object}[]} defs
  *        v1's tool definitions, in the model-facing shape
+ * @param {(conversationId: string) => string} [resolveConversation]
+ *        Maps the running conversation id to the one Go should run the tool for.
+ *        A delegated child runs in its own conversation but must reach the
+ *        parent turn's runner, so the host resolves it to the parent id; the
+ *        default identity keeps ordinary turns unchanged.
  */
-export function buildHostTools(bridge, defs) {
+export function buildHostTools(bridge, defs, resolveConversation = (id) => id) {
 	return defs.map((def) => {
 		const { name } = def;
 		return defineTool({
@@ -56,7 +61,7 @@ export function buildHostTools(bridge, defs) {
 					tool: name,
 					arguments: args,
 					callId: String(api.callId),
-					conversationId: String(api.conversationId),
+					conversationId: String(resolveConversation(api.conversationId) ?? api.conversationId),
 				});
 				return toResult(reply);
 			},
@@ -69,14 +74,14 @@ export function buildHostTools(bridge, defs) {
  * rewrite the arguments. A non-empty `block` denies the call before it runs
  * (pi-durable records the intent, so a denied call still has a durable record).
  */
-export function buildApprovalHook(bridge) {
+export function buildApprovalHook(bridge, resolveConversation = (id) => id) {
 	return hook(ToolTask, {
 		beforeTool: async (call, api) => {
 			const decision = await bridge.call("tool.authorize", {
 				tool: call.name,
 				arguments: call.arguments,
 				callId: String(api.taskId),
-				conversationId: String(api.conversationId),
+				conversationId: String(resolveConversation(api.conversationId) ?? api.conversationId),
 				taskId: String(api.taskId),
 			});
 			if (!decision || typeof decision !== "object") return undefined;

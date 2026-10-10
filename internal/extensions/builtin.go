@@ -66,7 +66,12 @@ export default (pi) => ({
 						? "Sub-agent used " + result.toolCalls + " tool call(s)."
 						: "Sub-agent used no tools.";
 				const body = result.text || "(the sub-agent produced no text)";
-				return { content: [{ type: "text", text: summary + "\n\n" + body }] };
+				// The trailing marker lets v1 offer the sub-agent's full transcript;
+				// the UI strips it before display.
+				const marker = result.conversationId
+					? "\n\n[v1-subagent:" + result.conversationId + "]"
+					: "";
+				return { content: [{ type: "text", text: summary + "\n\n" + body + marker }] };
 			},
 		}),
 	],
