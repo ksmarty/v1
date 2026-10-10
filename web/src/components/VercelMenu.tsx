@@ -206,7 +206,7 @@ export default function VercelMenu({
                 variant="outline"
                 className="w-full"
                 onClick={() =>
-                  navigate('/settings?page=vercel', { state: { from: `/project/${projectId}` } })
+                  navigate('/settings?page=vercel', { state: { from: `/project/${projectId}${window.location.search}` } })
                 }
               >
                 Connect

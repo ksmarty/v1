@@ -33,7 +33,7 @@ import type {
   SavedProvider,
   Todo,
 } from '../types';
-import { errMsg, diffLines, getDebugHud, getJsonPretty, getThinkingCollapsed, getToolCallsCollapsed } from '../utils';
+import { errMsg, diffLines, findCatalogModel, findProviderForModel, getDebugHud, getJsonPretty, getThinkingCollapsed, getToolCallsCollapsed, humanizeModelId, modelMatches, normalizeBaseURL } from '../utils';
 import { notifyTurnDone, notifyTurnError, notifyAsk } from '../notify';
 import { pushActive } from '../push';
 import { permissionMeta } from '../permissions';
@@ -2564,6 +2564,12 @@ export default function ChatPane({
   const [providerId, setProviderId] = useState(''); // '' = custom (no saved provider)
   const [providers, setProviders] = useState<SavedProvider[]>([]);
   const [catalog, setCatalog] = useState<Provider[]>([]);
+  // The account's configured models (id + display name), so a model the
+  // catalog does not know still shows a readable name instead of a raw id.
+  const [settingsModels, setSettingsModels] = useState<ProviderModel[]>([]);
+  // Set once the persisted model's provider has been resolved from the catalog
+  // after load, so a later provider switch by the user is not undone.
+  const providerResolvedRef = useRef(false);
   const [todos, setTodos] = useState<Todo[]>([]);
   const [todosOpen, setTodosOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
@@ -2729,6 +2735,7 @@ export default function ChatPane({
   // a free-text id when it does not (i.e. it was custom before).
   useEffect(() => {
     let active = true;
+    providerResolvedRef.current = false;
     const selKey = `v1.chatModel.${projectId}`;
     let persisted: { providerId: string; model: string; thinking?: string } | null = null;
     try {
@@ -2742,6 +2749,7 @@ export default function ChatPane({
         if (!active) return;
         const saved = s.llm.providers ?? [];
         setProviders(saved);
+        setSettingsModels(s.llm.models ?? []);
         setPermissionMode(s.permissionMode ?? 'ask');
         setRewindApproval(s.rewindApproval ?? false);
         const sel =
@@ -2796,14 +2804,45 @@ export default function ChatPane({
   const catalogModels = useMemo(() => {
     if (!selectedProvider) return [] as ProviderModel[];
     const byId = new Map<string, ProviderModel>();
+    const base = normalizeBaseURL(selectedProvider.baseURL);
     for (const p of catalog) {
-      if (p.baseURL !== selectedProvider.baseURL) continue;
+      if (normalizeBaseURL(p.baseURL) !== base) continue;
       for (const m of p.models) {
         if (!byId.has(m.id)) byId.set(m.id, m);
       }
     }
     return [...byId.values()];
   }, [catalog, selectedProvider]);
+
+  // A persisted provider can stop serving the selected model (the provider was
+  // removed, or the model moved). Point the picker at the provider that owns
+  // it so the label and thinking levels resolve, instead of showing a raw id
+  // and "thinking off" until the model is re-picked. One-shot per load: after
+  // this, a provider switch the user makes is left alone.
+  useEffect(() => {
+    if (providerResolvedRef.current) return;
+    if (!model || providers.length === 0 || catalog.length === 0) return;
+    const current = providers.find((p) => p.id === providerId) ?? null;
+    if (current) {
+      const base = normalizeBaseURL(current.baseURL);
+      const serves = catalog.some(
+        (c) =>
+          normalizeBaseURL(c.baseURL) === base &&
+          c.models.some((m) => modelMatches(m.id, model)),
+      );
+      if (serves) {
+        providerResolvedRef.current = true;
+        return;
+      }
+    }
+    // The persisted provider is gone, no longer serves the model, or the model
+    // was persisted as Custom (`providerId === ''`). Point the picker at the
+    // provider that owns it, so the label and thinking levels resolve instead
+    // of showing a raw id and "thinking off" until the model is re-picked.
+    providerResolvedRef.current = true;
+    const owner = findProviderForModel(providers, catalog, model);
+    if (owner && owner.id !== providerId) setProviderId(owner.id);
+  }, [catalog, providers, model, providerId]);
 
   // A provider-backed model shows as a searchable combobox (free text is also
   // allowed there); only the "Custom" provider gets the plain input. Keeping
@@ -2821,7 +2860,13 @@ export default function ChatPane({
   const supportsImages =
     showFreeText || selectedModelMeta === null || selectedModelMeta.imageInput === true;
 
-  const modelLabel = selectedModelMeta?.name || model || 'Select model';
+  const configuredModel = settingsModels.find((m) => modelMatches(m.id, model));
+  const modelLabel =
+    findCatalogModel(catalog, model)?.name ||
+    selectedModelMeta?.name ||
+    configuredModel?.name ||
+    (model ? humanizeModelId(model) : '') ||
+    'Select model';
 
   const persistSelection = useCallback(
     (pid: string, m: string, th: string) => {
@@ -3150,7 +3195,13 @@ export default function ChatPane({
           if (prev) return prev;
           // Deep link from a notification → open that exact chat.
           const deep = new URLSearchParams(window.location.search).get('session');
-          if (deep && list.some((s) => s.id === deep)) return deep;
+          if (deep && list.some((s) => s.id === deep)) {
+            // Keep the stored session in step: settings' back button restores
+            // `/project/:id` without the query, and a stale stored id would
+            // open a different thread than the one being worked in.
+            localStorage.setItem(sessionStorageKey(projectId), deep);
+            return deep;
+          }
           const stored = localStorage.getItem(sessionStorageKey(projectId));
           if (stored && list.some((s) => s.id === stored && !s.archived)) return stored;
           const def = list.find((s) => !s.archived)?.id || '';
@@ -5494,17 +5545,6 @@ export default function ChatPane({
                       Model thinking
                     </button>
                   )}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setPlusOpen(false);
-                      onSessionsOpenChange(true);
-                    }}
-                    className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm text-text transition-colors hover:bg-border"
-                  >
-                    <IconLayers className="h-4 w-4 shrink-0 text-dim" />
-                    Sessions
-                  </button>
                   {debugEnabled && (
                     <button
                       type="button"
@@ -5818,7 +5858,7 @@ export default function ChatPane({
               No AI provider configured — set an API key and model in Settings to start building.
             </p>
             <Button
-              onClick={() => navigate('/settings', { state: { from: `/project/${projectId}` } })}
+              onClick={() => navigate('/settings', { state: { from: `/project/${projectId}${window.location.search}` } })}
               className="min-h-11 md:min-h-9"
             >
               Open Settings

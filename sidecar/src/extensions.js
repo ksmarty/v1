@@ -126,12 +126,56 @@ export function settingsSchema(extension) {
 	return out;
 }
 
-/** The keys of the prompt sections an extension contributes. */
+/**
+ * The keys of the prompt sections an extension contributes. */
 export function sectionKeys(extension) {
 	const sections = Array.isArray(extension?.sections) ? extension.sections : [];
 	return sections
 		.map((entry) => entry?.key ?? entry?.name ?? entry?.id)
 		.filter((key) => typeof key === "string");
+}
+
+/**
+ * Conflicts between the extensions that are loaded and the host's own tools.
+ *
+ * The registry is last-write-wins for a name two extensions both claim, and a
+ * tool whose name matches a host tool is dropped at offer time, so a duplicate
+ * does not throw — it silently changes which tool runs. This pass turns that
+ * into something the agent and the UI can see, so create_extension can refuse a
+ * collision instead of the agent believing its tool is available.
+ *
+ * Returns `[{ kind: "tool" | "section" | "title", name, ids }]`, where `ids`
+ * are the extensions involved and "builtin" stands for a host tool.
+ */
+export function extensionConflicts(extensions, hostToolNames) {
+	const conflicts = [];
+	const toolOwners = new Map();
+	const sectionOwners = new Map();
+	const titleOwners = new Map();
+	for (const entry of extensions) {
+		const id = entry.id;
+		for (const name of toolNames(entry.extension)) {
+			toolOwners.set(name, [...(toolOwners.get(name) ?? []), id]);
+		}
+		for (const key of sectionKeys(entry.extension)) {
+			sectionOwners.set(key, [...(sectionOwners.get(key) ?? []), id]);
+		}
+		for (const meta of Object.values(toolDisplay(entry.extension))) {
+			if (typeof meta.title !== "string") continue;
+			titleOwners.set(meta.title, [...(titleOwners.get(meta.title) ?? []), id]);
+		}
+	}
+	for (const [name, ids] of toolOwners) {
+		if (ids.length > 1) conflicts.push({ kind: "tool", name, ids });
+		else if (hostToolNames?.has?.(name)) conflicts.push({ kind: "tool", name, ids: [ids[0], "builtin"] });
+	}
+	for (const [name, ids] of sectionOwners) {
+		if (ids.length > 1) conflicts.push({ kind: "section", name, ids });
+	}
+	for (const [name, ids] of titleOwners) {
+		if (ids.length > 1) conflicts.push({ kind: "title", name, ids });
+	}
+	return conflicts;
 }
 
 /**

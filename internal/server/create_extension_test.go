@@ -21,6 +21,30 @@ func TestCreateExtensionRejectsBadID(t *testing.T) {
 	}
 }
 
+// The harness reports cross-extension name conflicts; create_extension must
+// turn the ones involving the new extension into a message, so the agent learns
+// its tool will be shadowed instead of believing it loaded.
+func TestConflictsForExtension(t *testing.T) {
+	raw := []any{
+		map[string]any{"kind": "tool", "name": "shared", "ids": []any{"alpha", "beta"}},
+		map[string]any{"kind": "tool", "name": "read_file", "ids": []any{"alpha", "builtin"}},
+		map[string]any{"kind": "section", "name": "notes", "ids": []any{"beta", "gamma"}},
+	}
+	got := conflictsForExtension(raw, "alpha")
+	if len(got) != 2 {
+		t.Fatalf("conflicts = %v, want two for alpha", got)
+	}
+	if !strings.Contains(got[0], `"shared"`) || !strings.Contains(got[0], "beta") {
+		t.Fatalf("first conflict = %q", got[0])
+	}
+	if !strings.Contains(got[1], "builtin") {
+		t.Fatalf("host-tool conflict = %q", got[1])
+	}
+	if other := conflictsForExtension(raw, "delta"); len(other) != 0 {
+		t.Fatalf("an unrelated extension got conflicts: %v", other)
+	}
+}
+
 // A syntax error must be reported to the agent (node's message) and leave
 // nothing on disk.
 func TestCreateExtensionRejectsSyntaxError(t *testing.T) {

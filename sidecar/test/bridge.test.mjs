@@ -29,7 +29,7 @@ import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 
 import { createPeer } from "../src/rpc.js";
-import { bindToolToConversation, hookNames, loadExtensions, toolNames } from "../src/extensions.js";
+import { bindToolToConversation, extensionConflicts, hookNames, loadExtensions, toolNames } from "../src/extensions.js";
 import { endpointHeaders } from "../src/provider.js";
 import { buildHostTools } from "../src/tools.js";
 
@@ -595,6 +595,50 @@ async function checkExtensionLoading() {
 }
 
 /**
+ * A duplicate tool/section/title name across extensions is not something the
+ * registry raises (the last install wins), and a tool name matching a host tool
+ * is dropped at offer time. The verifier has to surface both, so
+ * create_extension can refuse a collision instead of letting the agent believe
+ * its tool is live.
+ */
+function checkExtensionConflicts() {
+	const extension = (id, tools) => ({ id, extension: { name: id, tools } });
+	const conflicts = extensionConflicts(
+		[
+			extension("alpha", [
+				{ name: "shared", display: { title: "Shared tool" } },
+				{ name: "read_file" },
+			]),
+			extension("beta", [
+				{ name: "shared", display: { title: "Shared tool" } },
+				{ name: "beta_only" },
+			]),
+		],
+		new Set(["read_file"]),
+	);
+	check(
+		"extensions: duplicate tool names conflict",
+		conflicts.some((c) => c.kind === "tool" && c.name === "shared" && c.ids.join(",") === "alpha,beta"),
+		JSON.stringify(conflicts),
+	);
+	check(
+		"extensions: a host-tool name conflicts",
+		conflicts.some((c) => c.kind === "tool" && c.name === "read_file" && c.ids.includes("builtin")),
+		JSON.stringify(conflicts),
+	);
+	check(
+		"extensions: duplicate display titles conflict",
+		conflicts.some((c) => c.kind === "title" && c.name === "Shared tool"),
+		JSON.stringify(conflicts),
+	);
+	check(
+		"extensions: unique names do not conflict",
+		!conflicts.some((c) => c.name === "beta_only"),
+		JSON.stringify(conflicts),
+	);
+}
+
+/**
  * A tool must see the conversation it was offered in, even while another
  * conversation runs a turn at the same time. That is why the binding travels in
  * async context rather than on a field of the host.
@@ -685,6 +729,7 @@ async function checkSubmitContentValidation(peer, conversationId) {
 }
 
 await checkExtensionLoading();
+checkExtensionConflicts();
 await checkConversationBinding();
 await checkToolResultMapping();
 await main();

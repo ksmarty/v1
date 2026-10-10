@@ -8,6 +8,7 @@ import type {
   DelegateTranscript,
   DeviceFlowPoll,
   DeviceFlowStart,
+  ExtensionConflict,
   FileEntry,
   GitFileChange,
   GitHubRepo,
@@ -556,7 +557,7 @@ export const api = {
       extensions: InstalledExtension[];
       errors?: string[];
       /** What the sidecar loaded, including how extensions want tools shown. */
-      harness?: { loaded?: LoadedExtension[] };
+      harness?: { loaded?: LoadedExtension[]; conflicts?: ExtensionConflict[] };
     }>('/api/extensions'),
   extension: (id: string) =>
     request<{

@@ -245,19 +245,16 @@ func harnessToolDetail(args json.RawMessage) string {
 }
 
 // harnessToolRunner executes the sidecar's host-tool calls on the turn's
-// executor, remembers each result so the UI event for a finished tool can
-// report success exactly as the built-in loop does, and persists the result as
-// a "tool" row.
+// executor and remembers each result so the UI event for a finished tool can
+// report success exactly as the built-in loop does.
 //
 // The durable transcript lives in the sidecar, but v1's store is what the UI
-// reloads from, and it renders tool cards from these rows: without them a
-// reloaded pi session showed the assistant's prose and no tool history at all.
+// reloads from, and it renders tool cards from "tool" rows. Those rows are
+// written once, from the `tool_execution_end` event, which fires for host tools
+// and sidecar-run tools alike (see recordToolResult); writing here too would
+// duplicate every host-tool result.
 type harnessToolRunner struct {
 	exec *agent.Executor
-
-	store     *store.Store
-	projectID string
-	sessionID string
 
 	mu      sync.Mutex
 	results map[string]harness.ToolResult
@@ -294,16 +291,6 @@ func (r *harnessToolRunner) RunTool(ctx context.Context, call harness.ToolCall) 
 		r.results[call.CallID] = res
 	}
 	r.mu.Unlock()
-
-	// The built-in loop writes one "tool" row per call, tagged with the call id
-	// and tool name (agent.go:631). The UI parses that tag to label the card, so
-	// the shape has to match.
-	if r.store != nil {
-		meta, _ := json.Marshal(map[string]any{"tool_call_id": call.CallID, "name": call.Tool})
-		if _, err := r.store.AddMessage(r.projectID, r.sessionID, "tool", res.Text, string(meta), "", "", "", ""); err != nil {
-			log.Printf("harness: persisting tool result failed: %v", err)
-		}
-	}
 	return res, nil
 }
 
@@ -413,11 +400,8 @@ func (s *Server) runHarnessTurn(ctx context.Context, p *store.Project, params ag
 	defer stop()
 
 	runner := &harnessToolRunner{
-		exec:      params.Exec,
-		store:     params.Store,
-		projectID: params.Project.ID,
-		sessionID: params.SessionID,
-		results:   map[string]harness.ToolResult{},
+		exec:    params.Exec,
+		results: map[string]harness.ToolResult{},
 	}
 	unregister := bridge.Register(sidecarID, runner)
 	defer unregister()

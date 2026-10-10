@@ -423,6 +423,17 @@ export interface LoadedExtension {
   display?: Record<string, ExtensionToolDisplay>;
 }
 
+/**
+ * A name two extensions both claim, or an extension tool that shadows a host
+ * tool. The sidecar reports these so a duplicate does not silently win.
+ */
+export interface ExtensionConflict {
+  kind: 'tool' | 'section' | 'title';
+  name: string;
+  /** The extensions involved; "builtin" stands for a host tool. */
+  ids: string[];
+}
+
 export interface SkillSearchResult {
   id: string;
   name: string;

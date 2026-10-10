@@ -23,6 +23,7 @@ export default function SessionsModal({
   onUnarchive,
   onDelete,
   creating,
+  initialTab = 'active',
 }: {
   open: boolean;
   onClose: () => void;
@@ -35,10 +36,15 @@ export default function SessionsModal({
   onUnarchive: (id: string) => void;
   onDelete: (id: string) => void;
   creating: boolean;
+  /** Tab to show when the dialog opens (the dashboard's archived menu item). */
+  initialTab?: 'active' | 'archived';
 }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState('');
-  const [tab, setTab] = useState<'active' | 'archived'>('active');
+  const [tab, setTab] = useState<'active' | 'archived'>(initialTab);
+  useEffect(() => {
+    if (open) setTab(initialTab);
+  }, [open, initialTab]);
   // Archived rows ask once before deleting: clicking the trash arms this, and
   // the row shows Delete/Cancel until confirmed or dismissed.
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);

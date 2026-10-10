@@ -101,11 +101,8 @@ func TestHarnessToolResultIsScrubbed(t *testing.T) {
 		t.Fatal(err)
 	}
 	runner := &harnessToolRunner{
-		exec:      &agent.Executor{Root: p.Path, ProjectID: p.ID, SessionID: sessionID, Store: s.st},
-		store:     s.st,
-		projectID: p.ID,
-		sessionID: sessionID,
-		results:   map[string]harness.ToolResult{},
+		exec:    &agent.Executor{Root: p.Path, ProjectID: p.ID, SessionID: sessionID, Store: s.st},
+		results: map[string]harness.ToolResult{},
 	}
 	args, _ := json.Marshal(map[string]string{"path": "raw.log"})
 	res, err := runner.RunTool(context.Background(), harness.ToolCall{Tool: "read_file", Args: args, CallID: "call_raw"})
@@ -123,7 +120,11 @@ func TestHarnessToolResultIsScrubbed(t *testing.T) {
 	}
 
 	// The row the UI reloads from and a retry rebuilds the request from must
-	// match what the model was shown.
+	// match what the model was shown. RunTool no longer writes it — the
+	// tool_execution_end event does — so persist it the way the handler does.
+	if err := s.recordToolResult(p.ID, sessionID, "call_raw", "read_file", res.Text); err != nil {
+		t.Fatal(err)
+	}
 	msgs, err := s.st.ListMessages(p.ID, sessionID)
 	if err != nil {
 		t.Fatal(err)

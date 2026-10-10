@@ -28,7 +28,7 @@ import { writeModelCatalog } from "./modeldata.js";
 import { installProviderFetchLog } from "./providerlog.js";
 import { RpcError, createPeer } from "./rpc.js";
 import { createModelStore, registerProvider } from "./provider.js";
-import { bindToolToConversation, hookNames, loadExtensions, sectionKeys, toolDisplay, toolNames } from "./extensions.js";
+import { bindToolToConversation, extensionConflicts, hookNames, loadExtensions, sectionKeys, toolDisplay, toolNames } from "./extensions.js";
 import { buildApprovalHook, buildContinuationHook, buildHostTools } from "./tools.js";
 
 /** Bridge protocol revision; must equal `harness.ProtocolVersion` in Go. */
@@ -140,6 +140,8 @@ class Sidecar {
 		this.extensionsDir = process.env.V1_EXTENSIONS_DIR || null;
 		this.loadedExtensions = [];
 		this.extensionErrors = [];
+		/** Names claimed by more than one extension, or by a host tool. */
+		this.extensionConflicts = [];
 		// The ids the user enabled, pushed by the host. null means "everything",
 		// which only holds before the host has told us.
 		this.enabledExtensionIds = null;
@@ -342,9 +344,26 @@ class Sidecar {
 			settingsFor,
 		);
 		const present = new Set();
+		const installed = [];
+		const installErrors = [];
 		for (const entry of result.extensions) {
 			present.add(entry.id);
-			this.registry.install(entry.extension);
+			try {
+				// validateExtension() inside install throws on a duplicate tool or
+				// section within one extension. One bad extension must not fail the
+				// whole reload, so it is reported against its id and dropped.
+				this.registry.install(entry.extension);
+				installed.push(entry);
+			} catch (error) {
+				const message = error?.message ?? String(error);
+				installErrors.push({ id: entry.id, message });
+				log.warn("extensions: install failed", { id: entry.id, error: message });
+				try {
+					this.registry.uninstall(entry.extension);
+				} catch {
+					// Nothing was installed for this id; nothing to remove.
+				}
+			}
 		}
 		// An extension deleted from disk (or disabled in v1) must stop
 		// contributing, so uninstall whatever is no longer there.
@@ -356,8 +375,12 @@ class Sidecar {
 				log.debug("extensions: uninstall skipped", { id: entry.id, error: error?.message ?? String(error) });
 			}
 		}
-		this.loadedExtensions = result.extensions;
-		this.extensionErrors = result.errors;
+		this.loadedExtensions = installed;
+		this.extensionErrors = [...result.errors, ...installErrors];
+		this.extensionConflicts = extensionConflicts(installed, this.hostToolNames);
+		if (this.extensionConflicts.length > 0) {
+			log.warn("extensions: name conflicts", { count: this.extensionConflicts.length });
+		}
 		const listed = this.extensionsList();
 		log.info("extensions loaded", { count: listed.loaded.length, errors: listed.errors.length });
 		return listed;
@@ -431,6 +454,9 @@ class Sidecar {
 			})),
 			enabled: this.enabledExtensionIds ? [...this.enabledExtensionIds] : null,
 			errors: this.extensionErrors,
+			// Cross-extension (and host-tool) name conflicts, so v1 and the agent can
+			// report a duplicate instead of silently letting the last install win.
+			conflicts: this.extensionConflicts,
 		};
 	}
 

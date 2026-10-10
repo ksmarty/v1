@@ -560,23 +560,35 @@ func TestHarnessPersistsToolCallsAndResults(t *testing.T) {
 	}
 
 	runner := &harnessToolRunner{
-		exec:      &agent.Executor{Root: p.Path, ProjectID: p.ID, SessionID: sessionID, Store: s.st},
-		store:     s.st,
-		projectID: p.ID,
-		sessionID: sessionID,
-		results:   map[string]harness.ToolResult{},
+		exec:    &agent.Executor{Root: p.Path, ProjectID: p.ID, SessionID: sessionID, Store: s.st},
+		results: map[string]harness.ToolResult{},
 	}
 	args, _ := json.Marshal(map[string]string{"path": "a.txt", "content": "hi"})
-	if _, err := runner.RunTool(context.Background(), harness.ToolCall{
+	res, err := runner.RunTool(context.Background(), harness.ToolCall{
 		ConversationID: harnessConversationID(p.ID, sessionID),
 		Tool:           "write_file",
 		Args:           args,
 		CallID:         "call_a",
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("RunTool: %v", err)
 	}
 
+	// RunTool must not persist: the tool_execution_end event owns that row, and
+	// writing here too duplicated every host-tool result in the transcript.
 	msgs, err := s.st.ListMessages(p.ID, sessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 0 {
+		t.Fatalf("RunTool wrote %d rows; the event path owns the tool row", len(msgs))
+	}
+
+	// The event handler is what writes it, from the runner's result.
+	if err := s.recordToolResult(p.ID, sessionID, "call_a", "write_file", res.Text); err != nil {
+		t.Fatal(err)
+	}
+	msgs, err = s.st.ListMessages(p.ID, sessionID)
 	if err != nil {
 		t.Fatal(err)
 	}

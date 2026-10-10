@@ -291,6 +291,9 @@ func (s *Server) createExtension(ctx context.Context, id, description, source st
 	if outcome.err != "" {
 		return "", fmt.Errorf("extension %q was written but the harness could not load it: %s", id, outcome.err)
 	}
+	if len(outcome.conflicts) > 0 {
+		return "", fmt.Errorf("extension %q was written but its names conflict: %s (rename the tool/section/title, or uninstall the other extension)", id, strings.Join(outcome.conflicts, "; "))
+	}
 	message := fmt.Sprintf("installed extension %q and enabled it (source sha256:%s, %d bytes)", id, sourceDigest(source), len(source))
 	if len(outcome.tools) > 0 {
 		message += "; tools: " + strings.Join(outcome.tools, ", ")
@@ -363,6 +366,9 @@ func (s *Server) listExtensions(ctx context.Context) (string, error) {
 		rows = append(rows, row)
 	}
 	out := map[string]any{"extensions": rows}
+	if raw, ok := state["conflicts"].([]any); ok && len(raw) > 0 {
+		out["conflicts"] = raw
+	}
 	if available, _ := state["available"].(bool); !available {
 		out["harnessAvailable"] = false
 		if reason, _ := state["reason"].(string); reason != "" {
@@ -379,11 +385,12 @@ func (s *Server) listExtensions(ctx context.Context) (string, error) {
 // extensionOutcome describes one extension in a reload response, so the
 // create_extension tool can report what the extension contributed.
 type extensionOutcome struct {
-	reloaded bool
-	tools    []string
-	sections []string
-	hooks    []string
-	err      string
+	reloaded  bool
+	tools     []string
+	sections  []string
+	hooks     []string
+	conflicts []string
+	err       string
 }
 
 func extensionReloadOutcome(reload map[string]any, id string) extensionOutcome {
@@ -417,6 +424,41 @@ func extensionReloadOutcome(reload map[string]any, id string) extensionOutcome {
 			out.sections = anyStrings(entry["sections"])
 			out.hooks = anyStrings(entry["hooks"])
 		}
+	}
+	out.conflicts = conflictsForExtension(state["conflicts"], id)
+	return out
+}
+
+// conflictsForExtension turns the harness's cross-extension name conflicts into
+// messages for one extension, so create_extension can name what a new extension
+// collides with instead of installing a tool that will be shadowed.
+func conflictsForExtension(raw any, id string) []string {
+	items, ok := raw.([]any)
+	if !ok {
+		return nil
+	}
+	var out []string
+	for _, item := range items {
+		entry, _ := item.(map[string]any)
+		if entry == nil {
+			continue
+		}
+		ids := anyStrings(entry["ids"])
+		involved := false
+		others := make([]string, 0, len(ids))
+		for _, owner := range ids {
+			if owner == id {
+				involved = true
+			} else {
+				others = append(others, owner)
+			}
+		}
+		if !involved || len(others) == 0 {
+			continue
+		}
+		kind, _ := entry["kind"].(string)
+		name, _ := entry["name"].(string)
+		out = append(out, fmt.Sprintf("%s %q is also provided by %s", kind, name, strings.Join(others, ", ")))
 	}
 	return out
 }

@@ -2,6 +2,7 @@ import { memo, useCallback, useEffect, useRef, useState, type FormEvent } from '
 import { api } from '../api';
 import type {
   EmbeddingSettings,
+  ExtensionConflict,
   ExtensionSettingField,
   InstalledExtension,
   InstalledSkill,
@@ -248,6 +249,7 @@ function ToolSettings({
   // hooks. An agent can write one, which is how v1 extends itself.
   const [extensions, setExtensions] = useState<InstalledExtension[]>([]);
   const [extErrors, setExtErrors] = useState<string[]>([]);
+  const [extConflicts, setExtConflicts] = useState<ExtensionConflict[]>([]);
   const [extError, setExtError] = useState<string | null>(null);
   const [extBusy, setExtBusy] = useState(false);
   // Whether the "describe an extension" chat-starter dialog is open.
@@ -1081,6 +1083,7 @@ function ToolSettings({
       const r = await api.extensions();
       setExtensions(r.extensions ?? []);
       setExtErrors((r.errors ?? []).map(String));
+      setExtConflicts(r.harness?.conflicts ?? []);
     } catch (err) {
       setExtError(errMsg(err));
     }
@@ -1806,6 +1809,18 @@ function ToolSettings({
       )}
 
       <div className="fade-y flex min-h-0 flex-1 flex-col gap-2 overflow-x-hidden overflow-y-auto overscroll-contain">
+          {extConflicts.length > 0 && (
+            <div className="rounded-xl border border-amber-300/30 bg-amber-300/5 px-3 py-2 text-[11px] text-amber-200">
+              <div className="font-medium">Name conflicts</div>
+              <ul className="mt-1 list-disc space-y-0.5 pl-4">
+                {extConflicts.map((c, i) => (
+                  <li key={`${c.kind}-${c.name}-${i}`}>
+                    {c.kind} <span className="font-mono">{c.name}</span> is claimed by {c.ids.join(', ')}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           {extensions.length === 0 && (
             <div className="text-[11px] text-faint">
               No extensions yet. The agent can create one when it needs a capability it does not have.

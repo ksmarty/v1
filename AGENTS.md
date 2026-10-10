@@ -37,7 +37,12 @@ React SPA (Vite + TypeScript), both built into a single binary.
   through the host: `create_extension` takes the source inline or a workspace
   `path`, and its result reports the extension's tools, sections and hooks;
   `list_extensions` reports every installed extension and what loaded, so an
-  install is verifiable from the tool result. A tool call cut off by the output
+  install is verifiable from the tool result. A verifier in the sidecar also
+  reports cross-extension name conflicts (a tool name, section key or display
+  title two extensions both claim, or a tool name that shadows a host tool):
+  `create_extension` refuses a colliding extension, and the Extensions settings
+  list shows a warning, instead of the last install silently winning. A tool
+  call cut off by the output
   limit is dropped with an info event and a model-visible note (never
   silently), so the model switches to the path form instead of re-inlining.
   The provider spec carries the model's output ceiling (models.dev
@@ -136,6 +141,13 @@ or `make dev`), then report: (1) the new stamped build version (`v1 <version>
   `screenshot_app` is
   vision-gated (above); `fetch_url` fetches web pages for the model
   (HTML → text via `golang.org/x/net/html`).
+- The bundled `delegate` extension runs a task in a separate sub-agent
+  conversation (harness `delegate`) and appends `[v1-subagent:<conversationId>]`
+  to its result; the UI turns that marker into a "view transcript" action that
+  opens `GET /api/projects/{id}/delegate/{conversationId}/messages` in a
+  read-only ChatPane dialog (the child conversation is never a v1 session).
+  Host tools called by a delegate resolve through the owning turn's run
+  (`harnessToolRunner.findRun`), so a sub-agent can use file/command tools.
 - Tool results are stored as JSON (the UI parses them) but re-encoded as
   TOON (spec: toon-format/spec) when fed to the model — encoder in
   `internal/agent/toon.go`, applied in `RunChat` history building. The model

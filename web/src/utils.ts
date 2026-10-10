@@ -328,6 +328,13 @@ export function modelMatches(a: string, b: string): boolean {
   return normalizeModelId(a) === normalizeModelId(b);
 }
 
+// A base URL is compared across settings (whatever the user typed) and the
+// catalog (models.dev's spelling), so case and a trailing slash must not
+// decide whether two entries are the same provider.
+export function normalizeBaseURL(url: string): string {
+  return url.trim().toLowerCase().replace(/\/+$/, '');
+}
+
 // The catalog model behind a configured id, searched across every provider.
 export function findCatalogModel(catalog: Provider[], id: string): ProviderModel | null {
   for (const p of catalog) {
@@ -344,9 +351,22 @@ export function findProviderForModel(
   id: string,
 ): SavedProvider | null {
   for (const p of providers) {
-    if (catalog.some((c) => c.baseURL === p.baseURL && c.models.some((m) => modelMatches(m.id, id)))) {
+    const base = normalizeBaseURL(p.baseURL);
+    if (!base) continue;
+    if (
+      catalog.some(
+        (c) =>
+          normalizeBaseURL(c.baseURL) === base && c.models.some((m) => modelMatches(m.id, id)),
+      )
+    ) {
       return p;
     }
+  }
+  // The catalog may not know the model (a custom id, or a provider whose model
+  // list is not published). Fall back to the provider that names it as its
+  // own default, so the picker can still jump to the right provider.
+  for (const p of providers) {
+    if (p.model && modelMatches(p.model, id)) return p;
   }
   return null;
 }

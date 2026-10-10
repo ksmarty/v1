@@ -1346,7 +1346,7 @@ var tools = []llm.Tool{
 		Type: "function",
 		Function: llm.ToolFunction{
 			Name:        "create_extension",
-			Description: "Create or update a v1 extension the agent can use in later turns. Pass a lowercase dashed id, a one-line description, and the extension's index.js either as `source` or as a workspace `path` (write the file first with write_file — required for anything over 8 KB, because a large inline source is refused and would otherwise be truncated). The source is syntax-checked and installed enabled, then loaded immediately; the result reports the tools/sections/hooks it contributed and the installed source's sha256, which list_extensions repeats so a later turn can confirm the file on disk is the one that was written. Use this to add a custom tool, prompt section or hook to v1; see the v1-extensions skill for the API.",
+			Description: "Create or update a v1 extension the agent can use in later turns. Pass a lowercase dashed id, a one-line description, and the extension's index.js either as `source` or as a workspace `path` (write the file first with write_file — required for anything over 8 KB, because a large inline source is refused and would otherwise be truncated). The source is syntax-checked and installed enabled, then loaded immediately; the result reports the tools/sections/hooks it contributed and the installed source's sha256, which list_extensions repeats so a later turn can confirm the file on disk is the one that was written. A tool name, prompt-section key or display title that duplicates a built-in tool or another extension's is refused, so rename it and retry. Use this to add a custom tool, prompt section or hook to v1; see the v1-extensions skill for the API.",
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -1375,7 +1375,7 @@ var tools = []llm.Tool{
 		Type: "function",
 		Function: llm.ToolFunction{
 			Name:        "list_extensions",
-			Description: "List the v1 extensions installed for this project: whether each is enabled and loaded, the tools, prompt sections, hooks and settings it contributed, and the sha256 and byte size of the source on disk. Use it to confirm an extension loaded after create_extension (the reported sha256 should match the one create_extension returned), or to see what is already installed before writing a new one.",
+			Description: "List the v1 extensions installed for this project: whether each is enabled and loaded, the tools, prompt sections, hooks and settings it contributed, and the sha256 and byte size of the source on disk. It also reports cross-extension conflicts — a tool name, section key or display title two extensions both claim, or a tool name that shadows a built-in tool. Use it to confirm an extension loaded after create_extension (the reported sha256 should match the one create_extension returned), or to see what is already installed before writing a new one.",
 			Parameters: map[string]any{
 				"type":       "object",
 				"properties": map[string]any{},

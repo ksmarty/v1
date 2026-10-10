@@ -3,12 +3,14 @@ import { createPortal } from 'react-dom';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import type { ChatSession, GitHubRepo, Project, Provider, ProviderModel, SavedProvider } from '../types';
-import { errMsg, findCatalogModel, findProviderForModel, humanizeModelId, modelMatches, timeAgo } from '../utils';
+import { errMsg, findCatalogModel, findProviderForModel, humanizeModelId, modelMatches, normalizeBaseURL, timeAgo } from '../utils';
 import { markSessionUnused } from '../sessionCleanup';
 import { freshThinkingLevel } from '../thinking';
 import { Button, Dialog, ErrorBox, IconButton, Input, Spinner } from '../components/ui';
 import ModelPicker from '../components/ModelPicker';
+import SessionsModal from '../components/SessionsModal';
 import {
+  IconArchive,
   IconChat,
   IconChevronDown,
   IconDots,
@@ -36,7 +38,15 @@ function sessionRecency(s: ChatSession): number {
   return s.lastTurnAt && s.lastTurnAt > 0 ? s.lastTurnAt : s.createdAt;
 }
 
-function CardMenu({ onNewSession, onDelete }: { onNewSession: () => void; onDelete: () => void }) {
+function CardMenu({
+  onNewSession,
+  onArchived,
+  onDelete,
+}: {
+  onNewSession: () => void;
+  onArchived: () => void;
+  onDelete: () => void;
+}) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ top: number; right: number } | null>(null);
   const anchorRef = useRef<HTMLSpanElement>(null);
@@ -51,7 +61,7 @@ function CardMenu({ onNewSession, onDelete }: { onNewSession: () => void; onDele
     // in-flow menu would be cut off. Anchor a fixed menu to the button and
     // render it in a portal so no ancestor's overflow can clip it. Flip it
     // above the button when it would run off the bottom of the viewport.
-    const MENU_H = 88;
+    const MENU_H = 124;
     const r = anchorRef.current?.getBoundingClientRect();
     if (r) {
       const openUp = r.bottom + 4 + MENU_H > window.innerHeight;
@@ -116,6 +126,17 @@ function CardMenu({ onNewSession, onDelete }: { onNewSession: () => void; onDele
               New session
             </button>
             <button
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-text hover:bg-border"
+              onClick={(e) => {
+                e.preventDefault();
+                setOpen(false);
+                onArchived();
+              }}
+            >
+              <IconArchive className="h-4 w-4" />
+              Archived sessions
+            </button>
+            <button
               className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-red-400 hover:bg-border"
               onClick={(e) => {
                 e.preventDefault();
@@ -133,17 +154,60 @@ function CardMenu({ onNewSession, onDelete }: { onNewSession: () => void; onDele
   );
 }
 
+function SessionRow({
+  projectId,
+  session: s,
+  activeSessionIds,
+}: {
+  projectId: string;
+  session: ChatSession;
+  activeSessionIds: Set<string>;
+}) {
+  return (
+    <li className="border-b border-border/60 last:border-0">
+      <Link
+        to={`/project/${projectId}?session=${s.id}`}
+        className="flex items-center gap-2 px-4 py-2.5 transition-colors hover:bg-bg/60"
+      >
+        <IconChat className="h-3.5 w-3.5 shrink-0 text-faint" />
+        <span
+          className={`min-w-0 flex-1 truncate text-sm ${
+            activeSessionIds.has(s.id) ? 'text-accent' : 'text-dim'
+          }`}
+        >
+          {s.name}
+        </span>
+        {activeSessionIds.has(s.id) ? (
+          // The spinner says everything a timestamp would and more,
+          // so it replaces the time rather than sitting beside it.
+          <span
+            className="inline-flex shrink-0 items-center gap-1 text-[11px] font-medium text-accent"
+            title="A chat turn is running in this session"
+          >
+            <Spinner className="h-3 w-3" />
+            running
+          </span>
+        ) : (
+          <span className="shrink-0 text-xs text-faint">{timeAgo(lastTurnISO(s))}</span>
+        )}
+      </Link>
+    </li>
+  );
+}
+
 function ProjectCard({
   project: p,
   sessions,
   activeSessionIds,
   onNewSession,
+  onArchived,
   onDelete,
 }: {
   project: Project;
   sessions: ChatSession[];
   activeSessionIds: Set<string>;
   onNewSession: () => void;
+  onArchived: () => void;
   onDelete: () => void;
 }) {
   return (
@@ -164,41 +228,14 @@ function ProjectCard({
             meant, and the rows beneath are the sessions. */}
         <span className="min-w-0 flex-1 truncate font-medium text-text">{p.name}</span>
         {p.updatedAt && <span className="shrink-0 text-xs text-faint">{timeAgo(p.updatedAt)}</span>}
-        <CardMenu onNewSession={onNewSession} onDelete={onDelete} />
+        <CardMenu onNewSession={onNewSession} onArchived={onArchived} onDelete={onDelete} />
       </div>
       <ul className="overflow-hidden rounded-b-xl">
         {sessions.length === 0 && (
           <li className="px-4 py-2.5 text-xs text-faint">No sessions yet</li>
         )}
         {sessions.map((s) => (
-          <li key={s.id} className="border-b border-border/60 last:border-0">
-            <Link
-              to={`/project/${p.id}?session=${s.id}`}
-              className="flex items-center gap-2 px-4 py-2.5 transition-colors hover:bg-bg/60"
-            >
-              <IconChat className="h-3.5 w-3.5 shrink-0 text-faint" />
-              <span
-                className={`min-w-0 flex-1 truncate text-sm ${
-                  activeSessionIds.has(s.id) ? 'text-accent' : 'text-dim'
-                }`}
-              >
-                {s.name}
-              </span>
-              {activeSessionIds.has(s.id) ? (
-                // The spinner says everything a timestamp would and more,
-                // so it replaces the time rather than sitting beside it.
-                <span
-                  className="inline-flex shrink-0 items-center gap-1 text-[11px] font-medium text-accent"
-                  title="A chat turn is running in this session"
-                >
-                  <Spinner className="h-3 w-3" />
-                  running
-                </span>
-              ) : (
-                <span className="shrink-0 text-xs text-faint">{timeAgo(lastTurnISO(s))}</span>
-              )}
-            </Link>
-          </li>
+          <SessionRow key={s.id} projectId={p.id} session={s} activeSessionIds={activeSessionIds} />
         ))}
       </ul>
     </section>
@@ -287,7 +324,7 @@ function NewProjectDialog({
     const out: ProviderModel[] = [];
     const seen = new Set<string>();
     for (const p of catalog) {
-      if (p.baseURL !== target) continue;
+      if (normalizeBaseURL(p.baseURL) !== normalizeBaseURL(target)) continue;
       for (const m of p.models) {
         if (seen.has(m.id)) continue;
         seen.add(m.id);
@@ -629,6 +666,8 @@ export default function Projects() {
   const [activeSessionIds, setActiveSessionIds] = useState<Set<string>>(new Set());
   // Each project's chat threads, listed under its header on the dashboard.
   const [sessionsByProject, setSessionsByProject] = useState<Record<string, ChatSession[]>>({});
+  // The project whose archived sessions the three-dot menu opened.
+  const [archivedFor, setArchivedFor] = useState<Project | null>(null);
 
   const loadActive = useCallback(() => {
     api
@@ -667,6 +706,17 @@ export default function Projects() {
       })
       .catch((e) => setError(errMsg(e)));
   }, [loadSessions]);
+
+  // Re-reads one project's threads after an archive/restore/rename/delete from
+  // the dashboard's archived-sessions dialog.
+  const refreshProjectSessions = useCallback(async (projectId: string) => {
+    try {
+      const res = await api.listSessions(projectId);
+      setSessionsByProject((prev) => ({ ...prev, [projectId]: res.sessions ?? [] }));
+    } catch {
+      // leave the stale list; the next full load refreshes it
+    }
+  }, []);
 
   useEffect(() => {
     load();
@@ -729,6 +779,11 @@ export default function Projects() {
   }, [projects, sessionsByProject]);
   const ephemeralProjects = orderedProjects.filter((p) => p.ephemeral);
   const regularProjects = orderedProjects.filter((p) => !p.ephemeral);
+  // Ephemeral chats render as one flat list — no per-project header or menu,
+  // just the sessions, newest first.
+  const ephemeralSessions = ephemeralProjects
+    .flatMap((p) => sessionsFor(p).map((s) => ({ projectId: p.id, session: s })))
+    .sort((a, b) => sessionRecency(b.session) - sessionRecency(a.session));
 
   return (
     <div className="v1-safe-top flex h-[max(var(--v1-app-height,0px),100dvh)] flex-col overflow-hidden">
@@ -805,29 +860,23 @@ export default function Projects() {
         )}
         {projects !== null && projects.length > 0 && (
           <div className="mx-auto flex max-w-4xl flex-col gap-3">
-            {ephemeralProjects.length > 0 && (
-              <div className="flex flex-col gap-3">
-                <h2 className="px-1 text-xs font-semibold uppercase tracking-wide text-faint">
-                  Ephemeral
-                </h2>
-                {ephemeralProjects.map((p) => (
-                  <ProjectCard
-                    key={p.id}
-                    project={p}
-                    sessions={sessionsFor(p)}
-                    activeSessionIds={activeSessionIds}
-                    onNewSession={() => void newSession(p.id)}
-                    onDelete={() => {
-                      setDeleteError(null);
-                      setDeleting(p);
-                    }}
-                  />
-                ))}
-              </div>
+            {ephemeralSessions.length > 0 && (
+              <section className="rounded-xl border border-border bg-surface">
+                <ul className="overflow-hidden rounded-xl">
+                  {ephemeralSessions.map(({ projectId, session }) => (
+                    <SessionRow
+                      key={session.id}
+                      projectId={projectId}
+                      session={session}
+                      activeSessionIds={activeSessionIds}
+                    />
+                  ))}
+                </ul>
+              </section>
             )}
             {regularProjects.length > 0 && (
               <div className="flex flex-col gap-3">
-                {ephemeralProjects.length > 0 && (
+                {ephemeralSessions.length > 0 && (
                   <h2 className="px-1 text-xs font-semibold uppercase tracking-wide text-faint">
                     Projects
                   </h2>
@@ -839,6 +888,7 @@ export default function Projects() {
                     sessions={sessionsFor(p)}
                     activeSessionIds={activeSessionIds}
                     onNewSession={() => void newSession(p.id)}
+                    onArchived={() => setArchivedFor(p)}
                     onDelete={() => {
                       setDeleteError(null);
                       setDeleting(p);
@@ -857,6 +907,46 @@ export default function Projects() {
         initialEphemeral={newEphemeral}
       />
       <ImportDialog open={importOpen} onClose={() => setImportOpen(false)} />
+
+      <SessionsModal
+        open={archivedFor !== null}
+        onClose={() => setArchivedFor(null)}
+        sessions={archivedFor ? (sessionsByProject[archivedFor.id] ?? []) : []}
+        activeId=""
+        initialTab="archived"
+        onSwitch={(id) => {
+          if (archivedFor) navigate(`/project/${archivedFor.id}?session=${id}`);
+        }}
+        onNew={() => {
+          if (!archivedFor) return;
+          const pid = archivedFor.id;
+          void api
+            .createSession(pid)
+            .then((r) => navigate(`/project/${pid}?session=${r.session.id}`))
+            .catch(() => {});
+        }}
+        onRename={(id, name) => {
+          if (!archivedFor) return;
+          const pid = archivedFor.id;
+          void api.renameSession(pid, id, name).then(() => refreshProjectSessions(pid));
+        }}
+        onArchive={(id) => {
+          if (!archivedFor) return;
+          const pid = archivedFor.id;
+          void api.archiveSession(pid, id).then(() => refreshProjectSessions(pid));
+        }}
+        onUnarchive={(id) => {
+          if (!archivedFor) return;
+          const pid = archivedFor.id;
+          void api.unarchiveSession(pid, id).then(() => refreshProjectSessions(pid));
+        }}
+        onDelete={(id) => {
+          if (!archivedFor) return;
+          const pid = archivedFor.id;
+          void api.deleteSession(pid, id).then(() => refreshProjectSessions(pid));
+        }}
+        creating={false}
+      />
 
       <Dialog open={deleting !== null} onClose={() => setDeleting(null)} title="Delete project">
         <p className="text-sm text-dim">

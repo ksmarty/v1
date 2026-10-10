@@ -164,7 +164,7 @@ export default function ChatPanel({
         )}
         <Link
           to="/settings"
-          state={{ from: `/project/${projectId}` }}
+          state={{ from: `/project/${projectId}${window.location.search}` }}
           aria-label="Settings"
           className={iconLinkClass}
         >
