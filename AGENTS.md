@@ -242,10 +242,14 @@ or `make dev`), then report: (1) the new stamped build version (`v1 <version>
 ## Boundaries
 
 - Always: run the checks in "Key commands" after changes; keep edits scoped;
-  update this file and the README when you change what they document.
-- Ask first: git mutations (commit/push/reset/rebase), deleting files or data
+  update this file and the README when you change what they document; after a
+  successful turn, commit the work and push `main` automatically — the user has
+  pre-authorized automatic commit+push after every successful turn, so do not
+  ask. Only push once the checks pass; if they fail, fix first and report.
+- Ask first: git reset/rebase or any history rewrite, deleting files or data
   outside the task's scope, installing dependencies, touching `data/` (the dev
-  database), changing auth or permissions logic.
+  database), changing auth or permissions logic. (Commit+push after a
+  successful turn is already pre-authorized — see "Always" above.)
 - Never: commit secrets or `data/`, weaken path-escape/SSRF guards in the
   agent tools, or add non-stdlib Go dependencies without a stated reason.
 
