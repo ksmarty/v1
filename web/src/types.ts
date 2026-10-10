@@ -206,6 +206,8 @@ export interface Project {
   autoPush: boolean;
   previewDisabled?: boolean;
   vercelEnabled: boolean;
+  /** Ephemeral scratch chat: grouped at the top of the dashboard and archived 24h after its last activity. */
+  ephemeral?: boolean;
   /** "auto" (default) shows the GitHub tab only when repoUrl is a GitHub repo. */
   githubTab?: 'auto' | 'on' | 'off';
   preview: PreviewInfo;
@@ -229,6 +231,8 @@ export interface ChatUsage {
   cost?: number;
   /** Prompt tokens the provider served from its prompt cache, when it reports them. */
   cached?: number;
+  /** Final-round prompt size (the real context-window fill), when reported. */
+  context?: number;
 }
 
 export interface ContextUsage {
@@ -299,6 +303,7 @@ export type ChatEvent =
   | { type: 'memories'; memories: Memory[] }
   | { type: 'permission_request'; requestId: string; tool: string; detail: string }
   | { type: 'done'; usage?: ChatUsage }
+  | { type: 'context'; usage?: ChatUsage }
   | { type: 'error'; error: string }
   | {
       type: 'question_request';

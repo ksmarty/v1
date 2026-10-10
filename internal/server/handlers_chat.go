@@ -657,6 +657,7 @@ func (s *Server) streamChatTurn(w http.ResponseWriter, r *http.Request, p *store
 		},
 		OnAsk:           s.turnAsk(p.ID, params.SessionID, emit),
 		CreateExtension: s.createExtension,
+		ListExtensions:  s.listExtensions,
 		RenderPage: func(ctx context.Context, url string) (string, error) {
 			return screenshot.RenderText(ctx, url)
 		},

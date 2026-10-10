@@ -300,6 +300,10 @@ CREATE TABLE pending_asks_v2 (
 		// NULL means "decide from the repo URL": the GitHub tab is a property of
 		// the project being a GitHub repo, not something to ask about up front.
 		"github_tab": "ALTER TABLE projects ADD COLUMN github_tab TEXT",
+		// Ephemeral chats are scratch projects: the dashboard groups them and
+		// the sweeper archives them 24h after their last activity.
+		"ephemeral": "ALTER TABLE projects ADD COLUMN ephemeral INTEGER NOT NULL DEFAULT 0",
+		"archived":  "ALTER TABLE projects ADD COLUMN archived INTEGER NOT NULL DEFAULT 0",
 	})
 }
 
@@ -914,8 +918,13 @@ type Project struct {
 	// linked to a Git repository. Empty means deployments create a project named
 	// after the v1 project instead.
 	VercelProject string
-	CreatedAt     int64
-	UpdatedAt     int64
+	// Ephemeral marks a scratch chat: the dashboard groups these separately and
+	// they auto-archive 24h after their last activity. Archived hides a project
+	// from the dashboard without deleting its data.
+	Ephemeral bool
+	Archived  bool
+	CreatedAt int64
+	UpdatedAt int64
 }
 
 // CreateProject inserts a project, stamping created_at/updated_at.
@@ -923,9 +932,9 @@ func (s *Store) CreateProject(p *Project) error {
 	t := now()
 	p.CreatedAt = t
 	p.UpdatedAt = t
-	_, err := s.db.Exec(`INSERT INTO projects (id, name, path, repo_url, preview_command, instructions, owner_id, auto_push, preview_disabled, vercel_enabled, github_tab, vercel_project, created_at, updated_at)
-		VALUES (?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?, ?, ?, NULLIF(?, ''), ?, ?, ?)`,
-		p.ID, p.Name, p.Path, p.RepoURL, p.PreviewCommand, p.Instructions, p.OwnerID, boolInt(p.AutoPush), boolInt(p.PreviewDisabled), boolInt(p.VercelEnabled), p.GitHubTab, p.VercelProject, p.CreatedAt, p.UpdatedAt)
+	_, err := s.db.Exec(`INSERT INTO projects (id, name, path, repo_url, preview_command, instructions, owner_id, auto_push, preview_disabled, vercel_enabled, github_tab, vercel_project, ephemeral, created_at, updated_at)
+		VALUES (?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?, ?, ?, NULLIF(?, ''), ?, ?, ?, ?)`,
+		p.ID, p.Name, p.Path, p.RepoURL, p.PreviewCommand, p.Instructions, p.OwnerID, boolInt(p.AutoPush), boolInt(p.PreviewDisabled), boolInt(p.VercelEnabled), p.GitHubTab, p.VercelProject, boolInt(p.Ephemeral), p.CreatedAt, p.UpdatedAt)
 	return err
 }
 
@@ -936,8 +945,8 @@ type scanner interface {
 func scanProject(row scanner) (*Project, error) {
 	var p Project
 	var repoURL, previewCmd, instructions, ownerID, githubTab, vercelProject sql.NullString
-	var autoPush, previewDisabled, vercelEnabled int
-	if err := row.Scan(&p.ID, &p.Name, &p.Path, &repoURL, &previewCmd, &instructions, &ownerID, &autoPush, &previewDisabled, &vercelEnabled, &githubTab, &vercelProject, &p.CreatedAt, &p.UpdatedAt); err != nil {
+	var autoPush, previewDisabled, vercelEnabled, ephemeral, archived int
+	if err := row.Scan(&p.ID, &p.Name, &p.Path, &repoURL, &previewCmd, &instructions, &ownerID, &autoPush, &previewDisabled, &vercelEnabled, &githubTab, &vercelProject, &ephemeral, &archived, &p.CreatedAt, &p.UpdatedAt); err != nil {
 		return nil, err
 	}
 	p.RepoURL = repoURL.String
@@ -949,10 +958,12 @@ func scanProject(row scanner) (*Project, error) {
 	p.VercelEnabled = vercelEnabled != 0
 	p.GitHubTab = githubTab.String
 	p.VercelProject = vercelProject.String
+	p.Ephemeral = ephemeral != 0
+	p.Archived = archived != 0
 	return &p, nil
 }
 
-const projectCols = `id, name, path, repo_url, preview_command, instructions, owner_id, auto_push, preview_disabled, vercel_enabled, github_tab, vercel_project, created_at, updated_at`
+const projectCols = `id, name, path, repo_url, preview_command, instructions, owner_id, auto_push, preview_disabled, vercel_enabled, github_tab, vercel_project, ephemeral, archived, created_at, updated_at`
 
 // UpdateProjectAutoPush toggles the per-project auto-push flag.
 func (s *Store) UpdateProjectAutoPush(id string, autoPush bool) error {
@@ -1009,15 +1020,31 @@ func (s *Store) GetProject(id string) (*Project, error) {
 	return p, err
 }
 
-// ListProjects returns all projects sorted by updated_at descending.
+// ListProjects returns all active projects sorted by updated_at descending.
 func (s *Store) ListProjects() ([]*Project, error) {
-	return s.listProjects(`SELECT `+projectCols+` FROM projects ORDER BY updated_at DESC`, nil)
+	return s.listProjects(`SELECT `+projectCols+` FROM projects WHERE archived = 0 ORDER BY updated_at DESC`, nil)
 }
 
-// ListProjectsByOwner returns a user's projects sorted by updated_at
+// ListProjectsByOwner returns a user's active projects sorted by updated_at
 // descending.
 func (s *Store) ListProjectsByOwner(ownerID string) ([]*Project, error) {
-	return s.listProjects(`SELECT `+projectCols+` FROM projects WHERE owner_id = ? ORDER BY updated_at DESC`, ownerID)
+	return s.listProjects(`SELECT `+projectCols+` FROM projects WHERE owner_id = ? AND archived = 0 ORDER BY updated_at DESC`, ownerID)
+}
+
+// ArchiveExpiredEphemeralProjects hides ephemeral projects whose last activity
+// is older than cutoff (a unix second). Activity is the later of the last chat
+// message (either side, so sending one extends the window) and any project
+// touch. Returns how many rows were archived.
+func (s *Store) ArchiveExpiredEphemeralProjects(cutoff int64) (int64, error) {
+	res, err := s.db.Exec(`
+		UPDATE projects SET archived = 1
+		WHERE ephemeral = 1 AND archived = 0
+		  AND MAX(COALESCE((SELECT MAX(m.created_at) FROM messages m
+		                     WHERE m.project_id = projects.id AND m.role IN ('user', 'assistant')), 0), updated_at) < ?`, cutoff)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
 }
 
 func (s *Store) listProjects(query string, arg any) ([]*Project, error) {

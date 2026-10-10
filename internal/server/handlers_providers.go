@@ -46,7 +46,7 @@ const providerCatalogTTL = 24 * time.Hour
 // is absent, predates one of the metadata fields, or has simply aged out.
 func catalogNeedsRefresh(cat *llm.Catalog) bool {
 	if cat == nil || !llm.CatalogHasVision(cat) || !llm.CatalogHasReasoning(cat) ||
-		!llm.CatalogHasReasoningLevels(cat) || !llm.CatalogHasContext(cat) {
+		!llm.CatalogHasReasoningLevels(cat) || !llm.CatalogHasContext(cat) || !llm.CatalogHasOutput(cat) {
 		return true
 	}
 	// A cache written before FetchedAt existed carries no timestamp; refresh

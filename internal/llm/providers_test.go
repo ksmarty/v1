@@ -2,6 +2,7 @@ package llm
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -75,5 +76,23 @@ func TestPrettifyModelName(t *testing.T) {
 		if got := PrettifyModelName(id); got != want {
 			t.Errorf("PrettifyModelName(%q) = %q, want %q", id, got, want)
 		}
+	}
+}
+
+// models.dev publishes both limit.context and limit.output; the output ceiling
+// has to reach the catalog so the sidecar can send it as max_tokens instead of
+// capping every model at 8192 (a reasoning model can spend that whole budget
+// thinking and never answer).
+func TestModelSubsetParsesOutputLimit(t *testing.T) {
+	var doc modelsDevDoc
+	if err := json.Unmarshal([]byte(`{"models":{"deepseek-v4-flash":{"name":"DeepSeek V4 Flash","tool_call":true,"limit":{"context":1000000,"output":393216}}}}`), &doc); err != nil {
+		t.Fatal(err)
+	}
+	models := modelSubset(doc)
+	if len(models) != 1 {
+		t.Fatalf("models = %d, want 1", len(models))
+	}
+	if models[0].Context != 1000000 || models[0].Output != 393216 {
+		t.Fatalf("context/output = %d/%d, want 1000000/393216", models[0].Context, models[0].Output)
 	}
 }

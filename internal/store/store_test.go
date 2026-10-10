@@ -376,3 +376,75 @@ func TestScrubStoredMessages(t *testing.T) {
 		t.Fatalf("attachments not scrubbed: %q", attachments)
 	}
 }
+
+// Ephemeral projects disappear 24h after their last activity: the sweep hides
+// one that has been idle longer than the window, keeps one with a recent
+// message, and never touches a regular project.
+func TestArchiveExpiredEphemeralProjects(t *testing.T) {
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	now := time.Now().Unix()
+	const day = 24 * 60 * 60
+
+	old := &Project{ID: NewID(), Name: "old", Path: t.TempDir(), Ephemeral: true}
+	if err := s.CreateProject(old); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`UPDATE projects SET updated_at = ? WHERE id = ?`, now-day-60, old.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	// A recent message keeps an ephemeral project alive even when the project
+	// row itself looks stale.
+	fresh := &Project{ID: NewID(), Name: "fresh", Path: t.TempDir(), Ephemeral: true}
+	if err := s.CreateProject(fresh); err != nil {
+		t.Fatal(err)
+	}
+	sess, err := s.EnsureDefaultSession(fresh.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`UPDATE projects SET updated_at = ? WHERE id = ?`, now-day-60, fresh.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`INSERT INTO messages (project_id, session_id, role, content, created_at) VALUES (?, ?, 'user', 'hi', ?)`,
+		fresh.ID, sess.ID, now-60); err != nil {
+		t.Fatal(err)
+	}
+
+	regular := &Project{ID: NewID(), Name: "regular", Path: t.TempDir()}
+	if err := s.CreateProject(regular); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`UPDATE projects SET updated_at = ? WHERE id = ?`, now-day-60, regular.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	n, err := s.ArchiveExpiredEphemeralProjects(now - day)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("archived %d projects, want 1", n)
+	}
+	active, err := s.ListProjects()
+	if err != nil {
+		t.Fatal(err)
+	}
+	listed := map[string]bool{}
+	for _, p := range active {
+		listed[p.ID] = true
+	}
+	if listed[old.ID] {
+		t.Fatal("the expired ephemeral project is still listed")
+	}
+	if !listed[fresh.ID] {
+		t.Fatal("a recently-messaged ephemeral project was archived")
+	}
+	if !listed[regular.ID] {
+		t.Fatal("a non-ephemeral project was archived")
+	}
+}

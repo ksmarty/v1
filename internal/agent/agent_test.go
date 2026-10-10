@@ -37,8 +37,11 @@ func TestStripBrokenToolCalls(t *testing.T) {
 		{ID: "b", Function: llm.FunctionCall{Name: "write_file", Arguments: `{"path":"web/src/main.t`}}, // cut mid-JSON
 		{ID: "c", Function: llm.FunctionCall{Name: "no_args", Arguments: ""}},                           // never started
 	}
-	got := stripBrokenToolCalls(tcs)
+	got, dropped := stripBrokenToolCalls(tcs)
 	if len(got) != 1 || got[0].ID != "a" {
 		t.Fatalf("got %d calls, want only the complete one: %+v", len(got), got)
+	}
+	if len(dropped) != 2 || dropped[0] != "write_file" || dropped[1] != "no_args" {
+		t.Fatalf("got dropped %v, want [write_file no_args]", dropped)
 	}
 }

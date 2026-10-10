@@ -350,6 +350,16 @@ body {
   display: none;
 }
 
+/* Scroll-edge fade that only applies once the element is itself the scroll
+   container (md up). Below md the tools list scrolls in the tab's outer
+   scroller, and a fade on the non-scrolling element would mask its own edges. */
+@media (max-width: 47.9rem) {
+  .v1-fade-y-md {
+    --tw-fade-t: 0 !important;
+    --tw-fade-b: 0 !important;
+  }
+}
+
 /* Blinking caret appended to a streaming assistant message */
 .v1-stream-cursor {
   display: inline-block;

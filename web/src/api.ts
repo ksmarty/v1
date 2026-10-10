@@ -325,7 +325,7 @@ export const api = {
   // Projects
   listProjects: () => request<Project[]>('/api/projects'),
   activeProjects: () => request<{ active: string[]; sessions: string[] }>('/api/projects/active'),
-  createProject: (body: { name?: string; description?: string }) =>
+  createProject: (body: { name?: string; description?: string; ephemeral?: boolean }) =>
     post<Project>('/api/projects', body),
   getProject: (id: string) => request<Project>(`/api/projects/${id}`),
   updateProject: (id: string, body: { name?: string; previewCommand?: string; instructions?: string; autoPush?: boolean; previewDisabled?: boolean; vercelEnabled?: boolean; githubTab?: 'auto' | 'on' | 'off' }) =>

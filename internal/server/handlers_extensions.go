@@ -287,6 +287,9 @@ func (s *Server) createExtension(ctx context.Context, id, description, source st
 	if len(outcome.sections) > 0 {
 		message += "; sections: " + strings.Join(outcome.sections, ", ")
 	}
+	if len(outcome.hooks) > 0 {
+		message += "; hooks: " + strings.Join(outcome.hooks, ", ")
+	}
 	if !outcome.reloaded {
 		reason, _ := reload["reason"].(string)
 		if reason == "" {
@@ -297,12 +300,74 @@ func (s *Server) createExtension(ctx context.Context, id, description, source st
 	return message, nil
 }
 
+// listExtensions reports every installed extension and what the harness has
+// loaded. It backs the list_extensions tool, so the agent can confirm an
+// install (tools, sections, hooks, settings, load errors) with one call instead
+// of inspecting the host. It also works with the harness stopped: the installed
+// list is still returned, with a note that nothing is loaded.
+func (s *Server) listExtensions(ctx context.Context) (string, error) {
+	list := s.installedExtensions()
+	state := s.extensionLoadState(ctx)
+	loaded := map[string]map[string]any{}
+	if raw, ok := state["loaded"].([]any); ok {
+		for _, item := range raw {
+			entry, _ := item.(map[string]any)
+			if id, _ := entry["id"].(string); id != "" {
+				loaded[id] = entry
+			}
+		}
+	}
+	loadErrs := map[string]string{}
+	if raw, ok := state["errors"].([]any); ok {
+		for _, item := range raw {
+			entry, _ := item.(map[string]any)
+			if id, _ := entry["id"].(string); id != "" {
+				loadErrs[id], _ = entry["message"].(string)
+			}
+		}
+	}
+	rows := make([]map[string]any, 0, len(list))
+	for _, ext := range list {
+		row := map[string]any{"id": ext.ID, "enabled": ext.Enabled}
+		if ext.Builtin {
+			row["builtin"] = true
+		}
+		if entry := loaded[ext.ID]; entry != nil {
+			row["loaded"] = true
+			for _, key := range []string{"tools", "sections", "hooks", "settings"} {
+				if v, ok := entry[key]; ok {
+					row[key] = v
+				}
+			}
+		} else if ext.Enabled {
+			row["loaded"] = false
+		}
+		if msg := loadErrs[ext.ID]; msg != "" {
+			row["error"] = msg
+		}
+		rows = append(rows, row)
+	}
+	out := map[string]any{"extensions": rows}
+	if available, _ := state["available"].(bool); !available {
+		out["harnessAvailable"] = false
+		if reason, _ := state["reason"].(string); reason != "" {
+			out["reason"] = reason
+		}
+	}
+	b, err := json.Marshal(out)
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
+}
+
 // extensionOutcome describes one extension in a reload response, so the
 // create_extension tool can report what the extension contributed.
 type extensionOutcome struct {
 	reloaded bool
 	tools    []string
 	sections []string
+	hooks    []string
 	err      string
 }
 
@@ -335,6 +400,7 @@ func extensionReloadOutcome(reload map[string]any, id string) extensionOutcome {
 			}
 			out.tools = anyStrings(entry["tools"])
 			out.sections = anyStrings(entry["sections"])
+			out.hooks = anyStrings(entry["hooks"])
 		}
 	}
 	return out

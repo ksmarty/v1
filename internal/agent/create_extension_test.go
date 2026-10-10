@@ -3,6 +3,8 @@ package agent
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -84,5 +86,59 @@ func TestCreateExtensionToolSucceeds(t *testing.T) {
 	}
 	if !strings.Contains(out, "installed extension word-stats") {
 		t.Fatalf("the message was not passed through: %s", out)
+	}
+}
+
+// The source can be read from a workspace file instead of passed inline, which
+// is what keeps a large extension from being truncated inside the tool call.
+func TestCreateExtensionToolReadsSourcePath(t *testing.T) {
+	e := newTestExecutor(t)
+	dir := filepath.Join(e.Root, "extensions", "word-stats")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	const source = "export default () => ({ name: \"word-stats\" });\n"
+	if err := os.WriteFile(filepath.Join(dir, "index.js"), []byte(source), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	e.CreateExtension = func(_ context.Context, id, description, got string) (string, error) {
+		if id != "word-stats" {
+			t.Fatalf("id = %q", id)
+		}
+		if got != strings.TrimSpace(source) {
+			t.Fatalf("source = %q, want the file contents", got)
+		}
+		return "installed extension word-stats", nil
+	}
+	out, err := e.createExtension(context.Background(),
+		`{"id":"word-stats","description":"counts words","path":"extensions/word-stats/index.js"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "installed extension word-stats") {
+		t.Fatalf("the message was not passed through: %s", out)
+	}
+}
+
+// A path that does not resolve to a readable workspace file must be refused as
+// a BAD_ARGUMENT before the callback runs.
+func TestCreateExtensionToolRejectsBadPath(t *testing.T) {
+	e := newTestExecutor(t)
+	e.CreateExtension = func(context.Context, string, string, string) (string, error) {
+		t.Fatal("the callback must not run for a bad path")
+		return "", nil
+	}
+	for _, args := range []string{
+		`{"id":"x","path":"extensions/missing/index.js"}`,
+		`{"id":"x","path":"../../etc/passwd"}`,
+	} {
+		_, err := e.createExtension(context.Background(), args)
+		var te *ToolError
+		if !errors.As(err, &te) {
+			t.Fatalf("%s: want a ToolError, got %v", args, err)
+		}
+		if te.Type != "BAD_ARGUMENT" {
+			t.Fatalf("%s: type = %q, want BAD_ARGUMENT", args, te.Type)
+		}
 	}
 }

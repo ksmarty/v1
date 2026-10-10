@@ -471,12 +471,14 @@ function ToolSettings({
     api.updateSettings({ disabledTools: next }).catch((e) => setToolsError(errMsg(e)));
   };
 
-  // Laid out at its natural height, with the tab's own container doing the
-  // scrolling. Constraining this to h-full with a flex-1 list under three tall
-  // cards left the list a zero-height box on a phone: the built-in tools were
-  // unreachable rather than scrolled past.
+  // Two layouts, by width. On a phone the three cards are taller than the
+  // available height, so pinning them and giving the list the leftover space
+  // shrank the list to zero: nothing appeared below the memory embeddings card.
+  // There the whole column keeps its natural height and the tab's own scroller
+  // moves it. From md up the cards fit, so the list gets its own scroll
+  // container under them, the same shape the Skills and Extensions tabs use.
   const toolsSection = (
-    <div className="flex h-full min-h-0 min-w-0 flex-col gap-2.5">
+    <div className="flex min-w-0 flex-col gap-2.5 md:h-full md:min-h-0">
       <div className="shrink-0 rounded-lg border border-border-strong bg-surface/50 p-3 shadow-sm">
         <div className="flex items-center gap-2">
           <p className="text-sm text-text">Web search</p>
@@ -738,7 +740,7 @@ function ToolSettings({
           Extensions tabs do. As one long column in the tab's outer scroller the
           cards pushed the list off the bottom, where it read as missing rather
           than as something to scroll to. */}
-      <div className="fade-y min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain">
+      <div className="fade-y v1-fade-y-md min-w-0 md:min-h-0 md:flex-1 md:overflow-x-hidden md:overflow-y-auto md:overscroll-contain">
         {TOOL_GROUPS.map((g) => (
           <div key={g.id} className="mb-3">
             <h4 className="mb-1.5 text-xs font-medium text-subtle">{g.label}</h4>
@@ -2104,7 +2106,9 @@ function ToolSettings({
         {tab === 'extensions' && (
           <div className="flex h-full min-h-0 flex-col">{extensionsSection}</div>
         )}
-        {tab === 'tools' && <div className="flex h-full min-h-0 flex-col">{toolsSection}</div>}
+        {tab === 'tools' && (
+          <div className="flex min-w-0 flex-col md:h-full md:min-h-0">{toolsSection}</div>
+        )}
         {tab === 'perms' && permsSection}
       </div>
       {skillPreview && (

@@ -29,7 +29,7 @@ import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 
 import { createPeer } from "../src/rpc.js";
-import { bindToolToConversation, loadExtensions, toolNames } from "../src/extensions.js";
+import { bindToolToConversation, hookNames, loadExtensions, toolNames } from "../src/extensions.js";
 import { endpointHeaders } from "../src/provider.js";
 import { buildHostTools } from "../src/tools.js";
 
@@ -541,7 +541,10 @@ async function checkExtensionLoading() {
 		await mkdir(join(root, id), { recursive: true });
 		await writeFile(join(root, id, "index.js"), source, "utf8");
 	};
-	await write("alpha", 'export default () => ({ name: "alpha", tools: [{ name: "alpha_tool" }] });\n');
+	await write(
+		"alpha",
+		'export default () => ({ name: "alpha", tools: [{ name: "alpha_tool" }], hooks: [{ task: "pi.generation", handlers: { onYield: () => {} } }] });\n',
+	);
 	await write("beta", 'export default () => ({ name: "beta", tools: [{ name: "beta_tool" }] });\n');
 	await write("broken", "export default (pi) => ({\n");
 
@@ -555,6 +558,11 @@ async function checkExtensionLoading() {
 	check(
 		"extensions: a loaded extension keeps its tools",
 		toolNames(filtered.extensions[0].extension)[0] === "alpha_tool",
+	);
+	check(
+		"extensions: a loaded extension reports its hooks",
+		hookNames(filtered.extensions[0].extension)[0] === "pi.generation:onYield",
+		JSON.stringify(hookNames(filtered.extensions[0].extension)),
 	);
 	check(
 		"extensions: a disabled extension contributes nothing",

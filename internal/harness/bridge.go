@@ -158,6 +158,10 @@ type ModelSpec struct {
 	Reasoning     bool     `json:"reasoning,omitempty"`
 	Input         []string `json:"input,omitempty"`
 	ContextWindow int      `json:"contextWindow,omitempty"`
+	// MaxTokens is the model's output ceiling. pi-ai sends it as max_tokens;
+	// without it the sidecar falls back to min(8192, contextWindow), and a
+	// reasoning model can spend that whole budget thinking and never answer.
+	MaxTokens int `json:"maxTokens,omitempty"`
 }
 
 // ModelRef selects the model a conversation runs on.

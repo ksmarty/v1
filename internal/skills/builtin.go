@@ -485,16 +485,50 @@ inject it unwrapped.
 
 ### hook and wrap
 
-    pi.hook("some-task", { onStart: (event) => { /* ... */ } })
+    pi.hook("pi.generation", {
+      beforeRequest: (request) => ({ messages: request.messages }),
+      onYield: (answer) =>
+        answer.stopReason === "length" ? { continue: "Keep going." } : undefined,
+    })
 
     pi.wrapTool(someTool, (tool) => ({
       ...tool,
       description: tool.description + " Also reports the character count.",
     }))
 
-Hooks attach to a task by name. Wrappers are pure functions applied where the
-wrapping extension is selected. Both are advanced - prefer a plain new tool
-unless the user needs to change something that already exists.
+A hook attaches to a task by name. The task names are pi.generation (one model
+call and its tools), pi.tool (one tool call) and pi.compaction. pi.hook also
+accepts the task object, but the extension file sits outside any node_modules
+and cannot import it, so use the string name.
+
+The generation phases, in order, are beforeRequest, afterResponse, onYield and
+afterTools:
+
+- beforeRequest(request, api, context) runs before every request attempt.
+  request.messages is the transcript view. Return { messages } to replace it
+  for that request only.
+- afterResponse(message, api, context) sees every terminal provider message,
+  before it is classified.
+- onYield(answer, api, context) runs on a final answer (not a tool round).
+  answer.content is an array of { type: "text", text } and
+  { type: "thinking", thinking } parts, and answer.stopReason is "stop",
+  "length" or "toolUse". Return { continue: "<user message>" } to append that
+  message and continue the turn; return nothing to end it. This is how a hook
+  resumes a reply the provider truncated.
+- afterTools(assistant, results, api, context) runs after the round's tools
+  are terminal.
+
+The tool phases are beforeTool(call, api, context), returning { arguments } to
+replace the call's arguments or { block: "reason" } to refuse it, and
+afterTool(call, result, api, context), returning a replacement result.
+
+A hook can keep per-turn state across phases with api.memo(name, context) to
+read and api.memo(name, value, context) to write; it survives a continuation
+into a successor generation, which is how a retry is bounded.
+
+Wrappers are pure functions applied where the wrapping extension is selected.
+Hooks and wraps are advanced - prefer a plain new tool unless the user needs
+to change something that already exists.
 
 ## Settings fields
 
@@ -552,8 +586,15 @@ runs, so check that a tool is available before depending on it.
 
 ## Installing it
 
-Call create_extension with the id, a one-line description and the complete
-module source:
+Write the module to the workspace first (write_file), then install it by path:
+
+    create_extension({
+      id: "word-count",
+      description: "Adds a word_count tool.",
+      path: "extensions/word-count/index.js"
+    })
+
+For a small extension, pass the source inline instead:
 
     create_extension({
       id: "word-count",
@@ -561,13 +602,21 @@ module source:
       source: "<the whole module>"
     })
 
+Prefer the path form for anything more than a few lines: re-emitting a large
+source as a tool-call argument is where a big create_extension call gets
+truncated, and the file on disk is the copy you can edit and install again.
+
 It validates the id, syntax-checks the source with node, writes it, enables it
-and reloads the harness, then reports what loaded. Installing an id that
-already exists replaces its source. A new tool becomes available on the next
-turn, so tell the user to send another message before expecting to use it.
+and reloads the harness, then reports what loaded - its tools, sections and
+hooks. Installing an id that already exists replaces its source. A new tool
+becomes available on the next turn, so tell the user to send another message
+before expecting to use it.
 
 Read the result of create_extension rather than assuming the extension loaded.
-If it reports an error, fix the source and call it again.
+If it reports an error, fix the source and call it again. Use list_extensions
+to confirm what is installed and loaded at any time: it reports each
+extension's tools, sections, hooks and settings, plus any load error, so you
+do not need to inspect the host.
 
 ## Failure modes to check before you install
 

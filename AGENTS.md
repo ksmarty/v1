@@ -13,7 +13,7 @@ React SPA (Vite + TypeScript), both built into a single binary.
 - `cmd/v1/` — entrypoint; wires config → store → server.
 - `internal/config/` — reads all env config once at startup (`Config` + `Load`).
 - `internal/server/` — HTTP API routes, handlers, embedded `dist/` (built SPA).
-- `internal/auth/` — multi-user auth: per-user accounts (bcrypt), sessions bound to a user, admin role, auth middleware (attaches the `*store.User` to the request context). The auth middleware protects `/api/*` and `/preview/*` (401 JSON) but serves the SPA shell + static assets publicly so unauthenticated browsers reach `/login` (password or OIDC); it still attaches the user to the context when a session exists. OIDC users carry an `oidc` flag on the `users` row (auto-set on OIDC sign-in) and can be granted admin via `V1_OIDC_ADMIN_EMAILS`; the Settings Auth page hides the password form for OIDC users (admins keep the OIDC config section). Settings are per-user (`user_settings` table) with a shared/global fallback — the server's `userSetting` helper layers them; instance-level keys (MCP, skills, providers cache, OAuth app credentials) stay global. Projects are strictly owner-scoped (`projects.owner_id`, 404 for non-owners); auth-disabled dev mode skips the ownership gate.
+- `internal/auth/` — multi-user auth: per-user accounts (bcrypt), sessions bound to a user, admin role, auth middleware (attaches the `*store.User` to the request context). The auth middleware protects `/api/*` and `/preview/*` (401 JSON) but serves the SPA shell + static assets publicly so unauthenticated browsers reach `/login` (password or OIDC); it still attaches the user to the context when a session exists. OIDC users carry an `oidc` flag on the `users` row (auto-set on OIDC sign-in) and can be granted admin via `V1_OIDC_ADMIN_EMAILS`; the Settings Auth page hides the password form for OIDC users (admins keep the OIDC config section). Settings are per-user (`user_settings` table) with a shared/global fallback — the server's `userSetting` helper layers them; instance-level keys (MCP, skills, providers cache, OAuth app credentials) stay global. Projects are strictly owner-scoped (`projects.owner_id`, 404 for non-owners); auth-disabled dev mode skips the ownership gate. An ephemeral project (`projects.ephemeral`, created via the New-project dialog's "Ephemeral" option) is a scratch chat: the dashboard groups these at the top, and `ListProjects` sweeps them to `archived` 24h after their last activity (the later of the last assistant message and `updated_at`), so sending a message extends the window. The dashboard sorts each group's sessions by their last completed turn and the groups by their most recent session.
 - `internal/llm/` — OpenAI-compatible client + models.dev provider catalog.
 - `internal/embed/` — memory embeddings: the provider client (`embed.go`), a
   pure-Go BERT-family encoder for the built-in provider (`bert.go`,
@@ -31,7 +31,22 @@ React SPA (Vite + TypeScript), both built into a single binary.
 - `sidecar/` — the pi-durable host itself (ESM, run by `node`): registers one
   host tool per v1 tool schema, streams `AgentEvent`s back over the socket, and
   owns the durable transcript. `make sidecar-deps` installs its dependencies,
-  which a checkout needs before v1 can start.
+  which a checkout needs before v1 can start. It installs a `pi.generation`
+  continuation hook that re-prompts a round which ended with only thinking (no
+  text or tool calls) or hit the output limit, bounded per turn. Extensions load
+  through the host: `create_extension` takes the source inline or a workspace
+  `path`, and its result reports the extension's tools, sections and hooks;
+  `list_extensions` reports every installed extension and what loaded, so an
+  install is verifiable from the tool result. A tool call cut off by the output
+  limit is dropped with an info event and a model-visible note (never
+  silently), so the model switches to the path form instead of re-inlining.
+  The provider spec carries the model's output ceiling (models.dev
+  `limit.output`) as `maxTokens`, so a reasoning model is not capped at the
+  sidecar's 8192 fallback and cannot spend its whole window thinking; a turn
+  that still ends with no visible text and no tool call errors instead of a
+  silent `done`.
+  A hook names its task as a string (e.g. `pi.generation`) because the extension
+  file can't import pi-durable's task objects.
 - `internal/store/` — SQLite (settings, sessions, projects, messages).
 - `internal/preview/`, `internal/terminal/`, `internal/gitops/` — previews, terminals, GitHub.
 - `internal/scaffold/` — project templates.
@@ -150,13 +165,19 @@ or `make dev`), then report: (1) the new stamped build version (`v1 <version>
   container below. The tab bar is NOT `sticky` — it sits in a non-scrolling
   flex column so it never moves. On the Settings page the tools pane gets a
   fixed-height flex column (`overflow-hidden` main, no page padding) so the
-  same pinning works there; other Settings pages scroll `main` as before.
+  same pinning works there; other Settings pages scroll `main` as before. The
+  tools list is the exception: on a phone the three cards plus the list are
+  taller than the pane, so the whole column keeps its natural height and the
+  tab's outer scroller moves it (the list's edge fade is neutralized below `md`
+  by `.v1-fade-y-md`); from `md` up the list gets its own scroll container under
+  the cards.
   `initialPermissionMode` is passed from the chat header so the permission cards
   don't flash the default (`ask`) before the server value loads.
 - Token usage shows per turn: the backend stores usage per assistant message,
   and each turn-final assistant message renders its round's counts beneath it
   (from persisted usage on reload and from the live `done` event). There is no
-  cumulative session total.
+  cumulative session total. A per-round `context` SSE event moves the context
+  ring live while a turn runs; `done` still triggers an authoritative refetch.
 - iOS PWA: the project view root uses `v1-safe-top` so content clears the
   Dynamic Island; the mobile bottom nav uses
   `pb-[calc(env(safe-area-inset-bottom)/2)]` — half the home-indicator inset,

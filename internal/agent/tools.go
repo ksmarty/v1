@@ -109,6 +109,9 @@ type Executor struct {
 	// create_extension tool): it validates, writes, enables and reloads. Nil
 	// when extensions are unavailable, and the tool then says so.
 	CreateExtension func(ctx context.Context, id, description, source string) (string, error)
+	// ListExtensions reports what is installed and loaded (the list_extensions
+	// tool), so the agent can confirm an install without inspecting the host.
+	ListExtensions func(ctx context.Context) (string, error)
 	// OnAsk asks the user one or more questions and waits for the answers
 	// (the ask_user tool); nil when the turn cannot prompt.
 	OnAsk func(ctx context.Context, questions []AskQuestion) ([]AskAnswer, error)
@@ -221,6 +224,8 @@ func (e *Executor) Execute(ctx context.Context, name, argsJSON string) (string, 
 		return e.setTodos(argsJSON)
 	case "create_extension":
 		return e.createExtension(ctx, argsJSON)
+	case "list_extensions":
+		return e.listExtensions(ctx)
 	case "remember":
 		return e.remember(argsJSON)
 	case "forget":
@@ -617,6 +622,12 @@ func (e *Executor) forget(argsJSON string) (string, error) {
 // enabling and reloading live on the server, which owns the extensions
 // directory and the harness; this only shape-checks the call and turns a
 // refusal into the model-readable error contract.
+//
+// The source can be passed inline or read from a workspace file. A non-trivial
+// extension should be written to the project first and installed by path:
+// re-emitting a 20 KB source as a tool-call argument is where a large
+// create_extension call gets truncated, and the file on disk is the copy the
+// agent can edit and re-install.
 func (e *Executor) createExtension(ctx context.Context, argsJSON string) (string, error) {
 	if e.CreateExtension == nil {
 		return "", toolFail("UNAVAILABLE", "extensions are not available in this session", false, "ask the user to start the agent harness, then retry")
@@ -625,23 +636,49 @@ func (e *Executor) createExtension(ctx context.Context, argsJSON string) (string
 		ID          string `json:"id"`
 		Description string `json:"description"`
 		Source      string `json:"source"`
+		Path        string `json:"path"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 		return "", fmt.Errorf("invalid arguments: %w", err)
 	}
 	args.ID = strings.TrimSpace(args.ID)
 	args.Source = strings.TrimSpace(args.Source)
+	args.Path = strings.TrimSpace(args.Path)
 	if args.ID == "" {
 		return "", toolFail("BAD_ARGUMENT", "id is required (lowercase letters, digits and dashes)", true, "pick a short id such as word-stats")
 	}
+	if args.Path != "" {
+		full, err := e.resolve(args.Path)
+		if err != nil {
+			return "", err
+		}
+		data, err := os.ReadFile(full)
+		if err != nil {
+			return "", toolFail("BAD_ARGUMENT", fmt.Sprintf("cannot read %q: %v", args.Path, err), true, "write the extension source to a workspace file first, then pass its path")
+		}
+		args.Source = strings.TrimSpace(string(data))
+	}
 	if args.Source == "" {
-		return "", toolFail("BAD_ARGUMENT", "source is required", true, "pass the complete index.js source")
+		return "", toolFail("BAD_ARGUMENT", "source or path is required", true, "pass the complete index.js source, or write it to a workspace file and pass its path")
 	}
 	message, err := e.CreateExtension(ctx, args.ID, args.Description, args.Source)
 	if err != nil {
 		return "", toolFail("EXTENSION_REJECTED", err.Error(), true, "read the reported error, fix the source, and call create_extension again")
 	}
 	return toolResult(map[string]any{"ok": true, "message": message}), nil
+}
+
+// listExtensions backs the list_extensions tool: it reports what is installed
+// and loaded. A read-only call, so it stays available in plan mode.
+func (e *Executor) listExtensions(ctx context.Context) (string, error) {
+	if e.ListExtensions == nil {
+		return "", toolFail("UNAVAILABLE", "extensions are not available in this session", false, "ask the user to start the agent harness, then retry")
+	}
+	out, err := e.ListExtensions(ctx)
+	if err != nil {
+		return "", err
+	}
+	return out, nil
 }
 
 // emitMemories pushes the refreshed memory list to the UI after a change.

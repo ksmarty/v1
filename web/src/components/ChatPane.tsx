@@ -152,6 +152,7 @@ const TOOL_LABELS: Record<string, string> = {
   update_plan: 'Update plan',
   verify_project: 'Verify project',
   create_extension: 'Create extension',
+  list_extensions: 'List extensions',
   run_container: 'Run container',
   git: 'Git',
 };
@@ -224,6 +225,7 @@ const TOOL_ICONS: Record<string, typeof IconWrench> = {
   update_plan: IconCheckSquare,
   verify_project: IconFlask,
   create_extension: IconLayers,
+  list_extensions: IconList,
   run_container: IconTerminal,
 };
 
@@ -590,25 +592,26 @@ function parseBackgroundResult(text: string): {
 // A finished background command, collapsed like any other tool call: the row
 // carries the command and its exit status, and expanding shows the output. It
 // used to render as a full-width amber panel of raw text in the middle of the
-// conversation, which read as something the user had said.
+// conversation, which read as something the user had said. It keeps the amber
+// tint so a background result is still recognisable as one at a glance.
 function BackgroundResultRow({ text, onOpen }: { text: string; onOpen: (t: string) => void }) {
   const [open, setOpen] = useState(false);
   const bg = parseBackgroundResult(text);
   return (
-    <div className="rounded-md border border-border/80 bg-surface/50 text-[10px]">
+    <div className="rounded-md border border-amber-300/25 bg-amber-300/5 text-[10px]">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="flex min-h-[26px] w-full items-center gap-1.5 px-2 py-1 text-left text-dim transition-colors hover:text-text"
+        className="flex min-h-[26px] w-full items-center gap-1.5 px-2 py-1 text-left text-dim transition-colors hover:bg-amber-300/10 hover:text-text"
       >
         {open ? (
           <IconChevronDown className="h-3.5 w-3.5 shrink-0" />
         ) : (
           <IconChevronRight className="h-3.5 w-3.5 shrink-0" />
         )}
-        <IconTerminal className="h-3 w-3 shrink-0 text-faint" />
-        <span className="shrink-0 font-mono text-text">Background</span>
-        <span className="min-w-0 flex-1 truncate font-mono text-faint">{bg.command}</span>
+        <IconTerminal className="h-3 w-3 shrink-0 text-amber-300/70" />
+        <span className="shrink-0 font-mono text-amber-200/90">Background</span>
+        <span className="min-w-0 flex-1 truncate font-mono text-amber-100/60">{bg.command}</span>
         {bg.ok ? (
           <IconCheck className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
         ) : (
@@ -616,8 +619,8 @@ function BackgroundResultRow({ text, onOpen }: { text: string; onOpen: (t: strin
         )}
       </button>
       {open && (
-        <div className="border-t border-border/80 px-3 py-2">
-          <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-subtle">
+        <div className="border-t border-amber-300/20 px-3 py-2">
+          <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-amber-100/90">
             {bg.output}
           </pre>
           <button
@@ -3695,6 +3698,13 @@ export default function ChatPane({
           setLocalStatus(ev.text);
           break;
         }
+        case 'context': {
+          // A per-round context fill from the server — move the ring live while
+          // the turn runs, keeping the budget from the last full fetch.
+          const used = ev.usage?.context ?? 0;
+          if (used > 0) setCtx((prev) => (prev ? { ...prev, used } : prev));
+          break;
+        }
         case 'done': {
           if (ev.usage) {
             const u = ev.usage;
@@ -4602,20 +4612,6 @@ export default function ChatPane({
     return keys;
   }, [items, streaming, runActive]);
 
-  // True when a message renders as a collapsed tool summary row (the tool
-  // collapse setting is on and the message carries tools, ask included).
-  const isCollapsedToolsRow = useCallback(
-    (it: Item): boolean => {
-      if (it.kind !== 'msg' || it.role !== 'assistant' || it.streaming) return false;
-      if (!getToolCallsCollapsed()) return false;
-      const askCount = it.toolCalls?.filter((c) => c.name === 'ask_user').length ?? 0;
-      const calls = (it.toolCalls ?? []).filter((c) => c.name !== 'ask_user');
-      const results = (it.toolResults ?? []).filter((r) => r.name !== 'ask_user');
-      return calls.length + results.length > 0 || askCount > 0;
-    },
-    [],
-  );
-
   // Composer pieces, shared between the normal row layout and the expanded
   // layout (top button row in the corners, text field below at full width).
   const plusButton = (
@@ -5026,106 +5022,97 @@ export default function ChatPane({
         {!loading && !loadError && items.length > 0 && (
           <div className="mx-auto flex max-w-2xl flex-col gap-3">
             {(() => {
-              // Silent collapsed-tool rounds (no text) fold into the work note
-              // that precedes them, so bookkeeping like a lone "made 1 edit"
-              // extends the note above's collapse summary instead of cluttering
-              // the transcript. A round that says something is a real message —
-              // its words render as its own row and the run of silent rounds
-              // following it folds onto that note.
-              const displayItems: Item[] = [];
-              let note: MsgItem | null = null; // the current text-bearing work note
-              for (const it of items) {
-                const isSilent = it.kind === 'msg' && isCollapsedToolsRow(it) && !it.content?.trim();
-                if (isSilent && note && note.content?.trim() && isCollapsedToolsRow(note)) {
-                  const folded: MsgItem = {
-                    ...note,
-                    toolCalls: [...(note.toolCalls ?? []), ...(it.toolCalls ?? [])],
-                    toolResults: [...(note.toolResults ?? []), ...(it.toolResults ?? [])],
-                  };
-                  displayItems[displayItems.length - 1] = folded;
-                  note = folded;
-                } else {
-                  displayItems.push(it);
-                  note = it.kind === 'msg' && !it.streaming ? it : null;
-                }
-              }
+              // Group every round of a turn into one work collapse: all of the
+              // turn's reasoning and tool calls, in order. The text each round
+              // wrote still renders as its own message below the group, so a
+              // completed turn shows a single collapse line and never leaves a
+              // thinking block loose beside the tool calls.
               const lastMsgIdx = (() => {
-                for (let i = displayItems.length - 1; i >= 0; i--) {
-                  if (displayItems[i].kind === 'msg') return i;
+                for (let i = items.length - 1; i >= 0; i--) {
+                  if (items[i].kind === 'msg') return i;
                 }
                 return -1;
               })();
               const rows: ReactNode[] = [];
-              let run: { it: MsgItem; i: number }[] = [];
-              const flush = () => {
-                if (run.length === 0) return;
-                if (run.length === 1) {
-                  const { it, i } = run[0];
-                  rows.push(
-                    <div key={it.key} data-msg-key={it.key}>
-                      <MessageRow
-                        item={it}
-                        isLast={i === lastMsgIdx}
-                        streaming={streaming}
-                        turnEnd={turnEndKeys.has(it.key)}
-                        validTag={validTag}
-                        onEdit={editUserMessage}
-                        onRewind={requestRewind}
-                        onRegenerate={regenerate}
-                        onRetrySend={sendText}
-                        onEditStart={setItemEditing}
-                        onImageClick={openLightbox}
-                        onFileClick={openFile}
-                        onAskAnswered={(answer) => void answerAsk(answer)}
-                        onOpenBackground={openBackgroundOutput}
-                        currency={currency}
-                      />
-                    </div>,
-                  );
-                } else {
-                  rows.push(
-                    <div key={run[0].it.key} data-msg-key={run[0].it.key}>
-                      <CollapsedToolsGroup
-                        members={run.map(({ it }) => collapseData(it))}
-                        onAskAnswered={(answer) => void answerAsk(answer)}
-                      />
-                    </div>,
-                  );
-                }
-                run = [];
-              };
-              displayItems.forEach((it, i) => {
-                // Merge consecutive silent collapsed-tool rounds; a round with
-                // actual words is a message — render it alone (its text shows)
-                // and break the run.
-                if (it.kind === 'msg' && isCollapsedToolsRow(it) && !it.content?.trim()) {
-                  run.push({ it, i });
+              const renderMessage = (it: Item, i: number, shown: Item = it) => (
+                <div key={it.key} data-msg-key={it.key}>
+                  <MessageRow
+                    item={shown}
+                    isLast={i === lastMsgIdx}
+                    streaming={streaming}
+                    turnEnd={turnEndKeys.has(it.key)}
+                    validTag={validTag}
+                    onEdit={editUserMessage}
+                    onRewind={requestRewind}
+                    onRegenerate={regenerate}
+                    onRetrySend={sendText}
+                    onEditStart={setItemEditing}
+                    onImageClick={openLightbox}
+                    onFileClick={openFile}
+                    onAskAnswered={(answer) => void answerAsk(answer)}
+                    onOpenBackground={openBackgroundOutput}
+                    currency={currency}
+                  />
+                </div>
+              );
+              // A round that reasoned or called a tool belongs to the turn's
+              // work group; its text is stripped there and shown as its own row.
+              const isWork = (d: CollapseData) =>
+                d.calls.length + d.results.length > 0 || d.ask != null || !!d.reasoning;
+              let turn: { it: MsgItem; i: number }[] = [];
+              const flushTurn = () => {
+                if (turn.length === 0) return;
+                const groupable =
+                  getToolCallsCollapsed() && turn.every(({ it }) => !it.streaming);
+                if (!groupable) {
+                  turn.forEach(({ it, i }) => rows.push(renderMessage(it, i)));
+                  turn = [];
                   return;
                 }
-                flush();
-                rows.push(
-                  <div key={it.key} data-msg-key={it.key}>
-                    <MessageRow
-                      item={it}
-                      isLast={i === lastMsgIdx}
-                      streaming={streaming}
-                      turnEnd={turnEndKeys.has(it.key)}
-                      validTag={validTag}
-                      onEdit={editUserMessage}
-                      onRewind={requestRewind}
-                      onRegenerate={regenerate}
-                      onRetrySend={sendText}
-                      onEditStart={setItemEditing}
-                      onImageClick={openLightbox}
-                      onFileClick={openFile}
-                      onAskAnswered={(answer) => void answerAsk(answer)}
-                      onOpenBackground={openBackgroundOutput}
-                      currency={currency}
-                    />
-                  </div>,
+                const members: CollapseData[] = [];
+                for (const { it } of turn) {
+                  const d = collapseData(it);
+                  if (isWork(d)) members.push({ ...d, content: undefined });
+                }
+                const hasTools = members.some(
+                  (m) => m.calls.length + m.results.length > 0 || m.ask != null,
                 );
+                if (hasTools) {
+                  const first = turn.find(({ it }) => isWork(collapseData(it)));
+                  rows.push(
+                    <div key={`group-${first?.it.key}`} data-msg-key={first?.it.key}>
+                      <CollapsedToolsGroup
+                        members={members}
+                        onAskAnswered={(answer) => void answerAsk(answer)}
+                      />
+                    </div>,
+                  );
+                  for (const { it, i } of turn) {
+                    if (it.content?.trim()) {
+                      rows.push(
+                        renderMessage(it, i, {
+                          ...it,
+                          reasoning: undefined,
+                          toolCalls: undefined,
+                          toolResults: undefined,
+                        }),
+                      );
+                    }
+                  }
+                } else {
+                  turn.forEach(({ it, i }) => rows.push(renderMessage(it, i)));
+                }
+                turn = [];
+              };
+              items.forEach((it, i) => {
+                if (it.kind === 'msg' && it.role === 'assistant') {
+                  turn.push({ it, i });
+                } else {
+                  flushTurn();
+                  rows.push(renderMessage(it, i));
+                }
               });
-              flush();
+              flushTurn();
               return rows;
             })()}
             {!streaming && (resuming || runActive) && (

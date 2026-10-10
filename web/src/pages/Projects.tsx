@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { createPortal } from 'react-dom';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import type { ChatSession, GitHubRepo, Project, Provider, ProviderModel, SavedProvider } from '../types';
-import { errMsg, timeAgo } from '../utils';
+import { errMsg, findCatalogModel, findProviderForModel, humanizeModelId, modelMatches, timeAgo } from '../utils';
 import { markSessionUnused } from '../sessionCleanup';
 import { freshThinkingLevel } from '../thinking';
 import { Button, Dialog, ErrorBox, IconButton, Input, Spinner } from '../components/ui';
@@ -11,6 +12,7 @@ import {
   IconChat,
   IconChevronDown,
   IconDots,
+  IconFlask,
   IconGitHub,
   IconLogout,
   IconModel,
@@ -28,67 +30,189 @@ function lastTurnISO(s: ChatSession): string {
   return new Date(secs * 1000).toISOString();
 }
 
+// A session's recency is its last completed turn, falling back to when it was
+// created (a session that has never had a turn still has a place in the list).
+function sessionRecency(s: ChatSession): number {
+  return s.lastTurnAt && s.lastTurnAt > 0 ? s.lastTurnAt : s.createdAt;
+}
+
 function CardMenu({ onNewSession, onDelete }: { onNewSession: () => void; onDelete: () => void }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ top: number; right: number } | null>(null);
+  const anchorRef = useRef<HTMLSpanElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  const toggle = () => {
+    if (open) {
+      setOpen(false);
+      return;
+    }
+    // The dashboard list scrolls and each card clips its corners, so an
+    // in-flow menu would be cut off. Anchor a fixed menu to the button and
+    // render it in a portal so no ancestor's overflow can clip it. Flip it
+    // above the button when it would run off the bottom of the viewport.
+    const MENU_H = 88;
+    const r = anchorRef.current?.getBoundingClientRect();
+    if (r) {
+      const openUp = r.bottom + 4 + MENU_H > window.innerHeight;
+      setPos({
+        top: openUp ? Math.max(4, r.top - MENU_H - 4) : r.bottom + 4,
+        right: Math.max(4, window.innerWidth - r.right),
+      });
+    }
+    setOpen(true);
+  };
 
   useEffect(() => {
     if (!open) return;
     const onDoc = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      const t = e.target as Node;
+      if (anchorRef.current?.contains(t) || menuRef.current?.contains(t)) return;
+      setOpen(false);
     };
+    // A fixed menu would detach from its button if the list scrolled, so close
+    // it rather than letting it drift.
+    const onMove = () => setOpen(false);
     document.addEventListener('mousedown', onDoc);
-    return () => document.removeEventListener('mousedown', onDoc);
+    window.addEventListener('scroll', onMove, true);
+    window.addEventListener('resize', onMove);
+    return () => {
+      document.removeEventListener('mousedown', onDoc);
+      window.removeEventListener('scroll', onMove, true);
+      window.removeEventListener('resize', onMove);
+    };
   }, [open]);
 
   return (
-    <div ref={ref} className="relative">
-      <IconButton
-        aria-label="Project menu"
-        className="h-8 w-8 md:h-7 md:w-7"
-        onClick={(e) => {
-          e.preventDefault();
-          setOpen((o) => !o);
-        }}
-      >
-        <IconDots className="h-4 w-4" />
-      </IconButton>
-      {open && (
-        <div className="absolute right-0 top-full z-30 mt-1 w-40 overflow-hidden rounded-lg border border-border bg-bg py-1 shadow-xl">
-          <button
-            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-text hover:bg-border"
-            onClick={(e) => {
-              e.preventDefault();
-              setOpen(false);
-              onNewSession();
-            }}
+    <>
+      <span ref={anchorRef} className="inline-flex">
+        <IconButton
+          aria-label="Project menu"
+          className="h-8 w-8 md:h-7 md:w-7"
+          onClick={(e) => {
+            e.preventDefault();
+            toggle();
+          }}
+        >
+          <IconDots className="h-4 w-4" />
+        </IconButton>
+      </span>
+      {open && pos &&
+        createPortal(
+          <div
+            ref={menuRef}
+            style={{ top: pos.top, right: pos.right }}
+            className="fixed z-50 w-40 overflow-hidden rounded-lg border border-border bg-bg py-1 shadow-xl"
           >
-            <IconPlus className="h-4 w-4" />
-            New session
-          </button>
-          <button
-            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-red-400 hover:bg-border"
-            onClick={(e) => {
-              e.preventDefault();
-              setOpen(false);
-              onDelete();
-            }}
-          >
-            <IconTrash className="h-4 w-4" />
-            Delete
-          </button>
-        </div>
-      )}
-    </div>
+            <button
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-text hover:bg-border"
+              onClick={(e) => {
+                e.preventDefault();
+                setOpen(false);
+                onNewSession();
+              }}
+            >
+              <IconPlus className="h-4 w-4" />
+              New session
+            </button>
+            <button
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-red-400 hover:bg-border"
+              onClick={(e) => {
+                e.preventDefault();
+                setOpen(false);
+                onDelete();
+              }}
+            >
+              <IconTrash className="h-4 w-4" />
+              Delete
+            </button>
+          </div>,
+          document.body,
+        )}
+    </>
+  );
+}
+
+function ProjectCard({
+  project: p,
+  sessions,
+  activeSessionIds,
+  onNewSession,
+  onDelete,
+}: {
+  project: Project;
+  sessions: ChatSession[];
+  activeSessionIds: Set<string>;
+  onNewSession: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <section className="rounded-xl border border-border bg-surface">
+      <div className="flex items-center gap-2 rounded-t-xl border-b border-border px-4 py-1">
+        {/* A preview that is switched off is not stopped, it is absent:
+            saying so would report a state the project does not have. */}
+        {!p.previewDisabled && (
+          <span
+            className={`h-2 w-2 shrink-0 rounded-full ${
+              p.preview.running ? 'bg-emerald-500' : 'bg-border-strong'
+            }`}
+            title={p.preview.running ? 'Preview running' : 'Preview stopped'}
+          />
+        )}
+        {/* The title labels the group; it is not a target. Opening
+            a project without picking a session is never what you
+            meant, and the rows beneath are the sessions. */}
+        <span className="min-w-0 flex-1 truncate font-medium text-text">{p.name}</span>
+        {p.updatedAt && <span className="shrink-0 text-xs text-faint">{timeAgo(p.updatedAt)}</span>}
+        <CardMenu onNewSession={onNewSession} onDelete={onDelete} />
+      </div>
+      <ul className="overflow-hidden rounded-b-xl">
+        {sessions.length === 0 && (
+          <li className="px-4 py-2.5 text-xs text-faint">No sessions yet</li>
+        )}
+        {sessions.map((s) => (
+          <li key={s.id} className="border-b border-border/60 last:border-0">
+            <Link
+              to={`/project/${p.id}?session=${s.id}`}
+              className="flex items-center gap-2 px-4 py-2.5 transition-colors hover:bg-bg/60"
+            >
+              <IconChat className="h-3.5 w-3.5 shrink-0 text-faint" />
+              <span
+                className={`min-w-0 flex-1 truncate text-sm ${
+                  activeSessionIds.has(s.id) ? 'text-accent' : 'text-dim'
+                }`}
+              >
+                {s.name}
+              </span>
+              {activeSessionIds.has(s.id) ? (
+                // The spinner says everything a timestamp would and more,
+                // so it replaces the time rather than sitting beside it.
+                <span
+                  className="inline-flex shrink-0 items-center gap-1 text-[11px] font-medium text-accent"
+                  title="A chat turn is running in this session"
+                >
+                  <Spinner className="h-3 w-3" />
+                  running
+                </span>
+              ) : (
+                <span className="shrink-0 text-xs text-faint">{timeAgo(lastTurnISO(s))}</span>
+              )}
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 
 function NewProjectDialog({
   open,
   onClose,
+  initialEphemeral = false,
 }: {
   open: boolean;
   onClose: () => void;
+  initialEphemeral?: boolean;
 }) {
   const navigate = useNavigate();
   const [description, setDescription] = useState('');
@@ -107,10 +231,20 @@ function NewProjectDialog({
   // models.dev catalog + the active base URL, for the model picker.
   const [catalog, setCatalog] = useState<Provider[]>([]);
   const [baseURL, setBaseURL] = useState('');
+  // The account's configured models (id + display name). A model that the
+  // catalog does not know still has a name here.
+  const [settingsModels, setSettingsModels] = useState<ProviderModel[]>([]);
+  // Ephemeral scratch chat: grouped separately and auto-archived.
+  const [ephemeral, setEphemeral] = useState(initialEphemeral);
+  // Set once the user picks a provider or model, so the catalog arriving late
+  // does not move their selection.
+  const selectionTouched = useRef(false);
 
   useEffect(() => {
     if (open) {
+      selectionTouched.current = false;
       setDescription('');
+      setEphemeral(initialEphemeral);
       setError(null);
       setBusy(false);
       setProviderId('');
@@ -120,6 +254,7 @@ function NewProjectDialog({
       setThinkingLevels([]);
       setThinkingOff(false);
       setCatalog([]);
+      setSettingsModels([]);
       api
         .getSettings()
         .then((s) => {
@@ -130,6 +265,7 @@ function NewProjectDialog({
           // whose value rides along as the project's initialModel.
           setModel(s.llm.defaultModel ?? s.llm.model);
           setBaseURL(s.llm.baseURL);
+          setSettingsModels(s.llm.models ?? []);
           setDefaultThinking(s.defaultThinking ?? '');
           setThinking(s.defaultThinking ?? '');
         })
@@ -139,24 +275,60 @@ function NewProjectDialog({
         .then((r) => setCatalog(r.providers))
         .catch(() => {});
     }
-  }, [open]);
+  }, [open, initialEphemeral]);
 
   // Models for the selected provider (or the active base URL for "custom"),
-  // unioned across catalog entries that share the base URL.
+  // unioned across catalog entries that share the base URL. The account's own
+  // configured models are folded in for the active base URL, so a model the
+  // catalog does not know still appears (with its configured name).
   const modelList = useMemo(() => {
     const target = providers.find((p) => p.id === providerId)?.baseURL || baseURL;
     if (!target) return [] as ProviderModel[];
     const out: ProviderModel[] = [];
+    const seen = new Set<string>();
     for (const p of catalog) {
       if (p.baseURL !== target) continue;
-      for (const m of p.models) out.push(m);
+      for (const m of p.models) {
+        if (seen.has(m.id)) continue;
+        seen.add(m.id);
+        out.push(m);
+      }
+    }
+    if (target === baseURL) {
+      for (const m of settingsModels) {
+        if (seen.has(m.id)) continue;
+        seen.add(m.id);
+        out.push(m);
+      }
     }
     return out;
-  }, [catalog, providers, providerId, baseURL]);
+  }, [catalog, providers, providerId, baseURL, settingsModels]);
 
   // The picker stores a model id; show the catalog's human title when there is
-  // one, and fall back to the id so an uncatalogued model still reads.
-  const selectedModelName = modelList.find((m) => m.id === model)?.name ?? '';
+  // one, then the account's configured name, and a humanized id only as a last
+  // resort, so the button never shows a raw id when a name exists.
+  const selectedModelName = useMemo(() => {
+    if (!model) return '';
+    const hit = findCatalogModel(catalog, model);
+    if (hit) return hit.name || hit.id;
+    const configured = settingsModels.find((m) => modelMatches(m.id, model));
+    if (configured) return configured.name || configured.id;
+    return humanizeModelId(model);
+  }, [catalog, model, settingsModels]);
+
+  // A new project starts on the default model, which may belong to any saved
+  // provider. Once the catalog is in, point the picker at the provider that
+  // actually owns it: the catalog match first, then the provider sitting on the
+  // active base URL (the model may be uncatalogued), then leave the first
+  // provider. A selection the user already made wins.
+  useEffect(() => {
+    if (!open || selectionTouched.current || !model) return;
+    const hit =
+      findProviderForModel(providers, catalog, model) ??
+      providers.find((p) => p.baseURL && p.baseURL === baseURL) ??
+      null;
+    if (hit) setProviderId(hit.id);
+  }, [open, catalog, providers, model, baseURL]);
 
   // Thinking levels follow the model: fetched from the provider, like the
   // chat's thinking popup. An inapplicable selection resets to the account
@@ -206,7 +378,7 @@ function NewProjectDialog({
     setBusy(true);
     setError(null);
     try {
-      const p = await api.createProject({ description: text });
+      const p = await api.createProject({ description: text, ephemeral });
       navigate(`/project/${p.id}`, {
         state: {
           prompt: text,
@@ -227,11 +399,25 @@ function NewProjectDialog({
         <textarea
           autoFocus
           rows={4}
-          placeholder="What do you want to create? e.g. a landing page for a coffee shop with a menu and a contact form"
+          placeholder="Describe what to build…"
           value={description}
           onChange={(e) => setDescription(e.target.value)}
+          onFocus={(e) => {
+            // Safari parks the caret at the end of a wrapped placeholder, so it
+            // renders on the last line until the first keystroke. Pin it to the
+            // start when the field is empty (both now and after layout).
+            const ta = e.currentTarget;
+            if (ta.value) return;
+            ta.setSelectionRange(0, 0);
+            requestAnimationFrame(() => {
+              if (!ta.value) ta.setSelectionRange(0, 0);
+            });
+          }}
           className="w-full resize-y rounded-lg border border-border-strong bg-surface px-3 py-2 text-sm text-text outline-none transition-colors focus:border-subtle"
         />
+        <p className="-mt-2 text-xs text-faint">
+          e.g. a landing page for a coffee shop with a menu and a contact form
+        </p>
         <div className="flex items-center gap-2">
           <button
             type="button"
@@ -261,6 +447,20 @@ function NewProjectDialog({
             ))}
           </select>
         </div>
+        <label className="flex items-start gap-2 text-sm text-dim">
+          <input
+            type="checkbox"
+            checked={ephemeral}
+            onChange={(e) => setEphemeral(e.target.checked)}
+            className="mt-0.5 h-4 w-4 shrink-0 rounded border-border-strong accent-primary"
+          />
+          <span>
+            Ephemeral chat
+            <span className="block text-xs text-faint">
+              Grouped at the top and hidden 24h after your last message.
+            </span>
+          </span>
+        </label>
         {error && <ErrorBox message={error} className="mt-3" />}
         <div className="mt-4 flex justify-end gap-2">
           <Button variant="ghost" onClick={onClose}>
@@ -279,11 +479,15 @@ function NewProjectDialog({
         model={model}
         models={modelList}
         onProviderChange={(id) => {
+          selectionTouched.current = true;
           setProviderId(id);
           const p = providers.find((x) => x.id === id);
           if (p && p.model) setModel(p.model);
         }}
-        onModelChange={setModel}
+        onModelChange={(m) => {
+          selectionTouched.current = true;
+          setModel(m);
+        }}
       />
     </Dialog>
   );
@@ -413,6 +617,7 @@ export default function Projects() {
   const [projects, setProjects] = useState<Project[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [newOpen, setNewOpen] = useState(false);
+  const [newEphemeral, setNewEphemeral] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [deleting, setDeleting] = useState<Project | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
@@ -504,6 +709,27 @@ export default function Projects() {
     }
   };
 
+  // The dashboard sorts groups by their most recent session and each group's
+  // sessions newest-first. A session's recency is its last completed turn,
+  // falling back to when it was created; a group with no sessions falls back
+  // to the project's own updatedAt.
+  const sessionsFor = (p: Project) =>
+    (sessionsByProject[p.id] ?? [])
+      .filter((s) => !s.archived)
+      .sort((a, b) => sessionRecency(b) - sessionRecency(a));
+  const orderedProjects = useMemo(() => {
+    const recency = (p: Project): number => {
+      const list = (sessionsByProject[p.id] ?? []).filter((s) => !s.archived);
+      const lastTurn = list.reduce((m, s) => Math.max(m, sessionRecency(s)), 0);
+      // updatedAt is an ISO string; the session times are unix seconds.
+      const touched = p.updatedAt ? Math.floor(new Date(p.updatedAt).getTime() / 1000) : 0;
+      return lastTurn || touched || 0;
+    };
+    return [...(projects ?? [])].sort((a, b) => recency(b) - recency(a));
+  }, [projects, sessionsByProject]);
+  const ephemeralProjects = orderedProjects.filter((p) => p.ephemeral);
+  const regularProjects = orderedProjects.filter((p) => !p.ephemeral);
+
   return (
     <div className="v1-safe-top flex h-[max(var(--v1-app-height,0px),100dvh)] flex-col overflow-hidden">
       <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-3 md:h-12 md:px-5">
@@ -511,11 +737,26 @@ export default function Projects() {
           v1
         </Link>
         <div className="flex-1" />
+        <Button
+          variant="outline"
+          onClick={() => {
+            setNewEphemeral(true);
+            setNewOpen(true);
+          }}
+        >
+          <IconFlask className="h-4 w-4" />
+          <span className="hidden sm:inline">Ephemeral</span>
+        </Button>
         <Button variant="outline" onClick={() => setImportOpen(true)}>
           <IconGitHub className="h-4 w-4" />
           <span className="hidden sm:inline">Import</span>
         </Button>
-        <Button onClick={() => setNewOpen(true)}>
+        <Button
+          onClick={() => {
+            setNewEphemeral(false);
+            setNewOpen(true);
+          }}
+        >
           <IconPlus className="h-4 w-4" />
           <span className="hidden sm:inline">New project</span>
         </Button>
@@ -564,81 +805,57 @@ export default function Projects() {
         )}
         {projects !== null && projects.length > 0 && (
           <div className="mx-auto flex max-w-4xl flex-col gap-3">
-            {projects.map((p) => {
-              const sessions = (sessionsByProject[p.id] ?? []).filter((s) => !s.archived);
-              return (
-                <section key={p.id} className="overflow-hidden rounded-xl border border-border bg-surface">
-                  <div className="flex items-center gap-2 border-b border-border px-4 py-1">
-                    {/* A preview that is switched off is not stopped, it is absent:
-                        saying so would report a state the project does not have. */}
-                    {!p.previewDisabled && (
-                      <span
-                        className={`h-2 w-2 shrink-0 rounded-full ${
-                          p.preview.running ? 'bg-emerald-500' : 'bg-border-strong'
-                        }`}
-                        title={p.preview.running ? 'Preview running' : 'Preview stopped'}
-                      />
-                    )}
-                    {/* The title labels the group; it is not a target. Opening
-                        a project without picking a session is never what you
-                        meant, and the rows beneath are the sessions. */}
-                    <span className="min-w-0 flex-1 truncate font-medium text-text">{p.name}</span>
-                    {p.updatedAt && (
-                      <span className="shrink-0 text-xs text-faint">{timeAgo(p.updatedAt)}</span>
-                    )}
-                    <CardMenu
-                      onNewSession={() => void newSession(p.id)}
-                      onDelete={() => {
-                        setDeleteError(null);
-                        setDeleting(p);
-                      }}
-                    />
-                  </div>
-                  <ul>
-                    {sessions.length === 0 && (
-                      <li className="px-4 py-2.5 text-xs text-faint">No sessions yet</li>
-                    )}
-                    {sessions.map((s) => (
-                      <li key={s.id} className="border-b border-border/60 last:border-0">
-                        <Link
-                          to={`/project/${p.id}?session=${s.id}`}
-                          className="flex items-center gap-2 px-4 py-2.5 transition-colors hover:bg-bg/60"
-                        >
-                          <IconChat className="h-3.5 w-3.5 shrink-0 text-faint" />
-                          <span
-                            className={`min-w-0 flex-1 truncate text-sm ${
-                              activeSessionIds.has(s.id) ? 'text-accent' : 'text-dim'
-                            }`}
-                          >
-                            {s.name}
-                          </span>
-                          {activeSessionIds.has(s.id) ? (
-                            // The spinner says everything a timestamp would and more,
-                            // so it replaces the time rather than sitting beside it.
-                            <span
-                              className="inline-flex shrink-0 items-center gap-1 text-[11px] font-medium text-accent"
-                              title="A chat turn is running in this session"
-                            >
-                              <Spinner className="h-3 w-3" />
-                              running
-                            </span>
-                          ) : (
-                            <span className="shrink-0 text-xs text-faint">
-                              {timeAgo(lastTurnISO(s))}
-                            </span>
-                          )}
-                        </Link>
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-              );
-            })}
+            {ephemeralProjects.length > 0 && (
+              <div className="flex flex-col gap-3">
+                <h2 className="px-1 text-xs font-semibold uppercase tracking-wide text-faint">
+                  Ephemeral
+                </h2>
+                {ephemeralProjects.map((p) => (
+                  <ProjectCard
+                    key={p.id}
+                    project={p}
+                    sessions={sessionsFor(p)}
+                    activeSessionIds={activeSessionIds}
+                    onNewSession={() => void newSession(p.id)}
+                    onDelete={() => {
+                      setDeleteError(null);
+                      setDeleting(p);
+                    }}
+                  />
+                ))}
+              </div>
+            )}
+            {regularProjects.length > 0 && (
+              <div className="flex flex-col gap-3">
+                {ephemeralProjects.length > 0 && (
+                  <h2 className="px-1 text-xs font-semibold uppercase tracking-wide text-faint">
+                    Projects
+                  </h2>
+                )}
+                {regularProjects.map((p) => (
+                  <ProjectCard
+                    key={p.id}
+                    project={p}
+                    sessions={sessionsFor(p)}
+                    activeSessionIds={activeSessionIds}
+                    onNewSession={() => void newSession(p.id)}
+                    onDelete={() => {
+                      setDeleteError(null);
+                      setDeleting(p);
+                    }}
+                  />
+                ))}
+              </div>
+            )}
           </div>
         )}
       </main>
 
-      <NewProjectDialog open={newOpen} onClose={() => setNewOpen(false)} />
+      <NewProjectDialog
+        open={newOpen}
+        onClose={() => setNewOpen(false)}
+        initialEphemeral={newEphemeral}
+      />
       <ImportDialog open={importOpen} onClose={() => setImportOpen(false)} />
 
       <Dialog open={deleting !== null} onClose={() => setDeleting(null)} title="Delete project">

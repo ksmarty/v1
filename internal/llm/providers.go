@@ -45,6 +45,9 @@ type ProviderModel struct {
 	// Context is the model's context window in tokens, when published
 	// (models.dev limit.context).
 	Context int `json:"context,omitempty"`
+	// Output is the model's max output tokens, when published
+	// (models.dev limit.output).
+	Output int `json:"output,omitempty"`
 }
 
 // Provider is one LLM provider in the catalog.
@@ -261,6 +264,7 @@ type modelsDevDoc struct {
 		ReasoningOptions []reasoningOption `json:"reasoning_options"`
 		Limit            struct {
 			Context int `json:"context"`
+			Output  int `json:"output"`
 		} `json:"limit"`
 	} `json:"models"`
 }
@@ -731,6 +735,7 @@ func modelSubset(fp modelsDevDoc) []ProviderModel {
 			ImageInput: image,
 			Reasoning:  parseReasoning(m.Reasoning, m.ReasoningOptions),
 			Context:    m.Limit.Context,
+			Output:     m.Limit.Output,
 		})
 	}
 	return models
@@ -756,6 +761,20 @@ func CatalogHasContext(c *Catalog) bool {
 	for _, p := range c.Providers {
 		for _, m := range p.Models {
 			if m.Context > 0 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// CatalogHasOutput reports whether any model carries its max output tokens —
+// used to detect a cache written before the field existed, so the sidecar gets
+// a real max_tokens instead of its 8192 fallback.
+func CatalogHasOutput(c *Catalog) bool {
+	for _, p := range c.Providers {
+		for _, m := range p.Models {
+			if m.Output > 0 {
 				return true
 			}
 		}

@@ -28,6 +28,7 @@ type projectJSON struct {
 	PreviewDisabled       bool   `json:"previewDisabled"`
 	VercelEnabled         bool   `json:"vercelEnabled"`
 	GitHubTab             string `json:"githubTab"`
+	Ephemeral             bool   `json:"ephemeral"`
 	CreatedAt             int64  `json:"createdAt"`
 	UpdatedAt             int64  `json:"updatedAt"`
 }
@@ -44,6 +45,7 @@ func toProjectJSON(p *store.Project) projectJSON {
 		PreviewDisabled:       p.PreviewDisabled,
 		VercelEnabled:         p.VercelEnabled,
 		GitHubTab:             p.GitHubTab,
+		Ephemeral:             p.Ephemeral,
 		CreatedAt:             p.CreatedAt,
 		UpdatedAt:             p.UpdatedAt,
 	}
@@ -123,6 +125,9 @@ func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListProjects(w http.ResponseWriter, r *http.Request) {
+	// Ephemeral projects disappear 24h after their last activity. Sweeping on
+	// every list keeps the dashboard honest without a background job.
+	_, _ = s.st.ArchiveExpiredEphemeralProjects(time.Now().Unix() - 24*60*60)
 	var projects []*store.Project
 	var err error
 	if s.cfg.AuthDisabled {
@@ -142,6 +147,7 @@ func (s *Server) handleListProjects(w http.ResponseWriter, r *http.Request) {
 		ID        string      `json:"id"`
 		Name      string      `json:"name"`
 		RepoURL   string      `json:"repoUrl,omitempty"`
+		Ephemeral bool        `json:"ephemeral"`
 		Preview   previewInfo `json:"preview"`
 		UpdatedAt int64       `json:"updatedAt"`
 	}
@@ -152,6 +158,7 @@ func (s *Server) handleListProjects(w http.ResponseWriter, r *http.Request) {
 			ID:        p.ID,
 			Name:      p.Name,
 			RepoURL:   p.RepoURL,
+			Ephemeral: p.Ephemeral,
 			Preview:   previewInfo{Running: running, URL: url},
 			UpdatedAt: p.UpdatedAt,
 		})
@@ -164,6 +171,7 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 		Name        string `json:"name"`
 		Template    string `json:"template"`
 		Description string `json:"description"`
+		Ephemeral   bool   `json:"ephemeral"`
 	}
 	if !decodeJSON(w, r, &body) {
 		return
@@ -203,7 +211,7 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 	// Instructions are only what the user adds in the project settings — the
 	// initial description lives as the first chat message, not the system
 	// prompt.
-	p := &store.Project{ID: id, Name: name, Path: dir, OwnerID: s.currentUser(r).ID, AutoPush: s.autoPushDefault(s.currentUser(r).ID)}
+	p := &store.Project{ID: id, Name: name, Path: dir, OwnerID: s.currentUser(r).ID, AutoPush: s.autoPushDefault(s.currentUser(r).ID), Ephemeral: body.Ephemeral}
 	if err := s.st.CreateProject(p); err != nil {
 		os.RemoveAll(dir)
 		writeError(w, http.StatusInternalServerError, err.Error())

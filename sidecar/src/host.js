@@ -28,8 +28,8 @@ import { writeModelCatalog } from "./modeldata.js";
 import { installProviderFetchLog } from "./providerlog.js";
 import { RpcError, createPeer } from "./rpc.js";
 import { createModelStore, registerProvider } from "./provider.js";
-import { bindToolToConversation, loadExtensions, sectionKeys, toolDisplay, toolNames } from "./extensions.js";
-import { buildApprovalHook, buildHostTools } from "./tools.js";
+import { bindToolToConversation, hookNames, loadExtensions, sectionKeys, toolDisplay, toolNames } from "./extensions.js";
+import { buildApprovalHook, buildContinuationHook, buildHostTools } from "./tools.js";
 
 /** Bridge protocol revision; must equal `harness.ProtocolVersion` in Go. */
 const PROTOCOL_VERSION = 1;
@@ -286,7 +286,7 @@ class Sidecar {
 			defineExtension({
 				name: "v1-host-tools",
 				tools,
-				hooks: [buildApprovalHook(this.bridge)],
+				hooks: [buildApprovalHook(this.bridge), buildContinuationHook()],
 				// The cwd section is a placeholder: v1's real prompt blocks
 				// (base prompt, memories, plan, tool guidance) arrive as the
 				// conversation's `instructions` from Go.
@@ -366,7 +366,12 @@ class Sidecar {
 		return {
 			defineExtension,
 			defineTool,
-			hook,
+			// pi-durable's hook() reads `task.definition.name`, so it needs a task
+			// object the extension cannot import (its file sits outside node_modules).
+			// Accept the task name as a string too, so `pi.hook("pi.generation", …)`
+			// works as the v1-extensions skill documents it.
+			hook: (task, handlers) =>
+				typeof task === "string" ? { task, handlers } : hook(task, handlers),
 			section,
 			wrapSection,
 			wrapTool,
@@ -408,6 +413,7 @@ class Sidecar {
 				name: entry.name,
 				tools: toolNames(entry.extension),
 				sections: sectionKeys(entry.extension),
+				hooks: hookNames(entry.extension),
 				// How the extension wants its tool calls presented. Carried with the
 				// list rather than with each call, so v1 needs no new field on the
 				// tool event wire format to label a chip.

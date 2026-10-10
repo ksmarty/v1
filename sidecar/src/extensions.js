@@ -135,6 +135,27 @@ export function sectionKeys(extension) {
 }
 
 /**
+ * The hooks an extension registers, as "task:handler+handler" labels.
+ *
+ * `hook(task, handlers)` stores the task name and the handler keys, so this
+ * reads the registration rather than the running hook. It is what lets the
+ * create_extension result confirm that hooks loaded — a tool and a section
+ * show up in the tool/section lists, but a hook has no other visible surface.
+ */
+export function hookNames(extension) {
+	const hooks = Array.isArray(extension?.hooks) ? extension.hooks : [];
+	const out = [];
+	for (const entry of hooks) {
+		const task = entry?.task ?? entry?.name;
+		if (typeof task !== "string" || task === "") continue;
+		const handlers =
+			entry?.handlers && typeof entry.handlers === "object" ? Object.keys(entry.handlers) : [];
+		out.push(handlers.length ? `${task}:${handlers.join("+")}` : task);
+	}
+	return out;
+}
+
+/**
  * Load every enabled extension under `root`, calling each factory with `api`.
  *
  * `enabledIds` is the set of ids the user has enabled, or null to load

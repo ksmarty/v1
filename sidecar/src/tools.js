@@ -8,7 +8,7 @@
  * this process. The sidecar deliberately keeps no schema of its own: the model
  * must see exactly what v1's built-in loop would have sent.
  */
-import { defineTool, hook, ToolTask } from "@earendil-works/pi-durable";
+import { defineTool, hook, ToolTask, GenerationTask } from "@earendil-works/pi-durable";
 import { Type } from "typebox";
 
 import { log } from "./log.js";
@@ -87,6 +87,56 @@ export function buildApprovalHook(bridge) {
 			}
 			if (decision.arguments && typeof decision.arguments === "object") outcome.arguments = decision.arguments;
 			return Object.keys(outcome).length ? outcome : undefined;
+		},
+	});
+}
+
+/**
+ * Continuation hook: a turn that ends after a thinking block with no answer is
+ * not a finished turn. A reasoning model can fill its whole output window with
+ * thinking (stopReason "length"), or stop right after a thinking block with no
+ * text (stopReason "stop") — both read to the user as "the chat stopped midway
+ * for no reason". pi-durable's onYield lets a hook append a user message and
+ * hand the run to a successor generation, so this continues the same turn
+ * durably, exactly like the built-in loop's truncation resume. Bounded, so a
+ * provider stuck on "length" cannot spin forever.
+ */
+export function buildContinuationHook() {
+	return hook(GenerationTask, {
+		onYield: async (answer, api, context) => {
+			const content = Array.isArray(answer.content) ? answer.content : [];
+			if (content.some((part) => part?.type === "toolCall")) return undefined;
+			const text = content
+				.filter((part) => part?.type === "text")
+				.map((part) => part.text ?? "")
+				.join("")
+				.trim();
+			const truncated = answer.stopReason === "length";
+			const hasThinking = content.some(
+				(part) => part?.type === "thinking" && typeof part.thinking === "string" && part.thinking !== "",
+			);
+			// A clean answer is done; so is a completely empty response, which is a
+			// provider fault (continuing would only re-ask with no new context).
+			if (!truncated && (text !== "" || !hasThinking)) return undefined;
+			const attempts = Number((await api.memo("v1.continuation", context)) ?? 0);
+			if (attempts >= 3) {
+				log.warn("continuation: still unfinished after several retries; keeping the partial reply", {
+					stopReason: answer.stopReason,
+				});
+				return undefined;
+			}
+			await api.memo("v1.continuation", attempts + 1, context);
+			log.info("continuation: the model stopped after thinking; continuing the turn", {
+				stopReason: answer.stopReason,
+				attempt: attempts + 1,
+			});
+			// A round that hit the output limit spent its budget on reasoning, so
+			// ask for the answer directly instead of inviting more thinking; a
+			// round that stopped cleanly after thinking just needs to continue.
+			const message = truncated
+				? "You reached the output limit while thinking. Do not reason further — answer the user's last message directly and concisely now."
+				: "Continue from where you left off. Do not repeat what is already written above.";
+			return { continue: message };
 		},
 	});
 }

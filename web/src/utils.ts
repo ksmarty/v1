@@ -1,3 +1,5 @@
+import type { Provider, ProviderModel, SavedProvider } from './types';
+
 export function errMsg(e: unknown): string {
   if (e instanceof Error) return e.message;
   return String(e);
@@ -307,4 +309,52 @@ export function fuzzyScore(query: string, text: string): number | null {
     }
   }
   return qi === q.length ? score : null;
+}
+
+// A configured model id and a models.dev catalog id can name the same model in
+// different shapes: OpenRouter ids carry a vendor prefix
+// ("deepseek/deepseek-v4.1-flash") while the saved model is often the bare id,
+// and free variants add a ":free" suffix. Compare the vendor-less,
+// variant-less tail so a configured id still resolves to its catalog entry.
+export function normalizeModelId(id: string): string {
+  const tail = id.includes('/') ? id.slice(id.lastIndexOf('/') + 1) : id;
+  const noVariant = tail.includes(':') ? tail.slice(0, tail.indexOf(':')) : tail;
+  return noVariant.toLowerCase();
+}
+
+export function modelMatches(a: string, b: string): boolean {
+  if (!a || !b) return false;
+  if (a === b) return true;
+  return normalizeModelId(a) === normalizeModelId(b);
+}
+
+// The catalog model behind a configured id, searched across every provider.
+export function findCatalogModel(catalog: Provider[], id: string): ProviderModel | null {
+  for (const p of catalog) {
+    const m = p.models.find((x) => modelMatches(x.id, id));
+    if (m) return m;
+  }
+  return null;
+}
+
+// The saved provider that owns a configured model, matched by shared base URL.
+export function findProviderForModel(
+  providers: SavedProvider[],
+  catalog: Provider[],
+  id: string,
+): SavedProvider | null {
+  for (const p of providers) {
+    if (catalog.some((c) => c.baseURL === p.baseURL && c.models.some((m) => modelMatches(m.id, id)))) {
+      return p;
+    }
+  }
+  return null;
+}
+
+// A readable label for a model the catalog does not know, so the picker never
+// falls back to a raw id.
+export function humanizeModelId(id: string): string {
+  const tail = id.includes('/') ? id.slice(id.lastIndexOf('/') + 1) : id;
+  const noVariant = tail.includes(':') ? tail.slice(0, tail.indexOf(':')) : tail;
+  return noVariant.replace(/[-_]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }

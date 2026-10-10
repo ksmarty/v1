@@ -464,6 +464,9 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 	const maxAutoResumes = 3
 	// Output-window truncation has the same bound, for the same reason.
 	var truncationResumes int
+	// A model that stops after a thinking block with no visible text is not
+	// finished either; the bound is shared with truncation.
+	var reasoningResumes int
 	const maxTruncationResumes = 3
 	// partialStart is the history index where resumed-partial messages begin
 	// (-1 = none yet). resumeFrom() slices history back to it and re-appends
@@ -600,6 +603,10 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 			usage.Output += res.Usage.CompletionTokens
 			usage.Model = p.Client.Model
 			usage.Context = res.Usage.PromptTokens + res.Usage.CompletionTokens
+			// The context meter follows the turn as it runs, not only when it ends:
+			// each round re-reads the whole conversation, so its prompt size is the
+			// live fill.
+			p.Emit(ChatEvent{Type: "context", Usage: &Usage{Context: usage.Context}})
 			if res.Usage.Cost != nil {
 				var total float64
 				if usage.Cost != nil {
@@ -622,8 +629,16 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 		// upstream rejects with a hard 400 on every later request. Calls that
 		// DID complete keep their place, so a multi-call reply still runs the
 		// calls that finished.
+		var droppedCalls []string
 		if res.StopReason == "length" && len(res.ToolCalls) > 0 {
-			res.ToolCalls = stripBrokenToolCalls(res.ToolCalls)
+			res.ToolCalls, droppedCalls = stripBrokenToolCalls(res.ToolCalls)
+		}
+		if len(droppedCalls) > 0 {
+			// A tool call whose arguments were cut mid-JSON is dropped, not run.
+			// Say so: silence here is what pushes a model to re-send the same
+			// oversized payload (or invent a shim) instead of switching to a
+			// file/path transport.
+			p.Emit(ChatEvent{Type: "info", Text: fmt.Sprintf("Output window cut off a tool call (%s); the call was discarded.", strings.Join(droppedCalls, ", "))})
 		}
 		truncated := res.StopReason == "length" && len(res.ToolCalls) == 0
 		if truncated {
@@ -647,7 +662,19 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 				resumeFrom()
 				continue
 			}
-			break // no progress — a provider stuck on "length" with no output
+			// No partial content to replay and no usable tool call: the round
+			// produced nothing. Rather than silently ending the turn, tell the
+			// model what went wrong and give it a bounded retry — an over-limit
+			// tool call is the common cause, and the fix is a smaller payload.
+			truncationResumes++
+			if truncationResumes > maxTruncationResumes {
+				p.Emit(ChatEvent{Type: "info", Text: "Still truncated after several retries — ending the turn."})
+				break
+			}
+			if len(droppedCalls) > 0 {
+				history = append(history, llm.Message{Role: "user", Content: "Your tool call was cut off by the output limit and discarded. Do not inline large payloads: write the content to a file first (write_file) and pass its path to the tool instead."})
+			}
+			continue
 		}
 
 		// A provider can end a stream successfully without producing anything
@@ -691,6 +718,18 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 		history = append(history, llm.Message{Role: "assistant", Content: res.Text, ReasoningContent: res.Reasoning, ToolCalls: res.ToolCalls})
 
 		if len(res.ToolCalls) == 0 {
+			// A reasoning-only reply (no visible text) is not a finished turn: the
+			// model stopped after a thinking block without answering, which reads
+			// to the user as the chat stopping for no reason. Ask it to continue,
+			// bounded, the way a truncation is handled.
+			if res.Text == "" && reasoningResumes < maxTruncationResumes {
+				reasoningResumes++
+				if reasoningResumes == 1 {
+					p.Emit(ChatEvent{Type: "info", Text: "The model stopped after thinking; continuing the turn."})
+				}
+				history = append(history, llm.Message{Role: "user", Content: "Continue from where you left off. Do not repeat what is already written above."})
+				continue
+			}
 			return &TurnResult{Usage: usage, Model: p.Client.Model}, nil
 		}
 		for _, tc := range res.ToolCalls {
@@ -772,15 +811,20 @@ func elideHistoricalToolResult(name, content string) string {
 // a stream cut mid-arguments (finish_reason "length") leaves fragments that
 // upstream rejects with a hard 400 on every later request. Calls that did
 // complete keep their place, so a multi-call truncation still runs the calls
-// that finished and only the broken ones are discarded.
-func stripBrokenToolCalls(tcs []llm.ToolCall) []llm.ToolCall {
+// that finished and only the broken ones are discarded. It also returns the
+// names of the dropped calls so the caller can tell the user and the model
+// why a call never ran.
+func stripBrokenToolCalls(tcs []llm.ToolCall) ([]llm.ToolCall, []string) {
 	out := make([]llm.ToolCall, 0, len(tcs))
+	var dropped []string
 	for _, tc := range tcs {
 		if tc.Function.Arguments != "" && json.Valid([]byte(tc.Function.Arguments)) {
 			out = append(out, tc)
+		} else {
+			dropped = append(dropped, tc.Function.Name)
 		}
 	}
-	return out
+	return out, dropped
 }
 
 // toolDetail extracts a short human-readable detail for a tool call.
@@ -1302,7 +1346,7 @@ var tools = []llm.Tool{
 		Type: "function",
 		Function: llm.ToolFunction{
 			Name:        "create_extension",
-			Description: "Create or update a v1 extension the agent can use in later turns. Pass a lowercase dashed id, a one-line description, and the complete JavaScript source of the extension's index.js. The source is syntax-checked and installed enabled, then loaded immediately. Use this to add a custom tool or a prompt section to v1; see the v1-extensions skill for the API.",
+			Description: "Create or update a v1 extension the agent can use in later turns. Pass a lowercase dashed id, a one-line description, and the extension's index.js either as `source` or as a workspace `path` (write the file first with write_file — preferred for anything more than a few lines, because a large inline source can be truncated). The source is syntax-checked and installed enabled, then loaded immediately. Use this to add a custom tool, prompt section or hook to v1; see the v1-extensions skill for the API.",
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -1316,10 +1360,25 @@ var tools = []llm.Tool{
 					},
 					"source": map[string]any{
 						"type":        "string",
-						"description": "The complete JavaScript source of index.js: default-export a factory that is called with the pi API.",
+						"description": "The complete JavaScript source of index.js: default-export a factory that is called with the pi API. Omit when using path.",
+					},
+					"path": map[string]any{
+						"type":        "string",
+						"description": "Workspace-relative path to an index.js the agent already wrote (e.g. extensions/word-stats/index.js). Preferred over source for a non-trivial extension: it avoids re-emitting a large string and is the copy the agent can edit and re-install.",
 					},
 				},
-				"required": []string{"id", "source"},
+				"required": []string{"id"},
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: llm.ToolFunction{
+			Name:        "list_extensions",
+			Description: "List the v1 extensions installed for this project: whether each is enabled and loaded, and the tools, prompt sections, hooks and settings it contributed. Use it to confirm an extension loaded after create_extension, or to see what is already installed before writing a new one.",
+			Parameters: map[string]any{
+				"type":       "object",
+				"properties": map[string]any{},
 			},
 		},
 	},

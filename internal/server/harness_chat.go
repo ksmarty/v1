@@ -182,6 +182,7 @@ func harnessProviderSpec(c *llm.Client, turnModel string) harness.ProviderSpec {
 			ID:            m.ID,
 			Name:          m.Name,
 			ContextWindow: m.Context,
+			MaxTokens:     m.Output,
 			Reasoning:     m.Reasoning != nil,
 			Input:         []string{"text", "image"},
 		}
@@ -732,10 +733,22 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge,
 	// The assistant's tool calls, as the UI reads them back from the row's
 	// tool_json; set when a round commits and consumed by persist.
 	var toolJSON string
+	// Across the whole turn: a run that never wrote visible text and never
+	// called a tool is a failure, not an answer (see the guard after the loop).
+	var sawText, sawTool bool
 
 	persist := func(round *harness.Usage) error {
 		if text.Len() == 0 && reasoning.Len() == 0 && toolJSON == "" {
 			return nil
+		}
+		// The turn produced something the user can see if this round wrote text
+		// or called a tool. Tracked here because persist is the one place that
+		// sees both streamed deltas and the committed entry.
+		if text.Len() > 0 {
+			sawText = true
+		}
+		if toolJSON != "" {
+			sawTool = true
 		}
 		// The row carries its own round's usage, as the built-in loop's does. The
 		// context meter reads the newest assistant row's recorded context to report
@@ -903,6 +916,12 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge,
 					return turn, err
 				}
 				addUsage(u)
+				// The context meter follows the turn as it runs, not only when it
+				// ends: every round re-reads the conversation, so the round's prompt
+				// size is the live fill.
+				if lastContext > 0 {
+					emit(agent.ChatEvent{Type: "context", Usage: &agent.Usage{Context: lastContext}})
+				}
 				partial = nil
 				// A model call that failed is still committed as an entry, with
 				// stopReason "error"; pi-durable emits no task_failed for it, so this
@@ -969,6 +988,15 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge,
 	}
 	if err := persist(partial); err != nil {
 		return turn, err
+	}
+	// The built-in loop errors on an answer with no text, reasoning or tool
+	// calls (agent.go:662). The harness path had no such guard: a reasoning
+	// model that spent its whole output window thinking (stopReason "length")
+	// committed a reasoning-only entry and the turn ended in a silent done,
+	// so the user saw a thinking block and then nothing. Reasoning alone is
+	// never a user-visible answer; surface it instead of swallowing it.
+	if !sawText && !sawTool {
+		return turn, errors.New("the model produced no answer — it may have run out of output tokens while thinking; send a follow-up to continue")
 	}
 	if in > 0 || out > 0 {
 		u := &agent.Usage{Input: in, Output: out, Model: model, Context: lastContext, Cached: cached}

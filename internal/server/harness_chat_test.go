@@ -832,3 +832,26 @@ func TestHarnessToolDetail(t *testing.T) {
 		}
 	}
 }
+
+// A turn that only ever produced reasoning (a reasoning model that spent its
+// output window thinking) must not end in a silent done: the harness path used
+// to accept it, so the user saw a thinking block and then nothing.
+func TestHarnessReasoningOnlyTurnErrors(t *testing.T) {
+	s, p, sessionID := newHarnessTestServer(t)
+	q := harness.NewEventQueue()
+	runner := &harnessToolRunner{results: map[string]harness.ToolResult{}}
+	q.Push([]harness.Event{
+		{Type: "message_update", Changes: []harness.Change{delta("thinking_delta", "thinking hard")}},
+		{Type: "message_end", Entry: json.RawMessage(`{"id":1,"kind":"assistant"}`)},
+	})
+	q.Push([]harness.Event{{Type: "run_end"}})
+
+	_, err := s.consumeHarnessTurn(context.Background(), nil, "conv-1", q, runner,
+		agent.ChatParams{Project: p, SessionID: sessionID}, "test-model", func(agent.ChatEvent) {})
+	if err == nil {
+		t.Fatal("a reasoning-only turn must return an error, not a silent done")
+	}
+	if !strings.Contains(err.Error(), "no answer") {
+		t.Fatalf("error = %v, want a no-answer message", err)
+	}
+}
