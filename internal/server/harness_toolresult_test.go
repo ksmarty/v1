@@ -95,3 +95,43 @@ func TestRecordToolResultPairsWithItsCall(t *testing.T) {
 		t.Fatalf("tool_json = %q, want call_1/word_count", got.ToolJSON)
 	}
 }
+
+// A tool's display payload is persisted alongside its model-visible result so
+// the reloaded transcript can render it in place of the raw JSON.
+func TestRecordToolResultPersistsDisplay(t *testing.T) {
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+	s := &Server{st: st}
+
+	projectID, sessionID := store.NewID(), store.NewID()
+	display := json.RawMessage(`{"kind":"answers","answers":[{"question":"Q","answer":"A"}]}`)
+	if err := s.recordToolResult(projectID, sessionID, "call_1", "ask_user", `{"answers":[{"question":"Q","answer":"A"}]}`, display); err != nil {
+		t.Fatalf("recordToolResult: %v", err)
+	}
+
+	msgs, err := st.ListMessages(projectID, sessionID)
+	if err != nil {
+		t.Fatalf("ListMessages: %v", err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("got %d rows, want 1", len(msgs))
+	}
+	var meta struct {
+		Display json.RawMessage `json:"display"`
+	}
+	if err := json.Unmarshal([]byte(msgs[0].ToolJSON), &meta); err != nil {
+		t.Fatalf("tool_json = %q: %v", msgs[0].ToolJSON, err)
+	}
+	var d struct {
+		Kind string `json:"kind"`
+	}
+	if err := json.Unmarshal(meta.Display, &d); err != nil {
+		t.Fatalf("display = %q: %v", meta.Display, err)
+	}
+	if d.Kind != "answers" {
+		t.Fatalf("display kind = %q, want answers", d.Kind)
+	}
+}
