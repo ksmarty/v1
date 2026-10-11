@@ -2299,10 +2299,14 @@ function AskBlock({
             <div className="min-w-0 flex-1 space-y-2">
               {result!.map((r, i) => (
                 <div key={i}>
-                  <p className="whitespace-pre-wrap break-words text-text">
-                    {multi && <span className="mr-1 font-mono text-[10px] text-faint">{i + 1}.</span>}
-                    {r.question || questions[i]?.question || ''}
-                  </p>
+                  <div className="flex items-start gap-1.5 text-text">
+                    {multi && (
+                      <span className="mt-0.5 shrink-0 font-mono text-[10px] text-faint">{i + 1}.</span>
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <Markdown text={r.question || questions[i]?.question || ''} />
+                    </div>
+                  </div>
                   <p className="mt-1 flex items-center gap-1.5 text-xs text-dim">
                     <IconCheck className="h-3.5 w-3.5 shrink-0 text-emerald-400" />
                     {r.answer}
@@ -2315,9 +2319,9 @@ function AskBlock({
       ) : failed ? (
         <div className="flex items-start gap-2">
           <IconUser className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
-          <p className="min-w-0 flex-1 whitespace-pre-wrap break-words text-text">
-            {multi ? questions.map((qq) => qq.question).join(' · ') : q.question}
-          </p>
+          <div className="min-w-0 flex-1 text-text">
+            <Markdown text={multi ? questions.map((qq) => qq.question).join(' · ') : q.question} />
+          </div>
         </div>
       ) : (
         <>
@@ -2328,7 +2332,9 @@ function AskBlock({
           )}
           <div className="flex items-start gap-2">
             <IconUser className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
-            <p className="min-w-0 flex-1 whitespace-pre-wrap break-words text-text">{q.question}</p>
+            <div className="min-w-0 flex-1 text-text">
+              <Markdown text={q.question} />
+            </div>
           </div>
           {q.options.length > 0 && (
             <div className="mt-2.5 flex flex-wrap gap-1.5">
@@ -2517,7 +2523,9 @@ function AskResultBlock({ answers }: { answers: AskAnswerView[] }) {
         {answers.map((a, i) => (
           <div key={i}>
             {a.question && (
-              <p className="whitespace-pre-wrap break-words text-sm text-text">{a.question}</p>
+              <div className="text-sm text-text">
+                <Markdown text={a.question} />
+              </div>
             )}
             <p className="flex items-start gap-1.5 text-xs text-dim">
               <IconCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-400" />

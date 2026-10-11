@@ -169,8 +169,9 @@ or `make dev`), then report: (1) the new stamped build version (`v1 <version>
   and the tool resolves with the full answers array once confirmed. The
   response is parsed from the UI's `[{question,answer}]` array (single-question
   asks included) or a plain string (`parseAskAnswers`), and the UI unwraps a
-  stored answer that is itself a stringified array, so neither path shows JSON;
-  `screenshot_app` is
+  stored answer that is itself a stringified array, so neither path shows JSON.
+  The question text renders as markdown in every ask view (the answer stays
+  plain text); `screenshot_app` is
   vision-gated (above); `fetch_url` fetches web pages for the model
   (HTML → text via `golang.org/x/net/html`).
 - The bundled `delegate` extension runs a task in a separate sub-agent
