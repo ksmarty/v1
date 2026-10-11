@@ -885,13 +885,7 @@ function DisplayBlock({ display }: { display: unknown }) {
       }
     | null;
   if (d?.kind === 'answers') {
-    const answers = (Array.isArray(d.answers) ? d.answers : [])
-      .filter((a): a is { question?: unknown; answer?: unknown } => typeof a === 'object' && a !== null)
-      .map((a) => ({
-        question: typeof a.question === 'string' ? a.question : '',
-        answer: typeof a.answer === 'string' ? a.answer : '',
-      }))
-      .filter((a) => a.answer !== '');
+    const answers = normalizeAnswers(d.answers);
     if (answers.length > 0) return <AskResultBlock answers={answers} />;
   }
   if (d?.kind === 'files') {
@@ -2101,11 +2095,36 @@ function parseAnswerList(value: unknown): AskAnswerView[] {
     .filter((a) => a.answer !== '');
 }
 
+// An answer can itself be a stringified [{question,answer}] array: an older
+// client stored the whole response payload as the answer, and the display
+// payload built from it keeps that string. Unwrap it so the JSON never reaches
+// the transcript.
+function unwrapAnswer(answer: string): AskAnswerView[] {
+  try {
+    const parsed = JSON.parse(answer) as unknown;
+    return parseAnswerList(
+      Array.isArray(parsed) ? parsed : (parsed as { answers?: unknown } | null)?.answers,
+    );
+  } catch {
+    return [];
+  }
+}
+
+// Normalizes the answers of a result or a display payload, unwrapping any
+// answer that is itself a stringified array.
+function normalizeAnswers(value: unknown): AskAnswerView[] {
+  const out: AskAnswerView[] = [];
+  for (const a of parseAnswerList(value)) {
+    const nested = unwrapAnswer(a.answer);
+    if (nested.length > 0) out.push(...nested);
+    else out.push(a);
+  }
+  return out;
+}
+
 // Extracts the answers from an ask_user tool result: multi-question results
 // are {"answers":[{question,answer},…]}, single ones {"answer": "..."}. A bare
-// array of {question,answer} (what some paths store) is accepted too, and a
-// single answer that is itself a stringified array is unwrapped so the JSON
-// envelope never reaches the transcript.
+// array of {question,answer} (what some paths store) is accepted too.
 function askAnswers(detail: string): AskAnswerView[] {
   try {
     const parsed = JSON.parse(detail) as unknown;
@@ -2113,18 +2132,11 @@ function askAnswers(detail: string): AskAnswerView[] {
       answer?: unknown;
       answers?: unknown;
     };
-    const list = parseAnswerList(r.answers);
+    const list = normalizeAnswers(r.answers);
     if (list.length > 0) return list;
     if (typeof r.answer === 'string' && r.answer !== '') {
-      try {
-        const nested = JSON.parse(r.answer) as unknown;
-        const inner = parseAnswerList(
-          Array.isArray(nested) ? nested : (nested as { answers?: unknown } | null)?.answers,
-        );
-        if (inner.length > 0) return inner;
-      } catch {
-        // a plain answer
-      }
+      const nested = unwrapAnswer(r.answer);
+      if (nested.length > 0) return nested;
       return [{ question: '', answer: r.answer }];
     }
     return [];

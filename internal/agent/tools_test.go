@@ -540,3 +540,30 @@ func TestToolDisplay(t *testing.T) {
 		t.Fatalf("empty ask should have no display: %s", raw)
 	}
 }
+
+// A single-question ask whose stored answer is the stringified
+// [{question,answer}] array (an older client) must render as the answers, not
+// as that JSON string.
+func TestToolDisplayUnwrapsStringifiedAnswer(t *testing.T) {
+	out := `{"answer":"[{\"question\":\"Which days?\",\"answer\":\"Wednesday\"}]"}`
+	raw := toolDisplay("ask_user", out)
+	if raw == nil {
+		t.Fatal("no display")
+	}
+	var d struct {
+		Kind    string `json:"kind"`
+		Answers []struct {
+			Question string `json:"question"`
+			Answer   string `json:"answer"`
+		} `json:"answers"`
+	}
+	if err := json.Unmarshal(raw, &d); err != nil {
+		t.Fatalf("display not json: %v (%s)", err, raw)
+	}
+	if d.Kind != "answers" || len(d.Answers) != 1 {
+		t.Fatalf("unexpected display: %s", raw)
+	}
+	if d.Answers[0].Question != "Which days?" || d.Answers[0].Answer != "Wednesday" {
+		t.Fatalf("answer not unwrapped: %s", raw)
+	}
+}

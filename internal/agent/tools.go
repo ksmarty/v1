@@ -214,6 +214,9 @@ func toolDisplay(name, out string) json.RawMessage {
 		if len(answers) == 0 && r.Answer != "" {
 			answers = []AskAnswer{{Answer: r.Answer}}
 		}
+		// An older stored result kept the [{question,answer}] array as the answer
+		// string; unwrap it so the display carries the answers, not JSON.
+		answers = unwrapAskAnswers(answers)
 		if len(answers) == 0 {
 			return nil
 		}
@@ -283,6 +286,22 @@ func displayJSON(v map[string]any) json.RawMessage {
 		return nil
 	}
 	return b
+}
+
+// unwrapAskAnswers replaces an answer that is itself a JSON [{question,answer}]
+// array (an older client stored the raw response payload) with the answers it
+// contains, so the display never carries the JSON envelope.
+func unwrapAskAnswers(answers []AskAnswer) []AskAnswer {
+	out := make([]AskAnswer, 0, len(answers))
+	for _, a := range answers {
+		var nested []AskAnswer
+		if json.Unmarshal([]byte(a.Answer), &nested) == nil && len(nested) > 0 {
+			out = append(out, nested...)
+			continue
+		}
+		out = append(out, a)
+	}
+	return out
 }
 
 func (e *Executor) execute(ctx context.Context, name, argsJSON string) (string, error) {

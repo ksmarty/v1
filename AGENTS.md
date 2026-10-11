@@ -150,7 +150,10 @@ or `make dev`), then report: (1) the new stamped build version (`v1 <version>
   reconnects (a new turn, an answer, or a timeout clears it). `ask_user` also
   accepts a `questions` array for multi-question asks — the UI renders one
   block the user steps through (back/next, editable answers, "Confirm all"),
-  and the tool resolves with the full answers array once confirmed;
+  and the tool resolves with the full answers array once confirmed. The
+  response is parsed from the UI's `[{question,answer}]` array (single-question
+  asks included) or a plain string (`parseAskAnswers`), and the UI unwraps a
+  stored answer that is itself a stringified array, so neither path shows JSON;
   `screenshot_app` is
   vision-gated (above); `fetch_url` fetches web pages for the model
   (HTML → text via `golang.org/x/net/html`).
