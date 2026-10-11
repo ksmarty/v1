@@ -267,9 +267,22 @@ func harnessToolDetail(args json.RawMessage) string {
 // duplicate every host-tool result.
 type harnessToolRunner struct {
 	exec *agent.Executor
+	// emit, when set, is the turn's event sink. Attached uses it to tell the UI
+	// the child conversation id while a delegate is still running.
+	emit func(agent.ChatEvent)
 
 	mu      sync.Mutex
 	results map[string]harness.ToolResult
+}
+
+// Attached is called when a delegated child conversation is linked to this
+// turn. It emits the child id so the UI can open the sub-agent's transcript
+// live, rather than only once the delegate tool returns its marker.
+func (r *harnessToolRunner) Attached(childID, _ string) {
+	if r.emit == nil || childID == "" {
+		return
+	}
+	r.emit(agent.ChatEvent{Type: "delegate_started", Detail: childID})
 }
 
 func (r *harnessToolRunner) RunTool(ctx context.Context, call harness.ToolCall) (harness.ToolResult, error) {
@@ -413,6 +426,7 @@ func (s *Server) runHarnessTurn(ctx context.Context, p *store.Project, params ag
 
 	runner := &harnessToolRunner{
 		exec:    params.Exec,
+		emit:    emit,
 		results: map[string]harness.ToolResult{},
 	}
 	unregister := bridge.Register(sidecarID, runner)

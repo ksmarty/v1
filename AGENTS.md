@@ -179,7 +179,10 @@ or `make dev`), then report: (1) the new stamped build version (`v1 <version>
   opens `GET /api/projects/{id}/delegate/{conversationId}/messages` in a
   read-only ChatPane dialog (the child conversation is never a v1 session).
   The result carries a "No tools were used." note when the child made no tool
-  calls, so an empty transcript is explicit rather than silent.
+  calls, so an empty transcript is explicit rather than silent. While the
+  delegate still runs, `Bridge.Attach` notifies the turn's `harnessToolRunner`,
+  which emits a `delegate_started` event carrying the child id, so the card can
+  offer the transcript before the tool returns.
   Host tools called by a delegate resolve through the owning turn's run
   (`harnessToolRunner.findRun`), so a sub-agent can use file/command tools.
 - Tool results are stored as JSON (the UI parses them) but re-encoded as

@@ -503,6 +503,8 @@ type ToolItem = {
   display?: unknown;
   running: boolean;
   ok?: boolean;
+  /** A delegate's child conversation id, once the sidecar links it. */
+  delegateId?: string;
 };
 
 /** The agent's ask_user question(s), shown inline like other harnesses. */
@@ -667,6 +669,7 @@ function ToolRow({ item }: { item: ToolItem }) {
   const [open, setOpen] = useState(false);
   const display = useToolDisplay(item.name);
   const Icon = toolIcon(item.name, display);
+  const openDelegate = useContext(DelegateOpenContext);
   return (
     <div className="rounded-md border border-border/80 bg-surface/50 text-[10px]">
       <button
@@ -694,6 +697,17 @@ function ToolRow({ item }: { item: ToolItem }) {
           <IconX className="h-3.5 w-3.5 shrink-0 text-red-500" />
         )}
       </button>
+      {item.delegateId && (
+        <div className="border-t border-border/80 px-2 py-1.5">
+          <button
+            type="button"
+            onClick={() => openDelegate(item.delegateId as string)}
+            className="inline-flex items-center gap-1 rounded border border-border px-2 py-1 font-mono text-[10px] text-dim transition-colors hover:bg-border hover:text-text"
+          >
+            <IconUsers className="h-3 w-3" /> View transcript
+          </button>
+        </div>
+      )}
       {open && (item.call ?? item.detail) && <ToolBody detail={item.call ?? item.detail} />}
     </div>
   );
@@ -4158,6 +4172,20 @@ export default function ChatPane({
                 : it,
             ),
           );
+          break;
+        }
+        // The child conversation id for a running delegate, so its transcript
+        // can be opened before the delegate tool returns.
+        case 'delegate_started': {
+          const stack = toolStackRef.current['delegate'] ?? [];
+          const key = stack[stack.length - 1];
+          if (key) {
+            update((prev) =>
+              prev.map((it) =>
+                it.kind === 'tool' && it.key === key ? { ...it, delegateId: ev.detail } : it,
+              ),
+            );
+          }
           break;
         }
         // The watch connection replays the run's event history (deltas,

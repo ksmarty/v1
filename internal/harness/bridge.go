@@ -328,7 +328,15 @@ func (b *Bridge) Attach(conversationID, parentID string) {
 	}
 	b.mu.Lock()
 	b.aliases[conversationID] = parentID
+	runner := b.runners[parentID]
 	b.mu.Unlock()
+	// A runner that cares about the link (to surface the child to the UI) is
+	// notified once the alias is in place.
+	if n, ok := runner.(interface {
+		Attached(childID, parentID string)
+	}); ok {
+		n.Attached(conversationID, parentID)
+	}
 }
 
 // Register makes runner answer this conversation's tool calls until the
