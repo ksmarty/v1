@@ -68,6 +68,13 @@ React SPA (Vite + TypeScript), both built into a single binary.
 - `internal/store/` — SQLite (settings, sessions, projects, messages).
 - `internal/preview/`, `internal/terminal/`, `internal/gitops/` — previews, terminals, GitHub.
 - `internal/scaffold/` — project templates.
+- `internal/skills/` — bundled agent skills and the SkillsMP marketplace. A
+  bundled skill is materialized as `<data-dir>/skills/<id>/SKILL.md` like the
+  extensions, and `RefreshBuiltins` upgrades an untouched copy at startup when
+  v1 ships a new SKILL.md (the last shipped hash is recorded in
+  `.v1-builtins.json`) while leaving a user-edited copy alone. `builtin.go`
+  holds the bundled `v1-extensions` authoring skill, which documents the
+  extension verifier's collision rules.
 - `web/` — React frontend; built into `internal/server/dist` for embedding.
 
 ## Key commands

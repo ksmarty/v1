@@ -435,8 +435,9 @@ The api object provides:
 
 Rules that matter:
 
-- The name must be unique across everything loaded. A name that collides with
-  a builtin tool is dropped, with a log line - the model never sees it.
+- The name must be unique. create_extension refuses an extension whose tool
+  name, section key or display title another extension already claims, or whose
+  tool name shadows one of v1's own tools. See Name collisions below.
 - parameters is a JSON Schema object, and required lists the mandatory
   properties. Without them the model cannot call the tool correctly.
 - execute returns an object with a content array of { type: "text", text }
@@ -445,6 +446,22 @@ Rules that matter:
   message that says what to do differently.
 - The description is what the model reads when deciding whether to call the
   tool. Say when to use it, not only what it does.
+
+### Name collisions
+
+Names are shared across every loaded extension, so a duplicate does not throw:
+the registry is last-write-wins, and a tool that shadows a v1 tool is dropped.
+To keep that from happening silently, create_extension runs a verifier before it
+installs and refuses the extension when:
+
+- two extensions declare the same tool name;
+- a tool name shadows one of v1's own tools;
+- two extensions declare the same section key;
+- two extensions declare the same display title.
+
+Fix the name and install again. list_extensions reports any conflict it finds,
+and the Extensions page in settings shows it as a warning, so a collision stays
+visible even if an extension was installed another way.
 
 ### Presentation
 
@@ -654,7 +671,10 @@ It validates the id, syntax-checks the source with node, writes it, enables it
 and reloads the harness, then reports what loaded - its tools, sections and
 hooks - plus the sha256 of the source it wrote. Installing an id that already
 exists replaces its source. A new tool becomes available on the next turn, so
-tell the user to send another message before expecting to use it.
+tell the user to send another message before expecting to use it. When the user
+has turned on search mode (the tool-exposure setting), a new extension tool is
+deferred: call search_tools with a short description of it to reveal it before
+you call it.
 
 Read the result of create_extension rather than assuming the extension loaded.
 If it reports an error, fix the source and call it again. Use list_extensions
@@ -668,8 +688,9 @@ without inspecting the host.
 
 - A syntax error - node rejects the file and nothing loads. The result quotes
   node's message.
-- A duplicate tool name - the tool is dropped with a log line, so the model
-  never sees it.
+- A duplicate name - two extensions sharing a tool name, a section key or a
+  display title, or a tool that shadows a v1 tool, is refused before it
+  installs.
 - A bad id - must be lowercase, and cannot start with a dash.
 - A module whose default export is not a function - nothing is registered.
 

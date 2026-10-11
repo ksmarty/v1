@@ -282,28 +282,25 @@ func (s *Server) ghForSkills(userID string) *gitops.GHClient {
 }
 
 // installBuiltinSkill writes a bundled skill's files (SKILL.md + templates)
-// into the skills directory. The directory name comes from the skill's Dir
-// and must be a plain single component.
+// into the skills directory and records their hash, so a later startup can
+// refresh an untouched copy.
 func (s *Server) installBuiltinSkill(b skills.Builtin) error {
-	dir := b.Skill.Dir
-	if dir == "" || dir != filepath.Base(dir) || strings.ContainsAny(dir, `/\`) {
-		return os.ErrInvalid
-	}
-	dest := filepath.Join(s.skillsRoot(), dir)
-	if err := os.RemoveAll(dest); err != nil {
-		return err
-	}
-	for rel, content := range b.Files {
-		full := filepath.Join(dest, filepath.FromSlash(rel))
-		if !strings.HasPrefix(full, dest+string(filepath.Separator)) {
-			return os.ErrInvalid
-		}
-		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
-			return err
-		}
-		if err := os.WriteFile(full, []byte(content), 0o644); err != nil {
-			return err
+	return skills.InstallBuiltin(s.skillsRoot(), b)
+}
+
+// refreshBuiltinSkills upgrades the bundled skills a user has not edited, so a
+// shipped SKILL.md change reaches an existing install. It runs every startup
+// and only touches skills already in the installed list.
+func (s *Server) refreshBuiltinSkills() {
+	installed := s.installedSkills()
+	ids := make(map[string]bool, len(installed))
+	for _, sk := range installed {
+		ids[sk.ID] = true
+		if sk.Dir != "" {
+			ids[sk.Dir] = true
 		}
 	}
-	return nil
+	if err := skills.RefreshBuiltins(s.skillsRoot(), ids); err != nil {
+		log.Printf("skills: cannot refresh the bundled skills: %v", err)
+	}
 }

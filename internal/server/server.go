@@ -115,8 +115,10 @@ func New(cfg config.Config, st *store.Store) *Server {
 	// The bundled agent extensions (currently the `delegate` sub-agent tool)
 	// are written to the data volume on startup, so a fresh install has them.
 	s.ensureBuiltinExtensions()
-	// The bundled skills are seeded the same way.
+	// The bundled skills are seeded the same way, then refreshed every startup so
+	// a shipped SKILL.md change reaches an existing install.
 	s.ensureBuiltinSkills()
+	s.refreshBuiltinSkills()
 	mux := http.NewServeMux()
 	s.routes(mux)
 	s.handler = s.auth.Middleware(mux)
@@ -622,14 +624,14 @@ func (s *Server) embedConfigFor(userID string) v1embed.Config {
 func (s *Server) embeddingSettings(userID string) map[string]any {
 	cfg := s.embedConfigFor(userID)
 	return map[string]any{
-		"provider": cfg.Provider,
-		"model":    cfg.Model,
-		"baseUrl":  cfg.BaseURL,
-		"keySet":   cfg.APIKey != "",
-		"keyHint":  apiKeyHint(cfg.APIKey),
-		"dims":     v1embed.DimsFor(cfg.Provider, cfg.Model),
+		"provider":   cfg.Provider,
+		"model":      cfg.Model,
+		"baseUrl":    cfg.BaseURL,
+		"keySet":     cfg.APIKey != "",
+		"keyHint":    apiKeyHint(cfg.APIKey),
+		"dims":       v1embed.DimsFor(cfg.Provider, cfg.Model),
 		"downloaded": v1embed.Downloaded(cfg.Provider, cfg.Model),
-		"enabled":  cfg.Enabled(),
+		"enabled":    cfg.Enabled(),
 	}
 }
 
