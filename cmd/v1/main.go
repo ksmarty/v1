@@ -81,6 +81,10 @@ func main() {
 	// list, so they disappear even when nobody is looking.
 	srv.StartEphemeralSweeper(ctx)
 
+	// GitHub's OAuth scope catalog is fetched from its docs at startup so the
+	// scope picker is populated without a hardcoded list.
+	srv.LoadGitHubScopes(ctx)
+
 	// The pi-durable sidecar is the default chat harness. It starts before the
 	// server accepts traffic so a sidecar that cannot start, handshake or agree
 	// on the protocol fails startup loudly instead of failing the user's first

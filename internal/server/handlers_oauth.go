@@ -28,7 +28,6 @@ type oauthFlow struct {
 const (
 	deviceCodeURL  = "https://github.com/login/device/code"
 	accessTokenURL = "https://github.com/login/oauth/access_token"
-	deviceScope    = "repo workflow read:user read:packages"
 )
 
 // githubFormPost posts a form to a github.com endpoint and decodes the JSON
@@ -91,7 +90,7 @@ func (s *Server) handleOAuthDeviceStart(w http.ResponseWriter, r *http.Request) 
 	}
 	status, resp, err := githubFormPost(r.Context(), deviceCodeURL, url.Values{
 		"client_id": {clientID},
-		"scope":     {deviceScope},
+		"scope":     {s.githubOAuthScopeString()},
 	})
 	if err != nil {
 		// The container couldn't reach GitHub (DNS/egress/TLS). Log the exact
@@ -303,7 +302,7 @@ func (s *Server) handleGitHubOAuthStart(w http.ResponseWriter, r *http.Request) 
 	q := url.Values{
 		"client_id":    {clientID},
 		"redirect_uri": {s.githubOAuthRedirectURI(r)},
-		"scope":        {deviceScope},
+		"scope":        {s.githubOAuthScopeString()},
 		"state":        {state},
 	}
 	http.Redirect(w, r, "https://github.com/login/oauth/authorize?"+q.Encode(), http.StatusFound)

@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, ApiError } from '../api';
-import type { DeviceFlowStart } from '../types';
+import type { DeviceFlowStart, GitHubScope } from '../types';
 import { errMsg } from '../utils';
 import { Button, Dialog, Spinner } from './ui';
-import { IconCheck, IconCopy, IconExternalLink, IconGitHub } from './icons';
+import { IconCheck, IconCopy, IconExternalLink, IconGitHub, IconLock } from './icons';
 
 type Phase =
   | { kind: 'starting' }
@@ -30,6 +30,12 @@ export default function GitHubConnect({
   const [open, setOpen] = useState(false);
   const [phase, setPhase] = useState<Phase | null>(null);
   const [copied, setCopied] = useState(false);
+  const [scopesOpen, setScopesOpen] = useState(false);
+  const [scopes, setScopes] = useState<GitHubScope[] | null>(null);
+  const [selectedScopes, setSelectedScopes] = useState<Set<string>>(new Set());
+  const [scopesLoading, setScopesLoading] = useState(false);
+  const [scopesError, setScopesError] = useState<string | null>(null);
+  const [scopesSaving, setScopesSaving] = useState(false);
   const timerRef = useRef<number | null>(null);
   const cancelledRef = useRef(false);
 
@@ -127,16 +133,63 @@ export default function GitHubConnect({
     });
   };
 
+  const openScopes = async () => {
+    setScopesOpen(true);
+    setScopesLoading(true);
+    setScopesError(null);
+    try {
+      const r = await api.githubScopes();
+      setScopes(r.scopes);
+      setSelectedScopes(new Set(r.selected));
+    } catch (e) {
+      setScopesError(errMsg(e));
+    } finally {
+      setScopesLoading(false);
+    }
+  };
+
+  const toggleScope = (name: string) => {
+    setSelectedScopes((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  };
+
+  const saveScopes = async () => {
+    setScopesSaving(true);
+    setScopesError(null);
+    try {
+      const r = await api.saveGitHubScopes([...selectedScopes]);
+      setSelectedScopes(new Set(r.selected));
+      setScopesOpen(false);
+    } catch (e) {
+      setScopesError(errMsg(e));
+    } finally {
+      setScopesSaving(false);
+    }
+  };
+
   return (
     <>
-      <Button
-        variant="outline"
-        onClick={() => void start()}
-        disabled={!enabled}
-        title={enabled ? 'Connect your GitHub account' : 'Save an OAuth Client ID first'}
-      >
-        <IconGitHub className="h-4 w-4" /> Connect with GitHub
-      </Button>
+      <div className="flex flex-wrap gap-2">
+        <Button
+          variant="outline"
+          onClick={() => void start()}
+          disabled={!enabled}
+          title={enabled ? 'Connect your GitHub account' : 'Save an OAuth Client ID first'}
+        >
+          <IconGitHub className="h-4 w-4" /> Connect with GitHub
+        </Button>
+        <Button
+          variant="ghost"
+          onClick={() => void openScopes()}
+          title="Choose which GitHub permissions v1 requests"
+        >
+          <IconLock className="h-4 w-4" /> Scopes
+        </Button>
+      </div>
 
       <Dialog open={open} onClose={close} title="Connect with GitHub">
         {phase?.kind === 'starting' && (
@@ -198,6 +251,60 @@ export default function GitHubConnect({
             </div>
           </div>
         )}
+      </Dialog>
+      <Dialog
+        open={scopesOpen}
+        onClose={() => setScopesOpen(false)}
+        title="GitHub scopes"
+        fixedBody
+      >
+        <div className="flex h-full min-h-0 flex-col gap-3">
+          <p className="shrink-0 text-xs text-dim">
+            Choose which permissions v1 requests. These are sent the next time you connect.
+          </p>
+          {scopesLoading && (
+            <div className="flex items-center justify-center gap-2 py-8 text-sm text-dim">
+              <Spinner className="h-4 w-4" /> Loading scopes…
+            </div>
+          )}
+          {scopesError && <p className="shrink-0 text-sm text-red-400">{scopesError}</p>}
+          {scopes && (
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+              <div className="flex flex-col gap-1">
+                {scopes.map((sc) => (
+                  <label
+                    key={sc.name}
+                    className="flex cursor-pointer items-start gap-3 rounded-lg border border-border px-3 py-2 hover:bg-surface"
+                  >
+                    <input
+                      type="checkbox"
+                      className="mt-0.5 h-4 w-4 shrink-0 accent-indigo-500"
+                      checked={selectedScopes.has(sc.name)}
+                      onChange={() => toggleScope(sc.name)}
+                    />
+                    <span className="min-w-0">
+                      <code className="font-mono text-sm text-text">{sc.name}</code>
+                      {sc.description && (
+                        <span className="mt-0.5 block text-xs text-dim">{sc.description}</span>
+                      )}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+          <div className="flex shrink-0 justify-end gap-2">
+            <Button variant="ghost" onClick={() => setScopesOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => void saveScopes()}
+              disabled={scopesSaving || selectedScopes.size === 0}
+            >
+              {scopesSaving ? 'Saving…' : 'Save'}
+            </Button>
+          </div>
+        </div>
       </Dialog>
     </>
   );

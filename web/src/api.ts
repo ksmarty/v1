@@ -12,6 +12,7 @@ import type {
   FileEntry,
   GitFileChange,
   GitHubRepo,
+  GitHubScopesResponse,
   GitStatus,
   GitInfo,
   GitHubWorkflows,
@@ -512,6 +513,9 @@ export const api = {
   oauthDeviceStart: () => post<DeviceFlowStart>('/api/github/oauth/device/start'),
   oauthDevicePoll: (flowId: string) =>
     post<DeviceFlowPoll>('/api/github/oauth/device/poll', { flowId }),
+  githubScopes: () => request<GitHubScopesResponse>('/api/github/scopes'),
+  saveGitHubScopes: (scopes: string[]) =>
+    post<{ selected: string[] }>('/api/github/scopes', { scopes }),
 
   // Vercel
   vercelUser: () => request<VercelUserInfo>('/api/vercel/user'),

@@ -217,6 +217,14 @@ or `make dev`), then report: (1) the new stamped build version (`v1 <version>
   appears immediately. Project settings save the text fields (name/instructions)
   through a scoped Save button under them, while each toggle saves immediately.
   Memories are edited in a full-screen `Dialog` with a tags field.
+- GitHub OAuth scopes are user-selectable: the Settings GitHub section's
+  **Scopes** button opens a picker whose catalog is fetched at startup
+  (`Server.LoadGitHubScopes`, `internal/server/github_scopes.go`) from GitHub's
+  published docs markdown — not a hardcoded list — and cached in memory (a
+  startup failure is logged and retried lazily by `GET /api/github/scopes`). The
+  saved selection (`keyGitHubOAuthScopes`, default
+  `repo workflow read:user read:packages`) is what both the device and redirect
+  flows request.
 - SQLite is accessed only through `internal/store`. Settings are key/value
   strings; env vars are fallbacks, sqlite overrides env. Prefix settings keys
   with a domain (`keyLLM...`, `keyGitHub...`).

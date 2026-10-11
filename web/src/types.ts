@@ -198,6 +198,17 @@ export interface DeviceFlowPoll {
   error?: string;
 }
 
+/** One GitHub OAuth scope from GitHub's docs, fetched by the server. */
+export interface GitHubScope {
+  name: string;
+  description: string;
+}
+
+export interface GitHubScopesResponse {
+  scopes: GitHubScope[];
+  selected: string[];
+}
+
 export interface PreviewInfo {
   running: boolean;
   url: string;

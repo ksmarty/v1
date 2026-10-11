@@ -76,6 +76,11 @@ type Server struct {
 	// Redirect (authorization-code) flow states, keyed by the OAuth state.
 	oauthCodeFlows map[string]*githubOAuthFlow
 
+	// scopes caches the GitHub OAuth scope catalog fetched from GitHub's docs.
+	scopesMu     sync.Mutex
+	scopes       []GitHubScope
+	scopesLoaded bool
+
 	oidcMu    sync.Mutex
 	oidcFlows map[string]*oidcFlow
 	oidc      *auth.OIDC
@@ -241,6 +246,8 @@ func (s *Server) routes(m *http.ServeMux) {
 	m.HandleFunc("GET /api/github/images", s.handleGitHubImages)
 	m.HandleFunc("POST /api/github/oauth/device/start", s.handleOAuthDeviceStart)
 	m.HandleFunc("POST /api/github/oauth/device/poll", s.handleOAuthDevicePoll)
+	m.HandleFunc("GET /api/github/scopes", s.handleGitHubScopes)
+	m.HandleFunc("POST /api/github/scopes", s.handleGitHubScopesSave)
 	m.HandleFunc("POST /api/projects/{id}/github/create", s.handleGitHubCreate)
 	m.HandleFunc("POST /api/projects/{id}/github/link", s.handleGitHubLink)
 	m.HandleFunc("POST /api/projects/{id}/github/push", s.handleGitHubPush)
@@ -375,6 +382,7 @@ const (
 	keyGitHubTokenSource       = "github_token_source"
 	keyGitHubOAuthClientID     = "github_oauth_client_id"
 	keyGitHubOAuthClientSecret = "github_oauth_client_secret"
+	keyGitHubOAuthScopes       = "github_oauth_scopes"
 	keyVercelToken             = "vercel_token"
 	keyVercelTokenSource       = "vercel_token_source"
 	keyVercelRefreshToken      = "vercel_refresh_token"
