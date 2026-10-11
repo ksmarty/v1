@@ -166,7 +166,11 @@ or `make dev`), then report: (1) the new stamped build version (`v1 <version>
 - Tool results are stored as JSON (the UI parses them) but re-encoded as
   TOON (spec: toon-format/spec) when fed to the model — encoder in
   `internal/agent/toon.go`, applied in `RunChat` history building. The model
-  is told about the format in the system prompt.
+  is told about the format in the system prompt. A result may also carry a
+  `display` payload (`Executor.toolDisplay` — `ask_user` answers, `list_files`
+  entries, `fetch_url`/`web_search` previews) that the chat renders instead of
+  the raw JSON: the model always gets the raw result, and `display` is
+  persisted in `tool_json` and streamed on `tool_end`.
 - Chat tool cards render through `ChatPane.tsx`'s `ToolBlocks`/`ToolChip`: a
   result paired with its call becomes one card. Pure success acks
   (`{"ok":true}` with no payload — `isNoiseResult`) are dropped in BOTH the

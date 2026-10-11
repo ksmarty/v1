@@ -106,7 +106,7 @@ import json from 'highlight.js/lib/languages/json';
 // gets the same token colors as fenced code blocks.
 hljs.registerLanguage('json', json);
 
-type ToolCall = { name: string; detail: string };
+type ToolCall = { name: string; detail: string; display?: unknown };
 
 // Autocomplete item for the composer's /, @ and # menus. `insert` is the
 // token written into the textarea; `label`/`hint` are display-only.
@@ -495,6 +495,8 @@ type ToolItem = {
   call?: string;
   /** The result payload, once tool_end lands. */
   detail: string;
+  /** A human-readable rendering the tool asked for instead of its JSON result. */
+  display?: unknown;
   running: boolean;
   ok?: boolean;
 };
@@ -539,6 +541,12 @@ function parseToolCalls(tool: unknown): ToolCall[] | null {
 function parseToolName(tool: unknown): string {
   const data = asToolJSON(tool) as { name?: string } | null;
   return data && typeof data.name === 'string' && data.name ? data.name : 'tool';
+}
+
+/** Parses a role "tool" message's tool_json for the tool's display payload. */
+function parseToolDisplay(tool: unknown): unknown {
+  const data = asToolJSON(tool) as { display?: unknown } | null;
+  return data?.display ?? undefined;
 }
 
 /** True when a message key is a persisted row id (not a live/synthetic key). */
@@ -861,6 +869,76 @@ function chipLabel(detail: string, display?: ExtensionToolDisplay): string {
   }
 }
 
+/** A tool's display payload (ChatEvent.display / tool_json.display): the
+ *  human-readable result a tool asked the chat to show instead of its
+ *  model-visible JSON. Shapes the renderer doesn't know fall back to JSON. */
+function DisplayBlock({ display }: { display: unknown }) {
+  const d = display as
+    | {
+        kind?: string;
+        answers?: unknown;
+        files?: unknown;
+        count?: unknown;
+        truncated?: unknown;
+        text?: unknown;
+        label?: unknown;
+      }
+    | null;
+  if (d?.kind === 'answers') {
+    const answers = (Array.isArray(d.answers) ? d.answers : [])
+      .filter((a): a is { question?: unknown; answer?: unknown } => typeof a === 'object' && a !== null)
+      .map((a) => ({
+        question: typeof a.question === 'string' ? a.question : '',
+        answer: typeof a.answer === 'string' ? a.answer : '',
+      }))
+      .filter((a) => a.answer !== '');
+    if (answers.length > 0) return <AskResultBlock answers={answers} />;
+  }
+  if (d?.kind === 'files') {
+    const files = (Array.isArray(d.files) ? d.files : []).filter((f): f is string => typeof f === 'string');
+    const count = typeof d.count === 'number' ? d.count : files.length;
+    return (
+      <div className="rounded-md border border-border/80 bg-surface/50 text-[10px]">
+        <div className="flex min-h-[26px] items-center gap-1.5 px-2 py-1 text-dim">
+          <span className="text-text">
+            {count} {count === 1 ? 'entry' : 'entries'}
+          </span>
+          {d.truncated === true && <span className="text-faint">· truncated</span>}
+        </div>
+        {files.length > 0 && (
+          <div className="max-h-60 overflow-auto border-t border-border/80 px-3 py-2 font-mono text-[11px] leading-relaxed text-subtle">
+            {files.map((f, i) => (
+              <div key={i} className="whitespace-pre-wrap break-words">
+                {f}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+  if (d?.kind === 'text') {
+    const text = typeof d.text === 'string' ? d.text : '';
+    const label = typeof d.label === 'string' ? d.label : '';
+    return (
+      <div className="rounded-md border border-border/80 bg-surface/50 text-[10px]">
+        {label && (
+          <div className="flex min-h-[26px] items-center gap-1.5 border-b border-border/80 px-2 py-1 font-mono text-dim">
+            <span className="min-w-0 truncate text-text">{label}</span>
+          </div>
+        )}
+        <div className="max-h-80 overflow-auto whitespace-pre-wrap break-words px-3 py-2 text-[11px] leading-relaxed text-subtle">
+          {text}
+        </div>
+        {d.truncated === true && (
+          <div className="border-t border-border/80 px-2 py-1 text-faint">…truncated for display</div>
+        )}
+      </div>
+    );
+  }
+  return <ToolBody detail={JSON.stringify(display)} />;
+}
+
 function ToolChip({ name, detail, result }: { name: string; detail: string; result?: ToolCall }) {
   const [open, setOpen] = useState(false);
   const display = useToolDisplay(name);
@@ -981,6 +1059,8 @@ function ToolChip({ name, detail, result }: { name: string; detail: string; resu
               <div className="border-t border-red-500/30 px-3 py-2 text-[11px] leading-relaxed text-red-400">
                 {resultErr}
               </div>
+            ) : result.display !== undefined ? (
+              <DisplayBlock display={result.display} />
             ) : (
               <>
                 <ToolBody detail={sub ? sub.text : result.detail} />
@@ -2296,7 +2376,7 @@ function AskResultBlock({ answers }: { answers: AskAnswerView[] }) {
   );
 }
 
-function ToolResultBlock({ name, detail }: ToolCall) {
+function ToolResultBlock({ name, detail, display: resultDisplay }: ToolCall) {
   const [open, setOpen] = useState(false);
   const display = useToolDisplay(name);
   const Icon = toolIcon(name, display);
@@ -2308,6 +2388,8 @@ function ToolResultBlock({ name, detail }: ToolCall) {
     const answers = askAnswers(detail);
     if (answers.length > 0) return <AskResultBlock answers={answers} />;
   }
+  // A tool that supplied a display payload renders it in place of the raw JSON.
+  if (resultDisplay !== undefined) return <DisplayBlock display={resultDisplay} />;
   // A sub-agent result carries the child conversation id as a trailing marker;
   // hide it from the text and offer the full transcript instead.
   const sub = name === 'delegate' ? subagentId(detail) : null;
@@ -2553,7 +2635,7 @@ const MessageRow = memo(function MessageRow({
     // (the nice preview alone, no JSON envelope underneath).
     const liveResults = isNoiseResult(item.detail)
       ? []
-      : [{ name: item.name, detail: item.detail }];
+      : [{ name: item.name, detail: item.detail, display: item.display }];
     return (
       <ToolBlocks
         calls={[{ name: item.name, detail: item.call ?? item.detail }]}
@@ -3326,14 +3408,17 @@ export default function ChatPane({
           if (isNoiseResult(m.content)) continue;
           const last = mapped[mapped.length - 1];
           if (last && last.kind === 'msg' && last.role === 'assistant') {
-            last.toolResults = [...(last.toolResults ?? []), { name, detail: m.content }];
+            last.toolResults = [
+              ...(last.toolResults ?? []),
+              { name, detail: m.content, display: parseToolDisplay(m.tool) },
+            ];
           } else {
             mapped.push({
               kind: 'msg',
               key: m.id,
               role: 'assistant',
               content: '',
-              toolResults: [{ name, detail: m.content }],
+              toolResults: [{ name, detail: m.content, display: parseToolDisplay(m.tool) }],
             });
           }
         } else if (m.role === 'assistant') {
@@ -4021,7 +4106,13 @@ export default function ChatPane({
             update((prev) =>
               prev.map((it) =>
                 it.kind === 'tool' && it.key === key
-                  ? { ...it, running: false, ok: ev.ok, detail: ev.detail || it.detail }
+                  ? {
+                      ...it,
+                      running: false,
+                      ok: ev.ok,
+                      detail: ev.detail || it.detail,
+                      display: ev.display ?? it.display,
+                    }
                   : it,
               ),
             );
@@ -4033,6 +4124,7 @@ export default function ChatPane({
                 key: `t${++counterRef.current}`,
                 name: ev.name,
                 detail: ev.detail,
+                display: ev.display,
                 running: false,
                 ok: ev.ok,
               },

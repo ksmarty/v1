@@ -498,3 +498,45 @@ func TestDiagnoseContainerFailure(t *testing.T) {
 		t.Fatal("unknown failures should return empty hint")
 	}
 }
+
+func TestToolDisplay(t *testing.T) {
+	// A tool result the model reads as JSON can carry a display payload the chat
+	// renders instead; tools without one return nil.
+	cases := []struct {
+		name     string
+		tool     string
+		out      string
+		wantKind string
+	}{
+		{"ask answers", "ask_user", `{"answers":[{"question":"Q","answer":"A"}]}`, "answers"},
+		{"list files", "list_files", `{"files":["a","b"],"count":2}`, "files"},
+		{"fetch url", "fetch_url", `{"url":"http://x","text":"hello"}`, "text"},
+		{"web search", "web_search", `{"query":"go","text":"1. go.dev"}`, "text"},
+		{"run command has no display", "run_command", `{"stdout":"hi"}`, ""},
+		{"invalid json", "list_files", `not json`, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			raw := toolDisplay(tc.tool, tc.out)
+			if tc.wantKind == "" {
+				if raw != nil {
+					t.Fatalf("expected no display, got %s", raw)
+				}
+				return
+			}
+			var d struct {
+				Kind string `json:"kind"`
+			}
+			if err := json.Unmarshal(raw, &d); err != nil {
+				t.Fatalf("display not json: %v (%s)", err, raw)
+			}
+			if d.Kind != tc.wantKind {
+				t.Fatalf("kind = %q, want %q", d.Kind, tc.wantKind)
+			}
+		})
+	}
+	// An ask with no answers has nothing to show.
+	if raw := toolDisplay("ask_user", `{"answers":[]}`); raw != nil {
+		t.Fatalf("empty ask should have no display: %s", raw)
+	}
+}

@@ -81,6 +81,9 @@ type ChatEvent struct {
 	Attachments []AttachmentMeta `json:"attachments,omitempty"`
 	Options     []string         `json:"options,omitempty"`
 	Questions   []AskQuestion    `json:"questions,omitempty"`
+	// Display, when set, is what the chat renders for a tool result instead of
+	// the model-visible JSON envelope (see Executor.toolDisplay).
+	Display json.RawMessage `json:"display,omitempty"`
 }
 
 // ChatParams carries everything needed to run one chat turn.
@@ -735,18 +738,23 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 		}
 		for _, tc := range res.ToolCalls {
 			p.Emit(ChatEvent{Type: "tool_start", Name: tc.Function.Name, Detail: toolDetail(tc)})
-			result, execErr := p.Exec.Execute(turnCtx, tc.Function.Name, tc.Function.Arguments)
+			result, display, execErr := p.Exec.ExecuteWithDisplay(turnCtx, tc.Function.Name, tc.Function.Arguments)
 			ok := execErr == nil
 			if !ok {
 				result = formatToolError(execErr)
+				display = nil
 			}
 			// The result goes out whole, as the persisted row does: the client
 			// parses it to render the command output, the edit diff and the failure
 			// reason, so a truncated envelope shows as unparseable text until the
 			// next reload reads the full row back.
-			p.Emit(ChatEvent{Type: "tool_end", Name: tc.Function.Name, OK: ok, Detail: result})
-			tj, _ := json.Marshal(map[string]any{"tool_call_id": tc.ID, "name": tc.Function.Name})
-			if _, err := p.Store.AddMessage(p.Project.ID, p.SessionID, "tool", result, string(tj), "", "", "", ""); err != nil {
+			p.Emit(ChatEvent{Type: "tool_end", Name: tc.Function.Name, OK: ok, Detail: result, Display: display})
+			tj := map[string]any{"tool_call_id": tc.ID, "name": tc.Function.Name}
+			if len(display) > 0 {
+				tj["display"] = display
+			}
+			tjb, _ := json.Marshal(tj)
+			if _, err := p.Store.AddMessage(p.Project.ID, p.SessionID, "tool", result, string(tjb), "", "", "", ""); err != nil {
 				return nil, err
 			}
 			content := result

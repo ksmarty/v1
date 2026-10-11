@@ -305,7 +305,7 @@ export type ChatEvent =
   | { type: 'reasoning'; text: string; replace?: boolean; turn_id?: string }
   | { type: 'info'; text: string }
   | { type: 'tool_start'; name: string; detail: string }
-  | { type: 'tool_end'; name: string; ok: boolean; detail: string }
+  | { type: 'tool_end'; name: string; ok: boolean; detail: string; display?: unknown }
   | { type: 'todos'; todos: Todo[] }
   | { type: 'memories'; memories: Memory[] }
   | { type: 'permission_request'; requestId: string; tool: string; detail: string }

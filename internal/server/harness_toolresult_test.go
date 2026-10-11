@@ -66,7 +66,7 @@ func TestRecordToolResultPairsWithItsCall(t *testing.T) {
 	s := &Server{st: st}
 
 	projectID, sessionID := store.NewID(), store.NewID()
-	if err := s.recordToolResult(projectID, sessionID, "call_1", "word_count", "42 words"); err != nil {
+	if err := s.recordToolResult(projectID, sessionID, "call_1", "word_count", "42 words", nil); err != nil {
 		t.Fatalf("recordToolResult: %v", err)
 	}
 

@@ -585,7 +585,7 @@ func TestHarnessPersistsToolCallsAndResults(t *testing.T) {
 	}
 
 	// The event handler is what writes it, from the runner's result.
-	if err := s.recordToolResult(p.ID, sessionID, "call_a", "write_file", res.Text); err != nil {
+	if err := s.recordToolResult(p.ID, sessionID, "call_a", "write_file", res.Text, nil); err != nil {
 		t.Fatal(err)
 	}
 	msgs, err = s.st.ListMessages(p.ID, sessionID)

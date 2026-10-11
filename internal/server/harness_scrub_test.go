@@ -122,7 +122,7 @@ func TestHarnessToolResultIsScrubbed(t *testing.T) {
 	// The row the UI reloads from and a retry rebuilds the request from must
 	// match what the model was shown. RunTool no longer writes it — the
 	// tool_execution_end event does — so persist it the way the handler does.
-	if err := s.recordToolResult(p.ID, sessionID, "call_raw", "read_file", res.Text); err != nil {
+	if err := s.recordToolResult(p.ID, sessionID, "call_raw", "read_file", res.Text, nil); err != nil {
 		t.Fatal(err)
 	}
 	msgs, err := s.st.ListMessages(p.ID, sessionID)

@@ -178,7 +178,114 @@ func planSafeTools(in []llm.Tool) []llm.Tool {
 }
 
 // Execute runs one tool call and returns the result string fed back to the LLM.
+// Execute runs a tool and returns its model-visible result. It is the shape
+// most callers want; ExecuteWithDisplay adds the chat's presentation payload.
 func (e *Executor) Execute(ctx context.Context, name, argsJSON string) (string, error) {
+	out, _, err := e.ExecuteWithDisplay(ctx, name, argsJSON)
+	return out, err
+}
+
+// ExecuteWithDisplay runs a tool and returns its model-visible result plus, for
+// the few tools whose result is a machine-readable envelope, a display payload
+// the chat renders in place of that envelope. The model always receives the raw
+// result; Display is presentation only.
+func (e *Executor) ExecuteWithDisplay(ctx context.Context, name, argsJSON string) (string, json.RawMessage, error) {
+	out, err := e.execute(ctx, name, argsJSON)
+	if err != nil {
+		return out, nil, err
+	}
+	return out, toolDisplay(name, out), nil
+}
+
+// toolDisplay builds the human-readable payload for a tool whose model-visible
+// result is JSON. A tool with a dedicated frontend renderer, or one whose
+// result already reads as text, returns nil and the UI falls back to it.
+func toolDisplay(name, out string) json.RawMessage {
+	switch name {
+	case "ask_user":
+		var r struct {
+			Answer  string      `json:"answer"`
+			Answers []AskAnswer `json:"answers"`
+		}
+		if json.Unmarshal([]byte(out), &r) != nil {
+			return nil
+		}
+		answers := r.Answers
+		if len(answers) == 0 && r.Answer != "" {
+			answers = []AskAnswer{{Answer: r.Answer}}
+		}
+		if len(answers) == 0 {
+			return nil
+		}
+		return displayJSON(map[string]any{"kind": "answers", "answers": answers})
+	case "list_files":
+		var r struct {
+			Files     []string `json:"files"`
+			Truncated bool     `json:"truncated"`
+		}
+		if json.Unmarshal([]byte(out), &r) != nil {
+			return nil
+		}
+		return displayJSON(map[string]any{
+			"kind":      "files",
+			"count":     len(r.Files),
+			"files":     r.Files,
+			"truncated": r.Truncated,
+		})
+	case "fetch_url":
+		// The model gets the whole page; the chat shows a readable preview so a
+		// large fetch does not double its weight in the transcript.
+		var r struct {
+			URL  string `json:"url"`
+			Text string `json:"text"`
+		}
+		if json.Unmarshal([]byte(out), &r) != nil || r.Text == "" {
+			return nil
+		}
+		text, truncated := capDisplayText(r.Text, 4000)
+		return displayJSON(map[string]any{
+			"kind":      "text",
+			"label":     r.URL,
+			"text":      text,
+			"truncated": truncated,
+		})
+	case "web_search":
+		var r struct {
+			Query string `json:"query"`
+			Text  string `json:"text"`
+		}
+		if json.Unmarshal([]byte(out), &r) != nil || r.Text == "" {
+			return nil
+		}
+		text, truncated := capDisplayText(r.Text, 4000)
+		return displayJSON(map[string]any{
+			"kind":      "text",
+			"label":     r.Query,
+			"text":      text,
+			"truncated": truncated,
+		})
+	}
+	return nil
+}
+
+// capDisplayText returns at most n bytes of s, cut on a rune boundary, and
+// whether anything was dropped.
+func capDisplayText(s string, n int) (string, bool) {
+	if len(s) <= n {
+		return s, false
+	}
+	return strings.ToValidUTF8(s[:n], ""), true
+}
+
+func displayJSON(v map[string]any) json.RawMessage {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return nil
+	}
+	return b
+}
+
+func (e *Executor) execute(ctx context.Context, name, argsJSON string) (string, error) {
 	if e.DisabledTools[name] {
 		return "", fmt.Errorf("%s is disabled in Settings → Tools & permissions → Tools", name)
 	}

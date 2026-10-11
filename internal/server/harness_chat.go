@@ -276,8 +276,8 @@ func (r *harnessToolRunner) RunTool(ctx context.Context, call harness.ToolCall) 
 	if r.exec == nil {
 		return harness.ToolResult{Text: "no tool executor is available for this turn", IsError: true}, nil
 	}
-	out, err := r.exec.Execute(ctx, call.Tool, string(call.Args))
-	res := harness.ToolResult{Text: out}
+	out, display, err := r.exec.ExecuteWithDisplay(ctx, call.Tool, string(call.Args))
+	res := harness.ToolResult{Text: out, Details: display}
 	if err != nil {
 		res.IsError = true
 		if out == "" {
@@ -546,12 +546,16 @@ func entryToolCalls(entry json.RawMessage) []llm.ToolCall {
 // the id of the call it answers. The built-in loop writes these as it goes and
 // the durable harness has to as well: the UI pairs a call with its result by
 // that id and renders the result only when it finds the pairing.
-func (s *Server) recordToolResult(projectID, sessionID, callID, name, text string) error {
-	meta, err := json.Marshal(map[string]any{"tool_call_id": callID, "name": name})
+func (s *Server) recordToolResult(projectID, sessionID, callID, name, text string, display json.RawMessage) error {
+	meta := map[string]any{"tool_call_id": callID, "name": name}
+	if len(display) > 0 {
+		meta["display"] = display
+	}
+	mb, err := json.Marshal(meta)
 	if err != nil {
 		return err
 	}
-	_, err = s.st.AddMessage(projectID, sessionID, "tool", text, string(meta), "", "", "", "")
+	_, err = s.st.AddMessage(projectID, sessionID, "tool", text, string(mb), "", "", "", "")
 	return err
 }
 
@@ -989,14 +993,14 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge,
 				}
 				// Record the result the way the built-in loop does, so the UI can pair
 				// it with its call and still show it after a reload.
-				if err := s.recordToolResult(params.Project.ID, params.SessionID, ev.ToolCallID, ev.ToolName, text); err != nil {
+				if err := s.recordToolResult(params.Project.ID, params.SessionID, ev.ToolCallID, ev.ToolName, text, res.Details); err != nil {
 					log.Printf("chat: recording a tool result: %v", err)
 				}
 				// The result goes out whole, as the persisted row does: the client
 				// parses it to render the command output, the edit diff and the
 				// failure reason, so a truncated envelope shows as unparseable text
 				// until the next reload reads the full row back.
-				emit(agent.ChatEvent{Type: "tool_end", Name: ev.ToolName, OK: ev.Entry != nil && !isError, Detail: text})
+				emit(agent.ChatEvent{Type: "tool_end", Name: ev.ToolName, OK: ev.Entry != nil && !isError, Detail: text, Display: res.Details})
 			case "compaction_start":
 				// pi-durable compacts its own transcript (threshold, overflow, or a
 				// manual request). The built-in loop compacts in memory without a
