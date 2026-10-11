@@ -2010,10 +2010,15 @@ function askQuestions(detail: string): AskQuestionView[] {
 }
 
 // Extracts the answers from an ask_user tool result: multi-question results
-// are {"answers":[{question,answer},…]}, single ones {"answer": "..."}.
+// are {"answers":[{question,answer},…]}, single ones {"answer": "..."}. A bare
+// array of {question,answer} (what some paths store) is accepted too.
 function askAnswers(detail: string): AskAnswerView[] {
   try {
-    const r = JSON.parse(detail) as { answer?: unknown; answers?: unknown };
+    const parsed = JSON.parse(detail) as unknown;
+    const r = (Array.isArray(parsed) ? { answers: parsed } : parsed) as {
+      answer?: unknown;
+      answers?: unknown;
+    };
     if (Array.isArray(r.answers)) {
       const list = r.answers
         .filter((a): a is { question?: unknown; answer?: unknown } => typeof a === 'object' && a !== null)
@@ -2267,11 +2272,42 @@ function subagentId(detail: string): { id: string | null; text: string } {
   return { id: m[1], text: detail.slice(0, m.index).trimEnd() };
 }
 
+function AskResultBlock({ answers }: { answers: AskAnswerView[] }) {
+  return (
+    <div className="rounded-lg border border-accent/30 bg-surface p-2.5">
+      <div className="mb-1 flex items-center gap-1.5 text-[10px] text-faint">
+        <IconUser className="h-3 w-3 shrink-0 text-accent" />
+        <span>{answers.length === 1 ? 'Asked 1 question' : `Asked ${answers.length} questions`}</span>
+      </div>
+      <div className="space-y-1.5">
+        {answers.map((a, i) => (
+          <div key={i}>
+            {a.question && (
+              <p className="whitespace-pre-wrap break-words text-sm text-text">{a.question}</p>
+            )}
+            <p className="flex items-start gap-1.5 text-xs text-dim">
+              <IconCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-400" />
+              <span className="min-w-0 whitespace-pre-wrap break-words">{a.answer}</span>
+            </p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function ToolResultBlock({ name, detail }: ToolCall) {
   const [open, setOpen] = useState(false);
   const display = useToolDisplay(name);
   const Icon = toolIcon(name, display);
   const openDelegate = useContext(DelegateOpenContext);
+  // An ask_user result whose inline question block never rendered (a reconnect,
+  // or a result stored without its call) would otherwise show raw JSON. Render
+  // the answers the way the question block does instead.
+  if (name === 'ask_user') {
+    const answers = askAnswers(detail);
+    if (answers.length > 0) return <AskResultBlock answers={answers} />;
+  }
   // A sub-agent result carries the child conversation id as a trailing marker;
   // hide it from the text and offer the full transcript instead.
   const sub = name === 'delegate' ? subagentId(detail) : null;

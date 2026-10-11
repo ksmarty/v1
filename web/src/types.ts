@@ -419,11 +419,20 @@ export interface ExtensionToolDisplay {
   summary?: string;
 }
 
+/** One tool an extension contributes, as the harness reports it. */
+export interface LoadedTool {
+  name: string;
+  description?: string;
+  display?: ExtensionToolDisplay;
+}
+
 /** One extension the sidecar actually loaded, as the harness reports it. */
 export interface LoadedExtension {
   id: string;
   name: string;
   tools: string[];
+  /** Name, description and display metadata per tool. */
+  toolDetails?: LoadedTool[];
   sections: string[];
   display?: Record<string, ExtensionToolDisplay>;
 }

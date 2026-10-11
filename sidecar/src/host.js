@@ -24,11 +24,12 @@ import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite
 import { BACKGROUND_CONTEXT, withAbortSignal } from "@earendil-works/chord/context";
 
 import { log } from "./log.js";
+import { countToolCalls, firstAssistantText } from "./entries.js";
 import { writeModelCatalog } from "./modeldata.js";
 import { installProviderFetchLog } from "./providerlog.js";
 import { RpcError, createPeer } from "./rpc.js";
 import { createModelStore, registerProvider } from "./provider.js";
-import { bindToolToConversation, extensionConflicts, hookNames, loadExtensions, sectionKeys, toolDisplay, toolNames } from "./extensions.js";
+import { bindToolToConversation, extensionConflicts, hookNames, loadExtensions, sectionKeys, toolDetails, toolDisplay, toolNames } from "./extensions.js";
 import { buildApprovalHook, buildContinuationHook, buildHostTools, buildSearchTool } from "./tools.js";
 
 /** Bridge protocol revision; must equal `harness.ProtocolVersion` in Go. */
@@ -468,6 +469,9 @@ class Sidecar {
 				id: entry.id,
 				name: entry.name,
 				tools: toolNames(entry.extension),
+				// Name, description and display metadata per tool, for the extension's
+				// tool list in v1.
+				toolDetails: toolDetails(entry.extension),
 				sections: sectionKeys(entry.extension),
 				hooks: hookNames(entry.extension),
 				// How the extension wants its tool calls presented. Carried with the
@@ -650,29 +654,13 @@ class Sidecar {
 	async readAnswer(conversation, maxChars) {
 		const page = await conversation.entries({}, 40, undefined, this.ctx);
 		const items = page?.items ?? [];
-		let toolCalls = 0;
+		// Tool calls are counted across every entry, not just the final message:
+		// the sub-agent's tools ran in earlier rounds, so stopping at the final
+		// text would report "no tools".
+		const toolCalls = countToolCalls(items);
 		// entries() is newest-first, so the first assistant message carrying text
 		// is the answer the child finished on.
-		let text = "";
-		for (const entry of items) {
-			for (const message of [...(entry?.model ?? [])].reverse()) {
-				if (message?.role !== "assistant") continue;
-				const blocks = Array.isArray(message.content) ? message.content : [];
-				for (const block of blocks) {
-					if (typeof block?.type === "string" && block.type.toLowerCase().startsWith("toolcall")) {
-					toolCalls += 1;
-				}
-				}
-				if (text) continue;
-				const joined = blocks
-					.filter((block) => block?.type === "text" && typeof block.text === "string")
-					.map((block) => block.text)
-					.join("")
-					.trim();
-				if (joined) text = joined;
-			}
-			if (text) break;
-		}
+		const text = firstAssistantText(items);
 		const limit = Number.isInteger(maxChars) && maxChars > 0 ? maxChars : 20000;
 		const truncated = text.length > limit;
 		return {

@@ -6,6 +6,7 @@ import type {
   ExtensionSettingField,
   InstalledExtension,
   InstalledSkill,
+  LoadedTool,
   MCPServer,
   MCPServerStatus,
   PermissionMode,
@@ -17,7 +18,7 @@ import { Button, Dialog, Field, InfoTip, Input, SaveRow, Select, Spinner, toast 
 import CodeEditor from './CodeEditor';
 import Markdown from './Markdown';
 import NewExtensionDialog from './NewExtensionDialog';
-import { IconCheck, IconExternalLink, IconFlask, IconPencil, IconX } from './icons';
+import { IconCheck, IconChevronDown, IconChevronRight, IconExternalLink, IconFlask, IconPencil, IconWrench, IconX } from './icons';
 
 const TABS = [
   { id: 'mcp', label: 'MCP' },
@@ -179,6 +180,50 @@ function SkillPreviewDialog({
   );
 }
 
+/** One extension tool, rendered like a chat tool call: a header that expands
+ *  to the tool's own description and display metadata. */
+function ExtensionToolCard({ tool }: { tool: LoadedTool }) {
+  const [open, setOpen] = useState(false);
+  const title = tool.display?.title ?? tool.name;
+  return (
+    <div className="rounded-md border border-border/80 bg-surface/50 text-[10px]">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex min-h-[26px] w-full items-center gap-1.5 px-2 py-1 text-left text-dim transition-colors hover:text-text"
+      >
+        {open ? (
+          <IconChevronDown className="h-3.5 w-3.5 shrink-0" />
+        ) : (
+          <IconChevronRight className="h-3.5 w-3.5 shrink-0" />
+        )}
+        <IconWrench className="h-3 w-3 shrink-0 text-faint" />
+        <span className="shrink-0 font-mono text-text">{title}</span>
+        {title !== tool.name && <span className="truncate font-mono text-faint">{tool.name}</span>}
+      </button>
+      {open && (
+        <div className="space-y-1.5 border-t border-border/80 px-3 py-2 text-[11px] leading-relaxed text-dim">
+          <p className="whitespace-pre-wrap break-words">
+            {tool.description ? tool.description : <span className="text-faint">No description.</span>}
+          </p>
+          {tool.display?.summary && (
+            <p>
+              <span className="text-faint">Summary: </span>
+              <span className="font-mono">{tool.display.summary}</span>
+            </p>
+          )}
+          {tool.display?.icon && (
+            <p>
+              <span className="text-faint">Icon: </span>
+              <span className="font-mono">{tool.display.icon}</span>
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /**
  * MCP servers, installed skills, and the tool approval mode. Shared by the
  * Settings page and the chat's quick-access tools dialog: one section at a
@@ -250,6 +295,9 @@ function ToolSettings({
   const [extensions, setExtensions] = useState<InstalledExtension[]>([]);
   const [extErrors, setExtErrors] = useState<string[]>([]);
   const [extConflicts, setExtConflicts] = useState<ExtensionConflict[]>([]);
+  // The tools each loaded extension contributes, keyed by extension id, so the
+  // extension page can list them like chat tool calls without a second fetch.
+  const [extTools, setExtTools] = useState<Record<string, LoadedTool[]>>({});
   const [extError, setExtError] = useState<string | null>(null);
   const [extBusy, setExtBusy] = useState(false);
   // Whether the "describe an extension" chat-starter dialog is open.
@@ -284,7 +332,7 @@ function ToolSettings({
       ));
   // Which pane the extension dialog is showing: the detail (description,
   // settings), the source popup, or the full-height description editor.
-  const [extView, setExtView] = useState<'detail' | 'code' | 'description'>('detail');
+  const [extView, setExtView] = useState<'detail' | 'code' | 'description' | 'tools'>('detail');
 
   // Approval mode
   const [permissionMode, setPermissionMode] = useState<PermissionMode>(initialPermissionMode ?? 'ask');
@@ -1084,6 +1132,8 @@ function ToolSettings({
       setExtensions(r.extensions ?? []);
       setExtErrors((r.errors ?? []).map(String));
       setExtConflicts(r.harness?.conflicts ?? []);
+      const loaded = r.harness?.loaded ?? [];
+      setExtTools(Object.fromEntries(loaded.map((ext) => [ext.id, ext.toolDetails ?? []])));
     } catch (err) {
       setExtError(errMsg(err));
     }
@@ -1634,9 +1684,11 @@ function ToolSettings({
               ? `Source — ${extEditor.id || 'extension'}`
               : extView === 'description'
                 ? 'Description'
-                : extEditor.isNew
-                  ? 'New extension'
-                  : `Edit ${extEditor.id}`
+                : extView === 'tools'
+                  ? `Tools — ${extEditor.id || 'extension'}`
+                  : extEditor.isNew
+                    ? 'New extension'
+                    : `Edit ${extEditor.id}`
           }
           wide
           fullScreen
@@ -1670,6 +1722,12 @@ function ToolSettings({
                 autoFocus
                 className="min-h-0 w-full flex-1 resize-none rounded-lg border border-border-strong bg-surface px-3 py-2 text-sm text-text outline-none transition-colors focus:border-subtle"
               />
+            ) : extView === 'tools' ? (
+              <div className="fade-y flex min-h-0 flex-1 flex-col gap-1.5 overflow-x-hidden overflow-y-auto overscroll-contain">
+                {(extTools[extEditor.id] ?? []).map((tool) => (
+                  <ExtensionToolCard key={tool.name} tool={tool} />
+                ))}
+              </div>
             ) : (
               <>
                 {/* Fields stack on a phone: side by side, a fixed-width Id
@@ -1703,6 +1761,15 @@ function ToolSettings({
                   >
                     View source
                   </Button>
+                  {(extTools[extEditor.id]?.length ?? 0) > 0 && (
+                    <Button
+                      variant="outline"
+                      className="h-8 px-3 text-xs"
+                      onClick={() => setExtView('tools')}
+                    >
+                      <IconWrench className="h-3.5 w-3.5" /> View tools
+                    </Button>
+                  )}
                 </div>
                 {extEditor.schema.length > 0 && (
                   <div className="shrink-0 space-y-2.5 rounded-lg border border-border-strong bg-surface px-3 py-2.5">

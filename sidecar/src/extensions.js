@@ -69,18 +69,45 @@ export function toolNames(extension) {
  * Only recognised keys survive, so a typo costs a nicety rather than putting
  * malformed metadata in front of v1.
  */
+/** The recognised display keys of one tool, or null when it declares none. */
+function displayOf(tool) {
+	const source = tool?.display;
+	if (!source || typeof source !== "object") return null;
+	const entry = {};
+	if (typeof source.title === "string") entry.title = source.title;
+	if (typeof source.icon === "string") entry.icon = source.icon;
+	if (typeof source.summary === "string") entry.summary = source.summary;
+	return Object.keys(entry).length > 0 ? entry : null;
+}
+
 export function toolDisplay(extension) {
 	const tools = Array.isArray(extension?.tools) ? extension.tools : [];
 	const out = {};
 	for (const tool of tools) {
 		if (typeof tool?.name !== "string") continue;
-		const source = tool.display;
-		if (!source || typeof source !== "object") continue;
-		const entry = {};
-		if (typeof source.title === "string") entry.title = source.title;
-		if (typeof source.icon === "string") entry.icon = source.icon;
-		if (typeof source.summary === "string") entry.summary = source.summary;
-		if (Object.keys(entry).length > 0) out[tool.name] = entry;
+		const entry = displayOf(tool);
+		if (entry) out[tool.name] = entry;
+	}
+	return out;
+}
+
+/**
+ * Per-tool name, description and display metadata, for the extension's tool
+ * list in v1. Descriptions travel here rather than only in the schema because
+ * the settings UI shows a tool's own explanation when its card is expanded.
+ */
+export function toolDetails(extension) {
+	const tools = Array.isArray(extension?.tools) ? extension.tools : [];
+	const out = [];
+	for (const tool of tools) {
+		if (typeof tool?.name !== "string") continue;
+		const entry = { name: tool.name };
+		if (typeof tool.description === "string" && tool.description.trim()) {
+			entry.description = tool.description.trim();
+		}
+		const display = displayOf(tool);
+		if (display) entry.display = display;
+		out.push(entry);
 	}
 	return out;
 }

@@ -32,6 +32,7 @@ import { createPeer } from "../src/rpc.js";
 import { bindToolToConversation, extensionConflicts, hookNames, loadExtensions, toolNames } from "../src/extensions.js";
 import { endpointHeaders } from "../src/provider.js";
 import { buildHostTools, buildSearchTool, searchTools } from "../src/tools.js";
+import { countToolCalls, firstAssistantText } from "../src/entries.js";
 
 const run = promisify(execFile);
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -744,6 +745,30 @@ async function checkSearchTool() {
 }
 
 /**
+ * A delegated sub-agent's tool calls live in older entries; the answer is the
+ * newest assistant text. The reader must scan the whole page, not stop at the
+ * final message, or it reports "no tools used".
+ */
+function checkEntryHelpers() {
+	const entries = [
+		{ model: [{ role: "assistant", content: [{ type: "text", text: "Done." }] }] },
+		{
+			model: [
+				{
+					role: "assistant",
+					content: [{ type: "toolCall", name: "run_command" }, { type: "text", text: "ran it" }],
+				},
+			],
+		},
+		{ model: [{ role: "assistant", content: [{ type: "toolCall", name: "list_files" }] }] },
+		{ model: [{ role: "user", content: [{ type: "text", text: "go" }] }] },
+	];
+	check("countToolCalls counts across rounds", countToolCalls(entries) === 2, String(countToolCalls(entries)));
+	check("firstAssistantText picks the newest text", firstAssistantText(entries) === "Done.", firstAssistantText(entries));
+	check("empty entry page yields nothing", countToolCalls([]) === 0 && firstAssistantText([]) === "");
+}
+
+/**
  * turn.submit accepts both a plain message and content parts. The Go side sends
  * parts for a turn with attachments, so the sidecar must forward them rather
  * than expect a string.
@@ -761,4 +786,5 @@ checkExtensionConflicts();
 await checkConversationBinding();
 await checkToolResultMapping();
 await checkSearchTool();
+checkEntryHelpers();
 await main();
