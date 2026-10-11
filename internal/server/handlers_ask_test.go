@@ -168,3 +168,39 @@ func TestAskLifecycle(t *testing.T) {
 		t.Fatalf("respond unknown: %d %s", rr.Code, rr.Body.String())
 	}
 }
+
+// parseAskAnswers must accept the [{question,answer}] array the UI posts for a
+// single-question ask, not just the plain string the older client sent —
+// otherwise the whole JSON array is stored as the answer and shown in the chat.
+func TestParseAskAnswers(t *testing.T) {
+	one := []agent.AskQuestion{{Question: "Which days work best for you?"}}
+	got := parseAskAnswers(`[{"question":"Which days work best for you?","answer":"Wednesday"}]`, one)
+	if len(got) != 1 || got[0].Answer != "Wednesday" || got[0].Question != one[0].Question {
+		t.Fatalf("array payload: %+v", got)
+	}
+
+	// A plain answer string still works (backward compatible).
+	got = parseAskAnswers("Cats", one)
+	if len(got) != 1 || got[0].Answer != "Cats" || got[0].Question != one[0].Question {
+		t.Fatalf("plain payload: %+v", got)
+	}
+
+	// A literal JSON answer without an "answer" key is not the envelope.
+	got = parseAskAnswers(`[{"x":1}]`, one)
+	if len(got) != 1 || got[0].Answer != `[{"x":1}]` {
+		t.Fatalf("literal json: %+v", got)
+	}
+
+	// Multi-question: the array maps positionally.
+	two := []agent.AskQuestion{{Question: "a"}, {Question: "b"}}
+	got = parseAskAnswers(`[{"question":"a","answer":"1"},{"question":"b","answer":"2"}]`, two)
+	if len(got) != 2 || got[0].Answer != "1" || got[1].Answer != "2" {
+		t.Fatalf("multi payload: %+v", got)
+	}
+
+	// A malformed multi-question payload yields empty answers, not a JSON blob.
+	got = parseAskAnswers("garbage", two)
+	if len(got) != 2 || got[0].Answer != "" || got[1].Question != "b" {
+		t.Fatalf("fallback: %+v", got)
+	}
+}

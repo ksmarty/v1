@@ -2089,9 +2089,23 @@ function askQuestions(detail: string): AskQuestionView[] {
   }
 }
 
+// Maps an array of {question,answer} objects to views, dropping blanks.
+function parseAnswerList(value: unknown): AskAnswerView[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((a): a is { question?: unknown; answer?: unknown } => typeof a === 'object' && a !== null)
+    .map((a) => ({
+      question: typeof a.question === 'string' ? a.question : '',
+      answer: typeof a.answer === 'string' ? a.answer : '',
+    }))
+    .filter((a) => a.answer !== '');
+}
+
 // Extracts the answers from an ask_user tool result: multi-question results
 // are {"answers":[{question,answer},…]}, single ones {"answer": "..."}. A bare
-// array of {question,answer} (what some paths store) is accepted too.
+// array of {question,answer} (what some paths store) is accepted too, and a
+// single answer that is itself a stringified array is unwrapped so the JSON
+// envelope never reaches the transcript.
 function askAnswers(detail: string): AskAnswerView[] {
   try {
     const parsed = JSON.parse(detail) as unknown;
@@ -2099,17 +2113,18 @@ function askAnswers(detail: string): AskAnswerView[] {
       answer?: unknown;
       answers?: unknown;
     };
-    if (Array.isArray(r.answers)) {
-      const list = r.answers
-        .filter((a): a is { question?: unknown; answer?: unknown } => typeof a === 'object' && a !== null)
-        .map((a) => ({
-          question: typeof a.question === 'string' ? a.question : '',
-          answer: typeof a.answer === 'string' ? a.answer : '',
-        }))
-        .filter((a) => a.answer !== '');
-      if (list.length > 0) return list;
-    }
+    const list = parseAnswerList(r.answers);
+    if (list.length > 0) return list;
     if (typeof r.answer === 'string' && r.answer !== '') {
+      try {
+        const nested = JSON.parse(r.answer) as unknown;
+        const inner = parseAnswerList(
+          Array.isArray(nested) ? nested : (nested as { answers?: unknown } | null)?.answers,
+        );
+        if (inner.length > 0) return inner;
+      } catch {
+        // a plain answer
+      }
       return [{ question: '', answer: r.answer }];
     }
     return [];

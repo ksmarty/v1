@@ -81,18 +81,37 @@ func (s *Server) turnAsk(projectID, sessionID string, emit func(agent.ChatEvent)
 }
 
 // parseAskAnswers turns the response payload into the answers array. The UI
-// posts {"answers":[{question,answer},…]} for multi-question asks and a plain
-// "answer" string for single ones (backward compatible).
+// answers through {"answers":[{question,answer},…]}, marshaled to a JSON array
+// here, for single- and multi-question asks alike; a plain answer string (an
+// older client) is used as-is. The array form is only trusted when an element
+// actually carries an "answer" key, so a user who typed JSON as their answer
+// is not mistaken for the envelope.
 func parseAskAnswers(payload string, questions []agent.AskQuestion) []agent.AskAnswer {
+	var raw []struct {
+		Question string  `json:"question"`
+		Answer   *string `json:"answer"`
+	}
+	if json.Unmarshal([]byte(payload), &raw) == nil && len(raw) > 0 && raw[0].Answer != nil {
+		out := make([]agent.AskAnswer, len(raw))
+		for i, a := range raw {
+			out[i] = agent.AskAnswer{Question: a.Question, Answer: *a.Answer}
+		}
+		if len(questions) == 1 {
+			if out[0].Question == "" {
+				out[0].Question = questions[0].Question
+			}
+			return out[:1]
+		}
+		if len(out) == len(questions) {
+			return out
+		}
+	}
 	if len(questions) == 1 {
 		return []agent.AskAnswer{{Question: questions[0].Question, Answer: payload}}
 	}
-	var out []agent.AskAnswer
-	if err := json.Unmarshal([]byte(payload), &out); err != nil || len(out) != len(questions) {
-		out = make([]agent.AskAnswer, len(questions))
-		for i, q := range questions {
-			out[i].Question = q.Question
-		}
+	out := make([]agent.AskAnswer, len(questions))
+	for i, q := range questions {
+		out[i].Question = q.Question
 	}
 	return out
 }
