@@ -677,7 +677,11 @@ function ToolRow({ item }: { item: ToolItem }) {
         )}
         <Icon className="h-3 w-3 shrink-0 text-faint" />
         <span className="shrink-0 font-mono text-text">{toolLabel(item.name, display)}</span>
-        {item.detail && <span className="min-w-0 flex-1 truncate text-faint">{item.detail}</span>}
+        {(item.call ?? item.detail) && (
+          <span className="min-w-0 flex-1 truncate text-faint">
+            {chipLabel(item.call ?? item.detail, display)}
+          </span>
+        )}
         {item.running ? (
           <Spinner className="h-3.5 w-3.5 shrink-0" />
         ) : item.ok ? (
@@ -686,7 +690,7 @@ function ToolRow({ item }: { item: ToolItem }) {
           <IconX className="h-3.5 w-3.5 shrink-0 text-red-500" />
         )}
       </button>
-      {open && item.detail && <ToolBody detail={item.detail} />}
+      {open && (item.call ?? item.detail) && <ToolBody detail={item.call ?? item.detail} />}
     </div>
   );
 }
@@ -847,6 +851,9 @@ function chipLabel(detail: string, display?: ExtensionToolDisplay): string {
     }
     const v = a.command ?? a.path ?? a.query ?? a.url;
     if (typeof v === 'string') return v;
+    // ask_user: the question is the whole story (the row is normally replaced
+    // by the inline question block, but the live label should still read well).
+    if (typeof a.question === 'string' && a.question.trim()) return a.question;
     if (Array.isArray(a.todos)) {
       return `${a.todos.length} todo${a.todos.length === 1 ? '' : 's'}`;
     }

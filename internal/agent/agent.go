@@ -737,7 +737,15 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 			return &TurnResult{Usage: usage, Model: p.Client.Model}, nil
 		}
 		for _, tc := range res.ToolCalls {
-			p.Emit(ChatEvent{Type: "tool_start", Name: tc.Function.Name, Detail: toolDetail(tc)})
+			// The full arguments, not a summary: the client renders the live card
+			// from the same JSON the reload path parses (edit diff, write content,
+			// todo/plan previews), so a call looks right during the turn and not
+			// only after a reload. The summary is only a fallback for empty args.
+			detail := tc.Function.Arguments
+			if detail == "" || detail == "null" {
+				detail = toolDetail(tc)
+			}
+			p.Emit(ChatEvent{Type: "tool_start", Name: tc.Function.Name, Detail: detail})
 			result, display, execErr := p.Exec.ExecuteWithDisplay(turnCtx, tc.Function.Name, tc.Function.Arguments)
 			ok := execErr == nil
 			if !ok {

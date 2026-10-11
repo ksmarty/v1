@@ -102,7 +102,7 @@ func TestConsumeHarnessTurnTranslatesEvents(t *testing.T) {
 	if len(reasonings) != 1 || reasonings[0].Text != "why" {
 		t.Fatalf("reasoning events = %+v", reasonings)
 	}
-	if len(toolStarts) != 2 || toolStarts[0].Name != "read_file" || toolStarts[0].Detail != "a.txt" {
+	if len(toolStarts) != 2 || toolStarts[0].Name != "read_file" || toolStarts[0].Detail != `{"path":"a.txt"}` {
 		t.Fatalf("tool_start events = %+v", toolStarts)
 	}
 	if len(toolEnds) != 3 {

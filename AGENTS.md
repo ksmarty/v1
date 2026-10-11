@@ -189,7 +189,11 @@ or `make dev`), then report: (1) the new stamped build version (`v1 <version>
   show their raw JSON arguments collapsed behind an "Input" toggle when a
   result is present; `search_files`/`search_memories`/`set_todos`/`remember`/
   `make_plan`/`create_extension`/`set_project_name`/`set_session_name` render
-  purpose-built blocks instead. A `replace:true` on a `delta`/`reasoning`
+  purpose-built blocks instead. The `tool_start` event carries the call's full
+  arguments JSON (not a path/command summary), so a live card — an edit diff
+  with its +/- counts, a write's content, a todo/plan preview — renders the
+  same as the reloaded one; the summary is only a fallback for empty args. A
+  `replace:true` on a `delta`/`reasoning`
   event means the text replaces the live value rather than appending — the
   harness sends it when a round's committed text is not an extension of what
   streamed (retry/abort), so a stale fragment isn't glued on.

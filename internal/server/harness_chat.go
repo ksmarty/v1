@@ -976,7 +976,15 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge,
 					return turn, errors.New(msg)
 				}
 			case "tool_execution_start":
-				emit(agent.ChatEvent{Type: "tool_start", Name: ev.ToolName, Detail: harnessToolDetail(ev.Args)})
+				// The full arguments, not a summary: the client renders the live card
+				// from the same JSON the reload path parses (edit diff, write content,
+				// todo/plan previews), so a call looks right during the turn and not
+				// only after a reload. The summary is only a fallback for empty args.
+				detail := string(ev.Args)
+				if detail == "" || detail == "null" {
+					detail = harnessToolDetail(ev.Args)
+				}
+				emit(agent.ChatEvent{Type: "tool_start", Name: ev.ToolName, Detail: detail})
 			case "tool_execution_end":
 				// An absent entry means the tool task faulted or was orphaned;
 				// a tool that ran and failed is reported by its own runner.
