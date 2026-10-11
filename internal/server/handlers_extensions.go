@@ -249,7 +249,34 @@ func (s *Server) reloadExtensions(ctx context.Context) map[string]any {
 //
 // The result names the tools and prompt sections the extension contributed, or
 // returns the load error so the agent can fix it.
-func (s *Server) createExtension(ctx context.Context, id, description, source string) (string, error) {
+func (s *Server) createExtension(ctx context.Context, id, description, version, changelog, source string) (string, error) {
+	version = strings.TrimSpace(version)
+	changelog = strings.TrimSpace(changelog)
+	if version == "" {
+		return "", fmt.Errorf("a version is required, e.g. \"1.0.0\"")
+	}
+	if changelog == "" {
+		return "", fmt.Errorf("a changelog is required: one line describing what changed in this version")
+	}
+
+	list := s.installedExtensions()
+	installed := -1
+	for i := range list {
+		if list[i].ID == id {
+			installed = i
+			break
+		}
+	}
+	// A version must move forward, so an update can never be mistaken for the
+	// install it replaces. Checked before writing, so a rejected update leaves
+	// the installed source untouched.
+	if installed >= 0 && list[installed].Version != "" {
+		if extensions.CompareVersions(version, list[installed].Version) <= 0 {
+			return "", fmt.Errorf("version %s must be greater than the installed %s — increment it for this update", version, list[installed].Version)
+		}
+	}
+	previous, _ := extensions.Read(s.extensionsRoot(), id)
+
 	if err := extensions.Validate(id, source); err != nil {
 		return "", err
 	}
@@ -257,26 +284,22 @@ func (s *Server) createExtension(ctx context.Context, id, description, source st
 		return "", err
 	}
 
-	list := s.installedExtensions()
 	now := time.Now().UTC()
-	updated := false
-	for i := range list {
-		if list[i].ID != id {
-			continue
-		}
+	if installed >= 0 {
 		if description != "" {
-			list[i].Description = description
+			list[installed].Description = description
 		}
-		list[i].Enabled = true
-		list[i].UpdatedAt = now
-		updated = true
-		break
-	}
-	if !updated {
+		list[installed].Version = version
+		list[installed].Changelog = changelog
+		list[installed].Enabled = true
+		list[installed].UpdatedAt = now
+	} else {
 		list = append(list, extensions.Extension{
 			ID:          id,
 			Name:        id,
 			Description: description,
+			Version:     version,
+			Changelog:   changelog,
 			Enabled:     true,
 			CreatedAt:   now,
 			UpdatedAt:   now,
@@ -294,7 +317,7 @@ func (s *Server) createExtension(ctx context.Context, id, description, source st
 	if len(outcome.conflicts) > 0 {
 		return "", fmt.Errorf("extension %q was written but its names conflict: %s (rename the tool/section/title, or uninstall the other extension)", id, strings.Join(outcome.conflicts, "; "))
 	}
-	message := fmt.Sprintf("installed extension %q and enabled it (source sha256:%s, %d bytes)", id, sourceDigest(source), len(source))
+	message := fmt.Sprintf("installed extension %q version %s and enabled it (source sha256:%s, %d bytes)", id, version, sourceDigest(source), len(source))
 	if len(outcome.tools) > 0 {
 		message += "; tools: " + strings.Join(outcome.tools, ", ")
 	}
@@ -303,6 +326,12 @@ func (s *Server) createExtension(ctx context.Context, id, description, source st
 	}
 	if len(outcome.hooks) > 0 {
 		message += "; hooks: " + strings.Join(outcome.hooks, ", ")
+	}
+	message += "\nchangelog: " + changelog
+	if diff := extensions.UnifiedDiff(previous, source); diff != "" {
+		message += "\nchanges:\n" + diff
+	} else if installed >= 0 {
+		message += "\nchanges: none (the source is unchanged)"
 	}
 	if !outcome.reloaded {
 		reason, _ := reload["reason"].(string)
@@ -343,6 +372,12 @@ func (s *Server) listExtensions(ctx context.Context) (string, error) {
 	rows := make([]map[string]any, 0, len(list))
 	for _, ext := range list {
 		row := map[string]any{"id": ext.ID, "enabled": ext.Enabled}
+		if ext.Version != "" {
+			row["version"] = ext.Version
+		}
+		if ext.Changelog != "" {
+			row["changelog"] = ext.Changelog
+		}
 		if ext.Builtin {
 			row["builtin"] = true
 		}
@@ -511,6 +546,8 @@ func (s *Server) handleExtensionsList(w http.ResponseWriter, r *http.Request) {
 			"id":          ext.ID,
 			"name":        ext.Name,
 			"description": ext.Description,
+			"version":     ext.Version,
+			"changelog":   ext.Changelog,
 			"enabled":     ext.Enabled,
 			"builtin":     ext.Builtin,
 			"createdAt":   ext.CreatedAt,
@@ -556,6 +593,8 @@ func (s *Server) handleExtensionGet(w http.ResponseWriter, r *http.Request) {
 		"id":          found.ID,
 		"name":        found.Name,
 		"description": found.Description,
+		"version":     found.Version,
+		"changelog":   found.Changelog,
 		"enabled":     found.Enabled,
 		"builtin":     found.Builtin,
 		"source":      source,
@@ -568,11 +607,23 @@ func (s *Server) handleExtensionSave(w http.ResponseWriter, r *http.Request) {
 		ID          string         `json:"id"`
 		Name        string         `json:"name"`
 		Description string         `json:"description"`
+		Version     string         `json:"version"`
+		Changelog   string         `json:"changelog"`
 		Source      string         `json:"source"`
 		Enabled     *bool          `json:"enabled"`
 		Settings    map[string]any `json:"settings"`
 	}
 	if !decodeJSON(w, r, &body) {
+		return
+	}
+	version := strings.TrimSpace(body.Version)
+	changelog := strings.TrimSpace(body.Changelog)
+	if version == "" {
+		writeError(w, http.StatusBadRequest, "a version is required, e.g. \"1.0.0\"")
+		return
+	}
+	if changelog == "" {
+		writeError(w, http.StatusBadRequest, "a changelog is required: one line describing what changed")
 		return
 	}
 	// The source is checked with node before it is stored: a syntax error is
@@ -582,32 +633,43 @@ func (s *Server) handleExtensionSave(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+
+	list := s.installedExtensions()
+	installed := -1
+	for i := range list {
+		if list[i].ID == body.ID {
+			installed = i
+			break
+		}
+	}
+	// An update must move the version forward, checked before writing so a
+	// rejected save leaves the installed source untouched.
+	if installed >= 0 && list[installed].Version != "" {
+		if extensions.CompareVersions(version, list[installed].Version) <= 0 {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("version %s must be greater than the installed %s — increment it for this update", version, list[installed].Version))
+			return
+		}
+	}
 	if err := extensions.Write(s.extensionsRoot(), body.ID, body.Source); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	list := s.installedExtensions()
 	now := time.Now().UTC()
-	updated := false
-	for i := range list {
-		if list[i].ID != body.ID {
-			continue
-		}
+	if installed >= 0 {
 		if body.Name != "" {
-			list[i].Name = body.Name
+			list[installed].Name = body.Name
 		}
 		if body.Description != "" {
-			list[i].Description = body.Description
+			list[installed].Description = body.Description
 		}
 		if body.Enabled != nil {
-			list[i].Enabled = *body.Enabled
+			list[installed].Enabled = *body.Enabled
 		}
-		list[i].UpdatedAt = now
-		updated = true
-		break
-	}
-	if !updated {
+		list[installed].Version = version
+		list[installed].Changelog = changelog
+		list[installed].UpdatedAt = now
+	} else {
 		name := body.Name
 		if name == "" {
 			name = body.ID
@@ -622,6 +684,8 @@ func (s *Server) handleExtensionSave(w http.ResponseWriter, r *http.Request) {
 			ID:          body.ID,
 			Name:        name,
 			Description: body.Description,
+			Version:     version,
+			Changelog:   changelog,
 			Enabled:     enabled,
 			CreatedAt:   now,
 			UpdatedAt:   now,

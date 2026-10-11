@@ -387,6 +387,17 @@ Extensions live at <data-dir>/extensions/<id>/index.js. The id must match
 [a-z0-9][a-z0-9-]* - lowercase letters, digits and dashes, and it cannot start
 with a dash.
 
+## Versions and changelog
+
+Every install and update must pass a version (for example "1.0.0") and a
+one-line changelog to create_extension. The version is stored and shown in
+the Extensions settings list, and the changelog tells the user what changed at
+a glance without reading the code. On an update the version must be greater
+than the installed one (compared component by component, so 1.10.0 > 1.9.0);
+create_extension refuses a same-or-older version, so bump it for every change
+you install. The result includes the changelog and a diff of the source, so you
+can confirm what changed without re-reading the file.
+
 ## The module
 
 The default export is a function. v1 calls it with an api object and uses what

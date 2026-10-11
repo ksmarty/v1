@@ -100,6 +100,8 @@ export interface Settings {
   autoPushDefault?: boolean;
   /** Compaction threshold in percent of the context window (e.g. 80). */
   contextThreshold: number;
+  /** Days an idle ephemeral chat is kept before it is archived (0 = never). */
+  ephemeralArchiveDays: number;
   /** System prompt override shown in Settings (empty = the built-in base). */
   systemPrompt: string;
   version: string;
@@ -384,6 +386,10 @@ export interface InstalledExtension {
   enabled: boolean;
   /** Bundled with v1: it can be disabled, never deleted. */
   builtin?: boolean;
+  /** The extension's version (e.g. 1.2.0). */
+  version?: string;
+  /** One line describing what changed in this version. */
+  changelog?: string;
   createdAt?: string;
   updatedAt?: string;
   /** Why the sidecar could not load it, when it could not. */

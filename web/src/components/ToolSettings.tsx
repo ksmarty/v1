@@ -305,6 +305,8 @@ function ToolSettings({
   const [extEditor, setExtEditor] = useState<{
     id: string;
     description: string;
+    version: string;
+    changelog: string;
     source: string;
     isNew: boolean;
     /** Bundled with v1: offered for disabling, never for deleting. */
@@ -318,6 +320,8 @@ function ToolSettings({
     /** The values as loaded, so Save can stay disabled until something changes. */
     original: {
       description: string;
+      version: string;
+      changelog: string;
       source: string;
       settings: Record<string, string | boolean>;
     };
@@ -326,6 +330,8 @@ function ToolSettings({
   const extDirty =
     extEditor !== null &&
     (extEditor.description !== extEditor.original.description ||
+      extEditor.version !== extEditor.original.version ||
+      extEditor.changelog !== extEditor.original.changelog ||
       extEditor.source !== extEditor.original.source ||
       extEditor.schema.some(
         (f) => extEditor.settings[f.key] !== extEditor.original.settings[f.key],
@@ -1153,6 +1159,8 @@ function ToolSettings({
       {
         id: string;
         description: string;
+        version: string;
+        changelog: string;
         source: string;
         builtin: boolean;
         settings?: ExtensionSettingField[];
@@ -1175,6 +1183,8 @@ function ToolSettings({
           extCache.current.set(ext.id, {
             id: r.id,
             description: r.description ?? '',
+            version: r.version ?? '',
+            changelog: r.changelog ?? '',
             source: r.source ?? '',
             builtin: r.builtin ?? false,
             settings: ext.settings,
@@ -1198,6 +1208,8 @@ function ToolSettings({
       setExtEditor({
         id: cached.id,
         description: cached.description,
+        version: cached.version,
+        changelog: cached.changelog,
         source: cached.source,
         isNew: false,
         builtin: cached.builtin,
@@ -1205,6 +1217,8 @@ function ToolSettings({
         settings: { ...(cached.values ?? {}) },
         original: {
           description: cached.description,
+          version: cached.version,
+          changelog: cached.changelog,
           source: cached.source,
           settings: { ...(cached.values ?? {}) },
         },
@@ -1220,13 +1234,21 @@ function ToolSettings({
     setExtEditor({
       id,
       description: listed?.description ?? '',
+      version: listed?.version ?? '',
+      changelog: listed?.changelog ?? '',
       source: '',
       isNew: false,
       builtin: listed?.builtin ?? false,
       schema: listedSchema,
       settings: { ...listedValues },
       loading: true,
-      original: { description: listed?.description ?? '', source: '', settings: { ...listedValues } },
+      original: {
+        description: listed?.description ?? '',
+        version: listed?.version ?? '',
+        changelog: listed?.changelog ?? '',
+        source: '',
+        settings: { ...listedValues },
+      },
     });
     try {
       const r = await api.extension(id);
@@ -1235,18 +1257,28 @@ function ToolSettings({
       extCache.current.set(id, {
         id: r.id,
         description,
+        version: r.version ?? '',
+        changelog: r.changelog ?? '',
         source,
         builtin: r.builtin ?? false,
       });
       setExtEditor({
         id: r.id,
         description,
+        version: r.version ?? '',
+        changelog: r.changelog ?? '',
         source,
         isNew: false,
         builtin: r.builtin ?? false,
         schema: listedSchema,
         settings: { ...listedValues },
-        original: { description, source, settings: { ...listedValues } },
+        original: {
+          description,
+          version: r.version ?? '',
+          changelog: r.changelog ?? '',
+          source,
+          settings: { ...listedValues },
+        },
       });
     } catch (err) {
       setExtError(errMsg(err));
@@ -1268,6 +1300,8 @@ function ToolSettings({
       const r = await api.extensionSave({
         id: extEditor.id.trim(),
         description: extEditor.description,
+        version: extEditor.version.trim(),
+        changelog: extEditor.changelog.trim(),
         source: extEditor.source,
         settings: extEditor.schema.length > 0 ? extEditor.settings : undefined,
         enabled: true,
@@ -1738,6 +1772,16 @@ function ToolSettings({
                       <Input value={extEditor.id} disabled autoComplete="off" />
                     </Field>
                   </div>
+                  <div className="sm:w-28">
+                    <Field label="Version">
+                      <Input
+                        value={extEditor.version}
+                        onChange={(e) => setExtEditor({ ...extEditor, version: e.target.value })}
+                        placeholder="1.0.0"
+                        autoComplete="off"
+                      />
+                    </Field>
+                  </div>
                   <div className="min-w-0 flex-1">
                     <Field label="Description">
                       <p className="min-h-[2.25rem] rounded-lg border border-border-strong bg-surface px-3 py-2 text-xs leading-relaxed text-text">
@@ -1745,6 +1789,16 @@ function ToolSettings({
                       </p>
                     </Field>
                   </div>
+                </div>
+                <div className="shrink-0">
+                  <Field label="Changelog">
+                    <Input
+                      value={extEditor.changelog}
+                      onChange={(e) => setExtEditor({ ...extEditor, changelog: e.target.value })}
+                      placeholder="what changed in this version"
+                      autoComplete="off"
+                    />
+                  </Field>
                 </div>
                 <div className="flex shrink-0 flex-wrap items-center gap-2">
                   <Button
@@ -1863,7 +1917,9 @@ function ToolSettings({
                     extBusy ||
                     !extDirty ||
                     extEditor.id.trim() === '' ||
-                    extEditor.source.trim() === ''
+                    extEditor.source.trim() === '' ||
+                    extEditor.version.trim() === '' ||
+                    extEditor.changelog.trim() === ''
                   }
                   onClick={() => void saveExtension()}
                 >
@@ -1904,10 +1960,20 @@ function ToolSettings({
                 title={`Edit ${ext.id}`}
                 className="min-w-0 flex-1 text-left"
               >
-                <div className="truncate text-sm text-text">{ext.id}</div>
+                <div className="flex items-center gap-2">
+                  <span className="truncate text-sm text-text">{ext.id}</span>
+                  {ext.version && (
+                    <span className="shrink-0 rounded bg-border px-1.5 py-0.5 text-[10px] font-medium text-subtle">
+                      v{ext.version}
+                    </span>
+                  )}
+                </div>
                 <div className="line-clamp-2 text-[11px] text-faint">
                   {ext.description !== '' ? ext.description : 'No description'}
                 </div>
+                {ext.changelog && (
+                  <div className="line-clamp-1 text-[10px] text-faint/80">{ext.changelog}</div>
+                )}
               </button>
               <button
                 type="button"

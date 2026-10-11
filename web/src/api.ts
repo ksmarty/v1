@@ -234,6 +234,7 @@ export interface SettingsUpdate {
   terminalWrap?: boolean;
   autoPushDefault?: boolean;
   contextThreshold?: number;
+  ephemeralArchiveDays?: number;
   systemPrompt?: string;
 }
 
@@ -565,6 +566,8 @@ export const api = {
       id: string;
       name: string;
       description: string;
+      version: string;
+      changelog: string;
       enabled: boolean;
       builtin: boolean;
       source: string;
@@ -572,6 +575,8 @@ export const api = {
   extensionSave: (body: {
     id: string;
     description: string;
+    version: string;
+    changelog: string;
     source: string;
     enabled: boolean;
     /** Only sent when the form has fields, so an unreadable schema never wipes values. */

@@ -429,7 +429,84 @@ function ContextThresholdControl() {
   );
 }
 
-// Whether tool results are TOON-encoded for the model (Settings → Appearance
+// How long an idle ephemeral chat is kept before it is archived. 0 turns the
+// automatic archive off (the chat stays until archived by hand).
+function EphemeralArchiveDaysControl() {
+  const [value, setValue] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const skipBlur = useRef(false);
+
+  useEffect(() => {
+    api
+      .getSettings()
+      .then((s) => setValue(String(s.ephemeralArchiveDays ?? 1)))
+      .catch(() => {});
+  }, []);
+
+  const restore = () => {
+    api
+      .getSettings()
+      .then((s) => setValue(String(s.ephemeralArchiveDays ?? 1)))
+      .catch(() => {});
+  };
+
+  const save = async () => {
+    const n = Number(value);
+    if (!Number.isInteger(n) || n < 0 || n > 3650) {
+      setError('Enter a whole number of days between 0 and 3650 (0 disables).');
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      await api.updateSettings({ ephemeralArchiveDays: n });
+      setValue(String(n));
+    } catch (e) {
+      setError(errMsg(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center gap-2">
+        <div className="relative w-28">
+          <Input
+            type="number"
+            min={0}
+            max={3650}
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            onBlur={() => {
+              if (skipBlur.current) {
+                skipBlur.current = false;
+                return;
+              }
+              void save();
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.currentTarget.blur();
+              } else if (e.key === 'Escape') {
+                skipBlur.current = true;
+                restore();
+                e.currentTarget.blur();
+              }
+            }}
+            className="h-8 pr-12 text-sm"
+          />
+          <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-faint">
+            days
+          </span>
+        </div>
+        {saving && <Spinner className="h-3.5 w-3.5" />}
+      </div>
+      {error && <p className="text-xs text-red-400">{error}</p>}
+    </div>
+  );
+}
 // → Tool calls). Server-backed so the agent loop reads it too.
 function ToonControl() {
   const [on, setOn] = useState(true);
@@ -2823,6 +2900,13 @@ export default function Settings() {
           description="Compaction runs automatically once the conversation crosses this share of the model's context window. Also sets the threshold shown in the chat's context popup."
         >
           <ContextThresholdControl />
+        </Section>
+        <Section
+          id="sec-ephemeral-archive"
+          title="Ephemeral chat archive"
+          description="How long an idle ephemeral chat is kept before it is archived. Sending a message extends the window. Set to 0 to keep ephemeral chats until you archive them yourself."
+        >
+          <EphemeralArchiveDaysControl />
         </Section>
         <Section
           id="sec-clear-cache"

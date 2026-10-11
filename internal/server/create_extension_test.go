@@ -13,7 +13,7 @@ import (
 // anything.
 func TestCreateExtensionRejectsBadID(t *testing.T) {
 	s, _, _ := newAuthServer(t)
-	if _, err := s.createExtension(context.Background(), "../escape", "d", "export default () => ({});"); err == nil {
+	if _, err := s.createExtension(context.Background(), "../escape", "d", "1.0.0", "first", "export default () => ({});"); err == nil {
 		t.Fatal("a traversing id was accepted")
 	}
 	if source, _ := extensions.Read(s.extensionsRoot(), "escape"); source != "" {
@@ -52,7 +52,7 @@ func TestCreateExtensionRejectsSyntaxError(t *testing.T) {
 		t.Skip("node is not available")
 	}
 	s, _, _ := newAuthServer(t)
-	_, err := s.createExtension(context.Background(), "broken", "d", "export default (pi) => ({")
+	_, err := s.createExtension(context.Background(), "broken", "d", "1.0.0", "first", "export default (pi) => ({")
 	if err == nil {
 		t.Fatal("a broken module was accepted")
 	}
@@ -72,7 +72,7 @@ func TestCreateExtensionInstallsEnabled(t *testing.T) {
 	}
 	s, _, _ := newAuthServer(t)
 	const src = `export default (pi) => ({ name: "word-stats", tools: [] });`
-	message, err := s.createExtension(context.Background(), "word-stats", "counts words", src)
+	message, err := s.createExtension(context.Background(), "word-stats", "counts words", "1.0.0", "first", src)
 	if err != nil {
 		t.Fatalf("createExtension: %v", err)
 	}
@@ -94,5 +94,52 @@ func TestCreateExtensionInstallsEnabled(t *testing.T) {
 	}
 	if !enabled {
 		t.Fatal("the installed extension is not enabled")
+	}
+}
+
+// An update must move the version forward, and the result must show what
+// changed so the agent (and the transcript) can see it without re-reading the
+// source.
+func TestCreateExtensionRequiresVersionIncrement(t *testing.T) {
+	if _, err := exec.LookPath("node"); err != nil {
+		t.Skip("node is not available")
+	}
+	s, _, _ := newAuthServer(t)
+	ctx := context.Background()
+	const first = `export default (pi) => ({ name: "word-stats", tools: [] });`
+	if _, err := s.createExtension(ctx, "word-stats", "counts words", "1.0.0", "first", first); err != nil {
+		t.Fatalf("first install: %v", err)
+	}
+	const second = `export default (pi) => ({ name: "word-stats", tools: [], note: "two" });`
+	// The same version, or an older one, is refused before writing.
+	if _, err := s.createExtension(ctx, "word-stats", "", "1.0.0", "same", second); err == nil || !strings.Contains(err.Error(), "greater than") {
+		t.Fatalf("a non-incremented version was accepted: %v", err)
+	}
+	if got, _ := extensions.Read(s.extensionsRoot(), "word-stats"); got != first {
+		t.Fatalf("a rejected update changed the source: %q", got)
+	}
+	// A greater version is accepted and the result carries the diff.
+	message, err := s.createExtension(ctx, "word-stats", "", "1.1.0", "second", second)
+	if err != nil {
+		t.Fatalf("incremented update: %v", err)
+	}
+	if !strings.Contains(message, "1 line(s) added") || !strings.Contains(message, "+ ") || !strings.Contains(message, "note") {
+		t.Fatalf("the result does not show the diff: %q", message)
+	}
+}
+
+// A missing version or changelog is refused, so an extension always carries
+// both.
+func TestCreateExtensionRequiresVersionAndChangelog(t *testing.T) {
+	if _, err := exec.LookPath("node"); err != nil {
+		t.Skip("node is not available")
+	}
+	s, _, _ := newAuthServer(t)
+	const src = `export default (pi) => ({ name: "word-stats", tools: [] });`
+	if _, err := s.createExtension(context.Background(), "word-stats", "d", "", "first", src); err == nil {
+		t.Fatal("a missing version was accepted")
+	}
+	if _, err := s.createExtension(context.Background(), "word-stats", "d", "1.0.0", "", src); err == nil {
+		t.Fatal("a missing changelog was accepted")
 	}
 }

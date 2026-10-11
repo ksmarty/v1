@@ -236,22 +236,23 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 			"keySet":  s.langSearchKey(userID) != "",
 			"keyHint": apiKeyHint(s.langSearchKey(userID)),
 		},
-		"embedding":         s.embeddingSettings(userID),
-		"skills":            s.installedSkills(),
-		"rewindApproval":    s.rewindApproval(userID),
-		"defaultThinking":   s.defaultThinking(userID),
-		"toonEnabled":       s.toonEnabled(userID),
-		"toolExposure":      s.toolExposure(userID),
-		"memoryAutoCapture": s.memoryAutoCapture(userID),
-		"disabledTools":     s.disabledTools(userID),
-		"turnTimeouts":      s.turnTimeoutMinutesForUI(userID),
-		"terminalFontSize":  s.terminalFontSize(userID),
-		"terminalWrap":      s.terminalWrap(userID),
-		"autoPushDefault":   s.autoPushDefault(userID),
-		"contextThreshold":  int(s.contextThreshold(userID) * 100),
-		"systemPrompt":      s.effectiveSystemPrompt(userID),
-		"version":           s.cfg.Version,
-		"commit":            s.cfg.Commit,
+		"embedding":            s.embeddingSettings(userID),
+		"skills":               s.installedSkills(),
+		"rewindApproval":       s.rewindApproval(userID),
+		"defaultThinking":      s.defaultThinking(userID),
+		"toonEnabled":          s.toonEnabled(userID),
+		"toolExposure":         s.toolExposure(userID),
+		"memoryAutoCapture":    s.memoryAutoCapture(userID),
+		"disabledTools":        s.disabledTools(userID),
+		"turnTimeouts":         s.turnTimeoutMinutesForUI(userID),
+		"terminalFontSize":     s.terminalFontSize(userID),
+		"terminalWrap":         s.terminalWrap(userID),
+		"autoPushDefault":      s.autoPushDefault(userID),
+		"contextThreshold":     int(s.contextThreshold(userID) * 100),
+		"ephemeralArchiveDays": s.ephemeralArchiveDays(userID),
+		"systemPrompt":         s.effectiveSystemPrompt(userID),
+		"version":              s.cfg.Version,
+		"commit":               s.cfg.Commit,
 	})
 }
 
@@ -288,12 +289,13 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 			BaseURL  *string `json:"baseUrl"`
 			APIKey   *string `json:"apiKey"`
 		} `json:"embedding"`
-		TurnTimeouts     *struct{ Soft, Hard int } `json:"turnTimeouts"`
-		TerminalFontSize *int                      `json:"terminalFontSize"`
-		TerminalWrap     *bool                     `json:"terminalWrap"`
-		AutoPushDefault  *bool                     `json:"autoPushDefault"`
-		ContextThreshold *float64                  `json:"contextThreshold"`
-		SystemPrompt     *string                   `json:"systemPrompt"`
+		TurnTimeouts         *struct{ Soft, Hard int } `json:"turnTimeouts"`
+		TerminalFontSize     *int                      `json:"terminalFontSize"`
+		TerminalWrap         *bool                     `json:"terminalWrap"`
+		AutoPushDefault      *bool                     `json:"autoPushDefault"`
+		ContextThreshold     *float64                  `json:"contextThreshold"`
+		EphemeralArchiveDays *int                      `json:"ephemeralArchiveDays"`
+		SystemPrompt         *string                   `json:"systemPrompt"`
 	}
 	if !decodeJSON(w, r, &body) {
 		return
@@ -636,6 +638,23 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 			val = "1"
 		}
 		if err := s.st.SetUserSetting(userID, keyAutoPushDefault, val); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+	if body.EphemeralArchiveDays != nil {
+		// Days an idle ephemeral chat is kept. 1 is the default, so it clears
+		// the override; 0 disables auto-archive.
+		n := *body.EphemeralArchiveDays
+		if n < 0 || n > 3650 {
+			n = 1
+		}
+		if n == 1 {
+			if err := s.st.DeleteUserSetting(userID, keyEphemeralArchiveDays); err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+		} else if err := s.st.SetUserSetting(userID, keyEphemeralArchiveDays, strconv.Itoa(n)); err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}

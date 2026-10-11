@@ -20,6 +20,8 @@ var delegateBuiltin = Builtin{
 		ID:          "delegate",
 		Name:        "delegate",
 		Description: "Run a task in a separate sub-agent conversation and return its final answer.",
+		Version:     "1.0.0",
+		Changelog:   "Initial bundled version.",
 		Enabled:     true,
 		Builtin:     true,
 		CreatedAt:   time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),

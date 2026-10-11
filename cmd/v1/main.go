@@ -77,6 +77,10 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	// Idle ephemeral chats are archived on a timer as well as on the dashboard
+	// list, so they disappear even when nobody is looking.
+	srv.StartEphemeralSweeper(ctx)
+
 	// The pi-durable sidecar is the default chat harness. It starts before the
 	// server accepts traffic so a sidecar that cannot start, handshake or agree
 	// on the protocol fails startup loudly instead of failing the user's first

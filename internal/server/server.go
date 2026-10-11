@@ -3,6 +3,7 @@
 package server
 
 import (
+	"context"
 	"embed"
 	"encoding/json"
 	"errors"
@@ -420,6 +421,10 @@ const (
 	keyAutoPushDefault  = "auto_push_default"
 	keySystemPrompt     = "system_prompt"
 	keyContextThreshold = "context_threshold"
+
+	// keyEphemeralArchiveDays is how many days an idle ephemeral chat is kept
+	// before it is archived. "0" disables auto-archive.
+	keyEphemeralArchiveDays = "ephemeral_archive_days"
 )
 
 // oidcEnabled reports whether the OIDC flow is active: it needs auth enabled
@@ -775,6 +780,60 @@ func (s *Server) autoPushDefault(userID string) bool {
 		return false
 	}
 	return v == "1"
+}
+
+// ephemeralArchiveDays resolves how many days an idle ephemeral chat is kept
+// before it is archived (default 1 day = 24h; 0 disables auto-archive).
+func (s *Server) ephemeralArchiveDays(userID string) int {
+	if v, ok := s.userSetting(userID, keyEphemeralArchiveDays); ok && v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			return n
+		}
+	}
+	return 1
+}
+
+// StartEphemeralSweeper archives idle ephemeral chats on a timer, so they
+// disappear even when nobody opens the dashboard. Each user's own window is
+// applied to their projects.
+func (s *Server) StartEphemeralSweeper(ctx context.Context) {
+	go func() {
+		ticker := time.NewTicker(time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				s.sweepEphemeralProjects()
+			}
+		}
+	}()
+}
+
+// sweepEphemeralProjects runs the archive sweep for every user (or once
+// globally when auth is disabled).
+func (s *Server) sweepEphemeralProjects() {
+	if s.cfg.AuthDisabled {
+		if n, err := s.st.ArchiveExpiredEphemeralProjects("", s.ephemeralArchiveDays("")); err != nil {
+			log.Printf("archive ephemeral projects: %v", err)
+		} else if n > 0 {
+			log.Printf("archived %d idle ephemeral project(s)", n)
+		}
+		return
+	}
+	users, err := s.st.ListUsers()
+	if err != nil {
+		log.Printf("archive ephemeral projects: list users: %v", err)
+		return
+	}
+	for _, u := range users {
+		if n, err := s.st.ArchiveExpiredEphemeralProjects(u.ID, s.ephemeralArchiveDays(u.ID)); err != nil {
+			log.Printf("archive ephemeral projects for %s: %v", u.ID, err)
+		} else if n > 0 {
+			log.Printf("archived %d idle ephemeral project(s)", n)
+		}
+	}
 }
 
 // contextThreshold resolves the user's compaction threshold — the share of

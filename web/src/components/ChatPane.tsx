@@ -889,6 +889,9 @@ function DisplayBlock({ display }: { display: unknown }) {
         truncated?: unknown;
         text?: unknown;
         label?: unknown;
+        version?: unknown;
+        changelog?: unknown;
+        diff?: unknown;
       }
     | null;
   if (d?.kind === 'answers') {
@@ -933,6 +936,37 @@ function DisplayBlock({ display }: { display: unknown }) {
         </div>
         {d.truncated === true && (
           <div className="border-t border-border/80 px-2 py-1 text-faint">…truncated for display</div>
+        )}
+      </div>
+    );
+  }
+  if (d?.kind === 'extension') {
+    const version = typeof d.version === 'string' ? d.version : '';
+    const changelog = typeof d.changelog === 'string' ? d.changelog : '';
+    const diff = typeof d.diff === 'string' ? d.diff : '';
+    return (
+      <div className="rounded-md border border-border/80 bg-surface/50 text-[10px]">
+        <div className="flex min-h-[26px] flex-wrap items-center gap-x-2 gap-y-0.5 border-b border-border/80 px-2 py-1">
+          <span className="font-mono text-text">{version ? `v${version}` : 'extension'}</span>
+          {changelog && <span className="min-w-0 flex-1 truncate text-dim">{changelog}</span>}
+        </div>
+        {diff && (
+          <div className="max-h-60 overflow-auto whitespace-pre-wrap break-words px-3 py-2 font-mono text-[11px] leading-relaxed">
+            {diff.split('\n').map((line, i) => (
+              <div
+                key={i}
+                className={
+                  line.startsWith('+ ')
+                    ? 'text-emerald-400'
+                    : line.startsWith('- ')
+                      ? 'text-red-400'
+                      : 'text-faint'
+                }
+              >
+                {line}
+              </div>
+            ))}
+          </div>
         )}
       </div>
     );

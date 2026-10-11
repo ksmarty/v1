@@ -20,6 +20,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -39,13 +40,20 @@ const (
 // Extension is the metadata v1 keeps about one extension. The source lives on
 // disk; this is what the settings UI and the sidecar's load list are built from.
 type Extension struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	Description string    `json:"description"`
-	Enabled     bool      `json:"enabled"`
-	Builtin     bool      `json:"builtin,omitempty"`
-	CreatedAt   time.Time `json:"createdAt"`
-	UpdatedAt   time.Time `json:"updatedAt"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	// Version is the extension's own version string. It is required and must be
+	// incremented on every update, so the settings page can tell two installs
+	// apart without reading the source.
+	Version string `json:"version,omitempty"`
+	// Changelog is a one-line summary of the last update, shown beside the
+	// version so a change is visible at a glance.
+	Changelog string    `json:"changelog,omitempty"`
+	Enabled   bool      `json:"enabled"`
+	Builtin   bool      `json:"builtin,omitempty"`
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 // Root is the directory holding every extension, under the data volume so it
@@ -304,4 +312,230 @@ func saveBuiltinManifest(root string, manifest map[string]string) error {
 func sourceHash(code string) string {
 	sum := sha256.Sum256([]byte(code))
 	return hex.EncodeToString(sum[:])
+}
+
+// CompareVersions orders two dotted version strings, returning -1, 0 or 1.
+//
+// Numeric segments compare numerically, so "1.10" is newer than "1.9"; a
+// missing segment counts as zero, so "1.2" equals "1.2.0". A non-numeric
+// segment compares as a string but sorts before a numeric one, so "1.0" is
+// newer than "1.0-beta". An empty version is older than any non-empty one.
+func CompareVersions(a, b string) int {
+	a = strings.TrimPrefix(strings.TrimSpace(a), "v")
+	b = strings.TrimPrefix(strings.TrimSpace(b), "v")
+	if a == b {
+		return 0
+	}
+	if a == "" {
+		return -1
+	}
+	if b == "" {
+		return 1
+	}
+	as := strings.Split(a, ".")
+	bs := strings.Split(b, ".")
+	n := len(as)
+	if len(bs) > n {
+		n = len(bs)
+	}
+	for i := 0; i < n; i++ {
+		x, y := "0", "0"
+		if i < len(as) {
+			x = as[i]
+		}
+		if i < len(bs) {
+			y = bs[i]
+		}
+		xi, xerr := strconv.Atoi(x)
+		yi, yerr := strconv.Atoi(y)
+		if xerr == nil && yerr == nil {
+			if xi != yi {
+				if xi < yi {
+					return -1
+				}
+				return 1
+			}
+			continue
+		}
+		if x == y {
+			continue
+		}
+		// A numeric segment beats a non-numeric one (1.0 > 1.0-beta).
+		if xerr == nil {
+			return 1
+		}
+		if yerr == nil {
+			return -1
+		}
+		if x < y {
+			return -1
+		}
+		return 1
+	}
+	return 0
+}
+
+// maxDiffLines bounds the diff: a source larger than this gets a one-line
+// summary instead, so a huge extension cannot flood a tool result.
+const maxDiffLines = 1500
+
+// UnifiedDiff returns a compact unified-style diff of two sources, or "" when
+// they are equal. It is what create_extension shows so the agent (and the
+// transcript) can see what changed without re-reading the whole file.
+func UnifiedDiff(oldText, newText string) string {
+	if oldText == newText {
+		return ""
+	}
+	a := splitLines(oldText)
+	b := splitLines(newText)
+	if len(a) > maxDiffLines || len(b) > maxDiffLines {
+		added, removed := lineDelta(a, b)
+		return fmt.Sprintf("%d line(s) added, %d removed (diff omitted: source too large)", added, removed)
+	}
+	// LCS length table, filled bottom-up so the walk below can emit a minimal
+	// edit script. Bounded by maxDiffLines, so the table stays small.
+	n, m := len(a), len(b)
+	lcs := make([][]int, n+1)
+	for i := range lcs {
+		lcs[i] = make([]int, m+1)
+	}
+	for i := n - 1; i >= 0; i-- {
+		for j := m - 1; j >= 0; j-- {
+			switch {
+			case a[i] == b[j]:
+				lcs[i][j] = lcs[i+1][j+1] + 1
+			case lcs[i+1][j] >= lcs[i][j+1]:
+				lcs[i][j] = lcs[i+1][j]
+			default:
+				lcs[i][j] = lcs[i][j+1]
+			}
+		}
+	}
+	type op = diffOp
+	ops := make([]op, 0, n+m)
+	i, j := 0, 0
+	for i < n && j < m {
+		switch {
+		case a[i] == b[j]:
+			ops = append(ops, op{' ', a[i]})
+			i++
+			j++
+		case lcs[i+1][j] >= lcs[i][j+1]:
+			ops = append(ops, op{'-', a[i]})
+			i++
+		default:
+			ops = append(ops, op{'+', b[j]})
+			j++
+		}
+	}
+	for ; i < n; i++ {
+		ops = append(ops, op{'-', a[i]})
+	}
+	for ; j < m; j++ {
+		ops = append(ops, op{'+', b[j]})
+	}
+	return renderDiff(ops)
+}
+
+// splitLines splits on newlines and drops a single trailing empty line, so a
+// file that ends in a newline does not read as an extra change.
+func splitLines(text string) []string {
+	if text == "" {
+		return nil
+	}
+	lines := strings.Split(text, "\n")
+	if len(lines) > 0 && lines[len(lines)-1] == "" {
+		lines = lines[:len(lines)-1]
+	}
+	return lines
+}
+
+// lineDelta counts lines only in new (added) and only in old (removed), using
+// multisets so a repeated line is counted once per extra occurrence.
+func lineDelta(oldLines, newLines []string) (added, removed int) {
+	oldCount := map[string]int{}
+	for _, line := range oldLines {
+		oldCount[line]++
+	}
+	for _, line := range newLines {
+		if oldCount[line] > 0 {
+			oldCount[line]--
+			continue
+		}
+		added++
+	}
+	newCount := map[string]int{}
+	for _, line := range newLines {
+		newCount[line]++
+	}
+	for _, line := range oldLines {
+		if newCount[line] > 0 {
+			newCount[line]--
+			continue
+		}
+		removed++
+	}
+	return added, removed
+}
+
+// diffOp is one line of an edit script: ' ' unchanged, '+' added, '-' removed.
+type diffOp struct {
+	kind byte
+	text string
+}
+
+// renderDiff keeps changed lines plus a little context and collapses long
+// unchanged runs, so a two-line edit to a large file reads as two lines.
+func renderDiff(ops []diffOp) string {
+	const context = 2
+	const maxOut = 200
+	show := make([]bool, len(ops))
+	for i, o := range ops {
+		if o.kind == ' ' {
+			continue
+		}
+		for k := i - context; k <= i+context; k++ {
+			if k >= 0 && k < len(ops) {
+				show[k] = true
+			}
+		}
+	}
+	var b strings.Builder
+	added, removed := 0, 0
+	for _, o := range ops {
+		if o.kind == '+' {
+			added++
+		} else if o.kind == '-' {
+			removed++
+		}
+	}
+	fmt.Fprintf(&b, "%d line(s) added, %d removed\n", added, removed)
+	last := -1
+	written := 0
+	for i, o := range ops {
+		if !show[i] {
+			continue
+		}
+		if written >= maxOut {
+			b.WriteString("… diff truncated\n")
+			return b.String()
+		}
+		if last == -1 {
+			if i > 0 {
+				b.WriteString("  …\n")
+			}
+		} else if i > last+1 {
+			b.WriteString("  …\n")
+		}
+		b.WriteByte(o.kind)
+		b.WriteByte(' ')
+		b.WriteString(o.text)
+		b.WriteByte('\n')
+		last = i
+		written++
+	}
+	if last >= 0 && last < len(ops)-1 {
+		b.WriteString("  …\n")
+	}
+	return b.String()
 }

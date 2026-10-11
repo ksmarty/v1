@@ -33,7 +33,7 @@ func TestCreateExtensionToolUnavailable(t *testing.T) {
 // rather than a bare error that aborts the turn.
 func TestCreateExtensionToolRequiresIDAndSource(t *testing.T) {
 	e := newTestExecutor(t)
-	e.CreateExtension = func(context.Context, string, string, string) (string, error) {
+	e.CreateExtension = func(context.Context, string, string, string, string, string) (string, error) {
 		t.Fatal("the callback must not run for invalid arguments")
 		return "", nil
 	}
@@ -56,14 +56,14 @@ func TestCreateExtensionToolRequiresIDAndSource(t *testing.T) {
 // the model can read, carrying the reported message.
 func TestCreateExtensionToolReportsCallbackError(t *testing.T) {
 	e := newTestExecutor(t)
-	e.CreateExtension = func(_ context.Context, id, description, source string) (string, error) {
-		if id != "word-stats" || description != "counts words" || source != "src" {
-			t.Fatalf("callback got id=%q description=%q source=%q", id, description, source)
+	e.CreateExtension = func(_ context.Context, id, description, version, changelog, source string) (string, error) {
+		if id != "word-stats" || description != "counts words" || version != "1.0.0" || changelog != "first" || source != "src" {
+			t.Fatalf("callback got id=%q description=%q version=%q changelog=%q source=%q", id, description, version, changelog, source)
 		}
 		return "", errors.New("SyntaxError: unexpected end of input")
 	}
 	_, err := e.createExtension(context.Background(),
-		`{"id":" word-stats ","description":"counts words","source":" src "}`)
+		`{"id":" word-stats ","description":"counts words","version":" 1.0.0 ","changelog":" first ","source":" src "}`)
 	var te *ToolError
 	if !errors.As(err, &te) {
 		t.Fatalf("want a ToolError, got %v", err)
@@ -76,11 +76,11 @@ func TestCreateExtensionToolReportsCallbackError(t *testing.T) {
 // A successful install passes the callback's human-readable result through.
 func TestCreateExtensionToolSucceeds(t *testing.T) {
 	e := newTestExecutor(t)
-	e.CreateExtension = func(_ context.Context, id, description, source string) (string, error) {
+	e.CreateExtension = func(_ context.Context, id, description, version, changelog, source string) (string, error) {
 		return "installed extension " + id, nil
 	}
 	out, err := e.createExtension(context.Background(),
-		`{"id":"word-stats","description":"counts words","source":"src"}`)
+		`{"id":"word-stats","description":"counts words","version":"1.0.0","changelog":"first","source":"src"}`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,7 +101,7 @@ func TestCreateExtensionToolReadsSourcePath(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "index.js"), []byte(source), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	e.CreateExtension = func(_ context.Context, id, description, got string) (string, error) {
+	e.CreateExtension = func(_ context.Context, id, description, version, changelog, got string) (string, error) {
 		if id != "word-stats" {
 			t.Fatalf("id = %q", id)
 		}
@@ -111,7 +111,7 @@ func TestCreateExtensionToolReadsSourcePath(t *testing.T) {
 		return "installed extension word-stats", nil
 	}
 	out, err := e.createExtension(context.Background(),
-		`{"id":"word-stats","description":"counts words","path":"extensions/word-stats/index.js"}`)
+		`{"id":"word-stats","description":"counts words","version":"1.0.0","changelog":"first","path":"extensions/word-stats/index.js"}`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,13 +124,13 @@ func TestCreateExtensionToolReadsSourcePath(t *testing.T) {
 // a BAD_ARGUMENT before the callback runs.
 func TestCreateExtensionToolRejectsBadPath(t *testing.T) {
 	e := newTestExecutor(t)
-	e.CreateExtension = func(context.Context, string, string, string) (string, error) {
+	e.CreateExtension = func(context.Context, string, string, string, string, string) (string, error) {
 		t.Fatal("the callback must not run for a bad path")
 		return "", nil
 	}
 	for _, args := range []string{
-		`{"id":"x","path":"extensions/missing/index.js"}`,
-		`{"id":"x","path":"../../etc/passwd"}`,
+		`{"id":"x","version":"1.0.0","changelog":"first","path":"extensions/missing/index.js"}`,
+		`{"id":"x","version":"1.0.0","changelog":"first","path":"../../etc/passwd"}`,
 	} {
 		_, err := e.createExtension(context.Background(), args)
 		var te *ToolError

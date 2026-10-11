@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io/fs"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -139,9 +140,18 @@ func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListProjects(w http.ResponseWriter, r *http.Request) {
-	// Ephemeral projects disappear 24h after their last activity. Sweeping on
-	// every list keeps the dashboard honest without a background job.
-	_, _ = s.st.ArchiveExpiredEphemeralProjects(time.Now().Unix() - 24*60*60)
+	// Ephemeral projects disappear once idle for the configured window
+	// (default 24h; sending a message extends it). The periodic sweeper also
+	// handles this, but sweeping here keeps the dashboard honest immediately.
+	userID := ""
+	if u := s.currentUser(r); u != nil {
+		userID = u.ID
+	}
+	if n, err := s.st.ArchiveExpiredEphemeralProjects(userID, s.ephemeralArchiveDays(userID)); err != nil {
+		log.Printf("archive ephemeral projects: %v", err)
+	} else if n > 0 {
+		log.Printf("archived %d idle ephemeral project(s)", n)
+	}
 	var projects []*store.Project
 	var err error
 	if s.cfg.AuthDisabled {

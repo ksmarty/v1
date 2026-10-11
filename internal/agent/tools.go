@@ -108,7 +108,7 @@ type Executor struct {
 	// CreateExtension installs an extension the agent wrote (the
 	// create_extension tool): it validates, writes, enables and reloads. Nil
 	// when extensions are unavailable, and the tool then says so.
-	CreateExtension func(ctx context.Context, id, description, source string) (string, error)
+	CreateExtension func(ctx context.Context, id, description, version, changelog, source string) (string, error)
 	// ListExtensions reports what is installed and loaded (the list_extensions
 	// tool), so the agent can confirm an install without inspecting the host.
 	ListExtensions func(ctx context.Context) (string, error)
@@ -267,8 +267,52 @@ func toolDisplay(name, out string) json.RawMessage {
 			"text":      text,
 			"truncated": truncated,
 		})
+	case "create_extension":
+		// The result is a readable install summary; lift out the version,
+		// changelog and diff so the chat shows an extension card with what
+		// changed instead of the raw message.
+		version := betweenStrings(out, "version ", " and enabled it")
+		changelog := lineAfter(out, "changelog: ")
+		var diff string
+		if i := strings.Index(out, "\nchanges:\n"); i >= 0 {
+			diff = strings.TrimRight(out[i+len("\nchanges:\n"):], "\n")
+		}
+		if version == "" && changelog == "" {
+			return nil
+		}
+		return displayJSON(map[string]any{
+			"kind":      "extension",
+			"version":   version,
+			"changelog": changelog,
+			"diff":      diff,
+		})
 	}
 	return nil
+}
+
+// betweenStrings returns the text between the first start and the next end, or
+// "" when either is missing. It is used to lift a field out of a readable
+// message (create_extension's install summary) for the chat's display payload.
+func betweenStrings(s, start, end string) string {
+	i := strings.Index(s, start)
+	if i < 0 {
+		return ""
+	}
+	s = s[i+len(start):]
+	if j := strings.Index(s, end); j >= 0 {
+		s = s[:j]
+	}
+	return strings.TrimSpace(s)
+}
+
+// lineAfter returns the rest of the first line that starts with prefix.
+func lineAfter(s, prefix string) string {
+	for _, line := range strings.Split(s, "\n") {
+		if strings.HasPrefix(line, prefix) {
+			return strings.TrimSpace(strings.TrimPrefix(line, prefix))
+		}
+	}
+	return ""
 }
 
 // capDisplayText returns at most n bytes of s, cut on a rune boundary, and
@@ -746,6 +790,8 @@ func (e *Executor) createExtension(ctx context.Context, argsJSON string) (string
 	var args struct {
 		ID          string `json:"id"`
 		Description string `json:"description"`
+		Version     string `json:"version"`
+		Changelog   string `json:"changelog"`
 		Source      string `json:"source"`
 		Path        string `json:"path"`
 	}
@@ -753,10 +799,18 @@ func (e *Executor) createExtension(ctx context.Context, argsJSON string) (string
 		return "", fmt.Errorf("invalid arguments: %w", err)
 	}
 	args.ID = strings.TrimSpace(args.ID)
+	args.Version = strings.TrimSpace(args.Version)
+	args.Changelog = strings.TrimSpace(args.Changelog)
 	args.Source = strings.TrimSpace(args.Source)
 	args.Path = strings.TrimSpace(args.Path)
 	if args.ID == "" {
 		return "", toolFail("BAD_ARGUMENT", "id is required (lowercase letters, digits and dashes)", true, "pick a short id such as word-stats")
+	}
+	if args.Version == "" {
+		return "", toolFail("BAD_ARGUMENT", "version is required", true, "pass the extension's version, e.g. 1.0.0; on an update it must be greater than the installed version")
+	}
+	if args.Changelog == "" {
+		return "", toolFail("BAD_ARGUMENT", "changelog is required", true, "write one line describing what changed in this version")
 	}
 	if args.Path != "" {
 		full, err := e.resolve(args.Path)
@@ -778,7 +832,7 @@ func (e *Executor) createExtension(ctx context.Context, argsJSON string) (string
 	if args.Path == "" && len(args.Source) > inlineSourceLimit {
 		return "", toolFail("SOURCE_TOO_LARGE", fmt.Sprintf("source is %d bytes; the inline limit is %d", len(args.Source), inlineSourceLimit), true, "write the source to a workspace file with write_file, then call create_extension with `path` (not `source`)")
 	}
-	message, err := e.CreateExtension(ctx, args.ID, args.Description, args.Source)
+	message, err := e.CreateExtension(ctx, args.ID, args.Description, args.Version, args.Changelog, args.Source)
 	if err != nil {
 		return "", toolFail("EXTENSION_REJECTED", err.Error(), true, "read the reported error, fix the source, and call create_extension again")
 	}

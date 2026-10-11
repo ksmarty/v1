@@ -423,7 +423,7 @@ func TestArchiveExpiredEphemeralProjects(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	n, err := s.ArchiveExpiredEphemeralProjects(now - day)
+	n, err := s.ArchiveExpiredEphemeralProjects("", 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -446,5 +446,61 @@ func TestArchiveExpiredEphemeralProjects(t *testing.T) {
 	}
 	if !listed[regular.ID] {
 		t.Fatal("a non-ephemeral project was archived")
+	}
+}
+
+// The archive window is configurable (in days) and scoped to one owner, so a
+// user's setting never archives another user's chats.
+func TestArchiveExpiredEphemeralProjectsWindowAndOwner(t *testing.T) {
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	now := time.Now().Unix()
+	const day = 24 * 60 * 60
+
+	mk := func(name, owner string, idleDays int) *Project {
+		p := &Project{ID: NewID(), Name: name, Path: t.TempDir(), Ephemeral: true, OwnerID: owner}
+		if err := s.CreateProject(p); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.db.Exec(`UPDATE projects SET updated_at = ? WHERE id = ?`, now-int64(idleDays)*day, p.ID); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	aOld := mk("a-old", "owner-a", 3)
+	aFresh := mk("a-fresh", "owner-a", 1)
+	bOld := mk("b-old", "owner-b", 3)
+
+	// A 2-day window archives A's 3-day-old project but keeps its 1-day-old
+	// one, and never touches B.
+	n, err := s.ArchiveExpiredEphemeralProjects("owner-a", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("archived %d, want 1", n)
+	}
+	listed := map[string]bool{}
+	active, err := s.ListProjects()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range active {
+		listed[p.ID] = true
+	}
+	if listed[aOld.ID] || !listed[aFresh.ID] || !listed[bOld.ID] {
+		t.Fatalf("wrong rows archived: aOld=%v aFresh=%v bOld=%v", listed[aOld.ID], listed[aFresh.ID], listed[bOld.ID])
+	}
+
+	// 0 disables the sweep entirely.
+	if n, err := s.ArchiveExpiredEphemeralProjects("", 0); err != nil || n != 0 {
+		t.Fatalf("disabled sweep archived %d, err %v", n, err)
+	}
+	// A global sweep with the same window then catches B's old project.
+	if n, err := s.ArchiveExpiredEphemeralProjects("", 2); err != nil || n != 1 {
+		t.Fatalf("global sweep archived %d, want 1, err %v", n, err)
 	}
 }

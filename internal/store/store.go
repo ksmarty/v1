@@ -1032,15 +1032,28 @@ func (s *Store) ListProjectsByOwner(ownerID string) ([]*Project, error) {
 }
 
 // ArchiveExpiredEphemeralProjects hides ephemeral projects whose last activity
-// is older than cutoff (a unix second). Activity is the later of the last chat
-// message (either side, so sending one extends the window) and any project
-// touch. Returns how many rows were archived.
-func (s *Store) ArchiveExpiredEphemeralProjects(cutoff int64) (int64, error) {
-	res, err := s.db.Exec(`
-		UPDATE projects SET archived = 1
+// is older than days days. Activity is the later of the last chat message
+// (either side, so sending one extends the window) and any project touch. A
+// non-positive days disables the sweep. An empty ownerID sweeps every owner;
+// otherwise only that owner's projects. Returns how many rows were archived.
+func (s *Store) ArchiveExpiredEphemeralProjects(ownerID string, days int) (int64, error) {
+	if days <= 0 {
+		return 0, nil
+	}
+	now := time.Now().Unix()
+	cutoff := now - int64(days)*24*60*60
+	query := `
+		UPDATE projects SET archived = 1, updated_at = ?
 		WHERE ephemeral = 1 AND archived = 0
 		  AND MAX(COALESCE((SELECT MAX(m.created_at) FROM messages m
-		                     WHERE m.project_id = projects.id AND m.role IN ('user', 'assistant')), 0), updated_at) < ?`, cutoff)
+		                     WHERE m.project_id = projects.id AND m.role IN ('user', 'assistant')), 0),
+		          COALESCE(updated_at, 0)) < ?`
+	args := []any{now, cutoff}
+	if ownerID != "" {
+		query += ` AND owner_id = ?`
+		args = append(args, ownerID)
+	}
+	res, err := s.db.Exec(query, args...)
 	if err != nil {
 		return 0, err
 	}

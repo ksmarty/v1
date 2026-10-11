@@ -101,7 +101,7 @@ func TestExtensionsSaveRejectsSyntaxError(t *testing.T) {
 	}
 	s, adminCookie, _ := newAuthServer(t)
 	rr := extensionsRequest(t, s, adminCookie, "POST", "/api/extensions",
-		`{"id":"broken","source":"export default (pi) => ({"}`)
+		`{"id":"broken","version":"1.0.0","changelog":"first","source":"export default (pi) => ({"}`)
 	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("saving a broken module = %d, want 400: %s", rr.Code, rr.Body.String())
 	}
@@ -125,7 +125,7 @@ func TestExtensionsSaveToggleAndRemove(t *testing.T) {
 	// wrong default.
 	const sampleSource = `export default (pi) => ({ name: "sample", tools: [] });`
 	rr := extensionsRequest(t, s, adminCookie, "POST", "/api/extensions",
-		`{"id":"sample","name":"Sample","description":"a test","source":`+
+		`{"id":"sample","name":"Sample","description":"a test","version":"1.0.0","changelog":"first","source":`+
 			strconv.Quote(sampleSource)+`}`)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("save = %d: %s", rr.Code, rr.Body.String())

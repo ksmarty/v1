@@ -23,10 +23,10 @@ func TestCreateExtensionReinstallReplaces(t *testing.T) {
 	const first = `export default (pi) => ({ name: "word-stats", tools: [] });`
 	const second = `export default (pi) => ({ name: "word-stats", tools: [], note: "v2" });`
 
-	if _, err := s.createExtension(ctx, "word-stats", "counts words", first); err != nil {
+	if _, err := s.createExtension(ctx, "word-stats", "counts words", "1.0.0", "first", first); err != nil {
 		t.Fatalf("first install: %v", err)
 	}
-	if _, err := s.createExtension(ctx, "word-stats", "", second); err != nil {
+	if _, err := s.createExtension(ctx, "word-stats", "", "1.1.0", "second", second); err != nil {
 		t.Fatalf("re-install: %v", err)
 	}
 	if got, _ := extensions.Read(s.extensionsRoot(), "word-stats"); got != second {
@@ -78,7 +78,7 @@ func TestCreateExtensionReportsStoppedHarness(t *testing.T) {
 		t.Skip("node is not available")
 	}
 	s, _, _ := newAuthServer(t)
-	message, err := s.createExtension(context.Background(), "word-stats", "counts words",
+	message, err := s.createExtension(context.Background(), "word-stats", "counts words", "1.0.0", "first",
 		`export default (pi) => ({ name: "word-stats", tools: [] });`)
 	if err != nil {
 		t.Fatalf("createExtension: %v", err)
@@ -100,7 +100,7 @@ func TestListExtensionsReportsInstalled(t *testing.T) {
 	}
 	s, _, _ := newAuthServer(t)
 	ctx := context.Background()
-	if _, err := s.createExtension(ctx, "word-stats", "counts words",
+	if _, err := s.createExtension(ctx, "word-stats", "counts words", "1.0.0", "first",
 		`export default (pi) => ({ name: "word-stats", tools: [] });`); err != nil {
 		t.Fatalf("createExtension: %v", err)
 	}

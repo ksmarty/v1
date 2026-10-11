@@ -1363,7 +1363,7 @@ var tools = []llm.Tool{
 		Type: "function",
 		Function: llm.ToolFunction{
 			Name:        "create_extension",
-			Description: "Create or update a v1 extension the agent can use in later turns. Pass a lowercase dashed id, a one-line description, and the extension's index.js either as `source` or as a workspace `path` (write the file first with write_file — required for anything over 8 KB, because a large inline source is refused and would otherwise be truncated). The source is syntax-checked and installed enabled, then loaded immediately; the result reports the tools/sections/hooks it contributed and the installed source's sha256, which list_extensions repeats so a later turn can confirm the file on disk is the one that was written. A tool name, prompt-section key or display title that duplicates a built-in tool or another extension's is refused, so rename it and retry. Use this to add a custom tool, prompt section or hook to v1; see the v1-extensions skill for the API.",
+			Description: "Create or update a v1 extension the agent can use in later turns. Pass a lowercase dashed id, a one-line description, the extension's version (e.g. 1.0.0) and a one-line changelog, plus the extension's index.js either as `source` or as a workspace `path` (write the file first with write_file — required for anything over 8 KB, because a large inline source is refused and would otherwise be truncated). On an update the version must be greater than the installed one; the result reports the diff against the previous source so you can see what changed without re-reading the file. The source is syntax-checked and installed enabled, then loaded immediately; the result reports the tools/sections/hooks it contributed and the installed source's sha256, which list_extensions repeats so a later turn can confirm the file on disk is the one that was written. A tool name, prompt-section key or display title that duplicates a built-in tool or another extension's is refused, so rename it and retry. Use this to add a custom tool, prompt section or hook to v1; see the v1-extensions skill for the API.",
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -1375,6 +1375,14 @@ var tools = []llm.Tool{
 						"type":        "string",
 						"description": "One-line description of what the extension does.",
 					},
+					"version": map[string]any{
+						"type":        "string",
+						"description": "The extension's version, e.g. 1.0.0. Required. On an update it must be greater than the installed version.",
+					},
+					"changelog": map[string]any{
+						"type":        "string",
+						"description": "One line describing what changed in this version. Required.",
+					},
 					"source": map[string]any{
 						"type":        "string",
 						"description": "The complete JavaScript source of index.js: default-export a factory that is called with the pi API. Omit when using path.",
@@ -1384,7 +1392,7 @@ var tools = []llm.Tool{
 						"description": "Workspace-relative path to an index.js the agent already wrote (e.g. extensions/word-stats/index.js). Preferred over source for a non-trivial extension: it avoids re-emitting a large string and is the copy the agent can edit and re-install.",
 					},
 				},
-				"required": []string{"id"},
+				"required": []string{"id", "version", "changelog"},
 			},
 		},
 	},
