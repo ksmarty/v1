@@ -353,9 +353,10 @@ Setup:
    flow) into Settings → GitHub, or set `V1_GITHUB_OAUTH_CLIENT_ID` /
    `V1_GITHUB_OAUTH_CLIENT_SECRET`. When either is set via env, the field is
    read-only in Settings.
-4. Click **Connect with GitHub**. v1 requests the `repo read:user
+4. Click **Connect with GitHub**. v1 requests the `repo workflow read:user
    read:packages` scopes (`read:packages` is needed to list your ghcr.io
-   container images in the GitHub tab).
+   container images in the GitHub tab; `workflow` lets the agent commit
+   GitHub Actions files under `.github/workflows/`).
 
 ### Personal access token
 
