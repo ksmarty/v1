@@ -48,7 +48,10 @@ React SPA (Vite + TypeScript), both built into a single binary.
   a required `version` and a one-line `changelog`: `create_extension` refuses a
   same-or-older version, both are stored and shown in the Extensions list, and
   the install/update result includes the changelog plus a source diff (rendered
-  in chat by the `create_extension` display payload). Bundled
+  in chat by the `create_extension` display payload). A matching `create_skill`
+  tool writes `<data-dir>/skills/<id>/SKILL.md` and enables the skill, with the
+  same required `version` + `changelog` and same-or-older refusal; its install
+  summary (version, changelog, diff) renders as a skill card in chat. Bundled
   extensions are materialized into the extensions dir at startup; a copy the
   user has not edited is upgraded when v1 ships a new source (the last shipped
   hash is recorded in `.v1-builtins.json`), so a fix to a builtin reaches an
@@ -78,7 +81,9 @@ React SPA (Vite + TypeScript), both built into a single binary.
   v1 ships a new SKILL.md (the last shipped hash is recorded in
   `.v1-builtins.json`) while leaving a user-edited copy alone. `builtin.go`
   holds the bundled `v1-extensions` authoring skill, which documents the
-  extension verifier's collision rules.
+  extension verifier's collision rules. Skills are installed by the agent with
+  `create_skill` (version + changelog required, same-or-older refused) as well
+  as from the Skills settings page and the SkillsMP marketplace.
 - `web/` — React frontend; built into `internal/server/dist` for embedding.
 
 ## Key commands
@@ -192,8 +197,9 @@ or `make dev`), then report: (1) the new stamped build version (`v1 <version>
   reloaded one (no JSON envelope glued under a nice preview). Generic tools
   show their raw JSON arguments collapsed behind an "Input" toggle when a
   result is present; `search_files`/`search_memories`/`set_todos`/`remember`/
-  `make_plan`/`create_extension`/`set_project_name`/`set_session_name` render
-  purpose-built blocks instead. The `tool_start` event carries the call's full
+  `make_plan`/`create_extension`/`create_skill`/`set_project_name`/`set_session_name`/
+  `delegate` render purpose-built blocks instead (delegate shows the task as
+  prose and its answer as a sub-agent card with a View transcript action). The `tool_start` event carries the call's full
   arguments JSON (not a path/command summary), so a live card — an edit diff
   with its +/- counts, a write's content, a todo/plan preview — renders the
   same as the reloaded one; the summary is only a fallback for empty args. A

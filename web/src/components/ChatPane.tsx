@@ -163,6 +163,8 @@ const TOOL_LABELS: Record<string, string> = {
   update_plan: 'Update plan',
   verify_project: 'Verify project',
   create_extension: 'Create extension',
+  create_skill: 'Create skill',
+  delegate: 'Delegate',
   list_extensions: 'List extensions',
   run_container: 'Run container',
   git: 'Git',
@@ -239,6 +241,8 @@ const TOOL_ICONS: Record<string, typeof IconWrench> = {
   update_plan: IconCheckSquare,
   verify_project: IconFlask,
   create_extension: IconLayers,
+  create_skill: IconLayers,
+  delegate: IconUsers,
   list_extensions: IconList,
   run_container: IconTerminal,
 };
@@ -867,9 +871,10 @@ function chipLabel(detail: string, display?: ExtensionToolDisplay): string {
       const first = a.plan.trim().split('\n')[0].replace(/^#+\s*/, '');
       if (first) return first;
     }
-    // create_extension: the id names the thing being created. Keyed off
-    // `source`, which only this tool sends, so no other tool's id leaks here.
-    if (typeof a.source === 'string' && typeof a.id === 'string' && a.id) return a.id;
+    // create_extension / create_skill: the id names the thing being created.
+    // Keyed off `source` (extension) or `version` (skill), so no other tool's
+    // id leaks here.
+    if (typeof a.id === 'string' && a.id && (typeof a.source === 'string' || typeof a.version === 'string')) return a.id;
     return meaningfulDetail(detail) ? detail : '';
   } catch {
     return meaningfulDetail(detail) ? detail : '';
@@ -940,14 +945,14 @@ function DisplayBlock({ display }: { display: unknown }) {
       </div>
     );
   }
-  if (d?.kind === 'extension') {
+  if (d?.kind === 'extension' || d?.kind === 'skill') {
     const version = typeof d.version === 'string' ? d.version : '';
     const changelog = typeof d.changelog === 'string' ? d.changelog : '';
     const diff = typeof d.diff === 'string' ? d.diff : '';
     return (
       <div className="rounded-md border border-border/80 bg-surface/50 text-[10px]">
         <div className="flex min-h-[26px] flex-wrap items-center gap-x-2 gap-y-0.5 border-b border-border/80 px-2 py-1">
-          <span className="font-mono text-text">{version ? `v${version}` : 'extension'}</span>
+          <span className="font-mono text-text">{version ? `v${version}` : d.kind}</span>
           {changelog && <span className="min-w-0 flex-1 truncate text-dim">{changelog}</span>}
         </div>
         {diff && (
@@ -978,7 +983,6 @@ function ToolChip({ name, detail, result }: { name: string; detail: string; resu
   const [open, setOpen] = useState(false);
   const display = useToolDisplay(name);
   const Icon = toolIcon(name, display);
-  const openDelegate = useContext(DelegateOpenContext);
   // A sub-agent result carries the child conversation id as a trailing marker;
   // hide it from the text and offer the full transcript instead.
   const sub = name === 'delegate' && result ? subagentId(result.detail) : null;
@@ -1003,7 +1007,7 @@ function ToolChip({ name, detail, result }: { name: string; detail: string; resu
       <TodoListBlock detail={detail} />
     ) : name === 'make_plan' || name === 'update_plan' ? (
       <PlanBlock detail={detail} />
-    ) : name === 'create_extension' ? (
+    ) : name === 'create_extension' || name === 'create_skill' ? (
       <ExtensionBlock detail={detail} />
     ) : name === 'remember' ? (
       <MemoryBlock detail={detail} />
@@ -1011,6 +1015,8 @@ function ToolChip({ name, detail, result }: { name: string; detail: string; resu
       <NameBlock label="Rename project" detail={detail} />
     ) : name === 'set_session_name' ? (
       <NameBlock label="Rename session" detail={detail} />
+    ) : name === 'delegate' ? (
+      <DelegateTaskBlock detail={detail} />
     ) : null;
   // Nothing worth expanding (e.g. restart_preview with empty args) renders as
   // a static row — no chevron, no dropdown.
@@ -1096,21 +1102,10 @@ function ToolChip({ name, detail, result }: { name: string; detail: string; resu
               </div>
             ) : result.display !== undefined ? (
               <DisplayBlock display={result.display} />
+            ) : sub ? (
+              <DelegateResultBlock detail={result.detail} />
             ) : (
-              <>
-                <ToolBody detail={sub ? sub.text : result.detail} />
-                {sub?.id && (
-                  <div className="border-t border-border/80 px-2 py-1.5">
-                    <button
-                      type="button"
-                      onClick={() => openDelegate(sub.id as string)}
-                      className="inline-flex items-center gap-1 rounded border border-border px-2 py-1 font-mono text-[10px] text-dim transition-colors hover:bg-border hover:text-text"
-                    >
-                      <IconUsers className="h-3 w-3" /> View sub-agent transcript
-                    </button>
-                  </div>
-                )}
-              </>
+              <ToolBody detail={result.detail} />
             ))}
           {/* A generic tool shows its raw JSON arguments. When there is also a
               result, the arguments collapse behind a toggle — otherwise the
@@ -1871,6 +1866,8 @@ type CollapseData = {
   results: ToolCall[];
   ask: { questions: AskQuestionView[]; result?: AskAnswerView[]; failed?: boolean } | null;
   askCount: number;
+  /** A finished background command's result row, folded into the turn group. */
+  background?: { key: string; text: string };
 };
 
 function collapseData(item: MsgItem): CollapseData {
@@ -1891,6 +1888,7 @@ function collapseData(item: MsgItem): CollapseData {
       ? { ...ask, failed: ask.result !== undefined && ask.result.length === 0 }
       : null,
     askCount: ask ? ask.questions.length : 0,
+    background: item.background ? { key: item.key, text: item.content } : undefined,
   };
 }
 
@@ -1898,14 +1896,19 @@ function collapseData(item: MsgItem): CollapseData {
 function CollapsedToolBlocks({
   d,
   onAskAnswered,
+  onOpenBackground,
 }: {
   d: CollapseData;
   onAskAnswered: (answers: AskAnswerView[]) => void;
+  onOpenBackground?: (text: string) => void;
 }) {
   return (
     <>
       {d.reasoning && <ReasoningBlock text={d.reasoning} autoOpen={false} />}
       <ToolBlocks calls={d.calls} results={d.results} />
+      {d.background && onOpenBackground && (
+        <BackgroundResultRow text={d.background.text} onOpen={onOpenBackground} />
+      )}
       {d.ask && (
         <AskBlock
           questions={d.ask.questions}
@@ -1918,11 +1921,20 @@ function CollapsedToolBlocks({
   );
 }
 
-function collapseSummary(calls: ToolCall[], results: ToolCall[], askCount: number): string {
+function collapseSummary(
+  calls: ToolCall[],
+  results: ToolCall[],
+  askCount: number,
+  backgroundCount = 0,
+): string {
   const summary = calls.length + results.length > 0 ? summarizeTools(calls, results) : '';
   const askPart =
     askCount > 0 ? `Asked user ${askCount === 1 ? '1 question' : `${askCount} questions`}` : '';
-  return [summary, askPart].filter(Boolean).join(' · ');
+  const bgPart =
+    backgroundCount > 0
+      ? `Ran ${backgroundCount === 1 ? '1 background command' : `${backgroundCount} background commands`}`
+      : '';
+  return [summary, bgPart, askPart].filter(Boolean).join(' · ');
 }
 
 // Collapses an assistant message's reasoning and tool calls into a single
@@ -1947,8 +1959,8 @@ function CollapsedTools({
   useEffect(() => {
     if (!streaming && !pendingAsk) setOpen(false);
   }, [streaming, pendingAsk]);
-  const fullSummary = collapseSummary(calls, results, askCount);
-  const hasTools = calls.length + results.length > 0 || askCount > 0;
+  const fullSummary = collapseSummary(calls, results, askCount, d.background ? 1 : 0);
+  const hasTools = calls.length + results.length > 0 || askCount > 0 || !!d.background;
   return (
     <div className="text-[10px]">
       <button
@@ -1986,9 +1998,11 @@ function CollapsedTools({
 function CollapsedToolsGroup({
   members,
   onAskAnswered,
+  onOpenBackground,
 }: {
   members: CollapseData[];
   onAskAnswered: (answers: AskAnswerView[]) => void;
+  onOpenBackground?: (text: string) => void;
 }) {
   const anyPendingAsk = members.some((m) => m.ask != null && m.ask.result === undefined && !m.ask.failed);
   const [open, setOpen] = useState(anyPendingAsk);
@@ -1998,8 +2012,14 @@ function CollapsedToolsGroup({
   const calls = members.flatMap((m) => m.calls);
   const results = members.flatMap((m) => m.results);
   const askCount = members.reduce((a, m) => a + m.askCount, 0);
-  const fullSummary = collapseSummary(calls, results, askCount);
-  const hasTools = calls.length + results.length > 0 || askCount > 0;
+  const fullSummary = collapseSummary(
+    calls,
+    results,
+    askCount,
+    members.filter((m) => m.background).length,
+  );
+  const hasTools =
+    calls.length + results.length > 0 || askCount > 0 || members.some((m) => m.background);
   const hasReasoning = members.some((m) => m.reasoning);
   return (
     <div className="text-[10px]">
@@ -2029,7 +2049,11 @@ function CollapsedToolsGroup({
                   {m.content}
                 </div>
               )}
-              <CollapsedToolBlocks d={m} onAskAnswered={onAskAnswered} />
+              <CollapsedToolBlocks
+                d={m}
+                onAskAnswered={onAskAnswered}
+                onOpenBackground={onOpenBackground}
+              />
             </div>
           ))}
         </div>
@@ -2420,6 +2444,54 @@ function subagentId(detail: string): { id: string | null; text: string } {
   return { id: m[1], text: detail.slice(0, m.index).trimEnd() };
 }
 
+// A delegate call's arguments are `{"task": "..."}`; the task is a prompt, so
+// show it as prose instead of a JSON envelope.
+function DelegateTaskBlock({ detail }: { detail: string }) {
+  const task = useMemo(() => {
+    try {
+      const a = JSON.parse(detail) as { task?: unknown };
+      return typeof a.task === 'string' ? a.task : null;
+    } catch {
+      return null;
+    }
+  }, [detail]);
+  if (task === null) return null;
+  return (
+    <div className="border-t border-border/80 px-3 py-2 text-[11px] leading-relaxed">
+      <div className="mb-1 flex items-center gap-1.5 text-[10px] text-faint">
+        <IconUsers className="h-3 w-3 shrink-0 text-accent" />
+        <span>Sub-agent task</span>
+      </div>
+      <p className="whitespace-pre-wrap break-words text-subtle">{task}</p>
+    </div>
+  );
+}
+
+// A sub-agent's answer, with the trailing conversation marker turned into a
+// transcript action instead of being shown as raw text.
+function DelegateResultBlock({ detail }: { detail: string }) {
+  const openDelegate = useContext(DelegateOpenContext);
+  const sub = subagentId(detail);
+  return (
+    <div className="rounded-lg border border-accent/30 bg-surface p-2.5">
+      <div className="mb-1 flex items-center gap-1.5 text-[10px] text-faint">
+        <IconUsers className="h-3 w-3 shrink-0 text-accent" />
+        <span>Sub-agent</span>
+      </div>
+      <p className="whitespace-pre-wrap break-words text-xs text-subtle">{sub.text}</p>
+      {sub.id && (
+        <button
+          type="button"
+          onClick={() => openDelegate(sub.id as string)}
+          className="mt-2 inline-flex items-center gap-1 rounded border border-border px-2 py-1 font-mono text-[10px] text-dim transition-colors hover:bg-border hover:text-text"
+        >
+          <IconUsers className="h-3 w-3" /> View transcript
+        </button>
+      )}
+    </div>
+  );
+}
+
 function AskResultBlock({ answers }: { answers: AskAnswerView[] }) {
   return (
     <div className="rounded-lg border border-accent/30 bg-surface p-2.5">
@@ -2448,7 +2520,6 @@ function ToolResultBlock({ name, detail, display: resultDisplay }: ToolCall) {
   const [open, setOpen] = useState(false);
   const display = useToolDisplay(name);
   const Icon = toolIcon(name, display);
-  const openDelegate = useContext(DelegateOpenContext);
   // An ask_user result whose inline question block never rendered (a reconnect,
   // or a result stored without its call) would otherwise show raw JSON. Render
   // the answers the way the question block does instead.
@@ -2456,12 +2527,14 @@ function ToolResultBlock({ name, detail, display: resultDisplay }: ToolCall) {
     const answers = askAnswers(detail);
     if (answers.length > 0) return <AskResultBlock answers={answers} />;
   }
+  // A sub-agent result gets a card with its answer and a transcript action,
+  // rather than the generic result body with a marker to strip.
+  if (name === 'delegate') {
+    const sub = subagentId(detail);
+    if (sub.id || sub.text) return <DelegateResultBlock detail={detail} />;
+  }
   // A tool that supplied a display payload renders it in place of the raw JSON.
   if (resultDisplay !== undefined) return <DisplayBlock display={resultDisplay} />;
-  // A sub-agent result carries the child conversation id as a trailing marker;
-  // hide it from the text and offer the full transcript instead.
-  const sub = name === 'delegate' ? subagentId(detail) : null;
-  const body = sub ? sub.text : detail;
   // A call that failed reads as a failure whatever the tool was: a red cross
   // that opens to the reason, rather than a neutral "result" the reader has to
   // open and judge for themselves.
@@ -2507,22 +2580,7 @@ function ToolResultBlock({ name, detail, display: resultDisplay }: ToolCall) {
         <span className="shrink-0 font-mono text-text">{toolLabel(name, display)}</span>
         <span className="text-faint">result</span>
       </button>
-      {open && (
-        <>
-          <ToolBody detail={body} />
-          {sub?.id && (
-            <div className="border-t border-border/80 px-2 py-1.5">
-              <button
-                type="button"
-                onClick={() => openDelegate(sub.id as string)}
-                className="inline-flex items-center gap-1 rounded border border-border px-2 py-1 font-mono text-[10px] text-dim transition-colors hover:bg-border hover:text-text"
-              >
-                <IconUsers className="h-3 w-3" /> View sub-agent transcript
-              </button>
-            </div>
-          )}
-        </>
-      )}
+      {open && <ToolBody detail={detail} />}
     </div>
   );
 }
@@ -5283,7 +5341,7 @@ export default function ChatPane({
       onClick={() => setConfirmStopOpen(true)}
       aria-label="Stop generating"
       title="Stop generating"
-      className="h-8! w-8! shrink-0 md:h-9! md:w-9!"
+      className="h-8! w-8! shrink-0 text-red-400! hover:bg-red-500/10! hover:text-red-300! md:h-9! md:w-9!"
     >
       <IconSquare className="h-4 w-4" />
     </IconButton>
@@ -5646,7 +5704,10 @@ export default function ChatPane({
               // A round that reasoned or called a tool belongs to the turn's
               // work group; its text is stripped there and shown as its own row.
               const isWork = (d: CollapseData) =>
-                d.calls.length + d.results.length > 0 || d.ask != null || !!d.reasoning;
+                d.calls.length + d.results.length > 0 ||
+                d.ask != null ||
+                !!d.reasoning ||
+                !!d.background;
               let turn: { it: MsgItem; i: number }[] = [];
               const flushTurn = () => {
                 if (turn.length === 0) return;
@@ -5663,7 +5724,7 @@ export default function ChatPane({
                   if (isWork(d)) members.push({ ...d, content: undefined });
                 }
                 const hasTools = members.some(
-                  (m) => m.calls.length + m.results.length > 0 || m.ask != null,
+                  (m) => m.calls.length + m.results.length > 0 || m.ask != null || !!m.background,
                 );
                 if (hasTools) {
                   const first = turn.find(({ it }) => isWork(collapseData(it)));
@@ -5672,10 +5733,12 @@ export default function ChatPane({
                       <CollapsedToolsGroup
                         members={members}
                         onAskAnswered={(answer) => void answerAsk(answer)}
+                        onOpenBackground={openBackgroundOutput}
                       />
                     </div>,
                   );
                   for (const { it, i } of turn) {
+                    if (it.background) continue;
                     if (it.content?.trim()) {
                       rows.push(
                         renderMessage(it, i, {
@@ -5693,7 +5756,10 @@ export default function ChatPane({
                 turn = [];
               };
               items.forEach((it, i) => {
-                if (it.kind === 'msg' && it.role === 'assistant') {
+                if (
+                  it.kind === 'msg' &&
+                  (it.role === 'assistant' || (it.role === 'user' && it.background))
+                ) {
                   turn.push({ it, i });
                 } else {
                   flushTurn();

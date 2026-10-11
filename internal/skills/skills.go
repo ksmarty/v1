@@ -36,6 +36,37 @@ type Skill struct {
 	Dir         string `json:"dir"`
 	Enabled     bool   `json:"enabled"`
 	Builtin     bool   `json:"builtin,omitempty"`
+	Version     string `json:"version,omitempty"`
+	Changelog   string `json:"changelog,omitempty"`
+}
+
+// Write writes a skill's SKILL.md into root/<id>. It refuses an id that is not a
+// plain directory name, so a skill cannot be written outside root.
+func Write(root, id, content string) error {
+	if id == "" || id != filepath.Base(id) || strings.ContainsAny(id, `/\`) {
+		return os.ErrInvalid
+	}
+	dest := filepath.Join(root, id)
+	if err := os.MkdirAll(dest, 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dest, "SKILL.md"), []byte(content), 0o644)
+}
+
+// Read returns an installed skill's SKILL.md, or an empty string when it is not
+// installed.
+func Read(root, id string) (string, error) {
+	if id == "" || id != filepath.Base(id) || strings.ContainsAny(id, `/\`) {
+		return "", os.ErrInvalid
+	}
+	data, err := os.ReadFile(filepath.Join(root, id, "SKILL.md"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", nil
+		}
+		return "", err
+	}
+	return string(data), nil
 }
 
 // Search queries the SkillsMP index.

@@ -1,13 +1,16 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"v1/internal/extensions"
 	"v1/internal/gitops"
 	"v1/internal/skills"
 )
@@ -303,4 +306,86 @@ func (s *Server) refreshBuiltinSkills() {
 	if err := skills.RefreshBuiltins(s.skillsRoot(), ids); err != nil {
 		log.Printf("skills: cannot refresh the bundled skills: %v", err)
 	}
+}
+
+// createSkill installs a skill the agent wrote (the create_skill tool): it
+// validates the version/changelog, writes the SKILL.md, enables it and updates
+// the installed list. Skills are injected into the system prompt on later
+// turns, so there is no harness reload step.
+func (s *Server) createSkill(ctx context.Context, id, description, version, changelog, content string) (string, error) {
+	id = strings.TrimSpace(id)
+	version = strings.TrimSpace(version)
+	changelog = strings.TrimSpace(changelog)
+	content = strings.TrimSpace(content)
+	if version == "" {
+		return "", fmt.Errorf("a version is required, e.g. \"1.0.0\"")
+	}
+	if changelog == "" {
+		return "", fmt.Errorf("a changelog is required: one line describing what changed in this version")
+	}
+	if id == "" || id != filepath.Base(id) || strings.ContainsAny(id, `/\`) {
+		return "", fmt.Errorf("id must be a lowercase dashed name, e.g. release-checklist")
+	}
+	if content == "" {
+		return "", fmt.Errorf("the SKILL.md body is required")
+	}
+	if !strings.HasPrefix(content, "#") {
+		return "", fmt.Errorf("the SKILL.md must start with a `#` heading")
+	}
+
+	list := s.installedSkills()
+	installed := -1
+	for i := range list {
+		if list[i].ID == id || list[i].Dir == id {
+			installed = i
+			break
+		}
+	}
+	// A version must move forward, so an update can never be mistaken for the
+	// install it replaces. Checked before writing, so a rejected update leaves
+	// the installed SKILL.md untouched.
+	if installed >= 0 && list[installed].Version != "" {
+		if extensions.CompareVersions(version, list[installed].Version) <= 0 {
+			return "", fmt.Errorf("version %s must be greater than the installed %s — increment it for this update", version, list[installed].Version)
+		}
+	}
+	previous, _ := skills.Read(s.skillsRoot(), id)
+	if err := skills.Write(s.skillsRoot(), id, content); err != nil {
+		return "", err
+	}
+
+	if installed >= 0 {
+		if description != "" {
+			list[installed].Description = description
+		}
+		list[installed].Dir = id
+		if list[installed].Name == "" {
+			list[installed].Name = id
+		}
+		list[installed].Version = version
+		list[installed].Changelog = changelog
+		list[installed].Enabled = true
+	} else {
+		list = append(list, skills.Skill{
+			ID:          id,
+			Name:        id,
+			Description: description,
+			Dir:         id,
+			Enabled:     true,
+			Version:     version,
+			Changelog:   changelog,
+		})
+	}
+	if err := s.saveSkills(list); err != nil {
+		return "", err
+	}
+
+	message := fmt.Sprintf("installed skill %q version %s and enabled it (%d bytes)", id, version, len(content))
+	message += "\nchangelog: " + changelog
+	if diff := extensions.UnifiedDiff(previous, content); diff != "" {
+		message += "\nchanges:\n" + diff
+	} else if installed >= 0 {
+		message += "\nchanges: none (the SKILL.md is unchanged)"
+	}
+	return message, nil
 }

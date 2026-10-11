@@ -1399,6 +1399,43 @@ var tools = []llm.Tool{
 	{
 		Type: "function",
 		Function: llm.ToolFunction{
+			Name:        "create_skill",
+			Description: "Create or update a v1 skill the agent will have in later turns. Pass a lowercase dashed id, a one-line description, the skill's version (e.g. 1.0.0) and a one-line changelog, plus the SKILL.md body either as `content` or as a workspace `path` (write the file first with write_file — required for anything over 8 KB, because a large inline body is refused). The SKILL.md must be Markdown starting with a `#` heading. On an update the version must be greater than the installed one; the result reports the diff against the previous SKILL.md. The skill is installed enabled and injected into the system prompt on later turns. Use this to teach v1 a reusable procedure, checklist or project convention; see the v1-skills skill for the format.",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"id": map[string]any{
+						"type":        "string",
+						"description": "Skill id: lowercase letters, digits and dashes; becomes the directory name (e.g. release-checklist).",
+					},
+					"description": map[string]any{
+						"type":        "string",
+						"description": "One-line description of what the skill teaches.",
+					},
+					"version": map[string]any{
+						"type":        "string",
+						"description": "The skill's version, e.g. 1.0.0. Required. On an update it must be greater than the installed version.",
+					},
+					"changelog": map[string]any{
+						"type":        "string",
+						"description": "One line describing what changed in this version. Required.",
+					},
+					"content": map[string]any{
+						"type":        "string",
+						"description": "The complete SKILL.md body (Markdown, starting with a `#` heading). Omit when using path.",
+					},
+					"path": map[string]any{
+						"type":        "string",
+						"description": "Workspace-relative path to a SKILL.md the agent already wrote (e.g. skills/release-checklist/SKILL.md). Preferred over content for a non-trivial skill: it avoids re-emitting a large string and is the copy the agent can edit and re-install.",
+					},
+				},
+				"required": []string{"id", "version", "changelog"},
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: llm.ToolFunction{
 			Name:        "list_extensions",
 			Description: "List the v1 extensions installed for this project: whether each is enabled and loaded, the tools, prompt sections, hooks and settings it contributed, and the sha256 and byte size of the source on disk. It also reports cross-extension conflicts — a tool name, section key or display title two extensions both claim, or a tool name that shadows a built-in tool. Use it to confirm an extension loaded after create_extension (the reported sha256 should match the one create_extension returned), or to see what is already installed before writing a new one.",
 			Parameters: map[string]any{

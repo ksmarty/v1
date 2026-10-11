@@ -109,6 +109,10 @@ type Executor struct {
 	// create_extension tool): it validates, writes, enables and reloads. Nil
 	// when extensions are unavailable, and the tool then says so.
 	CreateExtension func(ctx context.Context, id, description, version, changelog, source string) (string, error)
+	// CreateSkill installs a skill the agent wrote (the create_skill tool): it
+	// validates, writes the SKILL.md, enables it and updates the installed list.
+	// Nil when skills are unavailable, and the tool then says so.
+	CreateSkill func(ctx context.Context, id, description, version, changelog, content string) (string, error)
 	// ListExtensions reports what is installed and loaded (the list_extensions
 	// tool), so the agent can confirm an install without inspecting the host.
 	ListExtensions func(ctx context.Context) (string, error)
@@ -163,6 +167,7 @@ var planBlockedTools = map[string]bool{
 	"remember":               true,
 	"forget":                 true,
 	"create_extension":       true,
+	"create_skill":           true,
 }
 
 // planSafeTools filters a tool list down to the read-only ones for plan mode.
@@ -267,21 +272,27 @@ func toolDisplay(name, out string) json.RawMessage {
 			"text":      text,
 			"truncated": truncated,
 		})
-	case "create_extension":
+	case "create_extension", "create_skill":
 		// The result is a readable install summary; lift out the version,
-		// changelog and diff so the chat shows an extension card with what
-		// changed instead of the raw message.
-		version := betweenStrings(out, "version ", " and enabled it")
-		changelog := lineAfter(out, "changelog: ")
+		// changelog and diff so the chat shows an extension/skill card with what
+		// changed instead of the raw message. Unwrap the {"message":...} envelope
+		// first: the summary's newlines are JSON-escaped inside it.
+		kind := "extension"
+		if name == "create_skill" {
+			kind = "skill"
+		}
+		msg := messageOf(out)
+		version := betweenStrings(msg, "version ", " and enabled it")
+		changelog := lineAfter(msg, "changelog: ")
 		var diff string
-		if i := strings.Index(out, "\nchanges:\n"); i >= 0 {
-			diff = strings.TrimRight(out[i+len("\nchanges:\n"):], "\n")
+		if i := strings.Index(msg, "\nchanges:\n"); i >= 0 {
+			diff = strings.TrimRight(msg[i+len("\nchanges:\n"):], "\n")
 		}
 		if version == "" && changelog == "" {
 			return nil
 		}
 		return displayJSON(map[string]any{
-			"kind":      "extension",
+			"kind":      kind,
 			"version":   version,
 			"changelog": changelog,
 			"diff":      diff,
@@ -394,6 +405,8 @@ func (e *Executor) execute(ctx context.Context, name, argsJSON string) (string, 
 		return e.setTodos(argsJSON)
 	case "create_extension":
 		return e.createExtension(ctx, argsJSON)
+	case "create_skill":
+		return e.createSkill(ctx, argsJSON)
 	case "list_extensions":
 		return e.listExtensions(ctx)
 	case "remember":
@@ -837,6 +850,73 @@ func (e *Executor) createExtension(ctx context.Context, argsJSON string) (string
 		return "", toolFail("EXTENSION_REJECTED", err.Error(), true, "read the reported error, fix the source, and call create_extension again")
 	}
 	return toolResult(map[string]any{"ok": true, "message": message}), nil
+}
+
+func (e *Executor) createSkill(ctx context.Context, argsJSON string) (string, error) {
+	if e.CreateSkill == nil {
+		return "", toolFail("UNAVAILABLE", "skills are not available in this session", false, "ask the user to start the agent harness, then retry")
+	}
+	var args struct {
+		ID          string `json:"id"`
+		Description string `json:"description"`
+		Version     string `json:"version"`
+		Changelog   string `json:"changelog"`
+		Content     string `json:"content"`
+		Path        string `json:"path"`
+	}
+	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
+		return "", fmt.Errorf("invalid arguments: %w", err)
+	}
+	args.ID = strings.TrimSpace(args.ID)
+	args.Version = strings.TrimSpace(args.Version)
+	args.Changelog = strings.TrimSpace(args.Changelog)
+	args.Content = strings.TrimSpace(args.Content)
+	args.Path = strings.TrimSpace(args.Path)
+	if args.ID == "" {
+		return "", toolFail("BAD_ARGUMENT", "id is required (lowercase letters, digits and dashes)", true, "pick a short id such as release-checklist")
+	}
+	if args.Version == "" {
+		return "", toolFail("BAD_ARGUMENT", "version is required", true, "pass the skill's version, e.g. 1.0.0; on an update it must be greater than the installed version")
+	}
+	if args.Changelog == "" {
+		return "", toolFail("BAD_ARGUMENT", "changelog is required", true, "write one line describing what changed in this version")
+	}
+	if args.Path != "" {
+		full, err := e.resolve(args.Path)
+		if err != nil {
+			return "", err
+		}
+		data, err := os.ReadFile(full)
+		if err != nil {
+			return "", toolFail("BAD_ARGUMENT", fmt.Sprintf("cannot read %q: %v", args.Path, err), true, "write the SKILL.md to a workspace file first, then pass its path")
+		}
+		args.Content = strings.TrimSpace(string(data))
+	}
+	if args.Content == "" {
+		return "", toolFail("BAD_ARGUMENT", "content or path is required", true, "pass the complete SKILL.md body, or write it to a workspace file and pass its path")
+	}
+	// Refuse a large inline body instead of letting the tool-call argument
+	// truncate mid-call. Point the model at the file path.
+	if args.Path == "" && len(args.Content) > inlineSourceLimit {
+		return "", toolFail("CONTENT_TOO_LARGE", fmt.Sprintf("content is %d bytes; the inline limit is %d", len(args.Content), inlineSourceLimit), true, "write the SKILL.md to a workspace file with write_file, then call create_skill with `path` (not `content`)")
+	}
+	message, err := e.CreateSkill(ctx, args.ID, args.Description, args.Version, args.Changelog, args.Content)
+	if err != nil {
+		return "", toolFail("SKILL_REJECTED", err.Error(), true, "read the reported error, fix the SKILL.md, and call create_skill again")
+	}
+	return toolResult(map[string]any{"ok": true, "message": message}), nil
+}
+
+// messageOf unwraps a tool result of the shape {"ok":true,"message":"..."}
+// into its message. A result that is not that envelope is returned unchanged.
+func messageOf(out string) string {
+	var r struct {
+		Message string `json:"message"`
+	}
+	if json.Unmarshal([]byte(out), &r) == nil && r.Message != "" {
+		return r.Message
+	}
+	return out
 }
 
 // listExtensions backs the list_extensions tool: it reports what is installed
