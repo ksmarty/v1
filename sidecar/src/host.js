@@ -144,6 +144,13 @@ class Sidecar {
 		 * this map. Cleared when the delegate finishes.
 		 */
 		this.delegateParents = new Map();
+		/**
+		 * String(childConversationId) → conversation, for a finished delegate. The
+		 * child is not registered in `conversations` (a later turn must not resolve
+		 * to it), but the UI fetches its transcript by id after it finishes, so the
+		 * handle is kept here. Bounded: only the most recent few are retained.
+		 */
+		this.delegateConversations = new Map();
 		this.closed = false;
 		this.closing = null;
 		/** Extensions the user wrote, keyed by id, and their load errors. */
@@ -642,9 +649,14 @@ class Sidecar {
 			await child.waitForIdle(this.ctx);
 			return await this.readAnswer(child, input?.maxChars);
 		} finally {
-			// This path never registers the child, but drop the caches anyway so a
-			// later change cannot leave it resolvable.
 			this.delegateParents.delete(String(child.id));
+			// Keep the child resolvable by id so the UI can open its transcript after
+			// the delegate finishes. It stays out of `conversations`, so a later turn
+			// still cannot resolve to it. Bounded to the most recent handful.
+			this.delegateConversations.set(String(child.id), child);
+			while (this.delegateConversations.size > 50) {
+				this.delegateConversations.delete(this.delegateConversations.keys().next().value);
+			}
 			this.conversations.delete(String(child.id));
 			this.changes.delete(String(child.id));
 		}
@@ -675,6 +687,8 @@ class Sidecar {
 		if (conversationId) {
 			const cached = this.conversations.get(String(conversationId));
 			if (cached) return cached;
+			const delegated = this.delegateConversations.get(String(conversationId));
+			if (delegated) return delegated;
 			const conversation = await this.harness.conversation(conversationId, this.ctx);
 			if (conversation) {
 				this.conversations.set(String(conversation.id), conversation);

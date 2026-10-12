@@ -176,14 +176,20 @@ or `make dev`), then report: (1) the new stamped build version (`v1 <version>
   (HTML → text via `golang.org/x/net/html`).
 - The bundled `delegate` extension runs a task in a separate sub-agent
   conversation (harness `delegate`) and appends `[v1-subagent:<conversationId>]`
-  to its result; the UI turns that marker into a "view transcript" action that
-  opens `GET /api/projects/{id}/delegate/{conversationId}/messages` in a
-  read-only ChatPane dialog (the child conversation is never a v1 session).
+  to its result. The delegate card is one clickable card — it never expands
+  inline; clicking it (while running or after) opens
+  `GET /api/projects/{id}/delegate/{conversationId}/messages` in a read-only
+  dialog shaped like the main chat: the instructions sent to the sub-agent at
+  the top as a tool-style block, then every user/assistant/tool/thinking block
+  through the same `MessageRow`/`ToolBlocks` the transcript uses (the child
+  conversation is never a v1 session). The sidecar keeps a finished child
+  resolvable by id (`delegateConversations`, bounded) so the transcript loads
+  after the delegate returns.
   The result carries a "No tools were used." note when the child made no tool
   calls, so an empty transcript is explicit rather than silent. While the
   delegate still runs, `Bridge.Attach` notifies the turn's `harnessToolRunner`,
   which emits a `delegate_started` event carrying the child id, so the card can
-  offer the transcript before the tool returns.
+  open the transcript before the tool returns.
   Host tools called by a delegate resolve through the owning turn's run
   (`harnessToolRunner.findRun`), so a sub-agent can use file/command tools.
 - Tool results are stored as JSON (the UI parses them) but re-encoded as

@@ -26,6 +26,9 @@ import type {
   ChatEvent,
   ChatSession,
   ChatUsage,
+  DelegateContentPart,
+  DelegateTranscript,
+  DelegateTranscriptEntry,
   Memory,
   PermissionMode,
   Provider,
@@ -52,7 +55,6 @@ import { highlightFile } from '../markdown';
 import ModelPicker from './ModelPicker';
 import SessionsModal from './SessionsModal';
 import BackgroundTasksModal from './BackgroundTasksModal';
-import DelegateTranscriptDialog from './DelegateTranscript';
 
 // Lets a deeply nested tool block open a sub-agent's transcript without
 // threading a callback through every collapse/block layer.
@@ -671,6 +673,18 @@ function ToolRow({ item }: { item: ToolItem }) {
   const display = useToolDisplay(item.name);
   const Icon = toolIcon(item.name, display);
   const openDelegate = useContext(DelegateOpenContext);
+  // A running delegate is the same clickable card as its finished form, so a
+  // click opens the live child session once its id is known.
+  if (item.name === 'delegate') {
+    return (
+      <DelegateCard
+        task={delegateTask(item.call ?? item.detail)}
+        running={item.running}
+        ok={item.ok}
+        onOpen={item.delegateId ? () => openDelegate(item.delegateId as string) : undefined}
+      />
+    );
+  }
   return (
     <div className="rounded-md border border-border/80 bg-surface/50 text-[10px]">
       <button
@@ -698,17 +712,6 @@ function ToolRow({ item }: { item: ToolItem }) {
           <IconX className="h-3.5 w-3.5 shrink-0 text-red-500" />
         )}
       </button>
-      {item.delegateId && (
-        <div className="border-t border-border/80 px-2 py-1.5">
-          <button
-            type="button"
-            onClick={() => openDelegate(item.delegateId as string)}
-            className="inline-flex items-center gap-1 rounded border border-border px-2 py-1 font-mono text-[10px] text-dim transition-colors hover:bg-border hover:text-text"
-          >
-            <IconUsers className="h-3 w-3" /> View transcript
-          </button>
-        </div>
-      )}
       {open && (item.call ?? item.detail) && <ToolBody detail={item.call ?? item.detail} />}
     </div>
   );
@@ -998,6 +1001,7 @@ function ToolChip({ name, detail, result }: { name: string; detail: string; resu
   const [open, setOpen] = useState(false);
   const display = useToolDisplay(name);
   const Icon = toolIcon(name, display);
+  const openDelegate = useContext(DelegateOpenContext);
   // A sub-agent result carries the child conversation id as a trailing marker;
   // hide it from the text and offer the full transcript instead.
   const sub = name === 'delegate' && result ? subagentId(result.detail) : null;
@@ -1021,6 +1025,19 @@ function ToolChip({ name, detail, result }: { name: string; detail: string; resu
     () => (write ? highlightFile(write.content, write.path) : null),
     [write],
   );
+  // A delegate call is one clickable card that opens the child's transcript —
+  // it never expands inline, so a click always opens the session window.
+  if (name === 'delegate') {
+    return (
+      <DelegateCard
+        task={delegateTask(detail)}
+        answer={sub ? sub.text : undefined}
+        running={!result}
+        ok={result ? resultError(result.detail) === null : undefined}
+        onOpen={sub?.id ? () => openDelegate(sub.id as string) : undefined}
+      />
+    );
+  }
   const label = diff ? diff.path : chipLabel(detail, display);
   // set_todos / remember / write_file expand to a readable preview of their
   // arguments instead of the JSON envelope.
@@ -1037,8 +1054,6 @@ function ToolChip({ name, detail, result }: { name: string; detail: string; resu
       <NameBlock label="Rename project" detail={detail} />
     ) : name === 'set_session_name' ? (
       <NameBlock label="Rename session" detail={detail} />
-    ) : name === 'delegate' ? (
-      <DelegateTaskBlock detail={detail} />
     ) : null;
   // Nothing worth expanding (e.g. restart_preview with empty args) renders as
   // a static row — no chevron, no dropdown.
@@ -2486,49 +2501,266 @@ function subagentId(detail: string): { id: string | null; text: string } {
 
 // A delegate call's arguments are `{"task": "..."}`; the task is a prompt, so
 // show it as prose instead of a JSON envelope.
-function DelegateTaskBlock({ detail }: { detail: string }) {
-  const task = useMemo(() => {
-    try {
-      const a = JSON.parse(detail) as { task?: unknown };
-      return typeof a.task === 'string' ? a.task : null;
-    } catch {
-      return null;
-    }
-  }, [detail]);
-  if (task === null) return null;
+function delegateTask(detail: string): string | null {
+  try {
+    const a = JSON.parse(detail) as { task?: unknown };
+    return typeof a.task === 'string' ? a.task : null;
+  } catch {
+    return null;
+  }
+}
+
+// A sub-agent's tool card. Clicking it opens the child conversation's full
+// transcript in a chat-like dialog — the card itself never expands inline.
+function DelegateCard({
+  task,
+  answer,
+  running,
+  ok,
+  onOpen,
+}: {
+  task: string | null;
+  answer?: string;
+  running?: boolean;
+  ok?: boolean;
+  onOpen?: () => void;
+}) {
   return (
-    <div className="border-t border-border/80 px-3 py-2 text-[11px] leading-relaxed">
-      <div className="mb-1 flex items-center gap-1.5 text-[10px] text-faint">
+    <button
+      type="button"
+      disabled={!onOpen}
+      onClick={onOpen}
+      className="w-full overflow-hidden rounded-lg border border-accent/30 bg-surface text-left transition-colors enabled:hover:border-accent/60 enabled:hover:bg-surface/80 disabled:cursor-default"
+    >
+      <div className="flex items-center gap-1.5 border-b border-accent/20 px-2.5 py-1.5 text-[10px] text-faint">
         <IconUsers className="h-3 w-3 shrink-0 text-accent" />
-        <span>Sub-agent task</span>
+        <span className="font-medium text-text">Sub-agent</span>
+        {running ? (
+          <Spinner className="ml-auto h-3.5 w-3.5 shrink-0" />
+        ) : ok === false ? (
+          <IconX className="ml-auto h-3.5 w-3.5 shrink-0 text-red-500" />
+        ) : (
+          <IconCheck className="ml-auto h-3.5 w-3.5 shrink-0 text-emerald-500" />
+        )}
       </div>
-      <p className="whitespace-pre-wrap break-words text-subtle">{task}</p>
-    </div>
+      {task && (
+        <p className="line-clamp-2 px-2.5 pt-1.5 text-[11px] leading-relaxed text-subtle">{task}</p>
+      )}
+      {answer && answer.trim() && (
+        <p className="line-clamp-4 whitespace-pre-wrap break-words px-2.5 pt-1 text-xs leading-relaxed text-subtle">
+          {answer}
+        </p>
+      )}
+      <div className="flex items-center gap-1 px-2.5 pb-2 pt-1.5 text-[10px] text-accent">
+        <IconChevronRight className="h-3 w-3" />
+        {onOpen ? 'View session' : 'Preparing session…'}
+      </div>
+    </button>
   );
 }
 
-// A sub-agent's answer, with the trailing conversation marker turned into a
-// transcript action instead of being shown as raw text.
+// A sub-agent's result rendered on its own (its call never arrived, e.g. a
+// reconnect) — still a clickable card that opens the transcript.
 function DelegateResultBlock({ detail }: { detail: string }) {
   const openDelegate = useContext(DelegateOpenContext);
   const sub = subagentId(detail);
   return (
-    <div className="rounded-lg border border-accent/30 bg-surface p-2.5">
-      <div className="mb-1 flex items-center gap-1.5 text-[10px] text-faint">
+    <DelegateCard
+      task={null}
+      answer={sub.text}
+      onOpen={sub.id ? () => openDelegate(sub.id as string) : undefined}
+    />
+  );
+}
+
+// The task/instructions sent to a sub-agent, shown at the top of its
+// transcript as a tool-style block rather than a user bubble.
+function InstructionsBlock({ text }: { text: string }) {
+  const [open, setOpen] = useState(true);
+  return (
+    <div className="w-full overflow-hidden rounded-md border border-accent/30 bg-surface/50 text-[10px]">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex min-h-[26px] w-full items-center gap-1.5 px-2 py-1 text-left text-dim transition-colors hover:text-text"
+      >
+        {open ? (
+          <IconChevronDown className="h-3 w-3 shrink-0" />
+        ) : (
+          <IconChevronRight className="h-3 w-3 shrink-0" />
+        )}
         <IconUsers className="h-3 w-3 shrink-0 text-accent" />
-        <span>Sub-agent</span>
-      </div>
-      <p className="whitespace-pre-wrap break-words text-xs text-subtle">{sub.text}</p>
-      {sub.id && (
-        <button
-          type="button"
-          onClick={() => openDelegate(sub.id as string)}
-          className="mt-2 inline-flex items-center gap-1 rounded border border-border px-2 py-1 font-mono text-[10px] text-dim transition-colors hover:bg-border hover:text-text"
-        >
-          <IconUsers className="h-3 w-3" /> View transcript
-        </button>
+        <span className="shrink-0 text-text">Instructions</span>
+        <span className="min-w-0 flex-1 truncate text-faint">Task sent to the sub-agent</span>
+      </button>
+      {open && (
+        <div className="border-t border-border/80 px-3 py-2 text-[11px] leading-relaxed">
+          <Markdown text={text} />
+        </div>
       )}
     </div>
+  );
+}
+
+// Flattens a pi-durable content payload to its text parts.
+function delegateText(content: string | DelegateContentPart[]): string {
+  if (typeof content === 'string') return content;
+  return content
+    .filter((p): p is { type: 'text'; text: string } => p.type === 'text')
+    .map((p) => p.text)
+    .join('\n');
+}
+
+// Turns a sub-agent's durable transcript (pi-durable model messages) into the
+// same item shape the main chat renders, so the dialog reuses MessageRow and
+// the exact tool/thinking blocks.
+function delegateItems(entries: DelegateTranscriptEntry[]): MsgItem[] {
+  const out: MsgItem[] = [];
+  // The sidecar returns newest-first; the reader wants oldest-first.
+  for (const entry of [...entries].reverse()) {
+    for (const m of entry.model ?? []) {
+      if (m.role === 'user') {
+        const text = delegateText(m.content);
+        if (!text.trim()) continue;
+        out.push({ kind: 'msg', key: entry.id, role: 'user', content: text });
+        continue;
+      }
+      if (m.role === 'assistant') {
+        const texts: string[] = [];
+        const thoughts: string[] = [];
+        const calls: ToolCall[] = [];
+        for (const part of m.content) {
+          if (part.type === 'text') texts.push(part.text);
+          else if (part.type === 'thinking') thoughts.push(part.thinking);
+          else if (part.type === 'toolCall') {
+            calls.push({ name: part.name, detail: JSON.stringify(part.arguments ?? {}) });
+          }
+        }
+        const item: MsgItem = {
+          kind: 'msg',
+          key: entry.id,
+          role: 'assistant',
+          content: texts.join('\n'),
+          reasoning: thoughts.join('\n') || undefined,
+        };
+        if (calls.length > 0) item.toolCalls = calls;
+        out.push(item);
+        continue;
+      }
+      if (m.role === 'toolResult') {
+        const result: ToolCall = { name: m.toolName, detail: delegateText(m.content) };
+        let attached = false;
+        for (let i = out.length - 1; i >= 0; i--) {
+          const it = out[i];
+          if (it.kind === 'msg' && it.role === 'assistant') {
+            it.toolResults = [...(it.toolResults ?? []), result];
+            attached = true;
+            break;
+          }
+        }
+        if (!attached) {
+          out.push({
+            kind: 'msg',
+            key: entry.id,
+            role: 'assistant',
+            content: '',
+            toolResults: [result],
+          });
+        }
+      }
+    }
+  }
+  return out;
+}
+
+// A read-only, chat-shaped view of a sub-agent's whole session: the
+// instructions it was given, then every user/assistant/tool/thinking block,
+// rendered through the same components as the main chat.
+function DelegateTranscriptDialog({
+  open,
+  onClose,
+  projectId,
+  conversationId,
+}: {
+  open: boolean;
+  onClose: () => void;
+  projectId: string;
+  conversationId: string | null;
+}) {
+  const [transcript, setTranscript] = useState<DelegateTranscript | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
+
+  useEffect(() => {
+    if (!open || !conversationId) return;
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    setTranscript(null);
+    api
+      .getDelegateMessages(projectId, conversationId)
+      .then((t) => {
+        if (!cancelled) setTranscript(t);
+      })
+      .catch((e) => {
+        if (!cancelled) setError(e instanceof Error ? e.message : 'Could not load the transcript.');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, projectId, conversationId, reloadKey]);
+
+  const items = useMemo(() => (transcript ? delegateItems(transcript.items) : []), [transcript]);
+  const firstUserKey = items.find((it) => it.role === 'user')?.key;
+  const noop = () => {};
+
+  return (
+    <Dialog open={open} onClose={onClose} title="Sub-agent session" wide fixedBody fullScreen>
+      <div className="flex flex-col gap-3 pb-2">
+        {loading && <div className="py-8 text-center text-sm text-dim">Loading session…</div>}
+        {error && (
+          <div className="flex flex-col items-center gap-3 py-8 text-center">
+            <div className="text-sm text-red-400">{error}</div>
+            <Button variant="outline" onClick={() => setReloadKey((k) => k + 1)}>
+              Try again
+            </Button>
+          </div>
+        )}
+        {!loading && !error && items.length === 0 && (
+          <div className="py-8 text-center text-sm text-dim">
+            No transcript was recorded for this sub-agent.
+          </div>
+        )}
+        {items.map((it) =>
+          it.role === 'user' && it.key === firstUserKey ? (
+            <InstructionsBlock key={it.key} text={it.content} />
+          ) : (
+            <MessageRow
+              key={it.key}
+              item={it}
+              isLast={false}
+              streaming={false}
+              turnEnd={false}
+              validTag={() => false}
+              onEdit={noop}
+              onRewind={noop}
+              onRegenerate={noop}
+              onRetrySend={noop}
+              onEditStart={noop}
+              onImageClick={noop}
+              onFileClick={noop}
+              onAskAnswered={noop}
+              onOpenBackground={noop}
+              currency="USD"
+            />
+          ),
+        )}
+      </div>
+    </Dialog>
   );
 }
 
