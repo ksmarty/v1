@@ -409,7 +409,7 @@ export interface InstalledExtension {
   /** The settings fields the extension declares. Absent when it declares none. */
   settings?: ExtensionSettingField[];
   /** Saved values, with the declared defaults filled in. */
-  values?: Record<string, string | boolean>;
+  values?: Record<string, string | boolean | number>;
 }
 
 /**
@@ -421,10 +421,10 @@ export interface InstalledExtension {
  */
 export interface ExtensionSettingField {
   key: string;
-  type: 'text' | 'checkbox';
+  type: 'text' | 'checkbox' | 'textarea' | 'number';
   label?: string;
   help?: string;
-  default?: string | boolean;
+  default?: string | boolean | number;
 }
 
 /** How an extension wants one of its tool calls presented. */

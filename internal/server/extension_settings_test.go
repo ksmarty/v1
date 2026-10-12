@@ -51,14 +51,28 @@ func TestCleanExtensionSettingsKeepsDeclaredKeysAndTypes(t *testing.T) {
 	schema := []any{
 		map[string]any{"key": "limit", "type": "text"},
 		map[string]any{"key": "strict", "type": "checkbox"},
+		map[string]any{"key": "retries", "type": "number"},
+		map[string]any{"key": "notes", "type": "textarea"},
 	}
 	clean := cleanExtensionSettings(schema, map[string]any{
-		"limit":  "20",
-		"strict": true,
-		"gone":   "x",
+		"limit":   "20",
+		"strict":  true,
+		"retries": float64(3),
+		"notes":   "hello",
+		"gone":    "x",
 	})
-	if len(clean) != 2 || clean["limit"] != "20" || clean["strict"] != true {
+	if len(clean) != 4 || clean["limit"] != "20" || clean["strict"] != true || clean["retries"] != float64(3) || clean["notes"] != "hello" {
 		t.Fatalf("cleaned values = %#v", clean)
+	}
+	// A number arriving as a string (an <input> always sends one) is parsed, so
+	// a form value still lands.
+	if coerced := cleanExtensionSettings(schema, map[string]any{"retries": "4"}); coerced["retries"] != float64(4) {
+		t.Fatalf("a numeric string was not coerced: %#v", coerced)
+	}
+	// A number that cannot be parsed is dropped rather than reaching the
+	// extension as a NaN.
+	if got := cleanExtensionSettings(schema, map[string]any{"retries": "abc"}); len(got) != 0 {
+		t.Fatalf("an unparseable number survived: %#v", got)
 	}
 	// An undeclared key would otherwise sit in the form forever.
 	if _, ok := clean["gone"]; ok {

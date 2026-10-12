@@ -121,11 +121,14 @@ export function toolDetails(extension) {
  *     settings: [
  *       { key: "limit", label: "Max words", type: "text", default: "500" },
  *       { key: "strict", label: "Strict mode", type: "checkbox" },
+ *       { key: "notes", label: "Notes", type: "textarea" },
+ *       { key: "retries", label: "Retries", type: "number", default: 3 },
  *     ]
  *
- * Two field types, text and checkbox, cover what an extension needs to be
- * configurable without growing a form builder. Only recognised keys survive, so
- * a typo costs a field rather than putting malformed input in front of v1.
+ * Four field types — text, checkbox, textarea and number — cover what an
+ * extension needs to be configurable without growing a form builder. Only
+ * recognised keys survive, so a typo costs a field rather than putting
+ * malformed input in front of v1.
  *
  * The values themselves live in v1's store, not in the extension, so they
  * survive a reload and can be edited while the extension is disabled.
@@ -139,12 +142,16 @@ export function settingsSchema(extension) {
 		// The key indexes an object in v1's store and is shown to the user, so
 		// reject anything that could not round-trip through JSON as a name.
 		if (typeof key !== "string" || !/^[A-Za-z][A-Za-z0-9_-]*$/.test(key)) continue;
-		const type = field.type === "checkbox" ? "checkbox" : "text";
+		const type =
+			field.type === "checkbox" ? "checkbox" : field.type === "textarea" ? "textarea" : field.type === "number" ? "number" : "text";
 		const entry = { key, type };
 		if (typeof field.label === "string" && field.label.trim()) entry.label = field.label.trim();
 		if (typeof field.help === "string" && field.help.trim()) entry.help = field.help.trim();
 		if (type === "checkbox") {
 			entry.default = field.default === true;
+		} else if (type === "number") {
+			const n = Number(field.default);
+			if (Number.isFinite(n)) entry.default = n;
 		} else if (typeof field.default === "string") {
 			entry.default = field.default;
 		}

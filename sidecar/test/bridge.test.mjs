@@ -29,7 +29,7 @@ import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 
 import { createPeer } from "../src/rpc.js";
-import { bindToolToConversation, extensionConflicts, hookNames, loadExtensions, toolNames } from "../src/extensions.js";
+import { bindToolToConversation, extensionConflicts, hookNames, loadExtensions, settingsSchema, toolNames } from "../src/extensions.js";
 import { endpointHeaders } from "../src/provider.js";
 import { buildHostTools, buildSearchTool, searchTools } from "../src/tools.js";
 import { countToolCalls, firstAssistantText } from "../src/entries.js";
@@ -640,6 +640,36 @@ function checkExtensionConflicts() {
 }
 
 /**
+ * An extension declares its settings fields; only recognised keys survive and
+ * the declared type decides what the form renders and how the value is stored.
+ * text, checkbox, textarea and number are the four the UI can render.
+ */
+function checkSettingsSchema() {
+	const fields = settingsSchema({
+		settings: [
+			{ key: "limit", type: "text", default: "500" },
+			{ key: "strict", type: "checkbox", default: true },
+			{ key: "notes", type: "textarea", default: "hello" },
+			{ key: "retries", type: "number", default: 3 },
+			{ key: "unknown", type: "color" },
+			{ key: "bad key", type: "text" },
+			{ key: "", type: "text" },
+		],
+	});
+	const byKey = Object.fromEntries(fields.map((f) => [f.key, f]));
+	check("extensions: text field survives", byKey.limit?.type === "text" && byKey.limit.default === "500");
+	check("extensions: checkbox field survives", byKey.strict?.type === "checkbox" && byKey.strict.default === true);
+	check("extensions: textarea field survives", byKey.notes?.type === "textarea" && byKey.notes.default === "hello");
+	check(
+		"extensions: number field survives with a numeric default",
+		byKey.retries?.type === "number" && byKey.retries.default === 3,
+		JSON.stringify(byKey.retries),
+	);
+	check("extensions: an unknown type falls back to text", byKey.unknown?.type === "text");
+	check("extensions: an invalid key is dropped", byKey["bad key"] === undefined && byKey[""] === undefined);
+}
+
+/**
  * A tool must see the conversation it was offered in, even while another
  * conversation runs a turn at the same time. That is why the binding travels in
  * async context rather than on a field of the host.
@@ -783,6 +813,7 @@ async function checkSubmitContentValidation(peer, conversationId) {
 
 await checkExtensionLoading();
 checkExtensionConflicts();
+checkSettingsSchema();
 await checkConversationBinding();
 await checkToolResultMapping();
 await checkSearchTool();

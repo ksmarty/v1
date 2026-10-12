@@ -4,16 +4,37 @@ import { api } from '../api';
 import { errMsg } from '../utils';
 import { Button, Dialog, ErrorBox, Spinner } from './ui';
 
-// One project holds every extension-authoring chat, so building several
-// extensions means several sessions in here rather than several projects.
-const EXTENSIONS_PROJECT = 'Extensions';
+// One project holds every authoring chat for a kind, so building several
+// extensions (or several skills) means several sessions in here rather than
+// several projects.
+type Kind = 'extension' | 'skill';
 
-const STARTER = (request: string) =>
-  `Build a v1 extension for this request:\n\n${request}\n\n` +
-  'Use the extension API described in your skills, install it with the create_extension tool, ' +
-  'and confirm it loaded.';
+const CONFIG: Record<
+  Kind,
+  { project: string; description: string; title: string; placeholder: string; starter: (r: string) => string }
+> = {
+  extension: {
+    project: 'Extensions',
+    description: 'Chats that build v1 extensions.',
+    title: 'New extension',
+    placeholder: 'e.g. a tool that summarises a URL into a few bullet points',
+    starter: (request) =>
+      `Build a v1 extension for this request:\n\n${request}\n\n` +
+      'Use the extension API described in your skills, install it with the create_extension tool, ' +
+      'and confirm it loaded.',
+  },
+  skill: {
+    project: 'Skills',
+    description: 'Chats that build v1 skills.',
+    title: 'New skill',
+    placeholder: 'e.g. a checklist for reviewing a pull request',
+    starter: (request) =>
+      `Create a v1 skill for this request:\n\n${request}\n\n` +
+      'Write the SKILL.md, install it with the create_skill tool, and confirm it loaded.',
+  },
+};
 
-// Sessions are named after the request so several extension chats stay
+// Sessions are named after the request so several authoring chats stay
 // distinguishable in the project's session list.
 function sessionName(request: string): string {
   const first = request.split('\n')[0].trim();
@@ -21,21 +42,24 @@ function sessionName(request: string): string {
 }
 
 /**
- * Starts a chat dedicated to writing an extension. Extensions are written by
- * the agent, so this is the same shape as creating a project: describe what you
- * want, and the conversation that opens does the work.
+ * Starts a chat dedicated to writing an extension or a skill. Both are written
+ * by the agent, so this is the same shape as creating a project: describe what
+ * you want, and the conversation that opens does the work.
  */
-export default function NewExtensionDialog({
+export default function NewAuthoringDialog({
   open,
   onClose,
+  kind = 'extension',
 }: {
   open: boolean;
   onClose: () => void;
+  kind?: Kind;
 }) {
   const navigate = useNavigate();
   const [request, setRequest] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const config = CONFIG[kind];
 
   useEffect(() => {
     if (!open) return;
@@ -52,15 +76,15 @@ export default function NewExtensionDialog({
     try {
       const projects = await api.listProjects();
       const existing = projects.find(
-        (p) => p.name.trim().toLowerCase() === EXTENSIONS_PROJECT.toLowerCase(),
+        (p) => p.name.trim().toLowerCase() === config.project.toLowerCase(),
       );
       const project =
         existing ??
         (await api.createProject({
-          name: EXTENSIONS_PROJECT,
-          description: 'Chats that build v1 extensions.',
+          name: config.project,
+          description: config.description,
         }));
-      // The account defaults, so the extension chat starts on the model and
+      // The account defaults, so the authoring chat starts on the model and
       // thinking level the user actually configured rather than the model's
       // lowest level. This session is created outside the chat page, so nothing
       // else applies them.
@@ -73,7 +97,7 @@ export default function NewExtensionDialog({
       await api.queueChat(
         project.id,
         sessionId,
-        STARTER(text),
+        config.starter(text),
         settings?.llm.defaultModel ?? settings?.llm.model,
         settings?.llm.providers?.[0]?.id,
         settings?.defaultThinking || undefined,
@@ -87,10 +111,10 @@ export default function NewExtensionDialog({
   };
 
   return (
-    <Dialog open={open} onClose={onClose} title="New extension">
+    <Dialog open={open} onClose={onClose} title={config.title}>
       <p className="text-sm text-dim">
-        Describe what the extension should do. A chat opens in the{' '}
-        <span className="font-medium text-text">{EXTENSIONS_PROJECT}</span> project, where the agent
+        Describe what the {kind} should do. A chat opens in the{' '}
+        <span className="font-medium text-text">{config.project}</span> project, where the agent
         writes and installs it.
       </p>
       <textarea
@@ -98,7 +122,7 @@ export default function NewExtensionDialog({
         onChange={(e) => setRequest(e.target.value)}
         rows={4}
         autoFocus
-        placeholder="e.g. a tool that summarises a URL into a few bullet points"
+        placeholder={config.placeholder}
         className="mt-3 w-full resize-y rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text outline-none focus:border-accent"
       />
       {error && <ErrorBox message={error} className="mt-3" />}

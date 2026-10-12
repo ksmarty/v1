@@ -44,11 +44,16 @@ React SPA (Vite + TypeScript), both built into a single binary.
   list shows a warning, instead of the last install silently winning. An
   extension's page lists its tools behind a View tools button, each rendered as
   a chat-style expandable card (name, description, display metadata) fed by the
-  sidecar's `toolDetails` field on `GET /api/extensions`. An extension carries
+  sidecar's `toolDetails` field on `GET /api/extensions`. An extension declares
+  its settings as `text`, `checkbox`, `textarea` or `number` fields, rendered as
+  a form on its edit screen. An extension carries
   a required `version` and a one-line `changelog`: `create_extension` refuses a
   same-or-older version, both are stored and shown in the Extensions list, and
   the install/update result includes the changelog plus a source diff (rendered
-  in chat by the `create_extension` display payload). A matching `create_skill`
+  in chat by the `create_extension` display payload). The extension page itself
+  is read-only (id, version, description): a single Edit button opens a screen
+  for the source, description and settings, then a version + changelog step
+  before the final save. A matching `create_skill`
   tool writes `<data-dir>/skills/<id>/SKILL.md` and enables the skill, with the
   same required `version` + `changelog` and same-or-older refusal; its install
   summary (version, changelog, diff) renders as a skill card in chat. Bundled
@@ -83,7 +88,9 @@ React SPA (Vite + TypeScript), both built into a single binary.
   holds the bundled `v1-extensions` authoring skill, which documents the
   extension verifier's collision rules. Skills are installed by the agent with
   `create_skill` (version + changelog required, same-or-older refused) as well
-  as from the Skills settings page and the SkillsMP marketplace.
+  as from the Skills settings page and the SkillsMP marketplace. The Skills
+  tab's New button starts a skill-authoring chat in the Skills project, the same
+  shape as the Extensions tab's New (both use `NewAuthoringDialog`).
 - `web/` — React frontend; built into `internal/server/dist` for embedding.
 
 ## Key commands

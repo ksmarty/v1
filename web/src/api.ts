@@ -584,7 +584,7 @@ export const api = {
     source: string;
     enabled: boolean;
     /** Only sent when the form has fields, so an unreadable schema never wipes values. */
-    settings?: Record<string, string | boolean>;
+    settings?: Record<string, string | boolean | number>;
   }) => post<{ extensions: InstalledExtension[]; error?: string }>('/api/extensions', body),
   extensionToggle: (id: string, enabled: boolean) =>
     post<{ extensions: InstalledExtension[] }>('/api/extensions/toggle', { id, enabled }),

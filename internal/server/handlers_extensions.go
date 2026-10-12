@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -142,6 +143,17 @@ func cleanExtensionSettings(schema []any, values map[string]any) map[string]any 
 		if field["type"] == "checkbox" {
 			if b, ok := value.(bool); ok {
 				out[key] = b
+			}
+			continue
+		}
+		if field["type"] == "number" {
+			switch n := value.(type) {
+			case float64:
+				out[key] = n
+			case string:
+				if f, err := strconv.ParseFloat(strings.TrimSpace(n), 64); err == nil {
+					out[key] = f
+				}
 			}
 			continue
 		}

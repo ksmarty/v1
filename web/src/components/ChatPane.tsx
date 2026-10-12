@@ -5637,7 +5637,7 @@ export default function ChatPane({
       onClick={() => setConfirmStopOpen(true)}
       aria-label="Stop generating"
       title="Stop generating"
-      className="h-8! w-8! shrink-0 text-red-400! hover:bg-red-500/10! hover:text-red-300! md:h-9! md:w-9!"
+      className="h-8! w-8! shrink-0 bg-red-500 text-white hover:opacity-90 hover:text-white md:h-9! md:w-9!"
     >
       <IconSquare className="h-4 w-4" />
     </IconButton>
