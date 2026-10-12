@@ -48,6 +48,7 @@ function sessionStorageKey(projectId: string): string {
 import { Button, Dialog, ErrorBox, IconButton, Input, Spinner } from './ui';
 import ToolSettings, { type ToolsTab } from './ToolSettings';
 import Markdown from './Markdown';
+import { highlightFile } from '../markdown';
 import ModelPicker from './ModelPicker';
 import SessionsModal from './SessionsModal';
 import BackgroundTasksModal from './BackgroundTasksModal';
@@ -1003,16 +1004,23 @@ function ToolChip({ name, detail, result }: { name: string; detail: string; resu
   const diff = name === 'edit_file' ? parseEditDiff(detail) : null;
   const resultErr = result ? resultError(result.detail) : null;
   // write_file expands to just the file content — the path is already in the
-  // header, and the JSON envelope around the content is noise.
-  const writeContent = useMemo(() => {
+  // header, and the JSON envelope around the content is noise. The path is
+  // kept so the content can be syntax-highlighted for its language.
+  const write = useMemo(() => {
     if (name !== 'write_file') return null;
     try {
-      const a = JSON.parse(detail) as { content?: unknown };
-      return typeof a.content === 'string' ? a.content : null;
+      const a = JSON.parse(detail) as { content?: unknown; path?: unknown };
+      if (typeof a.content !== 'string') return null;
+      return { content: a.content, path: typeof a.path === 'string' ? a.path : '' };
     } catch {
       return null;
     }
   }, [name, detail]);
+  const writeContent = write?.content ?? null;
+  const writeHtml = useMemo(
+    () => (write ? highlightFile(write.content, write.path) : null),
+    [write],
+  );
   const label = diff ? diff.path : chipLabel(detail, display);
   // set_todos / remember / write_file expand to a readable preview of their
   // arguments instead of the JSON envelope.
@@ -1104,7 +1112,11 @@ function ToolChip({ name, detail, result }: { name: string; detail: string; resu
             </StickToBottom>
           ) : writeContent !== null ? (
             <StickToBottom className="max-h-60 overflow-auto whitespace-pre-wrap break-words border-t border-border/80 px-3 py-2 font-mono text-[11px] leading-relaxed text-subtle">
-              {writeContent}
+              {writeHtml !== null ? (
+                <div dangerouslySetInnerHTML={{ __html: writeHtml }} />
+              ) : (
+                writeContent
+              )}
             </StickToBottom>
           ) : preview !== null ? (
             <>{preview}</>
@@ -1514,6 +1526,10 @@ function ReadFileBlock({ path, result }: { path: string; result: ToolCall }) {
       return null;
     }
   }, [err, result]);
+  const html = useMemo(
+    () => (content !== null ? highlightFile(content, path) : null),
+    [content, path],
+  );
   return (
     <div className="w-full overflow-hidden rounded-md border border-border bg-surface/50 font-mono text-[10px]">
       <button
@@ -1538,7 +1554,11 @@ function ReadFileBlock({ path, result }: { path: string; result: ToolCall }) {
           </div>
         ) : content !== null ? (
           <StickToBottom className="max-h-60 overflow-auto whitespace-pre-wrap break-words border-t border-border/80 px-3 py-2 text-[11px] leading-relaxed text-subtle">
-            {content}
+            {html !== null ? (
+              <div dangerouslySetInnerHTML={{ __html: html }} />
+            ) : (
+              content
+            )}
           </StickToBottom>
         ) : result ? (
           <ToolBody detail={result.detail} />
@@ -5503,6 +5523,54 @@ export default function ChatPane({
             e.preventDefault();
             setSuggestions([]);
             return;
+          }
+          // Double-space on a markdown list line indents the item one level.
+          // At keydown the first space is already in the value, so the second
+          // one is the trigger; it is swallowed so the line stays clean.
+          if (e.key === ' ' && taRef.current && suggestions.length === 0) {
+            const ta = taRef.current;
+            if (ta.selectionStart === ta.selectionEnd && ta.selectionStart > 0) {
+              const before = input.slice(0, ta.selectionStart);
+              const lineStart = before.lastIndexOf('\n') + 1;
+              const line = before.slice(lineStart);
+              if (line.endsWith(' ') && /^[ \t]*([-*+]|\d+[.)])\s/.test(line)) {
+                e.preventDefault();
+                const next = input.slice(0, lineStart) + '  ' + input.slice(lineStart);
+                setInput(next);
+                const pos = ta.selectionStart + 2;
+                requestAnimationFrame(() => {
+                  ta.selectionStart = pos;
+                  ta.selectionEnd = pos;
+                });
+                void updateSuggestions(next);
+                return;
+              }
+            }
+          }
+          // Backspace on an empty, indented list item (depth 2+) un-indents it
+          // one level instead of deleting the space after the marker.
+          if (e.key === 'Backspace' && taRef.current && suggestions.length === 0) {
+            const ta = taRef.current;
+            if (ta.selectionStart === ta.selectionEnd) {
+              const selStart = ta.selectionStart;
+              const before = input.slice(0, selStart);
+              const lineStart = before.lastIndexOf('\n') + 1;
+              const nl = input.indexOf('\n', lineStart);
+              const lineEnd = nl === -1 ? input.length : nl;
+              const line = input.slice(lineStart, lineEnd);
+              if (selStart === lineEnd && /^[ \t]{2,}([-*+]|\d+[.)])[ \t]+$/.test(line)) {
+                e.preventDefault();
+                const next = input.slice(0, lineStart) + line.slice(2) + input.slice(lineEnd);
+                setInput(next);
+                const pos = selStart - 2;
+                requestAnimationFrame(() => {
+                  ta.selectionStart = pos;
+                  ta.selectionEnd = pos;
+                });
+                void updateSuggestions(next);
+                return;
+              }
+            }
           }
           // On desktop the send shortcut is Cmd/Ctrl+Enter, so a plain Enter is
           // a newline there too — the composer is a markdown editor, and

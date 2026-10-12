@@ -210,7 +210,12 @@ or `make dev`), then report: (1) the new stamped build version (`v1 <version>
   `replace:true` on a `delta`/`reasoning`
   event means the text replaces the live value rather than appending — the
   harness sends it when a round's committed text is not an extension of what
-  streamed (retry/abort), so a stale fragment isn't glued on.
+  streamed (retry/abort), so a stale fragment isn't glued on. `write_file`
+  content and `read_file` output are syntax-highlighted for the file's
+  language (`highlightFile` in `web/src/markdown.ts`).
+- The chat composer is a markdown editor: Enter continues a list marker,
+  double-space on a list line indents it one level, and Backspace on an empty
+  indented item (depth 2+) un-indents it.
 - The GitHub tab's repo is auto-detected: `GET /api/projects/{id}` fills
   `repoUrl` from the working tree's `origin` remote (`gitops.RemoteURL`) when
   the user hasn't linked one, so `showGitHubTab` can offer the tab on its own;

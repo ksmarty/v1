@@ -207,6 +207,19 @@ export function fileLanguage(path: string): string | null {
   return EXT_LANGS[base.slice(dot + 1).toLowerCase()] ?? null;
 }
 
+/** Highlights a file's content for the language inferred from its path.
+ *  Returns null when the path has no known language, so callers fall back to
+ *  plain text. */
+export function highlightFile(code: string, path: string): string | null {
+  const lang = fileLanguage(path);
+  if (!lang || !hljs.getLanguage(lang)) return null;
+  try {
+    return hljs.highlight(code, { language: lang }).value;
+  } catch {
+    return null;
+  }
+}
+
 function escapeHtml(s: string): string {
   return s
     .replace(/&/g, '&amp;')
