@@ -2552,8 +2552,16 @@ function DelegateCard({
         </p>
       )}
       <div className="flex items-center gap-1 px-2.5 pb-2 pt-1.5 text-[10px] text-accent">
-        <IconChevronRight className="h-3 w-3" />
-        {onOpen ? 'View session' : 'Preparing session…'}
+        {onOpen ? (
+          <>
+            <IconChevronRight className="h-3 w-3" />
+            View session
+          </>
+        ) : running ? (
+          <span className="text-faint">Preparing session…</span>
+        ) : (
+          <span className="text-faint">No session recorded</span>
+        )}
       </div>
     </button>
   );
