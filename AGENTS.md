@@ -46,14 +46,16 @@ React SPA (Vite + TypeScript), both built into a single binary.
   a chat-style expandable card (name, description, display metadata) fed by the
   sidecar's `toolDetails` field on `GET /api/extensions`. An extension declares
   its settings as `text`, `checkbox`, `textarea` or `number` fields, rendered as
-  a form on its edit screen. An extension carries
+  a form on the extension page. Settings are configuration, not a code change,
+  so they save on their own (`POST /api/extensions/settings`) without a version
+  bump. An extension carries
   a required `version` and a one-line `changelog`: `create_extension` refuses a
   same-or-older version, both are stored and shown in the Extensions list, and
   the install/update result includes the changelog plus a source diff (rendered
-  in chat by the `create_extension` display payload). The extension page itself
-  is read-only (id, version, description): a single Edit button opens a screen
-  for the source, description and settings, then a version + changelog step
-  before the final save. A matching `create_skill`
+  in chat by the `create_extension` display payload). The extension page shows
+  read-only id, version and description plus the editable settings form; a
+  single Edit button opens a screen for the source and description, then a
+  version + changelog step before the final save. A matching `create_skill`
   tool writes `<data-dir>/skills/<id>/SKILL.md` and enables the skill, with the
   same required `version` + `changelog` and same-or-older refusal; its install
   summary (version, changelog, diff) renders as a skill card in chat. Bundled

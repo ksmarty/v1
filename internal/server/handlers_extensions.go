@@ -759,6 +759,38 @@ func (s *Server) handleExtensionsToggle(w http.ResponseWriter, r *http.Request) 
 	writeError(w, http.StatusNotFound, "extension not found")
 }
 
+// handleExtensionSettings saves an extension's settings on their own. Settings
+// are configuration, not a code change, so they save from the extension page
+// without a version bump or a changelog.
+func (s *Server) handleExtensionSettings(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		ID       string         `json:"id"`
+		Settings map[string]any `json:"settings"`
+	}
+	if !decodeJSON(w, r, &body) {
+		return
+	}
+	if strings.TrimSpace(body.ID) == "" {
+		writeError(w, http.StatusBadRequest, "an extension id is required")
+		return
+	}
+	schema := extensionSchema(s.extensionLoadState(r.Context()), body.ID)
+	if len(schema) == 0 {
+		writeError(w, http.StatusBadRequest, "this extension declares no settings")
+		return
+	}
+	all := s.storedExtensionSettings()
+	all[body.ID] = cleanExtensionSettings(schema, body.Settings)
+	if err := s.saveExtensionSettings(all); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"extensions": s.installedExtensions(),
+		"reload":     s.reloadExtensions(r.Context()),
+	})
+}
+
 // handleExtensionsRemove deletes an extension and its source.
 func (s *Server) handleExtensionsRemove(w http.ResponseWriter, r *http.Request) {
 	var body struct {

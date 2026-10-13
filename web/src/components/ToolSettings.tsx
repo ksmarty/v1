@@ -333,10 +333,14 @@ function ToolSettings({
     (extEditor.description !== extEditor.original.description ||
       extEditor.version !== extEditor.original.version ||
       extEditor.changelog !== extEditor.original.changelog ||
-      extEditor.source !== extEditor.original.source ||
-      extEditor.schema.some(
-        (f) => extEditor.settings[f.key] !== extEditor.original.settings[f.key],
-      ));
+      extEditor.source !== extEditor.original.source);
+  // Settings are edited on the extension page and saved on their own, so they
+  // are tracked apart from a code change (which needs a version bump).
+  const extSettingsDirty =
+    extEditor !== null &&
+    extEditor.schema.some(
+      (f) => extEditor.settings[f.key] !== extEditor.original.settings[f.key],
+    );
   // Which pane the extension dialog is showing: the read-only detail, the
   // source/description/settings editor, the version + changelog step, or the
   // tool list.
@@ -1319,6 +1323,27 @@ function ToolSettings({
     }
   };
 
+  // Settings save from the extension page, without a version bump: they are
+  // configuration, not a code change.
+  const saveExtSettings = async () => {
+    if (!extEditor || extEditor.schema.length === 0) return;
+    setExtBusy(true);
+    setExtError(null);
+    try {
+      const r = await api.extensionSettingsSave(extEditor.id, extEditor.settings);
+      setExtensions(r.extensions ?? []);
+      // The saved values become the baseline, so the form is no longer dirty.
+      setExtEditor((prev) =>
+        prev ? { ...prev, original: { ...prev.original, settings: { ...prev.settings } } } : prev,
+      );
+      await refreshExtensions();
+    } catch (err) {
+      setExtError(errMsg(err));
+    } finally {
+      setExtBusy(false);
+    }
+  };
+
   const toggleExtension = async (id: string, enabled: boolean) => {
     setExtError(null);
     try {
@@ -1758,6 +1783,82 @@ function ToolSettings({
                     className="h-24 w-full resize-none rounded-lg border border-border-strong bg-surface px-3 py-2 text-sm text-text outline-none transition-colors focus:border-subtle"
                   />
                 </Field>
+              </div>
+            ) : extView === 'version' ? (
+              <div className="flex flex-col gap-3">
+                <p className="text-xs leading-relaxed text-subtle">
+                  Bump the version and describe what changed. The version must be
+                  greater than the installed one.
+                </p>
+                <Field label="Version">
+                  <Input
+                    value={extEditor.version}
+                    onChange={(e) => setExtEditor({ ...extEditor, version: e.target.value })}
+                    placeholder="1.0.0"
+                    autoFocus
+                    autoComplete="off"
+                  />
+                </Field>
+                <Field label="Changelog">
+                  <textarea
+                    value={extEditor.changelog}
+                    onChange={(e) => setExtEditor({ ...extEditor, changelog: e.target.value })}
+                    placeholder="what changed in this version"
+                    rows={4}
+                    className="w-full resize-none rounded-lg border border-border-strong bg-surface px-3 py-2 text-sm text-text outline-none transition-colors focus:border-subtle"
+                  />
+                </Field>
+              </div>
+            ) : extView === 'tools' ? (
+              <div className="fade-y flex min-h-0 flex-1 flex-col gap-1.5 overflow-x-hidden overflow-y-auto overscroll-contain">
+                {(extTools[extEditor.id] ?? []).map((tool) => (
+                  <ExtensionToolCard key={tool.name} tool={tool} />
+                ))}
+              </div>
+            ) : (
+              <div className="fade-y flex min-h-0 flex-1 flex-col gap-3 overflow-x-hidden overflow-y-auto overscroll-contain">
+                {/* The extension page: read-only id/version/description plus
+                    the settings form. Source and description are edited on
+                    their own screen, reached with the Edit button. */}
+                <div className="flex shrink-0 flex-col gap-2 sm:flex-row sm:items-end">
+                  <div className="sm:w-40">
+                    <Field label="Id">
+                      <Input value={extEditor.id} disabled autoComplete="off" />
+                    </Field>
+                  </div>
+                  <div className="sm:w-28">
+                    <Field label="Version">
+                      <p className="min-h-[2.25rem] rounded-lg border border-border-strong bg-surface px-3 py-2 font-mono text-xs leading-relaxed text-text">
+                        {extEditor.version !== '' ? extEditor.version : '—'}
+                      </p>
+                    </Field>
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <Field label="Description">
+                      <p className="min-h-[2.25rem] rounded-lg border border-border-strong bg-surface px-3 py-2 text-xs leading-relaxed text-text">
+                        {extEditor.description !== '' ? extEditor.description : 'No description'}
+                      </p>
+                    </Field>
+                  </div>
+                </div>
+                <div className="flex shrink-0 flex-wrap items-center gap-2">
+                  <Button
+                    variant="primary"
+                    className="h-8 px-3 text-xs"
+                    onClick={() => setExtView('edit')}
+                  >
+                    <IconPencil className="h-3.5 w-3.5" /> Edit
+                  </Button>
+                  {(extTools[extEditor.id]?.length ?? 0) > 0 && (
+                    <Button
+                      variant="outline"
+                      className="h-8 px-3 text-xs"
+                      onClick={() => setExtView('tools')}
+                    >
+                      <IconWrench className="h-3.5 w-3.5" /> View tools
+                    </Button>
+                  )}
+                </div>
                 {extEditor.schema.length > 0 && (
                   <div className="space-y-2.5 rounded-lg border border-border-strong bg-surface px-3 py-2.5">
                     <div className="text-[11px] font-medium text-subtle">Settings</div>
@@ -1834,81 +1935,6 @@ function ToolSettings({
                   </div>
                 )}
               </div>
-            ) : extView === 'version' ? (
-              <div className="flex flex-col gap-3">
-                <p className="text-xs leading-relaxed text-subtle">
-                  Bump the version and describe what changed. The version must be
-                  greater than the installed one.
-                </p>
-                <Field label="Version">
-                  <Input
-                    value={extEditor.version}
-                    onChange={(e) => setExtEditor({ ...extEditor, version: e.target.value })}
-                    placeholder="1.0.0"
-                    autoFocus
-                    autoComplete="off"
-                  />
-                </Field>
-                <Field label="Changelog">
-                  <textarea
-                    value={extEditor.changelog}
-                    onChange={(e) => setExtEditor({ ...extEditor, changelog: e.target.value })}
-                    placeholder="what changed in this version"
-                    rows={4}
-                    className="w-full resize-none rounded-lg border border-border-strong bg-surface px-3 py-2 text-sm text-text outline-none transition-colors focus:border-subtle"
-                  />
-                </Field>
-              </div>
-            ) : extView === 'tools' ? (
-              <div className="fade-y flex min-h-0 flex-1 flex-col gap-1.5 overflow-x-hidden overflow-y-auto overscroll-contain">
-                {(extTools[extEditor.id] ?? []).map((tool) => (
-                  <ExtensionToolCard key={tool.name} tool={tool} />
-                ))}
-              </div>
-            ) : (
-              <>
-                {/* Read-only detail. Editing source, description and settings
-                    happens on its own screen, reached with the Edit button. */}
-                <div className="flex shrink-0 flex-col gap-2 sm:flex-row sm:items-end">
-                  <div className="sm:w-40">
-                    <Field label="Id">
-                      <Input value={extEditor.id} disabled autoComplete="off" />
-                    </Field>
-                  </div>
-                  <div className="sm:w-28">
-                    <Field label="Version">
-                      <p className="min-h-[2.25rem] rounded-lg border border-border-strong bg-surface px-3 py-2 font-mono text-xs leading-relaxed text-text">
-                        {extEditor.version !== '' ? extEditor.version : '—'}
-                      </p>
-                    </Field>
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <Field label="Description">
-                      <p className="min-h-[2.25rem] rounded-lg border border-border-strong bg-surface px-3 py-2 text-xs leading-relaxed text-text">
-                        {extEditor.description !== '' ? extEditor.description : 'No description'}
-                      </p>
-                    </Field>
-                  </div>
-                </div>
-                <div className="flex shrink-0 flex-wrap items-center gap-2">
-                  <Button
-                    variant="primary"
-                    className="h-8 px-3 text-xs"
-                    onClick={() => setExtView('edit')}
-                  >
-                    <IconPencil className="h-3.5 w-3.5" /> Edit
-                  </Button>
-                  {(extTools[extEditor.id]?.length ?? 0) > 0 && (
-                    <Button
-                      variant="outline"
-                      className="h-8 px-3 text-xs"
-                      onClick={() => setExtView('tools')}
-                    >
-                      <IconWrench className="h-3.5 w-3.5" /> View tools
-                    </Button>
-                  )}
-                </div>
-              </>
             )}
             {/* The actions read as what you do once you have read the detail.
                 Delete is destructive and sits apart on the left; Save and Cancel
@@ -1971,6 +1997,16 @@ function ToolSettings({
                     onClick={() => void saveExtension()}
                   >
                     {extBusy ? <Spinner className="h-4 w-4" /> : 'Save'}
+                  </Button>
+                )}
+                {extView === 'detail' && extEditor.schema.length > 0 && (
+                  <Button
+                    variant="primary"
+                    className="h-8 px-3 text-xs"
+                    disabled={extBusy || !extSettingsDirty}
+                    onClick={() => void saveExtSettings()}
+                  >
+                    {extBusy ? <Spinner className="h-4 w-4" /> : 'Save settings'}
                   </Button>
                 )}
               </div>

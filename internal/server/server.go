@@ -287,6 +287,7 @@ func (s *Server) routes(m *http.ServeMux) {
 	m.HandleFunc("GET /api/extensions", s.handleExtensionsList)
 	m.HandleFunc("GET /api/extensions/{id}", s.handleExtensionGet)
 	m.HandleFunc("POST /api/extensions", s.handleExtensionSave)
+	m.HandleFunc("POST /api/extensions/settings", s.handleExtensionSettings)
 	m.HandleFunc("POST /api/extensions/toggle", s.handleExtensionsToggle)
 	m.HandleFunc("POST /api/extensions/remove", s.handleExtensionsRemove)
 	m.HandleFunc("POST /api/extensions/reload", s.handleExtensionsReload)

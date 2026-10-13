@@ -190,6 +190,18 @@ func TestExtensionsSaveToggleAndRemove(t *testing.T) {
 	}
 }
 
+// Settings save on their own from the extension page. Without a running
+// harness the schema cannot be read, and the endpoint must refuse rather than
+// wipe the stored values.
+func TestExtensionsSettingsRefuseWhenSchemaIsUnreadable(t *testing.T) {
+	s, adminCookie, _ := newAuthServer(t)
+	rr := extensionsRequest(t, s, adminCookie, "POST", "/api/extensions/settings",
+		`{"id":"sample","settings":{"limit":"10"}}`)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("saving settings without a schema = %d, want 400: %s", rr.Code, rr.Body.String())
+	}
+}
+
 func hasExtension(body extensionListBody, id string, enabled bool) bool {
 	for _, ext := range body.Extensions {
 		if ext.ID == id {

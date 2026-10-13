@@ -586,6 +586,9 @@ export const api = {
     /** Only sent when the form has fields, so an unreadable schema never wipes values. */
     settings?: Record<string, string | boolean | number>;
   }) => post<{ extensions: InstalledExtension[]; error?: string }>('/api/extensions', body),
+  /** Settings are configuration, not code: they save without a version bump. */
+  extensionSettingsSave: (id: string, settings: Record<string, string | boolean | number>) =>
+    post<{ extensions: InstalledExtension[]; error?: string }>('/api/extensions/settings', { id, settings }),
   extensionToggle: (id: string, enabled: boolean) =>
     post<{ extensions: InstalledExtension[] }>('/api/extensions/toggle', { id, enabled }),
   extensionRemove: (id: string) =>
