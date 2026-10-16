@@ -63,6 +63,28 @@ func TestYoloKeepsEveryOtherTool(t *testing.T) {
 	}
 }
 
+// A model that can read images is offered screenshot_app and told that seeing
+// the app is part of done; a text-only model gets neither.
+func TestVisionGatesScreenshotAndVisualVerification(t *testing.T) {
+	base := ChatParams{Project: &store.Project{}, SkipCompactionSnapshot: true}
+	if hasToolName(base.ToolSet(), "screenshot_app") {
+		t.Error("a text-only model must not be offered screenshot_app")
+	}
+	if strings.Contains(BuildSystemPrompt(&base), "screenshot_app") {
+		t.Error("a text-only model must not be told about screenshot_app")
+	}
+
+	vision := base
+	vision.Vision = true
+	if !hasToolName(vision.ToolSet(), "screenshot_app") {
+		t.Error("a vision model should be offered screenshot_app")
+	}
+	prompt := BuildSystemPrompt(&vision)
+	if !strings.Contains(prompt, "screenshot_app") || !strings.Contains(prompt, "Visual verification is part of done") {
+		t.Errorf("the vision prompt does not demand visual verification:\n%s", prompt)
+	}
+}
+
 func hasToolName(tools []llm.Tool, name string) bool {
 	for _, tool := range tools {
 		if tool.Function.Name == name {

@@ -309,7 +309,7 @@ func BuildSystemPrompt(p *ChatParams) string {
 		system += "\n- run_command_background starts a command detached from the turn: it returns a job id immediately, and the result is injected into the chat as a user message (\"[Background #id: command] finished (exit N): output\") once the command completes — mid-turn if you are still working, or at the start of your next turn. Start long-running work with it instead of blocking, and react to the result when it arrives."
 	}
 	if p.Vision {
-		system += "\n\nYou can see the app: call screenshot_app to capture an image of the running preview and inspect what is on screen. Use it after visual changes to verify them."
+		system += "\n\nVisual verification is part of done — you can see the running app. After any change that affects what the user sees (layout, styling, a new component or page, copy, images), call screenshot_app and look at the returned image before you report the work complete. The tool starts the preview if it is not running. A code-level check (verify_project) is not a substitute for seeing it render: check the layout, spacing, colours and that the intended content is actually on screen, and if anything looks wrong, fix it and screenshot again."
 	}
 	return system
 }
@@ -874,7 +874,7 @@ var screenshotAppTool = llm.Tool{
 	Type: "function",
 	Function: llm.ToolFunction{
 		Name:        "screenshot_app",
-		Description: "Capture a screenshot of the app preview so you can see its current visual state. Starts the preview if it is not running. Only available for models that can read images.",
+		Description: "Capture a screenshot of the app preview and see its current visual state. Starts the preview if it is not running. Call this after any visual change (layout, styling, a component, page or copy) and actually look at the image before reporting the work done. Only available for models that can read images.",
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{

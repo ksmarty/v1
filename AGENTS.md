@@ -121,7 +121,11 @@ or `make dev`), then report: (1) the new stamped build version (`v1 <version>
   model carries `imageInput` catalog metadata
   (`Server.modelSupportsImages`); the PNG reaches the model as an injected
   user message with an image attachment (tool results are text-only on many
-  OpenAI-compatible APIs), streamed to the UI as `injected_message`.
+  OpenAI-compatible APIs), streamed to the UI as `injected_message`. The
+  vision system-prompt note and the tool description make visual verification
+  part of done: after a change that affects what the user sees, the agent is
+  told to call `screenshot_app` and look at the image before reporting
+  completion.
   Node-mode previews are screenshotted via `preview.Manager.DirectURL`
   (the proxy requires a session when auth is on).
 - Chat is organized into per-project sessions (`chat_sessions` table; messages
