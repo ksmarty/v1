@@ -119,13 +119,18 @@ or `make dev`), then report: (1) the new stamped build version (`v1 <version>
   headless Chrome for the `screenshot_app` agent tool; Chrome is auto-located,
   `V1_CHROME_PATH` overrides. The tool is only registered when the turn's
   model carries `imageInput` catalog metadata
-  (`Server.modelSupportsImages`); the PNG reaches the model as an injected
-  user message with an image attachment (tool results are text-only on many
-  OpenAI-compatible APIs), streamed to the UI as `injected_message`. The
-  vision system-prompt note and the tool description make visual verification
-  part of done: after a change that affects what the user sees, the agent is
-  told to call `screenshot_app` and look at the image before reporting
-  completion.
+  (`Server.modelSupportsImages`); the PNG reaches the model either as an
+  injected user message with an image attachment (the built-in loop) or on the
+  tool result (the pi-durable harness, whose OpenAI adapter turns tool-result
+  images into a follow-up user message). Either way it is persisted as a user
+  attachment and streamed to the UI as `injected_message`, so the screenshot is
+  in the chat log live and after a reload. The model can embed the latest
+  screenshot in its reply with `![screenshot](v1-screenshot)`, which the
+  markdown renderer resolves to the most recent image attachment in the
+  session. The vision system-prompt note and the tool description make visual
+  verification part of done: after a change that affects what the user sees,
+  the agent is told to call `screenshot_app` and look at the image before
+  reporting completion.
   Node-mode previews are screenshotted via `preview.Manager.DirectURL`
   (the proxy requires a session when auth is on).
 - Chat is organized into per-project sessions (`chat_sessions` table; messages

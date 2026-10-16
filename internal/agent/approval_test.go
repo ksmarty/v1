@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -82,6 +83,24 @@ func TestVisionGatesScreenshotAndVisualVerification(t *testing.T) {
 	prompt := BuildSystemPrompt(&vision)
 	if !strings.Contains(prompt, "screenshot_app") || !strings.Contains(prompt, "Visual verification is part of done") {
 		t.Errorf("the vision prompt does not demand visual verification:\n%s", prompt)
+	}
+}
+
+// The screenshot tool must hand the model a token it can put in its reply, so
+// the chat can render the image inline in the summary.
+func TestScreenshotAppAdvertisesEmbedToken(t *testing.T) {
+	e := &Executor{Screenshot: func(context.Context, string) ([]byte, error) {
+		return []byte("\x89PNG"), nil
+	}}
+	out, err := e.screenshotApp(context.Background(), `{"path":"/"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "v1-screenshot") {
+		t.Errorf("screenshot result does not advertise the embed token: %s", out)
+	}
+	if len(e.PendingImage) == 0 {
+		t.Error("screenshot did not set PendingImage")
 	}
 }
 

@@ -309,7 +309,7 @@ func BuildSystemPrompt(p *ChatParams) string {
 		system += "\n- run_command_background starts a command detached from the turn: it returns a job id immediately, and the result is injected into the chat as a user message (\"[Background #id: command] finished (exit N): output\") once the command completes — mid-turn if you are still working, or at the start of your next turn. Start long-running work with it instead of blocking, and react to the result when it arrives."
 	}
 	if p.Vision {
-		system += "\n\nVisual verification is part of done — you can see the running app. After any change that affects what the user sees (layout, styling, a new component or page, copy, images), call screenshot_app and look at the returned image before you report the work complete. The tool starts the preview if it is not running. A code-level check (verify_project) is not a substitute for seeing it render: check the layout, spacing, colours and that the intended content is actually on screen, and if anything looks wrong, fix it and screenshot again."
+		system += "\n\nVisual verification is part of done — you can see the running app. After any change that affects what the user sees (layout, styling, a new component or page, copy, images), call screenshot_app and look at the returned image before you report the work complete. The tool starts the preview if it is not running. A code-level check (verify_project) is not a substitute for seeing it render: check the layout, spacing, colours and that the intended content is actually on screen, and if anything looks wrong, fix it and screenshot again. To show a screenshot in your reply, include the markdown ![screenshot](v1-screenshot)."
 	}
 	return system
 }

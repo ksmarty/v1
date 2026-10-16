@@ -268,6 +268,21 @@ renderer.link = function (this: Renderer, { href, title, tokens }: Tokens.Link):
   return text;
 };
 
+// renderMarkdown sets imageResolver around the synchronous parse. The chat
+// resolves a bare `v1-screenshot` token — the screenshot tool tells the model
+// to emit `![screenshot](v1-screenshot)` — to the session's most recent
+// screenshot attachment.
+let imageResolver: ((src: string) => string | null) | null = null;
+
+renderer.image = ({ href, title, text }: Tokens.Image): string => {
+  const resolved = (href && imageResolver?.(href)) || href || '';
+  // The model's output is untrusted: allow http(s), inline images and
+  // same-origin paths, and fall back to the alt text for anything else.
+  if (!/^(?:https?:|data:image\/|\/)/i.test(resolved)) return escapeHtml(text ?? '');
+  const t = title ? ` title="${escapeHtml(title)}"` : '';
+  return `<img src="${escapeHtml(resolved)}" alt="${escapeHtml(text ?? '')}"${t} loading="lazy" />`;
+};
+
 // Inline extension: render @file / #skill mentions as monospaced pills.
 // Being an inline tokenizer, it never fires inside code spans or fences.
 // Matches the pill style used for tags in user bubbles (ChatPane TaggedText).
@@ -313,11 +328,13 @@ export function renderMarkdown(
   src: string,
   streaming = false,
   validTag?: (tag: string) => boolean,
+  resolveImage?: (src: string) => string | null,
 ): string {
   // Only append the blinking caret while there is actual text on screen — an
   // empty assistant bubble (e.g. between tool steps) should not blink.
   const withCursor = streaming && src.trim() !== '';
   tagValidator = validTag ?? null;
+  imageResolver = resolveImage ?? null;
   try {
     const html = marked.parse(stripFrontmatter(withCursor ? src + CURSOR_MARKER : src), {
       async: false,
@@ -330,5 +347,6 @@ export function renderMarkdown(
     return wrapped.replaceAll(CURSOR_MARKER, CURSOR_SPAN);
   } finally {
     tagValidator = null;
+    imageResolver = null;
   }
 }

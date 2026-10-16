@@ -3005,6 +3005,7 @@ const MessageRow = memo(function MessageRow({
   streaming,
   turnEnd,
   validTag,
+  resolveImage,
   onEdit,
   onRewind,
   onRegenerate,
@@ -3021,6 +3022,7 @@ const MessageRow = memo(function MessageRow({
   streaming: boolean;
   turnEnd: boolean;
   validTag: (tag: string) => boolean;
+  resolveImage?: (src: string) => string | null;
   onEdit: (key: string, text: string) => void;
   onRewind: (key: string, text: string) => void;
   onRegenerate: () => void;
@@ -3215,7 +3217,7 @@ const MessageRow = memo(function MessageRow({
       )}
       {item.content && (
         <div className="min-w-0">
-          <Markdown text={item.content} streaming={item.streaming} validTag={validTag} />
+          <Markdown text={item.content} streaming={item.streaming} validTag={validTag} resolveImage={resolveImage} />
         </div>
       )}
       {turnEnd && item.usage && !item.streaming && (
@@ -4183,6 +4185,23 @@ export default function ChatPane({
     const skills = new Set(skillList.map((s) => s.name));
     return (tag: string) => (tag[0] === '@' ? files.has(tag.slice(1)) : skills.has(tag.slice(1)));
   }, [fileList, skillList]);
+
+  // The most recent screenshot in the thread. An assistant summary can embed it
+  // with the `v1-screenshot` token the screenshot tool advertises.
+  const latestScreenshot = useMemo(() => {
+    let latest: string | null = null;
+    for (const it of items) {
+      if (it.kind !== 'msg' || !it.attachments) continue;
+      for (const a of it.attachments) {
+        if (a.kind === 'image' && a.url) latest = a.url;
+      }
+    }
+    return latest;
+  }, [items]);
+  const resolveImage = useCallback(
+    (src: string) => (src === 'v1-screenshot' ? latestScreenshot : null),
+    [latestScreenshot],
+  );
 
   const [showJump, setShowJump] = useState(false);
   // Minimap: a dot strip with one dot per viewport "screen" of the thread
@@ -6032,6 +6051,7 @@ export default function ChatPane({
                     streaming={streaming}
                     turnEnd={turnEndKeys.has(it.key)}
                     validTag={validTag}
+                    resolveImage={resolveImage}
                     onEdit={editUserMessage}
                     onRewind={requestRewind}
                     onRegenerate={regenerate}

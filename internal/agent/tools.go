@@ -455,7 +455,7 @@ func (e *Executor) screenshotApp(ctx context.Context, argsJSON string) (string, 
 		"ok":    true,
 		"path":  args.Path,
 		"bytes": len(png),
-		"note":  "the screenshot image follows in the next message",
+		"note":  "the screenshot image follows in the next message; to show it in your reply, include the markdown ![screenshot](v1-screenshot)",
 	}), nil
 }
 

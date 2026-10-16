@@ -192,6 +192,8 @@ body {
 .md img {
   max-width: 100%;
   border-radius: 8px;
+  border: 1px solid var(--v1-border);
+  margin: 0.5rem 0;
 }
 
 /* highlight.js token colors — fixed editor palettes (GitHub Dark / GitHub

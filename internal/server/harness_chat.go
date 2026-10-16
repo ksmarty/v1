@@ -1023,6 +1023,33 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge,
 				// failure reason, so a truncated envelope shows as unparseable text
 				// until the next reload reads the full row back.
 				emit(agent.ChatEvent{Type: "tool_end", Name: ev.ToolName, OK: ev.Entry != nil && !isError, Detail: text, Display: res.Details})
+				// A screenshot tool result carries a PNG for the model (res.Images).
+				// Mirror the built-in loop: persist it as a user attachment and emit an
+				// injected_message, so the image is in the chat log live and after a
+				// reload instead of only in the model's context.
+				for _, img := range res.Images {
+					raw, decErr := base64.StdEncoding.DecodeString(img.Data)
+					if decErr != nil {
+						continue
+					}
+					mime := img.MimeType
+					if mime == "" {
+						mime = "image/png"
+					}
+					att := []agent.Attachment{{Name: "screenshot.png", MIME: mime, Kind: "image", Content: img.Data}}
+					caption := "Screenshot of the current app preview (captured by the screenshot_app tool)."
+					msgID, addErr := s.st.AddMessage(params.Project.ID, params.SessionID, "user", caption, "", "", "", "", agent.MarshalAttachments(att))
+					if addErr != nil {
+						log.Printf("chat: recording a screenshot: %v", addErr)
+						continue
+					}
+					emit(agent.ChatEvent{
+						Type:        "injected_message",
+						MessageID:   msgID,
+						Text:        caption,
+						Attachments: []agent.AttachmentMeta{{Name: "screenshot.png", MIME: mime, Kind: "image", Size: len(raw)}},
+					})
+				}
 			case "compaction_start":
 				// pi-durable compacts its own transcript (threshold, overflow, or a
 				// manual request). The built-in loop compacts in memory without a

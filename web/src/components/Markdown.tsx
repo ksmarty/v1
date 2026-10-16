@@ -5,12 +5,18 @@ export default function Markdown({
   text,
   streaming,
   validTag,
+  resolveImage,
 }: {
   text: string;
   streaming?: boolean;
   validTag?: (tag: string) => boolean;
+  /** Resolves a markdown image src (e.g. the `v1-screenshot` token) to a URL. */
+  resolveImage?: (src: string) => string | null;
 }) {
-  const html = useMemo(() => renderMarkdown(text, streaming, validTag), [text, streaming, validTag]);
+  const html = useMemo(
+    () => renderMarkdown(text, streaming, validTag, resolveImage),
+    [text, streaming, validTag, resolveImage],
+  );
   const onCopy = (e: MouseEvent<HTMLDivElement>) => {
     const btn = (e.target as HTMLElement).closest('button[data-copy]');
     if (!(btn instanceof HTMLButtonElement)) return;
