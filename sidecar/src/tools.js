@@ -131,6 +131,27 @@ export function continuationMessage(content, stopReason) {
 }
 
 /**
+ * A provider that ends a tool-calling round with "length" (the model ran out of
+ * output while writing the call) or "stop" leaves pi-durable nothing to run: it
+ * only starts a tool round for exactly "toolUse", so the call is committed and
+ * then never executed — the turn ends with a tool call and no result, which the
+ * model itself reads as "the remember tool keeps getting interrupted". Promote
+ * such a message back to a tool round so the call actually runs. An "error"
+ * stop reason is left alone; that path has its own retry/compaction handling.
+ */
+export function promoteToolRound(message) {
+	if (
+		(message.stopReason === "length" || message.stopReason === "stop") &&
+		Array.isArray(message.content) &&
+		message.content.some((part) => part?.type === "toolCall")
+	) {
+		message.stopReason = "toolUse";
+		return true;
+	}
+	return false;
+}
+
+/**
  * Continuation hook: a turn that ends with no visible answer is not a finished
  * turn. A reasoning model can fill its whole output window with thinking
  * (stopReason "length"), stop right after a thinking block with no text, or —
@@ -143,6 +164,16 @@ export function continuationMessage(content, stopReason) {
  */
 export function buildContinuationHook() {
 	return hook(GenerationTask, {
+		// Runs before pi-durable classifies the message, so a tool call the provider
+		// ended with the wrong stop reason is promoted to a real tool round.
+		afterResponse: (message) => {
+			const original = message.stopReason;
+			if (promoteToolRound(message)) {
+				log.info("tool round: running a tool call the provider did not mark as toolUse", {
+					stopReason: original,
+				});
+			}
+		},
 		onYield: async (answer, api, context) => {
 			const message = continuationMessage(answer.content, answer.stopReason);
 			if (message === null) return undefined;

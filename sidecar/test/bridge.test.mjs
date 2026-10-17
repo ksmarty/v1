@@ -31,7 +31,7 @@ import { fileURLToPath } from "node:url";
 import { createPeer } from "../src/rpc.js";
 import { bindToolToConversation, extensionConflicts, hookNames, loadExtensions, settingsSchema, toolNames } from "../src/extensions.js";
 import { endpointHeaders } from "../src/provider.js";
-import { buildHostTools, buildSearchTool, continuationMessage, searchTools } from "../src/tools.js";
+import { buildHostTools, buildSearchTool, continuationMessage, promoteToolRound, searchTools } from "../src/tools.js";
 import { countToolCalls, firstAssistantText } from "../src/entries.js";
 
 const run = promisify(execFile);
@@ -825,6 +825,28 @@ function checkContinuation() {
 	check(
 		"a truncated round is told to answer directly",
 		/output limit/.test(continuationMessage(thinking, "length")),
+	);
+	// A tool call the provider ended with the wrong stop reason must be promoted to
+	// a real tool round, or pi-durable commits it and never runs it.
+	const lengthCall = { stopReason: "length", content: [{ type: "toolCall", name: "remember" }] };
+	check(
+		"a length-ended tool call is promoted",
+		promoteToolRound(lengthCall) === true && lengthCall.stopReason === "toolUse",
+	);
+	const stopCall = { stopReason: "stop", content: [{ type: "toolCall", name: "remember" }] };
+	check("a stop-ended tool call is promoted", promoteToolRound(stopCall) === true && stopCall.stopReason === "toolUse");
+	const errorCall = { stopReason: "error", content: [{ type: "toolCall", name: "remember" }] };
+	check(
+		"an errored tool call is left alone",
+		promoteToolRound(errorCall) === false && errorCall.stopReason === "error",
+	);
+	check(
+		"a text-only round is not promoted",
+		promoteToolRound({ stopReason: "length", content: [{ type: "text", text: "hi" }] }) === false,
+	);
+	check(
+		"a toolUse round is left alone",
+		promoteToolRound({ stopReason: "toolUse", content: [{ type: "toolCall", name: "remember" }] }) === false,
 	);
 }
 

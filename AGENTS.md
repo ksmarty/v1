@@ -35,7 +35,11 @@ React SPA (Vite + TypeScript), both built into a single binary.
   continuation hook that re-prompts a round which ended with no visible text —
   only thinking, an empty response (e.g. right after a `remember` call), or the
   output limit — bounded per turn, so a reasoning model cannot silently stop
-  the chat midway. Extensions load
+  the chat midway. Its `afterResponse` hook also promotes a tool call the
+  provider ended with `length`/`stop` (not `toolUse`) back to a tool round,
+  since pi-durable only runs a tool round for exactly `toolUse` — otherwise the
+  call is committed and then dropped, which reads as the chat stopping right
+  after the tool. Extensions load
   through the host: `create_extension` takes the source inline or a workspace
   `path`, and its result reports the extension's tools, sections and hooks;
   `list_extensions` reports every installed extension and what loaded, so an
