@@ -1,6 +1,10 @@
 package agent
 
-import "testing"
+import (
+	"strconv"
+	"strings"
+	"testing"
+)
 
 // An attachment-only turn is allowed (no caption), and must not carry an empty
 // text part: providers reject an empty text block, so the turn would fail for a
@@ -39,5 +43,25 @@ func TestUserMessageKeepsCaption(t *testing.T) {
 func TestUserMessagePlainTextStaysString(t *testing.T) {
 	if msg := userMessage("hello", nil); msg.Content != "hello" {
 		t.Fatalf("content = %#v, want the plain string", msg.Content)
+	}
+}
+
+// A large text attachment is truncated for the model, but the note states the
+// full size so the model knows there is more to ask for.
+func TestInlineTextAttachmentTruncates(t *testing.T) {
+	big := strings.Repeat("x", maxInlineTextAttachment+500)
+	got := InlineTextAttachment(Attachment{Name: "log.txt", Kind: "text", Content: big})
+	if !strings.HasPrefix(got, big[:maxInlineTextAttachment]) {
+		t.Fatal("the prefix was not preserved")
+	}
+	if !strings.Contains(got, "truncated") || !strings.Contains(got, strconv.Itoa(len(big))) {
+		t.Fatalf("note missing the full size: %q", got[len(got)-120:])
+	}
+}
+
+// A small attachment is inlined whole.
+func TestInlineTextAttachmentKeepsSmall(t *testing.T) {
+	if got := InlineTextAttachment(Attachment{Kind: "text", Content: "hello"}); got != "hello" {
+		t.Fatalf("got %q, want the whole text", got)
 	}
 }

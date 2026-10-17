@@ -2,9 +2,30 @@ package agent
 
 import (
 	"encoding/json"
+	"fmt"
+	"unicode/utf8"
 
 	"v1/internal/llm"
 )
+
+// maxInlineTextAttachment bounds how much of a text attachment is inlined into
+// the model's context. The full text stays on the message row for the chat UI
+// and the attachment endpoint; only the copy sent to the model is truncated,
+// matching pi's 50 KB read limit, so one huge log cannot blow the context.
+const maxInlineTextAttachment = 51200
+
+// InlineTextAttachment returns the text to place in front of the model,
+// truncated with a note when the attachment is larger than the inline budget.
+func InlineTextAttachment(a Attachment) string {
+	if len(a.Content) <= maxInlineTextAttachment {
+		return a.Content
+	}
+	cut := maxInlineTextAttachment
+	for cut > 0 && !utf8.RuneStart(a.Content[cut]) {
+		cut--
+	}
+	return a.Content[:cut] + fmt.Sprintf("\n\n[truncated: showing %d of %d bytes — the full file is attached to the message]", cut, len(a.Content))
+}
 
 // Attachment is a file attached to a user chat message. Kind is "text"
 // (Content holds the file's text) or "image" (Content holds base64 data and
@@ -81,7 +102,7 @@ func userMessage(content string, atts []Attachment) llm.Message {
 		case "image":
 			parts = append(parts, imagePart(a))
 		default:
-			parts = append(parts, textPart("Attached file: "+a.Name+"\n```\n"+a.Content+"\n```"))
+			parts = append(parts, textPart("Attached file: "+a.Name+"\n```\n"+InlineTextAttachment(a)+"\n```"))
 		}
 	}
 	return llm.Message{Role: "user", Content: parts}

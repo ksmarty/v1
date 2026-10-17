@@ -564,47 +564,85 @@ function persisted(key: string): boolean {
 }
 
 const MAX_ATTACHMENTS = 6;
-const MAX_ATTACHMENT_BYTES = 2 << 20;
 
-// readAttachment classifies a picked file: images are read as base64 (sent to
-// vision-capable models), everything else is read as text (code, config, logs).
-function readAttachment(file: File): Promise<{ value: ChatAttachmentInput } | { error: string }> {
-  if (file.size > MAX_ATTACHMENT_BYTES) {
-    return Promise.resolve({ error: `${file.name} is too large (max 2 MB).` });
+// Images are scaled down in the browser before upload so a large photo or
+// screenshot never becomes a huge request. The server scales again (and bounds
+// text), so a file the browser cannot decode still works.
+const MAX_IMAGE_DIM = 2000;
+const IMAGE_QUALITY = 0.85;
+
+// downscaleImageFile draws the file into a canvas capped at MAX_IMAGE_DIM and
+// re-encodes it, returning null when the browser cannot decode it (SVG, HEIC,
+// …) so the caller can fall back to the original bytes.
+async function downscaleImageFile(file: File): Promise<{ content: string; mime: string } | null> {
+  try {
+    const bitmap = await createImageBitmap(file);
+    const longest = Math.max(bitmap.width, bitmap.height);
+    const scale = longest > MAX_IMAGE_DIM ? MAX_IMAGE_DIM / longest : 1;
+    const w = Math.max(1, Math.round(bitmap.width * scale));
+    const h = Math.max(1, Math.round(bitmap.height * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      bitmap.close?.();
+      return null;
+    }
+    ctx.drawImage(bitmap, 0, 0, w, h);
+    bitmap.close?.();
+    const mime = file.type === 'image/png' ? 'image/png' : 'image/jpeg';
+    const dataUrl = canvas.toDataURL(mime, IMAGE_QUALITY);
+    return { content: dataUrl.slice(dataUrl.indexOf(',') + 1), mime };
+  } catch {
+    return null;
   }
-  if (file.type.startsWith('image/')) {
-    return new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const dataUrl = String(reader.result ?? '');
-        resolve({
-          value: {
-            name: file.name,
-            mime: file.type || 'image/png',
-            kind: 'image',
-            content: dataUrl.slice(dataUrl.indexOf(',') + 1),
-          },
-        });
-      };
-      reader.onerror = () => resolve({ error: `Could not read ${file.name}.` });
-      reader.readAsDataURL(file);
-    });
-  }
+}
+
+function readDataUrl(file: File): Promise<string | null> {
   return new Promise((resolve) => {
     const reader = new FileReader();
-    reader.onload = () => {
-      const text = String(reader.result ?? '');
-      if (text.includes('\u0000')) {
-        resolve({ error: `${file.name} is a binary file — only images and text files can be attached.` });
-        return;
-      }
-      resolve({
-        value: { name: file.name, mime: file.type || 'text/plain', kind: 'text', content: text },
-      });
-    };
-    reader.onerror = () => resolve({ error: `Could not read ${file.name}.` });
+    reader.onload = () => resolve(String(reader.result ?? ''));
+    reader.onerror = () => resolve(null);
+    reader.readAsDataURL(file);
+  });
+}
+
+function readText(file: File): Promise<string | null> {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ''));
+    reader.onerror = () => resolve(null);
     reader.readAsText(file);
   });
+}
+
+// readAttachment classifies a picked file: images are scaled and read as base64
+// (sent to vision-capable models), everything else is read as text (code,
+// config, logs). There is no size limit; the model copy is bounded server-side.
+async function readAttachment(file: File): Promise<{ value: ChatAttachmentInput } | { error: string }> {
+  if (file.type.startsWith('image/')) {
+    const scaled = await downscaleImageFile(file);
+    if (scaled) {
+      return { value: { name: file.name, mime: scaled.mime, kind: 'image', content: scaled.content } };
+    }
+    const dataUrl = await readDataUrl(file);
+    if (dataUrl === null) return { error: `Could not read ${file.name}.` };
+    return {
+      value: {
+        name: file.name,
+        mime: file.type || 'image/png',
+        kind: 'image',
+        content: dataUrl.slice(dataUrl.indexOf(',') + 1),
+      },
+    };
+  }
+  const text = await readText(file);
+  if (text === null) return { error: `Could not read ${file.name}.` };
+  if (text.includes('\u0000')) {
+    return { error: `${file.name} is a binary file — only images and text files can be attached.` };
+  }
+  return { value: { name: file.name, mime: file.type || 'text/plain', kind: 'text', content: text } };
 }
 
 // A finished background command's transcript row:
@@ -5747,10 +5785,6 @@ export default function ChatPane({
           // composer — the sent message references it as a highlighted chip.
           if (!text || (text.length <= 1200 && text.split('\n').length <= 40)) return;
           e.preventDefault();
-          if (text.length > MAX_ATTACHMENT_BYTES) {
-            setAttachError('Pasted text is too large to attach (max 2 MB).');
-            return;
-          }
           setAttachments((prev) => {
             if (prev.length >= MAX_ATTACHMENTS) {
               setAttachError(`Too many attachments (max ${MAX_ATTACHMENTS}).`);

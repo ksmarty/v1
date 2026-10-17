@@ -139,6 +139,16 @@ or `make dev`), then report: (1) the new stamped build version (`v1 <version>
   reporting completion.
   Node-mode previews are screenshotted via `preview.Manager.DirectURL`
   (the proxy requires a session when auth is on).
+- Attachments have no size limit. Images are scaled once when the turn is
+  accepted (`agent.NormalizeImageAttachments`): both the stored copy and the
+  model copy are bounded by a longest edge (2000px) and an encoded base64
+  budget (~4.5 MB), re-encoding JPEG→JPEG / everything else→PNG and halving
+  until it fits; undecodable formats and sources over 80 MP pass through
+  untouched. The SPA scales images in the browser before upload, so the wire
+  stays small. Text attachments are stored whole and truncated only in the
+  model message (`agent.InlineTextAttachment`, 50 KB, with a note); the chat UI
+  and the attachment endpoint still serve the full file. `POST /chat` caps the
+  request body at 256 MB purely as a transport guard.
 - Chat is organized into per-project sessions (`chat_sessions` table; messages
   carry a `session_id`, backfilled to the project's auto-created "Session 1").
   The chat/retry/queue/ask/compact/context endpoints all take a `sessionId`

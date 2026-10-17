@@ -139,7 +139,7 @@ func harnessUserContent(text string, atts []agent.Attachment) any {
 			parts = append(parts, harness.InputPart{Type: "image", Data: a.Content, MimeType: a.MIME})
 			continue
 		}
-		parts = append(parts, harness.InputPart{Type: "text", Text: scrubHarnessText("Attached file: " + a.Name + "\n```\n" + a.Content + "\n```")})
+		parts = append(parts, harness.InputPart{Type: "text", Text: scrubHarnessText("Attached file: " + a.Name + "\n```\n" + agent.InlineTextAttachment(a) + "\n```")})
 	}
 	return parts
 }

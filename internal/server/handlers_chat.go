@@ -24,12 +24,16 @@ import (
 // compactTimeout bounds one compaction summarization call.
 const compactTimeout = 10 * time.Minute
 
-// Attachment size caps keep a single turn's request and stored message sane.
+// Attachment caps keep a single turn's stored message sane. There is no size
+// cap: large files are accepted and bounded for the model instead — images are
+// scaled to the inline limits (agent.NormalizeImageAttachments) and oversized
+// text is truncated when the model message is built (agent.InlineTextAttachment).
 const (
 	maxAttachmentsPerMsg = 6
-	maxImageAttachment   = 3 << 20 // base64 string (≈2.2 MB decoded)
-	maxTextAttachment    = 200 << 10
-	maxTotalAttachments  = 8 << 20
+	// maxChatBody bounds the request body as a transport guard, so a pathological
+	// upload cannot exhaust memory. It is not a per-file limit; the SPA scales
+	// images before upload, so only a direct API client could approach it.
+	maxChatBody = 256 << 20
 )
 
 // validateAttachments returns an error message for invalid attachment lists,
@@ -38,27 +42,15 @@ func validateAttachments(atts []agent.Attachment) string {
 	if len(atts) > maxAttachmentsPerMsg {
 		return fmt.Sprintf("too many attachments (max %d)", maxAttachmentsPerMsg)
 	}
-	total := 0
 	for _, a := range atts {
 		if a.Name == "" {
 			return "attachment name is required"
 		}
 		switch a.Kind {
-		case "image":
-			if len(a.Content) > maxImageAttachment {
-				return fmt.Sprintf("image attachment %q is too large (max ~2 MB)", a.Name)
-			}
-		case "text":
-			if len(a.Content) > maxTextAttachment {
-				return fmt.Sprintf("text attachment %q is too large (max 200 KB)", a.Name)
-			}
+		case "image", "text":
 		default:
 			return fmt.Sprintf("unsupported attachment kind %q (use text or image)", a.Kind)
 		}
-		total += len(a.Content)
-	}
-	if total > maxTotalAttachments {
-		return "attachments are too large in total (max ~6 MB)"
 	}
 	return ""
 }
@@ -300,6 +292,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		Thinking      string             `json:"thinking"`
 		Attachments   []agent.Attachment `json:"attachments"`
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxChatBody)
 	if !decodeJSON(w, r, &body) {
 		return
 	}
@@ -322,6 +315,10 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, msg)
 		return
 	}
+	// Scale any image to the inline limits once, before it is stored and before
+	// either harness replays it, so an arbitrarily large upload becomes a bounded
+	// attachment without the model or the database paying for the original size.
+	body.Attachments = agent.NormalizeImageAttachments(body.Attachments)
 
 	if !s.requireLLMKey(w, userID, body.ProviderID) {
 		return
