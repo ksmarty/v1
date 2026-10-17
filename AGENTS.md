@@ -32,8 +32,10 @@ React SPA (Vite + TypeScript), both built into a single binary.
   host tool per v1 tool schema, streams `AgentEvent`s back over the socket, and
   owns the durable transcript. `make sidecar-deps` installs its dependencies,
   which a checkout needs before v1 can start. It installs a `pi.generation`
-  continuation hook that re-prompts a round which ended with only thinking (no
-  text or tool calls) or hit the output limit, bounded per turn. Extensions load
+  continuation hook that re-prompts a round which ended with no visible text —
+  only thinking, an empty response (e.g. right after a `remember` call), or the
+  output limit — bounded per turn, so a reasoning model cannot silently stop
+  the chat midway. Extensions load
   through the host: `create_extension` takes the source inline or a workspace
   `path`, and its result reports the extension's tools, sections and hooks;
   `list_extensions` reports every installed extension and what loaded, so an

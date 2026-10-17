@@ -31,7 +31,7 @@ import { fileURLToPath } from "node:url";
 import { createPeer } from "../src/rpc.js";
 import { bindToolToConversation, extensionConflicts, hookNames, loadExtensions, settingsSchema, toolNames } from "../src/extensions.js";
 import { endpointHeaders } from "../src/provider.js";
-import { buildHostTools, buildSearchTool, searchTools } from "../src/tools.js";
+import { buildHostTools, buildSearchTool, continuationMessage, searchTools } from "../src/tools.js";
 import { countToolCalls, firstAssistantText } from "../src/entries.js";
 
 const run = promisify(execFile);
@@ -799,6 +799,36 @@ function checkEntryHelpers() {
 }
 
 /**
+ * A turn that ends with no visible text is not a finished turn: it must be
+ * continued, whether it hit the output limit, stopped after thinking, or
+ * returned nothing right after a tool call (the remember case).
+ */
+function checkContinuation() {
+	const text = (value) => [{ type: "text", text: value }];
+	const thinking = [{ type: "thinking", thinking: "hmm" }];
+	check("a text answer is not continued", continuationMessage(text("All done."), "stop") === null);
+	check("a thinking-only round is continued", continuationMessage(thinking, "stop") !== null);
+	check("an empty round after a tool call is continued", continuationMessage([], "stop") !== null);
+	check("a round that hit the output limit is continued", continuationMessage(thinking, "length") !== null);
+	check(
+		"a round with a tool call is never continued",
+		continuationMessage([{ type: "toolCall", name: "remember" }], "stop") === null,
+	);
+	check(
+		"a thinking-only round gets the continue prompt",
+		/Continue from where you left off/.test(continuationMessage(thinking, "stop")),
+	);
+	check(
+		"an empty round is told it never answered",
+		/stopped without answering/.test(continuationMessage([], "stop")),
+	);
+	check(
+		"a truncated round is told to answer directly",
+		/output limit/.test(continuationMessage(thinking, "length")),
+	);
+}
+
+/**
  * turn.submit accepts both a plain message and content parts. The Go side sends
  * parts for a turn with attachments, so the sidecar must forward them rather
  * than expect a string.
@@ -818,4 +848,5 @@ await checkConversationBinding();
 await checkToolResultMapping();
 await checkSearchTool();
 checkEntryHelpers();
+checkContinuation();
 await main();

@@ -96,51 +96,80 @@ export function buildApprovalHook(bridge, resolveConversation = (id) => id) {
 	});
 }
 
+/** How long a burst of continuations lasts before it is treated as a new turn. */
+const CONTINUATION_WINDOW_MS = 5 * 60 * 1000;
+/** Most continuations one turn may take before the partial reply is kept. */
+const MAX_CONTINUATIONS = 3;
+/** Process-local continuation counts, keyed by conversation id. */
+const continuationAttempts = new Map();
+
 /**
- * Continuation hook: a turn that ends after a thinking block with no answer is
- * not a finished turn. A reasoning model can fill its whole output window with
- * thinking (stopReason "length"), or stop right after a thinking block with no
- * text (stopReason "stop") — both read to the user as "the chat stopped midway
- * for no reason". pi-durable's onYield lets a hook append a user message and
- * hand the run to a successor generation, so this continues the same turn
- * durably, exactly like the built-in loop's truncation resume. Bounded, so a
- * provider stuck on "length" cannot spin forever.
+ * The continuation prompt for a model round, or null when the round is a
+ * finished answer. A round with visible text is done; a round with no text is
+ * never finished — it hit the output limit, stopped after a thinking block, or
+ * returned nothing at all right after a tool call (which reads as the chat
+ * stopping for no reason).
+ */
+export function continuationMessage(content, stopReason) {
+	const parts = Array.isArray(content) ? content : [];
+	if (parts.some((part) => part?.type === "toolCall")) return null;
+	const text = parts
+		.filter((part) => part?.type === "text")
+		.map((part) => part.text ?? "")
+		.join("")
+		.trim();
+	if (stopReason !== "length" && text !== "") return null;
+	const hasThinking = parts.some(
+		(part) => part?.type === "thinking" && typeof part.thinking === "string" && part.thinking !== "",
+	);
+	if (stopReason === "length") {
+		return "You reached the output limit while thinking. Do not reason further — answer the user's last message directly and concisely now.";
+	}
+	return hasThinking
+		? "Continue from where you left off. Do not repeat what is already written above."
+		: "You stopped without answering. Answer the user's last message directly and concisely now.";
+}
+
+/**
+ * Continuation hook: a turn that ends with no visible answer is not a finished
+ * turn. A reasoning model can fill its whole output window with thinking
+ * (stopReason "length"), stop right after a thinking block with no text, or —
+ * right after a tool call such as remember — return nothing at all. All of
+ * those read to the user as "the chat stopped midway for no reason".
+ * pi-durable's onYield lets a hook append a user message and hand the run to a
+ * successor generation, so this continues the same turn durably, exactly like
+ * the built-in loop's truncation resume. Bounded, so a provider stuck on empty
+ * cannot spin forever.
  */
 export function buildContinuationHook() {
 	return hook(GenerationTask, {
 		onYield: async (answer, api, context) => {
-			const content = Array.isArray(answer.content) ? answer.content : [];
-			if (content.some((part) => part?.type === "toolCall")) return undefined;
-			const text = content
-				.filter((part) => part?.type === "text")
-				.map((part) => part.text ?? "")
-				.join("")
-				.trim();
-			const truncated = answer.stopReason === "length";
-			const hasThinking = content.some(
-				(part) => part?.type === "thinking" && typeof part.thinking === "string" && part.thinking !== "",
-			);
-			// A clean answer is done; so is a completely empty response, which is a
-			// provider fault (continuing would only re-ask with no new context).
-			if (!truncated && (text !== "" || !hasThinking)) return undefined;
-			const attempts = Number((await api.memo("v1.continuation", context)) ?? 0);
-			if (attempts >= 3) {
+			const message = continuationMessage(answer.content, answer.stopReason);
+			if (message === null) return undefined;
+			// pi-durable's per-task memo resets when a continuation hands the run to a
+			// successor generation, so it cannot bound this. A process-local counter,
+			// reset by a gap between turns, can.
+			const key = String(api.conversationId ?? "");
+			const now = Date.now();
+			const prev = continuationAttempts.get(key);
+			const attempts = prev !== undefined && now - prev.at < CONTINUATION_WINDOW_MS ? prev.attempts : 0;
+			if (attempts >= MAX_CONTINUATIONS) {
+				continuationAttempts.delete(key);
 				log.warn("continuation: still unfinished after several retries; keeping the partial reply", {
 					stopReason: answer.stopReason,
 				});
 				return undefined;
 			}
-			await api.memo("v1.continuation", attempts + 1, context);
-			log.info("continuation: the model stopped after thinking; continuing the turn", {
+			continuationAttempts.set(key, { attempts: attempts + 1, at: now });
+			if (continuationAttempts.size > 500) {
+				for (const [id, state] of continuationAttempts) {
+					if (now - state.at >= CONTINUATION_WINDOW_MS) continuationAttempts.delete(id);
+				}
+			}
+			log.info("continuation: the model produced no answer; continuing the turn", {
 				stopReason: answer.stopReason,
 				attempt: attempts + 1,
 			});
-			// A round that hit the output limit spent its budget on reasoning, so
-			// ask for the answer directly instead of inviting more thinking; a
-			// round that stopped cleanly after thinking just needs to continue.
-			const message = truncated
-				? "You reached the output limit while thinking. Do not reason further — answer the user's last message directly and concisely now."
-				: "Continue from where you left off. Do not repeat what is already written above.";
 			return { continue: message };
 		},
 	});
