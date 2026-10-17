@@ -6065,11 +6065,12 @@ export default function ChatPane({
         {!loading && !loadError && items.length > 0 && (
           <div className="mx-auto flex max-w-2xl flex-col gap-3">
             {(() => {
-              // Group every round of a turn into one work collapse: all of the
-              // turn's reasoning and tool calls, in order. The text each round
-              // wrote still renders as its own message below the group, so a
-              // completed turn shows a single collapse line and never leaves a
-              // thinking block loose beside the tool calls.
+              // Group a run of assistant rounds into one work collapse: the
+              // reasoning and tool calls up to the next round that says
+              // something. The text that round wrote renders right below the
+              // group (matching MessageRow's tools-then-text order), so a
+              // comment lands between the tool calls it follows and the ones
+              // after it instead of at the end of the whole turn.
               const lastMsgIdx = (() => {
                 for (let i = items.length - 1; i >= 0; i--) {
                   if (items[i].kind === 'msg') return i;
@@ -6159,6 +6160,14 @@ export default function ChatPane({
                   (it.role === 'assistant' || (it.role === 'user' && it.background))
                 ) {
                   turn.push({ it, i });
+                  // A round that says something ends the current work run: the
+                  // tools before it (and this round's own reasoning) collapse
+                  // into one group above, and its text renders just below that
+                  // group. Without this the group swallowed the whole turn and
+                  // every comment stacked at the bottom.
+                  if (it.role === 'assistant' && it.content?.trim()) {
+                    flushTurn();
+                  }
                 } else {
                   flushTurn();
                   rows.push(renderMessage(it, i));
