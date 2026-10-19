@@ -126,6 +126,18 @@ func serveFakeSidecar(conn net.Conn, socket string, readyProtocol int, mode stri
 				result["hostResult"] = decoded.Output
 			}
 			peer.reply(id, result)
+		case "test.poison":
+			// Answer the poison error until a marker exists, then succeed. The marker
+			// lives beside the socket, so the process that restarts after the kill
+			// sees it and answers normally — which is the recovery the supervisor is
+			// supposed to drive on its own.
+			marker := filepath.Join(filepath.Dir(socket), "poison-seen")
+			if _, err := os.Stat(marker); err != nil {
+				_ = os.WriteFile(marker, []byte("1"), 0o644)
+				peer.replyError(id, "Session is poisoned by a failed commit after storage admission; reopen it")
+				continue
+			}
+			peer.reply(id, map[string]any{"ok": true})
 		default:
 			peer.replyError(id, "unknown method "+method)
 		}
@@ -373,6 +385,53 @@ func TestSupervisorAnswersHostCalls(t *testing.T) {
 	}
 	if out.HostResult != "file contents" {
 		t.Fatalf("hostResult = %q", out.HostResult)
+	}
+}
+
+// A session poisoned by a failed storage commit answers every later call with
+// "reopen it", and only a fresh process can reopen it. Without the restart the
+// chat stays dead until someone restarts the container by hand, which is exactly
+// what this bug cost.
+func TestSupervisorRestartsAndRetriesAPoisonedSession(t *testing.T) {
+	sup := newTestSupervisor(t, "poison", nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := sup.Start(ctx); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	defer sup.Close()
+
+	var out struct {
+		OK bool `json:"ok"`
+	}
+	if err := sup.Call(ctx, "test.poison", map[string]any{}, &out); err != nil {
+		t.Fatalf("Call: %v", err)
+	}
+	if !out.OK {
+		t.Fatal("the retry did not reach a healthy sidecar")
+	}
+	if got := sup.Restarts(); got != 1 {
+		t.Fatalf("restarts = %d, want 1", got)
+	}
+}
+
+// Restarting on every error would be worse than the bug: it would drop every
+// other running turn. Only the poisoned-session wording may trigger it.
+func TestSupervisorDoesNotRestartOnOrdinaryErrors(t *testing.T) {
+	sup := newTestSupervisor(t, "", nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := sup.Start(ctx); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	defer sup.Close()
+
+	var out map[string]any
+	if err := sup.Call(ctx, "no.such.method", map[string]any{}, &out); err == nil {
+		t.Fatal("expected an error for an unknown method")
+	}
+	if got := sup.Restarts(); got != 0 {
+		t.Fatalf("restarts = %d, want 0", got)
 	}
 }
 

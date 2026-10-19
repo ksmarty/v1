@@ -105,6 +105,9 @@ type Supervisor struct {
 	consecutive int
 	stopping    bool
 	stopped     chan struct{}
+	// restartMu serializes deliberate restarts: two turns that hit a poisoned
+	// session at the same moment must not kill each other's fresh sidecar.
+	restartMu sync.Mutex
 }
 
 // New builds a Supervisor. Start launches the sidecar.
@@ -386,7 +389,26 @@ func (s *Supervisor) isStopping() bool {
 }
 
 // Call proxies a request to the sidecar.
+//
+// A session poisoned by a failed storage commit answers every later call with
+// "Session is poisoned by a failed commit after storage admission; reopen it",
+// and reopening means a fresh process: the storage object is permanently
+// unusable. So restart the sidecar once and retry, rather than leaving the chat
+// dead until someone restarts the container by hand.
 func (s *Supervisor) Call(ctx context.Context, method string, params, out any) error {
+	err := s.callOnce(ctx, method, params, out)
+	if err == nil || !isPoisonedSession(err) {
+		return err
+	}
+	s.logf("harness: %s hit a poisoned session; restarting the sidecar", method)
+	if rerr := s.Restart(ctx, "poisoned session"); rerr != nil {
+		s.logf("harness: restart after a poisoned session failed: %v", rerr)
+		return err
+	}
+	return s.callOnce(ctx, method, params, out)
+}
+
+func (s *Supervisor) callOnce(ctx context.Context, method string, params, out any) error {
 	s.mu.Lock()
 	conn := s.conn
 	s.mu.Unlock()
@@ -394,6 +416,70 @@ func (s *Supervisor) Call(ctx context.Context, method string, params, out any) e
 		return ErrNotRunning
 	}
 	return conn.Call(ctx, method, params, out)
+}
+
+// isPoisonedSession reports whether err is pi-durable's poisoned-session error.
+// The JSON-RPC code is a generic -32000, so the message is the only signal; it
+// is matched loosely and only ever triggers a restart-and-retry, so a wording
+// change upstream costs a retry, not correctness.
+func isPoisonedSession(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "Session is poisoned")
+}
+
+// Restart replaces the sidecar process and waits until a fresh one has
+// handshaken, so the caller can retry immediately.
+func (s *Supervisor) Restart(ctx context.Context, reason string) error {
+	s.restartMu.Lock()
+	defer s.restartMu.Unlock()
+	s.mu.Lock()
+	if s.stopping {
+		s.mu.Unlock()
+		return ErrNotRunning
+	}
+	p := s.proc
+	// Drop the connection before killing. The read loop only notices the dead
+	// socket asynchronously, so waiting on "a connection exists" would hand back
+	// the dying one and the retry would race the kill.
+	s.conn = nil
+	// A deliberate restart is not a crash: hand it a full budget so it cannot
+	// trip the give-up path.
+	s.consecutive = 0
+	s.mu.Unlock()
+	if p == nil {
+		return ErrNotRunning
+	}
+	s.logf("harness: restarting sidecar (%s)", reason)
+	if p.cmd.Process != nil {
+		_ = p.cmd.Process.Kill()
+	}
+	// The watch loop owns respawning, so wait for its new process rather than
+	// spawning a second one here.
+	return s.waitConn(ctx)
+}
+
+// waitConn waits for a connected sidecar, or for the supervisor to give up.
+func (s *Supervisor) waitConn(ctx context.Context) error {
+	tick := time.NewTicker(25 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		s.mu.Lock()
+		conn := s.conn
+		stopping := s.stopping
+		s.mu.Unlock()
+		if conn != nil {
+			return nil
+		}
+		if stopping {
+			return ErrNotRunning
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-s.stopped:
+			return ErrNotRunning
+		case <-tick.C:
+		}
+	}
 }
 
 // Notify proxies a notification to the sidecar.

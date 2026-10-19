@@ -25,7 +25,11 @@ React SPA (Vite + TypeScript), both built into a single binary.
   tools. Reachable with `V1_HARNESS=go`; it is no longer the default.
 - `internal/harness/` — supervises the pi-durable sidecar (newline-delimited
   JSON-RPC over a Unix socket) that runs chat turns by default: spawn, socket
-  discovery, handshake, crash restarts, graceful shutdown. Go keeps the HTTP
+  discovery, handshake, crash restarts, graceful shutdown. A session poisoned by
+  a failed storage commit is self-healed: pi-durable answers every later call
+  with "reopen it" and only a fresh process can reopen it, so the supervisor
+  restarts the sidecar once and retries the call instead of leaving the chat
+  dead until the container is restarted by hand. Go keeps the HTTP
   API, auth, store and tools; the sidecar calls back into Go (`host.call`) for
   every tool and approval. `V1_HARNESS=go` selects the built-in loop instead.
 - `sidecar/` — the pi-durable host itself (ESM, run by `node`): registers one
