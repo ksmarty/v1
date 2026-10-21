@@ -20,6 +20,11 @@ services:
     # privileged flag. Host kernel must allow unprivileged user namespaces.
     privileged: true
     restart: unless-stopped
+    # Give a chat that is mid-generation time to finish before Docker's SIGKILL.
+    # v1 waits for running turns when it gets SIGTERM; this is the deadline Docker
+    # holds it to, and the 10s default would cut a long answer short. `docker run`
+    # takes the same value as `--stop-timeout 600`.
+    stop_grace_period: 10m
     # Uncomment and fill in as needed:
     # environment:
     #   V1_PASSWORD: change-me               # password-protect the UI

@@ -200,8 +200,8 @@ type ChatParams struct {
 	// Requeue restores a steered message that the run could not take. The harness
 	// drains steers before it knows the sidecar will accept them, so a rejected
 	// one has to go back on the follow-up queue rather than vanish.
-	Requeue func(text string)
-	Background   *BackgroundManager
+	Requeue    func(text string)
+	Background *BackgroundManager
 	// PollBackground returns the session's finished background commands so the
 	// loop can inject their results into the conversation.
 	PollBackground func() []BackgroundResult

@@ -112,6 +112,15 @@ func main() {
 	<-ctx.Done()
 	log.Println("shutting down...")
 
+	// A chat mid-generation is not something to cut off: the sidecar owns the
+	// turn, and the user would come back to a truncated answer and an error row.
+	// Wait for running turns before tearing anything down. Docker decides the real
+	// deadline — it SIGKILLs after its stop timeout unless the compose file raises
+	// stop_grace_period, which the checked-in one does.
+	if n := srv.WaitForTurns(10 * time.Minute); n > 0 {
+		log.Printf("shutdown: %d chat turn(s) still running, shutting down anyway", n)
+	}
+
 	// Stop previews and terminals first, then drain HTTP, then close the DB.
 	srv.Shutdown()
 	shCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

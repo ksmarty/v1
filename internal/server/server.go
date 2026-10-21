@@ -144,6 +144,28 @@ func (s *Server) Shutdown() {
 	s.mcp.Shutdown()
 }
 
+// WaitForTurns blocks until no chat turn is running, or the timeout elapses, and
+// returns how many were still running.
+//
+// A turn is not something to cut off mid-generation: the sidecar owns it, and
+// the user would come back to a truncated answer and an error row. Docker
+// decides the real deadline — it SIGKILLs after its stop timeout, 10s unless the
+// compose file raises stop_grace_period — so this only ever waits as long as the
+// timeout it is given.
+func (s *Server) WaitForTurns(timeout time.Duration) int {
+	if s.turns == nil {
+		return 0
+	}
+	deadline := time.Now().Add(timeout)
+	for {
+		n := len(s.turns.activeRuns())
+		if n == 0 || !time.Now().Before(deadline) {
+			return n
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+}
+
 func (s *Server) routes(m *http.ServeMux) {
 	m.HandleFunc("GET /api/healthz", s.handleHealth)
 

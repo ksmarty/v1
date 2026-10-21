@@ -664,6 +664,52 @@ function parseBackgroundResult(text: string): {
 // used to render as a full-width amber panel of raw text in the middle of the
 // conversation, which read as something the user had said. It keeps the amber
 // tint so a background result is still recognisable as one at a glance.
+// The transcript cache. A poor connection should show the messages we last saw
+// instead of a blank chat, then refresh underneath once the fetch lands. The
+// mapped items are what gets cached, so reading it back is a plain setItems.
+// An oversized transcript is dropped rather than truncated: showing a partial
+// turn would be worse than showing a spinner.
+const CHAT_CACHE_MAX = 1_500_000;
+
+function chatCacheKey(projectId: string, sessionId: string): string {
+  return `v1-chat-cache:${projectId}:${sessionId}`;
+}
+
+function readChatCache(projectId: string, sessionId: string): Item[] | null {
+  try {
+    const raw = localStorage.getItem(chatCacheKey(projectId, sessionId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { items?: Item[] };
+    return Array.isArray(parsed.items) && parsed.items.length > 0 ? parsed.items : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The partial reply an error row follows, if any — a mid-turn failure keeps it. */
+function partialBefore(items: Item[], i: number): boolean {
+  const prev = i > 0 ? items[i - 1] : undefined;
+  return prev?.kind === 'msg' && prev.role === 'assistant' && !!prev.content?.trim();
+}
+
+function writeChatCache(projectId: string, sessionId: string, items: Item[]): void {
+  try {
+    // A cached row must never look like it is still streaming: the run it
+    // belonged to is over by the time this is read back.
+    const raw = JSON.stringify({
+      items: items.map((it) => ('streaming' in it && it.streaming ? { ...it, streaming: false } : it)),
+    });
+    if (raw.length > CHAT_CACHE_MAX) {
+      localStorage.removeItem(chatCacheKey(projectId, sessionId));
+      return;
+    }
+    localStorage.setItem(chatCacheKey(projectId, sessionId), raw);
+  } catch {
+    // Full or unavailable storage: the cache is an optimisation, never a
+    // requirement.
+  }
+}
+
 function BackgroundResultRow({ text, onOpen }: { text: string; onOpen: (t: string) => void }) {
   const [open, setOpen] = useState(false);
   const bg = parseBackgroundResult(text);
@@ -3084,6 +3130,7 @@ const MessageRow = memo(function MessageRow({
   onRewind,
   onRegenerate,
   onRetrySend,
+  canContinue,
   onEditStart,
   onImageClick,
   onFileClick,
@@ -3101,6 +3148,8 @@ const MessageRow = memo(function MessageRow({
   onRewind: (key: string, text: string) => void;
   onRegenerate: () => void;
   onRetrySend: (text: string) => void;
+  /** True when the error followed a partial reply, so retrying continues it. */
+  canContinue?: boolean;
   onEditStart: (key: string, editing: boolean) => void;
   onImageClick: (url: string, name: string) => void;
   onFileClick: (url: string, name: string) => void;
@@ -3247,21 +3296,38 @@ const MessageRow = memo(function MessageRow({
         </div>
         {!streaming && (
           <div className="flex justify-end">
-            <button
-              type="button"
-              onClick={onRegenerate}
-              className="text-xs font-medium text-red-300 underline-offset-2 transition-colors hover:text-red-200 hover:underline"
-            >
-              Try again
-            </button>
-            <button
-              type="button"
-              onClick={() => onRetrySend(item.content)}
-              className="ml-3 text-xs font-medium text-red-300 underline-offset-2 transition-colors hover:text-red-200 hover:underline"
-              title="Send this message again"
-            >
-              Send this message again
-            </button>
+            {canContinue ? (
+              // The run died mid-reply and its partial answer was persisted, so
+              // the useful action is to carry on from it rather than start the
+              // turn over. The server folds the partial and the continuation into
+              // one message once it succeeds.
+              <button
+                type="button"
+                onClick={onRegenerate}
+                className="text-xs font-medium text-red-300 underline-offset-2 transition-colors hover:text-red-200 hover:underline"
+                title="Continue the reply that was cut off"
+              >
+                Continue
+              </button>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={onRegenerate}
+                  className="text-xs font-medium text-red-300 underline-offset-2 transition-colors hover:text-red-200 hover:underline"
+                >
+                  Try again
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onRetrySend(item.content)}
+                  className="ml-3 text-xs font-medium text-red-300 underline-offset-2 transition-colors hover:text-red-200 hover:underline"
+                  title="Send this message again"
+                >
+                  Send this message again
+                </button>
+              </>
+            )}
           </div>
         )}
       </div>
@@ -3893,7 +3959,16 @@ export default function ChatPane({
     // session's messages overwrite the new one's transcript.
     const loadSession = sessionId;
     const loadSeq = ++loadSeqRef.current;
-    setLoading(true);
+    // Show the last transcript we saw for this session straight away — a blank
+    // chat on a slow link is worse than a slightly stale one — then let the
+    // fetch below replace it.
+    const cached = readChatCache(projectId, sessionId);
+    if (cached) {
+      setItems(cached);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
     setLoadError(null);
     try {
       const msgs = await api.getMessages(projectId, sessionId);
@@ -3979,6 +4054,7 @@ export default function ChatPane({
       if (loadSeqRef.current !== loadSeq || sessionIdRef.current !== loadSession) return;
       itemsRef.current = mapped;
       setItems(mapped);
+      writeChatCache(projectId, sessionId, mapped);
 
       // Runs that finished while the app was away are discovered here (the
       // live SSE event was lost). Notify for the newest one, unless it was
@@ -6117,7 +6193,7 @@ export default function ChatPane({
             </p>
           </div>
         )}
-        {!loading && !loadError && items.length > 0 && (
+        {!loading && items.length > 0 && (
           <div className="mx-auto flex max-w-2xl flex-col gap-3">
             {(() => {
               // Group a run of assistant rounds into one work collapse: the
@@ -6146,6 +6222,9 @@ export default function ChatPane({
                     onRewind={requestRewind}
                     onRegenerate={regenerate}
                     onRetrySend={sendText}
+                    canContinue={
+                      it.kind === 'msg' && it.role === 'error' && partialBefore(items, i)
+                    }
                     onEditStart={setItemEditing}
                     onImageClick={openLightbox}
                     onFileClick={openFile}

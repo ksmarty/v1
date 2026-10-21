@@ -191,7 +191,21 @@ class Sidecar {
 		const storage = await openNodeSqliteStorage(this.database);
 		this.harness = await Harness.open(
 			storage,
-			{ models: this.models, registry: this.registry, settings: { toolExecution: "sequential" } },
+			{
+				models: this.models,
+				registry: this.registry,
+				settings: {
+					// Tools run one at a time so a turn's transcript stays in call order.
+					toolExecution: "sequential",
+					// pi-durable retries 408/409/429/5xx and transport failures with
+					// exponential backoff (2s, 4s, 8s, capped at 60s) and announces each
+					// attempt, which v1 surfaces as an info line. Its default of three
+					// attempts assumes a wired connection; v1 is used from phones on bad
+					// links, where five is worth the wait. Quota and billing errors stay
+					// non-retryable, so a spent account still fails fast.
+					retry: { maxRetries: 5 },
+				},
+			},
 			this.ctx,
 		);
 		this.harness.resume();
