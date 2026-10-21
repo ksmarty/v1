@@ -2747,7 +2747,11 @@ function DelegateTranscriptDialog({
     api
       .getDelegateMessages(projectId, conversationId)
       .then((t) => {
-        if (!cancelled) setTranscript(t);
+        if (!cancelled) {
+          setTranscript(t);
+          countRef.current = t.items.length;
+          idleRef.current = 0;
+        }
       })
       .catch((e) => {
         if (!cancelled) setError(e instanceof Error ? e.message : 'Could not load the transcript.');
@@ -2759,6 +2763,38 @@ function DelegateTranscriptDialog({
       cancelled = true;
     };
   }, [open, projectId, conversationId, reloadKey]);
+
+  // A sub-agent can be watched while it works, so the transcript refreshes on a
+  // timer. It stops once two refreshes in a row add nothing, so a finished
+  // delegate settles instead of polling for as long as the dialog is open.
+  const countRef = useRef(0);
+  const idleRef = useRef(0);
+  useEffect(() => {
+    if (!open || !conversationId) return;
+    let cancelled = false;
+    const timer = window.setInterval(() => {
+      api
+        .getDelegateMessages(projectId, conversationId)
+        .then((t) => {
+          if (cancelled) return;
+          if (t.items.length > countRef.current) {
+            countRef.current = t.items.length;
+            idleRef.current = 0;
+            setTranscript(t);
+            setError(null);
+          } else if (++idleRef.current >= 2) {
+            window.clearInterval(timer);
+          }
+        })
+        .catch(() => {
+          if (!cancelled) window.clearInterval(timer);
+        });
+    }, 3000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [open, projectId, conversationId]);
 
   const items = useMemo(() => (transcript ? delegateItems(transcript.items) : []), [transcript]);
   const firstUserKey = items.find((it) => it.role === 'user')?.key;
@@ -3107,6 +3143,27 @@ const MessageRow = memo(function MessageRow({
     if (item.background) {
       return <BackgroundResultRow text={item.content} onOpen={onOpenBackground} />;
     }
+    // A steered message joined a run already in flight, so it is shown the way
+    // the queue shows one — an accent-bordered row rather than a normal user
+    // bubble — and it offers no Edit or Rewind, because there is no turn here to
+    // edit or rewind to.
+    if (item.steered) {
+      return (
+        <div className="ml-auto flex w-full max-w-[85%] flex-col items-end gap-1">
+          <div className="w-full rounded-lg border border-accent/40 bg-surface px-3 py-2 text-sm">
+            <div className="mb-1 flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wider text-accent">
+              <IconSend className="h-3 w-3" /> Steered
+            </div>
+            <div className="whitespace-pre-wrap break-words text-dim">
+              <TaggedText text={item.content} valid={validTag} />
+            </div>
+          </div>
+          {item.sentAt && (
+            <div className="pr-1 text-[10px] text-faint">{formatTime(item.sentAt)}</div>
+          )}
+        </div>
+      );
+    }
     if (item.editing) {
       return (
         <EditUserBubble
@@ -3118,11 +3175,6 @@ const MessageRow = memo(function MessageRow({
     }
     return (
       <div className="ml-auto flex max-w-[85%] flex-col items-end gap-1">
-        {item.steered && (
-          <span className="inline-flex items-center gap-1 rounded-full border border-accent/50 bg-accent/10 px-2 py-0.5 text-[10px] font-medium text-accent">
-            <IconSend className="h-2.5 w-2.5" /> steered
-          </span>
-        )}
         <div className="w-full rounded-2xl bg-border px-3.5 py-2 text-sm text-text">
           <div className="whitespace-pre-wrap break-words"><TaggedText text={item.content} valid={validTag} /></div>
           {item.attachments && item.attachments.length > 0 && (
@@ -5817,16 +5869,19 @@ export default function ChatPane({
             setSuggestions([]);
             return;
           }
-          // Double-space on a markdown list line indents the item one level.
-          // At keydown the first space is already in the value, so the second
-          // one is the trigger; it is swallowed so the line stays clean.
+          // Double-space immediately after a list marker indents the item one
+          // level. Only there: at keydown the first space is already in the
+          // value, so the line must be exactly the marker plus that space. A
+          // double space anywhere else on the line is left to the keyboard, which
+          // is what lets iOS turn it into ". " — swallowing it anywhere on a list
+          // line broke that.
           if (e.key === ' ' && taRef.current && suggestions.length === 0) {
             const ta = taRef.current;
             if (ta.selectionStart === ta.selectionEnd && ta.selectionStart > 0) {
               const before = input.slice(0, ta.selectionStart);
               const lineStart = before.lastIndexOf('\n') + 1;
               const line = before.slice(lineStart);
-              if (line.endsWith(' ') && /^[ \t]*([-*+]|\d+[.)])\s/.test(line)) {
+              if (/^[ \t]*([-*+]|\d+[.)]) $/.test(line)) {
                 e.preventDefault();
                 const next = input.slice(0, lineStart) + '  ' + input.slice(lineStart);
                 setInput(next);

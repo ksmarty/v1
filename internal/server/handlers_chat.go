@@ -591,6 +591,7 @@ func (s *Server) streamChatTurn(w http.ResponseWriter, r *http.Request, p *store
 	params.ContextThreshold = s.contextThreshold(userID)
 	params.Emit = emit
 	params.Steer = q.steerDrain
+	params.Requeue = func(text string) { q.add(text) }
 	// Background commands are detached from the turn: the result is persisted
 	// as a user message when the command finishes (so nothing is lost if the
 	// turn ends first) and the running turn injects it at the next round.

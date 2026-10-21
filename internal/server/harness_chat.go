@@ -852,6 +852,12 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge,
 			}
 			if err := bridge.Steer(ctx, sidecarID, fmt.Sprintf("v1-steer-%d", time.Now().UnixNano()), scrubHarnessText(msg)); err != nil {
 				log.Printf("harness: steer failed: %v", err)
+				// The steer was already drained from the queue, so put it back. A
+				// message the user sent must not vanish because the running turn could
+				// not take it; it runs as a follow-up turn when this one ends.
+				if params.Requeue != nil {
+					params.Requeue(msg)
+				}
 				continue
 			}
 			// The client shows it as a user message, exactly as the built-in

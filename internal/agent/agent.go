@@ -197,6 +197,10 @@ type ChatParams struct {
 	// the model whether asking questions is still wanted.
 	ApprovalMode string
 	Steer        func() []string // drains mid-run user messages, injected next round
+	// Requeue restores a steered message that the run could not take. The harness
+	// drains steers before it knows the sidecar will accept them, so a rejected
+	// one has to go back on the follow-up queue rather than vanish.
+	Requeue func(text string)
 	Background   *BackgroundManager
 	// PollBackground returns the session's finished background commands so the
 	// loop can inject their results into the conversation.

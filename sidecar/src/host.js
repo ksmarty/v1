@@ -621,6 +621,10 @@ class Sidecar {
 		);
 		// Route the child's host-tool and approval calls to this turn's Go runner.
 		this.delegateParents.set(String(child.id), String(parentId));
+		// Make the child resolvable by id right away, so the UI can open a running
+		// sub-agent's session. Registering it only on completion meant the
+		// transcript dialog had nothing to resolve until the delegate returned.
+		this.rememberDelegate(child);
 		// Tell Go as well. pi hands a tool the conversation it is running in, so the
 		// child's calls arrive carrying the child's id; Go resolves that through
 		// this alias to the runner of the turn that spawned it. Without it every
@@ -653,12 +657,21 @@ class Sidecar {
 			// Keep the child resolvable by id so the UI can open its transcript after
 			// the delegate finishes. It stays out of `conversations`, so a later turn
 			// still cannot resolve to it. Bounded to the most recent handful.
-			this.delegateConversations.set(String(child.id), child);
-			while (this.delegateConversations.size > 50) {
-				this.delegateConversations.delete(this.delegateConversations.keys().next().value);
-			}
+			this.rememberDelegate(child);
 			this.conversations.delete(String(child.id));
 			this.changes.delete(String(child.id));
+		}
+	}
+
+	/**
+	 * Keeps a child conversation resolvable by id, bounded to the most recent.
+	 * Called when the child is created and again when it finishes, so a running
+	 * delegate's transcript is readable too.
+	 */
+	rememberDelegate(child) {
+		this.delegateConversations.set(String(child.id), child);
+		while (this.delegateConversations.size > 50) {
+			this.delegateConversations.delete(this.delegateConversations.keys().next().value);
 		}
 	}
 
