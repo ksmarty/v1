@@ -731,10 +731,12 @@ class Sidecar {
 	}
 
 	async submit(params, whenBusy) {
-		const { requestId, content } = params ?? {};
-		if (!requestId) throw new RpcError(-32602, "turn.submit: requestId is required");
+		const { requestId } = params ?? {};
 		// A string is a plain message; an array is content parts (text plus the
-		// images and files the user attached).
+		// images and files the user attached). `text` is accepted as an alias, so
+		// a steer is still delivered whichever of the two shapes Go sends.
+		const content = params?.content ?? params?.text;
+		if (!requestId) throw new RpcError(-32602, "turn.submit: requestId is required");
 		if (typeof content !== "string" && !Array.isArray(content)) {
 			throw new RpcError(-32602, "turn.submit: content must be text or content parts");
 		}

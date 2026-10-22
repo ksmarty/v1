@@ -861,8 +861,13 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge,
 				continue
 			}
 			// The client shows it as a user message, exactly as the built-in
-			// loop's injected_message does.
-			emit(agent.ChatEvent{Type: "injected_message", Text: msg})
+			// loop's injected_message does — and v1's store has to hold it too, or
+			// the steered turn disappears from the transcript on the next reload.
+			msgID, addErr := s.st.AddMessage(params.Project.ID, params.SessionID, "user", msg, "", model, "", "", "")
+			if addErr != nil {
+				log.Printf("chat: recording a steered message: %v", addErr)
+			}
+			emit(agent.ChatEvent{Type: "injected_message", MessageID: msgID, Text: msg})
 		}
 	}
 

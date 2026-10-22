@@ -481,6 +481,36 @@ async function main() {
 			check("usage is reported per model", Object.keys(usage?.models ?? {}).length > 0, JSON.stringify(usage));
 		}
 
+		// A steer is a second user input handed to a run already in flight, and Go
+		// sends it as turn.steer with the message in `content` — the same submit
+		// path a normal turn takes. Sent as {text} it was rejected as bad content,
+		// so every steering message bounced back into the follow-up queue instead
+		// of joining the turn.
+		{
+			console.log("\nsteering");
+			const before = fake.requests.length;
+			await peer.call(
+				"turn.submit",
+				{ conversationId, requestId: "steer-turn-1", whenBusy: "queue", content: "Take your time." },
+				{ timeoutMs: 60_000 },
+			);
+			await waitFor(() => fake.requests.length > before, 30_000);
+			const steered = await peer
+				.call(
+					"turn.steer",
+					{ conversationId, requestId: "steer-1", content: "STEER-MARKER: acknowledge the steer." },
+					{ timeoutMs: 30_000 },
+				)
+				.then(() => true)
+				.catch((error) => error);
+			check("turn.steer is accepted mid-run", steered === true, String(steered));
+			const sawSteer = await waitFor(
+				() => fake.requests.slice(before).some((request) => JSON.stringify(request.body?.messages ?? []).includes("STEER-MARKER")),
+				60_000,
+			);
+			check("the model receives the steered message", sawSteer, "no provider request carried the steer");
+		}
+
 		console.log("\nlifecycle");
 		await peer.call("harness.shutdown", { reason: "test finished" }, { timeoutMs: 20_000 });
 		await peer.close();
@@ -861,6 +891,18 @@ async function checkSubmitContentValidation(peer, conversationId) {
 		.then(() => null)
 		.catch((err) => err);
 	check("turn.submit rejects non-string, non-array content", Boolean(rejected), String(rejected));
+	// A steer is submitted through the same path, and v1 used to send it as
+	// {text}: the alias is accepted rather than rejected as bad content, which
+	// is what silently bounced every steering message back to the queue.
+	const steerRejected = await peer
+		.call("turn.submit", { conversationId, requestId: "steer-1", text: 42 })
+		.then(() => null)
+		.catch((err) => err);
+	check(
+		"a text-shaped steer is validated as content",
+		Boolean(steerRejected) && /content must be text/.test(String(steerRejected)),
+		String(steerRejected),
+	);
 }
 
 await checkExtensionLoading();

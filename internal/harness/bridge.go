@@ -458,10 +458,14 @@ type InputPart struct {
 // joining the running turn — the pi-durable equivalent of the built-in loop's
 // mid-run injection.
 func (b *Bridge) Steer(ctx context.Context, conversationID, requestID, text string) error {
+	// The sidecar routes turn.steer through the same submit path as a normal
+	// turn, so the payload key is content — a steer sent as {text} is rejected
+	// as "content must be text or content parts" and the message bounces back
+	// to the queue instead of joining the run.
 	return b.sup.Call(ctx, "turn.steer", map[string]any{
 		"conversationId": conversationID,
 		"requestId":      requestID,
-		"text":           text,
+		"content":        text,
 	}, nil)
 }
 

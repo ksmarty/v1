@@ -180,7 +180,11 @@ or `make dev`), then report: (1) the new stamped build version (`v1 <version>
   once the current turn finishes. A message can be steered explicitly via
   `POST /chat/queue/steer` — it is then injected into the running turn at the
   next round boundary (persisted and emitted as `injected_message`); unconsumed
-  steers fall through to the follow-up queue. `GET /chat/queue` lists
+  steers fall through to the follow-up queue. On the harness path the steer is a
+  `turn.steer` call the sidecar routes through its own submit path, so the text
+  travels in `content` (a `text` field is ignored and the steer bounces back to
+  the queue); the Go side persists the injected message and emits its id, so the
+  row survives a reload. `GET /chat/queue` lists
   the queue and the pending steers (`steering` array, one entry per message
   steered but not yet injected — the UI shows them as pending rows with a
   spinner until the `injected_message` lands). The chat UI shows the queue as a pinned block above the

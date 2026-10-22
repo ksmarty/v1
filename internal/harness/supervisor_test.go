@@ -126,6 +126,12 @@ func serveFakeSidecar(conn net.Conn, socket string, readyProtocol int, mode stri
 				result["hostResult"] = decoded.Output
 			}
 			peer.reply(id, result)
+		case "turn.steer":
+			// Record the wire shape beside the socket: the Go side and the sidecar
+			// have to agree on the key that carries the message.
+			raw, _ := json.Marshal(msg["params"])
+			_ = os.WriteFile(filepath.Join(filepath.Dir(socket), "steer-params.json"), raw, 0o644)
+			peer.reply(id, map[string]any{"ok": true})
 		case "test.poison":
 			// Answer the poison error until a marker exists, then succeed. The marker
 			// lives beside the socket, so the process that restarts after the kill
@@ -432,6 +438,43 @@ func TestSupervisorDoesNotRestartOnOrdinaryErrors(t *testing.T) {
 	}
 	if got := sup.Restarts(); got != 0 {
 		t.Fatalf("restarts = %d, want 0", got)
+	}
+}
+
+// A steer goes through the sidecar's submit path, which reads the message from
+// `content`. Sent as `text` it is rejected as bad content, and v1 then puts the
+// steering message back in the queue instead of injecting it — the steering
+// rows sat there and never landed in the turn.
+func TestBridgeSteerSendsTheMessageAsContent(t *testing.T) {
+	sup := newTestSupervisor(t, "", nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := sup.Start(ctx); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	defer sup.Close()
+
+	bridge := NewBridge(sup, t.Logf)
+	if err := bridge.Steer(ctx, "conv-1", "steer-1", "use pnpm"); err != nil {
+		t.Fatalf("Steer: %v", err)
+	}
+
+	raw, err := os.ReadFile(filepath.Join(filepath.Dir(sup.opts.Socket), "steer-params.json"))
+	if err != nil {
+		t.Fatalf("the sidecar never saw a turn.steer call: %v", err)
+	}
+	var params map[string]any
+	if err := json.Unmarshal(raw, &params); err != nil {
+		t.Fatalf("steer params: %v", err)
+	}
+	if got, _ := params["content"].(string); got != "use pnpm" {
+		t.Fatalf("content = %q, want the steered message", got)
+	}
+	if _, ok := params["text"]; ok {
+		t.Fatalf("the steer still carries a text field, which the sidecar ignores: %s", raw)
+	}
+	if got, _ := params["conversationId"].(string); got != "conv-1" {
+		t.Fatalf("conversationId = %q", got)
 	}
 }
 
