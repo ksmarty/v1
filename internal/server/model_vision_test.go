@@ -15,12 +15,12 @@ func visionTestServer(t *testing.T) *Server {
 	s, _, _ := newHarnessTestServer(t)
 	cat := &llm.Catalog{Providers: []llm.Provider{
 		{ID: "openrouter", BaseURL: "https://openrouter.ai/api/v1", Models: []llm.ProviderModel{
-			{ID: "moonshotai/kimi-k3", Name: "Kimi K3", ImageInput: true},
-			{ID: "deepseek/deepseek-chat", Name: "DeepSeek Chat"},
+			{ID: "moonshotai/kimi-k3", Name: "Kimi K3", ImageInput: true, Context: 256000},
+			{ID: "deepseek/deepseek-chat", Name: "DeepSeek Chat", Context: 64000},
 		}},
 		{ID: "opencode-go", BaseURL: "https://opencode.ai/zen/go/v1", Models: []llm.ProviderModel{
-			{ID: "deepseek-v4.1-flash", Name: "DeepSeek V4.1 Flash", ImageInput: true},
-			{ID: "glm-5.2", Name: "GLM 5.2"},
+			{ID: "deepseek-v4.1-flash", Name: "DeepSeek V4.1 Flash", ImageInput: true, Context: 128000},
+			{ID: "glm-5.2", Name: "GLM 5.2", Context: 200000},
 		}},
 	}}
 	raw, err := json.Marshal(cat)
@@ -75,5 +75,25 @@ func TestModelSupportsImagesPrefersTheTurnsProvider(t *testing.T) {
 	// capability is unknown rather than borrowed from a same-named model.
 	if !s.modelSupportsImages("test-user", "openrouter", "deepseek-v4.1-flash") {
 		t.Fatal("an unknown id must not read as text-only")
+	}
+}
+
+// The context-window lookup reads the same ids, so the bare form a provider's
+// own /models endpoint publishes has to resolve against the namespaced catalog
+// entry — otherwise the turn falls back to the fixed server budget.
+func TestCatalogModelContextMatchesEitherSpelling(t *testing.T) {
+	s := visionTestServer(t)
+	if got := s.catalogModelContext("https://openrouter.ai/api/v1", "moonshotai/kimi-k3"); got != 256000 {
+		t.Fatalf("namespaced id = %d, want 256000", got)
+	}
+	if got := s.catalogModelContext("https://openrouter.ai/api/v1", "kimi-k3"); got != 256000 {
+		t.Fatalf("bare id on its own provider = %d, want 256000", got)
+	}
+	// A provider outside the catalog falls back to any entry naming the model.
+	if got := s.catalogModelContext("https://example.test/v1", "kimi-k3"); got != 256000 {
+		t.Fatalf("bare id on another provider = %d, want the fallback 256000", got)
+	}
+	if got := s.catalogModelContext("https://example.test/v1", "nope-9000"); got != 0 {
+		t.Fatalf("unknown model = %d, want 0", got)
 	}
 }

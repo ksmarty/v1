@@ -971,7 +971,9 @@ func (s *Server) handleContextUsage(w http.ResponseWriter, r *http.Request) {
 
 // catalogModelContext looks up a model's context window in the provider
 // catalog: first among providers sharing the base URL, then any catalog entry
-// with the same model id.
+// with the same model id. The id matches by bare or namespaced spelling
+// ("/kimi-k3" against "moonshotai/kimi-k3"), because a provider's own /models
+// output and the saved selection carry the bare form.
 func (s *Server) catalogModelContext(baseURL, model string) int {
 	cat := s.providerCatalog()
 	if cat == nil {
@@ -980,7 +982,7 @@ func (s *Server) catalogModelContext(baseURL, model string) int {
 	var fallback int
 	for _, p := range cat.Providers {
 		for _, m := range p.Models {
-			if m.ID != model || m.Context <= 0 {
+			if !modelMatchesID(m.ID, model) || m.Context <= 0 {
 				continue
 			}
 			if p.BaseURL == baseURL {
