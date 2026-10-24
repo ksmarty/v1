@@ -878,7 +878,7 @@ var screenshotAppTool = llm.Tool{
 	Type: "function",
 	Function: llm.ToolFunction{
 		Name:        "screenshot_app",
-		Description: "Capture a screenshot of the app preview and see its current visual state. Starts the preview if it is not running. Call this after any visual change (layout, styling, a component, page or copy) and actually look at the image before reporting the work done. Only available for models that can read images.",
+		Description: "Capture a screenshot of the app preview and see its current visual state. Starts the preview if it is not running. Call this after any visual change (layout, styling, a component, page or copy) and actually look at the image before reporting the work done. Not offered to models known to be text-only.",
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{

@@ -129,7 +129,18 @@ or `make dev`), then report: (1) the new stamped build version (`v1 <version>
   headless Chrome for the `screenshot_app` agent tool; Chrome is auto-located,
   `V1_CHROME_PATH` overrides. The tool is only registered when the turn's
   model carries `imageInput` catalog metadata
-  (`Server.modelSupportsImages`); the PNG reaches the model either as an
+  (`Server.modelSupportsImages`), which matches a catalog id exactly or by its
+  namespaced form (`kimi-k3` ↔ `moonshotai/kimi-k3`) and falls back to any
+  provider when the turn's provider is not a catalog entry (a user-added
+  provider carries a generated id). A model the catalog does not know is
+  treated as capable rather than text-only: a configured provider's picker list
+  is its live `/models` output, which publishes no modalities, so an
+  uncatalogued id would otherwise silently lose the tool while attachments —
+  which never consult the flag — still reached the model. The
+  `internal/llm` catalog cap (`maxModelsPerProvider`) is a guard against a
+  runaway upstream, not a curation knob: a low cap truncated lists
+  alphabetically and dropped real models together with their vision metadata.
+  The PNG reaches the model either as an
   injected user message with an image attachment (the built-in loop) or on the
   tool result (the pi-durable harness, whose OpenAI adapter turns tool-result
   images into a follow-up user message). Either way it is persisted as a user

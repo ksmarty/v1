@@ -1013,8 +1013,21 @@ func (s *Server) capturePreview(ctx context.Context, p *store.Project, path stri
 	return screenshot.Capture(ctx, base)
 }
 
-// modelSupportsImages reports whether the given model carries image-input
-// metadata in the provider catalog — gates the screenshot_app tool.
+// modelSupportsImages reports whether the given model reads images — it gates
+// the screenshot_app tool and the visual-verification note in the prompt.
+//
+// The answer comes from the provider catalog, but an id it does not know must
+// not read as "text-only". A configured provider's picker list is its live
+// /models output, which publishes no modalities, and the composer accepts a
+// hand-typed id; the model in play is therefore often one models.dev has not
+// indexed yet (or has not re-indexed since it gained image input). Hiding the
+// tool for those is the wrong default: attachments never consulted this flag,
+// so the model could already see a pasted screenshot while being told it had no
+// vision tool. An unknown id is treated as capable and the provider decides.
+//
+// A catalog id may be namespaced ("moonshotai/kimi-k3") while the endpoint and
+// the saved selection use the bare form ("kimi-k3"), so either spelling names
+// the same model.
 func (s *Server) modelSupportsImages(userID, providerID, model string) bool {
 	if model == "" {
 		if p := s.findLLMProvider(userID, providerID); p != nil {
@@ -1023,21 +1036,50 @@ func (s *Server) modelSupportsImages(userID, providerID, model string) bool {
 			_, _, model = s.llmConfig(userID)
 		}
 	}
-	cat := s.providerCatalog()
-	if cat == nil {
+	if model == "" {
 		return false
 	}
+	cat := s.providerCatalog()
+	if cat == nil {
+		return true
+	}
+	known, vision := catalogVision(cat, providerID, model)
+	if !known && providerID != "" {
+		// The provider is not a catalog entry — a user-added provider carries its
+		// own id — so the model's capability still comes from any catalog entry
+		// naming it.
+		known, vision = catalogVision(cat, "", model)
+	}
+	if !known {
+		return true
+	}
+	return vision
+}
+
+// catalogVision reports whether the catalog knows the model (restricted to
+// providerID when set) and whether any matching entry reads images.
+func catalogVision(cat *llm.Catalog, providerID, model string) (known, vision bool) {
 	for _, prov := range cat.Providers {
 		if providerID != "" && prov.ID != providerID {
 			continue
 		}
 		for _, m := range prov.Models {
-			if m.ID == model && m.ImageInput {
-				return true
+			if !modelMatchesID(m.ID, model) {
+				continue
+			}
+			known = true
+			if m.ImageInput {
+				vision = true
 			}
 		}
 	}
-	return false
+	return known, vision
+}
+
+// modelMatchesID reports whether a catalog id names the given model, accepting
+// the namespaced and bare spellings as the same model.
+func modelMatchesID(catalogID, model string) bool {
+	return catalogID == model || strings.HasSuffix(catalogID, "/"+model)
 }
 
 // ---- preview control ----

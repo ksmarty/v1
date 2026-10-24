@@ -118,7 +118,14 @@ func (c *Catalog) WithAdded(added []Provider) *Catalog {
 }
 
 const modelsDevURL = "https://models.dev/api.json"
-const maxModelsPerProvider = 40
+// maxModelsPerProvider is a guard against a pathological upstream, not a
+// curation knob: it must sit above every real provider's model count. A low cap
+// truncated lists alphabetically, so models past it (openrouter's 302
+// tool-calling models lost everything from "deepseek/deepseek-v4.1-flash"
+// onwards) vanished from the catalog and lost their vision/reasoning/context
+// metadata — a model the picker still offered came back as "text-only" and
+// screenshot_app was never offered.
+const maxModelsPerProvider = 1000
 
 // NVIDIABaseURL is NVIDIA's OpenAI-compatible build endpoint. Its /v1/models
 // listing is public (no key required), so the picker always prefers live model
@@ -701,8 +708,8 @@ func PrettifyModelName(id string) string {
 	return strings.Join(out, " ")
 }
 
-// modelSubset builds the curated, sorted model list for a models.dev entry:
-// only tool-calling models, capped for size.
+// modelSubset builds the sorted model list for a models.dev entry: only
+// tool-calling models, capped only as a guard against a runaway response.
 func modelSubset(fp modelsDevDoc) []ProviderModel {
 	ids := make([]string, 0, len(fp.Models))
 	for id := range fp.Models {
