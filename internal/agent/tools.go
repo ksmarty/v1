@@ -116,9 +116,9 @@ type Executor struct {
 	// ListExtensions reports what is installed and loaded (the list_extensions
 	// tool), so the agent can confirm an install without inspecting the host.
 	ListExtensions func(ctx context.Context) (string, error)
-	// OnAsk asks the user one or more questions and waits for the answers
+	// OnAsk asks the user one or more questions and waits for the answer
 	// (the ask_user tool); nil when the turn cannot prompt.
-	OnAsk func(ctx context.Context, questions []AskQuestion) ([]AskAnswer, error)
+	OnAsk func(ctx context.Context, questions []AskQuestion) (AskResponse, error)
 	// AskTimeout bounds ask_user's wait for an answer; 0 uses
 	// DefaultAskTimeout. The user can always answer sooner.
 	AskTimeout time.Duration
@@ -209,15 +209,18 @@ func toolDisplay(name, out string) json.RawMessage {
 	switch name {
 	case "ask_user":
 		var r struct {
-			Answer  string      `json:"answer"`
-			Answers []AskAnswer `json:"answers"`
+			Answer     string      `json:"answer"`
+			Options    []string    `json:"options"`
+			Text       string      `json:"text"`
+			Answers    []AskAnswer `json:"answers"`
+			GlobalNote string      `json:"globalNote"`
 		}
 		if json.Unmarshal([]byte(out), &r) != nil {
 			return nil
 		}
 		answers := r.Answers
 		if len(answers) == 0 && r.Answer != "" {
-			answers = []AskAnswer{{Answer: r.Answer}}
+			answers = []AskAnswer{{Answer: r.Answer, Options: r.Options, Text: r.Text}}
 		}
 		// An older stored result kept the [{question,answer}] array as the answer
 		// string; unwrap it so the display carries the answers, not JSON.
@@ -225,7 +228,7 @@ func toolDisplay(name, out string) json.RawMessage {
 		if len(answers) == 0 {
 			return nil
 		}
-		return displayJSON(map[string]any{"kind": "answers", "answers": answers})
+		return displayJSON(map[string]any{"kind": "answers", "answers": answers, "globalNote": r.GlobalNote})
 	case "list_files":
 		var r struct {
 			Files     []string `json:"files"`
@@ -971,30 +974,136 @@ const DefaultAskTimeout = 30 * time.Minute
 // AskQuestion is one question for the ask_user tool; AskAnswer pairs it with
 // the user's response.
 type AskQuestion struct {
-	Question string   `json:"question"`
-	Options  []string `json:"options"`
-	// Multi lets the user pick several of the options. The answer is then the
-	// picked options joined by ", ", so nothing downstream needs a new shape.
+	Question string `json:"question"`
+	// Options are the authored choices, each with the label the user clicks and,
+	// when the model explains itself, what picking it means — so the choice is
+	// made on written-out consequences rather than on shorthand labels.
+	Options []AskOption `json:"options,omitempty"`
+	// Multi lets the user pick several of the options. The answer string is then
+	// the picked labels joined by ", "; the picked labels also come back
+	// structured in AskAnswer.Options, so nothing downstream has to split it.
 	Multi bool `json:"multi,omitempty"`
+}
+
+// AskOption is one authored choice. Description says what the choice means or
+// costs; Preview carries the artifact itself (a snippet, a config file, an
+// ASCII mockup) as markdown, which the UI renders beside the option list so
+// options can be compared as artifacts rather than as labels.
+type AskOption struct {
+	Label       string `json:"label"`
+	Description string `json:"description,omitempty"`
+	Preview     string `json:"preview,omitempty"`
+}
+
+// UnmarshalJSON accepts a bare string as a label, so a model that sends
+// "options": ["Use Redis", …] is understood instead of failing the call.
+func (o *AskOption) UnmarshalJSON(b []byte) error {
+	if len(b) > 0 && b[0] == '"' {
+		var s string
+		if err := json.Unmarshal(b, &s); err != nil {
+			return err
+		}
+		*o = AskOption{Label: s}
+		return nil
+	}
+	type plain AskOption
+	var p plain
+	if err := json.Unmarshal(b, &p); err != nil {
+		return err
+	}
+	*o = AskOption(p)
+	return nil
+}
+
+// Labels returns the option labels, which is what a client that knows nothing
+// about descriptions (and the pending-ask record) carries.
+func Labels(opts []AskOption) []string {
+	if len(opts) == 0 {
+		return nil
+	}
+	out := make([]string, len(opts))
+	for i, o := range opts {
+		out[i] = o.Label
+	}
+	return out
 }
 
 type AskAnswer struct {
 	Question string `json:"question"`
-	Answer   string `json:"answer"`
+	// Answer is the human-readable response — the picked labels and any typed
+	// text, joined. Clients that know nothing else display this.
+	Answer string `json:"answer"`
+	// Options are the option labels the user picked.
+	Options []string `json:"options,omitempty"`
+	// Text is what the user typed in the free-text row instead of (or, on a
+	// multi-select question, in addition to) picking options.
+	Text string `json:"text,omitempty"`
+}
+
+// AskResponse is what the user returned for one questionnaire: the answers in
+// question order, plus an optional note about the whole ask.
+type AskResponse struct {
+	Answers    []AskAnswer `json:"answers"`
+	GlobalNote string      `json:"globalNote,omitempty"`
+}
+
+// MaxAskQuestions bounds one questionnaire. Past this it stops being a decision
+// the user can hold in their head and turns into a survey.
+const MaxAskQuestions = 4
+
+// MaxAskOptions bounds a question's choices.
+const MaxAskOptions = 4
+
+// freeTextLabel is the row every question gets appended by the UI, always:
+// the user must be able to answer in their own words. A model that names an
+// option that way gets it dropped rather than shown twice.
+const freeTextLabel = "type something"
+
+func isFreeTextLabel(s string) bool {
+	s = strings.ToLower(strings.TrimSpace(s))
+	return s == freeTextLabel || s == freeTextLabel+"."
+}
+
+// askResult is the model-visible result. A single answer is flattened (it is
+// the common case, and the model reads "answer" without unwrapping an array);
+// several stay an ordered array. A note about the whole ask rides along.
+func askResult(answers []AskAnswer, globalNote string) map[string]any {
+	if len(answers) == 1 {
+		a := answers[0]
+		out := map[string]any{"answer": a.Answer}
+		if len(a.Options) > 0 {
+			out["options"] = a.Options
+		}
+		if a.Text != "" {
+			out["text"] = a.Text
+		}
+		if globalNote != "" {
+			out["globalNote"] = globalNote
+		}
+		return out
+	}
+	out := map[string]any{"answers": answers}
+	if globalNote != "" {
+		out["globalNote"] = globalNote
+	}
+	return out
 }
 
 // askUser blocks the turn until the user answers through the ask endpoint. A
 // single question can be passed as "question" (with optional "options"); pass
-// "questions" as an array to ask several in sequence — the user steps through
-// them and confirms all answers at once. Questions are bounded by AskTimeout
-// (default DefaultAskTimeout) and remembered for the rest of the turn: asking
-// the same question again returns the earlier answer instead of pestering the
-// user, and asking it again while it is still unanswered waits for the answer
-// the first call is already waiting for rather than asking twice.
+// "questions" as an array to ask several in one questionnaire — the user walks
+// tabs and confirms all answers at once. Every question also offers a free-text
+// answer and a note, and the questionnaire as a whole offers a global note, so
+// the model gets the decision it asked for rather than a forced choice.
+// Questions are bounded by AskTimeout (default DefaultAskTimeout) and remembered
+// for the rest of the turn: asking the same question again returns the earlier
+// answer instead of pestering the user, and asking it again while it is still
+// unanswered waits for the answer the first call is already waiting for rather
+// than asking twice.
 func (e *Executor) askUser(ctx context.Context, argsJSON string) (string, error) {
 	var args struct {
 		Question  string        `json:"question"`
-		Options   []string      `json:"options"`
+		Options   []AskOption   `json:"options"`
 		Multi     bool          `json:"multi"`
 		Questions []AskQuestion `json:"questions"`
 	}
@@ -1009,17 +1118,28 @@ func (e *Executor) askUser(ctx context.Context, argsJSON string) (string, error)
 	} else {
 		return "", fmt.Errorf("question is required")
 	}
-	if len(qs) > 8 {
-		qs = qs[:8]
+	if len(qs) > MaxAskQuestions {
+		qs = qs[:MaxAskQuestions]
 	}
 	for i := range qs {
 		qs[i].Question = strings.TrimSpace(qs[i].Question)
 		if qs[i].Question == "" {
 			return "", fmt.Errorf("every question needs a question")
 		}
-		if len(qs[i].Options) > 4 {
-			qs[i].Options = qs[i].Options[:4]
+		opts := make([]AskOption, 0, len(qs[i].Options))
+		for _, o := range qs[i].Options {
+			o.Label = strings.TrimSpace(o.Label)
+			if o.Label == "" || isFreeTextLabel(o.Label) {
+				continue
+			}
+			o.Description = strings.TrimSpace(o.Description)
+			o.Preview = strings.TrimSpace(o.Preview)
+			opts = append(opts, o)
 		}
+		if len(opts) > MaxAskOptions {
+			opts = opts[:MaxAskOptions]
+		}
+		qs[i].Options = opts
 	}
 	if e.OnAsk == nil {
 		return "", toolFail("ASK_UNAVAILABLE", "asking the user is unavailable in this context", false, "proceed with your best judgment")
@@ -1067,7 +1187,7 @@ func (e *Executor) askUser(ctx context.Context, argsJSON string) (string, error)
 	}
 	askCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	answers, err := e.OnAsk(askCtx, qs)
+	resp, err := e.OnAsk(askCtx, qs)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || askCtx.Err() == context.DeadlineExceeded {
 			label := timeout.Round(time.Second)
@@ -1078,11 +1198,10 @@ func (e *Executor) askUser(ctx context.Context, argsJSON string) (string, error)
 		}
 		return "", err
 	}
-	if len(answers) == 1 {
-		e.askCache[key] = answers[0].Answer
-		return toolResult(map[string]any{"answer": answers[0].Answer}), nil
+	if len(resp.Answers) == 1 {
+		e.askCache[key] = resp.Answers[0].Answer
 	}
-	return toolResult(map[string]any{"answers": answers}), nil
+	return toolResult(askResult(resp.Answers, resp.GlobalNote)), nil
 }
 
 // runCommandBackground starts a command detached from the turn: the tool

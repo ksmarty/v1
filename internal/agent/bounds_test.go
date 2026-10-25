@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -204,9 +205,9 @@ func TestSudoRefused(t *testing.T) {
 func TestAskUserRepeatGuard(t *testing.T) {
 	e := newTestExecutor(t)
 	var calls int32
-	e.OnAsk = func(ctx context.Context, qs []AskQuestion) ([]AskAnswer, error) {
+	e.OnAsk = func(ctx context.Context, qs []AskQuestion) (AskResponse, error) {
 		atomic.AddInt32(&calls, 1)
-		return []AskAnswer{{Question: qs[0].Question, Answer: "yes"}}, nil
+		return AskResponse{Answers: []AskAnswer{{Question: qs[0].Question, Answer: "yes"}}}, nil
 	}
 	ask := `{"question":"Should I use Tailwind?"}`
 	res := executeContract(t, e, context.Background(), "ask_user", ask)
@@ -231,10 +232,10 @@ func TestAskUserCoalescesPendingQuestion(t *testing.T) {
 	e := newTestExecutor(t)
 	var calls int32
 	release := make(chan struct{})
-	e.OnAsk = func(ctx context.Context, qs []AskQuestion) ([]AskAnswer, error) {
+	e.OnAsk = func(ctx context.Context, qs []AskQuestion) (AskResponse, error) {
 		atomic.AddInt32(&calls, 1)
 		<-release
-		return []AskAnswer{{Question: qs[0].Question, Answer: "blue"}}, nil
+		return AskResponse{Answers: []AskAnswer{{Question: qs[0].Question, Answer: "blue"}}}, nil
 	}
 	const ask = `{"question":"Pick a color?"}`
 	type result struct {
@@ -286,9 +287,9 @@ func TestAskUserCoalescesPendingQuestion(t *testing.T) {
 func TestAskUserTimeout(t *testing.T) {
 	e := newTestExecutor(t)
 	e.AskTimeout = 150 * time.Millisecond
-	e.OnAsk = func(ctx context.Context, qs []AskQuestion) ([]AskAnswer, error) {
+	e.OnAsk = func(ctx context.Context, qs []AskQuestion) (AskResponse, error) {
 		<-ctx.Done()
-		return nil, ctx.Err()
+		return AskResponse{}, ctx.Err()
 	}
 	res := executeContract(t, e, context.Background(), "ask_user", `{"question":"Pick a color?"}`)
 	env := toolErrorOf(t, res)
@@ -297,6 +298,38 @@ func TestAskUserTimeout(t *testing.T) {
 	}
 	if env["recoverable"] != false {
 		t.Fatalf("recoverable = %v, want false", env["recoverable"])
+	}
+}
+
+// TestAskUserOptionsAndNotes verifies the questionnaire shape: options may be
+// bare strings or objects (label + description + preview), the free-text row the
+// UI always appends is not duplicated as an option, and the user's typed text,
+// per-question note and global note reach the model-visible result.
+func TestAskUserOptionsAndNotes(t *testing.T) {
+	e := newTestExecutor(t)
+	e.OnAsk = func(ctx context.Context, qs []AskQuestion) (AskResponse, error) {
+		if len(qs) != 1 {
+			return AskResponse{}, fmt.Errorf("got %d questions, want 1", len(qs))
+		}
+		opts := qs[0].Options
+		if len(opts) != 2 || opts[0].Label != "SQLite" || opts[0].Description != "one file" || opts[1].Label != "Postgres" {
+			return AskResponse{}, fmt.Errorf("options = %+v", opts)
+		}
+		return AskResponse{
+			Answers:    []AskAnswer{{Question: qs[0].Question, Answer: "SQLite — one file", Options: []string{"SQLite"}, Text: "one file"}},
+			GlobalNote: "ship today",
+		}, nil
+	}
+	res := executeContract(t, e, context.Background(), "ask_user",
+		`{"question":"How should we store it?","options":[{"label":"SQLite","description":"one file"},"Postgres","Type something."]}`)
+	if res["answer"] != "SQLite — one file" {
+		t.Fatalf("answer = %v", res["answer"])
+	}
+	if opts, ok := res["options"].([]any); !ok || len(opts) != 1 || opts[0] != "SQLite" {
+		t.Fatalf("options = %v", res["options"])
+	}
+	if res["text"] != "one file" || res["globalNote"] != "ship today" {
+		t.Fatalf("notes: %v", res)
 	}
 }
 

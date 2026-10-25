@@ -45,75 +45,109 @@ func (r *askRegistry) resolve(id, answer string) *askRequest {
 
 // turnAsk implements the ask_user tool for one chat stream: persists the
 // question(s) (so they survive reloads and reconnects), emits them as an SSE
-// event, and waits for the answer endpoint. Multi-question asks resolve with
-// the full answers array once the user confirms.
-func (s *Server) turnAsk(projectID, sessionID string, emit func(agent.ChatEvent)) func(ctx context.Context, questions []agent.AskQuestion) ([]agent.AskAnswer, error) {
-	return func(ctx context.Context, questions []agent.AskQuestion) ([]agent.AskAnswer, error) {
+// event, and waits for the answer endpoint. A multi-question ask resolves with
+// the full answers array (plus any global note) once the user confirms.
+func (s *Server) turnAsk(projectID, sessionID string, emit func(agent.ChatEvent)) func(ctx context.Context, questions []agent.AskQuestion) (agent.AskResponse, error) {
+	return func(ctx context.Context, questions []agent.AskQuestion) (agent.AskResponse, error) {
 		id := store.NewID()
 		first := questions[0]
-		qsJSON := ""
-		if len(questions) > 1 {
-			if b, err := json.Marshal(questions); err == nil {
-				qsJSON = string(b)
-			}
+		// The full questions array always goes into the durable record: options
+		// carry descriptions and previews now, and a single question is just a
+		// questionnaire of one.
+		var qsJSON string
+		if b, err := json.Marshal(questions); err == nil {
+			qsJSON = string(b)
 		}
-		// The durable record first — the UI answers through it even when the
-		// live stream is gone.
-		if err := s.st.SetPendingAsk(projectID, sessionID, id, first.Question, first.Options, qsJSON); err != nil {
-			return nil, fmt.Errorf("failed to persist question: %w", err)
+		if err := s.st.SetPendingAsk(projectID, sessionID, id, first.Question, agent.Labels(first.Options), qsJSON); err != nil {
+			return agent.AskResponse{}, fmt.Errorf("failed to persist question: %w", err)
 		}
 		ar := s.ask.register(id)
 		if emit != nil {
-			emit(agent.ChatEvent{Type: "question_request", RequestID: id, Text: first.Question, Options: first.Options, Questions: questions})
+			emit(agent.ChatEvent{Type: "question_request", RequestID: id, Text: first.Question, Options: agent.Labels(first.Options), Questions: questions})
 		}
 		select {
-		case answer := <-ar.ch:
+		case payload := <-ar.ch:
 			_ = s.st.ClearPendingAsk(projectID, sessionID)
-			return parseAskAnswers(answer, questions), nil
+			return parseAskAnswers(payload, questions), nil
 		case <-time.After(agent.DefaultAskTimeout):
 			_ = s.st.ClearPendingAsk(projectID, sessionID)
-			return nil, fmt.Errorf("question timed out")
+			return agent.AskResponse{}, fmt.Errorf("question timed out")
 		case <-ctx.Done():
 			_ = s.st.ClearPendingAsk(projectID, sessionID)
-			return nil, ctx.Err()
+			return agent.AskResponse{}, ctx.Err()
 		}
 	}
 }
 
-// parseAskAnswers turns the response payload into the answers array. The UI
-// answers through {"answers":[{question,answer},…]}, marshaled to a JSON array
-// here, for single- and multi-question asks alike; a plain answer string (an
-// older client) is used as-is. The array form is only trusted when an element
-// actually carries an "answer" key, so a user who typed JSON as their answer
-// is not mistaken for the envelope.
-func parseAskAnswers(payload string, questions []agent.AskQuestion) []agent.AskAnswer {
-	var raw []struct {
-		Question string  `json:"question"`
-		Answer   *string `json:"answer"`
+// parseAskAnswers turns the response payload into the questionnaire's answers.
+// The UI answers through {"answers":[{question,answer,options,text}…],
+// "globalNote":…} for single- and multi-question asks alike; a bare array (what
+// older clients posted) and a plain answer string are accepted too, so neither
+// an old tab nor a typed JSON answer is mistaken for the envelope. The array
+// form is only trusted when an element actually carries an "answer" key.
+func parseAskAnswers(payload string, questions []agent.AskQuestion) agent.AskResponse {
+	env := parseAskEnvelope(payload, questions, false)
+	if env == nil {
+		env = parseAskEnvelope(payload, questions, true)
 	}
-	if json.Unmarshal([]byte(payload), &raw) == nil && len(raw) > 0 && raw[0].Answer != nil {
-		out := make([]agent.AskAnswer, len(raw))
-		for i, a := range raw {
-			out[i] = agent.AskAnswer{Question: a.Question, Answer: *a.Answer}
-		}
-		if len(questions) == 1 {
-			if out[0].Question == "" {
-				out[0].Question = questions[0].Question
-			}
-			return out[:1]
-		}
-		if len(out) == len(questions) {
-			return out
-		}
+	if env != nil {
+		return *env
 	}
 	if len(questions) == 1 {
-		return []agent.AskAnswer{{Question: questions[0].Question, Answer: payload}}
+		return agent.AskResponse{Answers: []agent.AskAnswer{{Question: questions[0].Question, Answer: payload}}}
 	}
 	out := make([]agent.AskAnswer, len(questions))
 	for i, q := range questions {
 		out[i].Question = q.Question
 	}
-	return out
+	return agent.AskResponse{Answers: out}
+}
+
+// parseAskEnvelope decodes the answers out of payload, either from the
+// {"answers":…} envelope or — with bare set — directly from an array. Nil when
+// the payload is not this shape.
+func parseAskEnvelope(payload string, questions []agent.AskQuestion, bare bool) *agent.AskResponse {
+	type answerJSON struct {
+		Question string   `json:"question"`
+		Answer   *string  `json:"answer"`
+		Options  []string `json:"options"`
+		Text     string   `json:"text"`
+	}
+	var answers []answerJSON
+	globalNote := ""
+	if bare {
+		if json.Unmarshal([]byte(payload), &answers) != nil {
+			return nil
+		}
+	} else {
+		var env struct {
+			Answers    []answerJSON `json:"answers"`
+			GlobalNote string       `json:"globalNote"`
+		}
+		if json.Unmarshal([]byte(payload), &env) != nil {
+			return nil
+		}
+		answers, globalNote = env.Answers, env.GlobalNote
+	}
+	if len(answers) == 0 || answers[0].Answer == nil {
+		return nil
+	}
+	out := make([]agent.AskAnswer, len(answers))
+	for i, a := range answers {
+		out[i] = agent.AskAnswer{Question: a.Question, Answer: *a.Answer, Options: a.Options, Text: a.Text}
+	}
+	resp := agent.AskResponse{Answers: out, GlobalNote: globalNote}
+	if len(questions) == 1 {
+		if resp.Answers[0].Question == "" {
+			resp.Answers[0].Question = questions[0].Question
+		}
+		resp.Answers = resp.Answers[:1]
+		return &resp
+	}
+	if len(resp.Answers) != len(questions) {
+		return nil
+	}
+	return &resp
 }
 
 // handleAskRespond answers a pending question from the ask_user tool. The
@@ -128,10 +162,14 @@ func (s *Server) handleAskRespond(w http.ResponseWriter, r *http.Request) {
 		RequestID string `json:"requestId"`
 		Answer    string `json:"answer"`
 		Answers   []struct {
-			Question string `json:"question"`
-			Answer   string `json:"answer"`
+			Question string   `json:"question"`
+			Answer   string   `json:"answer"`
+			Options  []string `json:"options"`
+			Text     string   `json:"text"`
 		} `json:"answers"`
-		SessionID string `json:"sessionId"`
+		// GlobalNote is the user's remark on the questionnaire as a whole.
+		GlobalNote string `json:"globalNote"`
+		SessionID  string `json:"sessionId"`
 	}
 	if !decodeJSON(w, r, &body) {
 		return
@@ -142,7 +180,7 @@ func (s *Server) handleAskRespond(w http.ResponseWriter, r *http.Request) {
 	}
 	payload := body.Answer
 	if len(body.Answers) > 0 {
-		if b, err := json.Marshal(body.Answers); err == nil {
+		if b, err := json.Marshal(map[string]any{"answers": body.Answers, "globalNote": body.GlobalNote}); err == nil {
 			payload = string(b)
 		}
 	}

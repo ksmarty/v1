@@ -1,4 +1,5 @@
 import type {
+  AskQuestionDTO,
   AuthStatus,
   BackgroundJob,
   ChatEvent,
@@ -454,9 +455,14 @@ export const api = {
     id: string,
     sessionId: string,
     requestId: string,
-    answers: { question: string; answer: string }[],
-  ) =>
-    post<void>(`/api/projects/${id}/ask/respond`, { requestId, answers, sessionId }),
+    answers: {
+      question: string;
+      answer: string;
+      options?: string[];
+      text?: string;
+    }[],
+    globalNote?: string,
+  ) => post<void>(`/api/projects/${id}/ask/respond`, { requestId, answers, globalNote, sessionId }),
   askPending: (id: string, sessionId: string) =>
     request<{
       pending: boolean;
@@ -464,7 +470,7 @@ export const api = {
       question?: string;
       options?: string[];
       multi?: boolean;
-      questions?: { question: string; options?: string[]; multi?: boolean }[];
+      questions?: AskQuestionDTO[];
     }>(`/api/projects/${id}/ask/pending?sessionId=${encodeURIComponent(sessionId)}`),
   // Background jobs: the detached commands still running for a session, and
   // stopping one. A finished job is read from its transcript row instead.

@@ -516,7 +516,7 @@ type AskItem = {
   kind: 'ask';
   key: string;
   questions: AskQuestionView[];
-  result?: AskAnswerView[];
+  result?: AskResultView;
   failed?: boolean;
 };
 
@@ -1000,11 +1000,13 @@ function DisplayBlock({ display }: { display: unknown }) {
         version?: unknown;
         changelog?: unknown;
         diff?: unknown;
+        globalNote?: unknown;
       }
     | null;
   if (d?.kind === 'answers') {
     const answers = normalizeAnswers(d.answers);
-    if (answers.length > 0) return <AskResultBlock answers={answers} />;
+    const globalNote = str(d.globalNote).trim() || undefined;
+    if (answers.length > 0) return <AskResultBlock result={{ answers, globalNote }} />;
   }
   if (d?.kind === 'files') {
     const files = (Array.isArray(d.files) ? d.files : []).filter((f): f is string => typeof f === 'string');
@@ -1998,7 +2000,7 @@ type CollapseData = {
   reasoning?: string;
   calls: ToolCall[];
   results: ToolCall[];
-  ask: { questions: AskQuestionView[]; result?: AskAnswerView[]; failed?: boolean } | null;
+  ask: { questions: AskQuestionView[]; result?: AskResultView; failed?: boolean } | null;
   askCount: number;
   /** A finished background command's result row, folded into the turn group. */
   background?: { key: string; text: string };
@@ -2010,7 +2012,7 @@ function collapseData(item: MsgItem): CollapseData {
   const ask = askCall
     ? {
         questions: askQuestions(askCall.detail),
-        result: askResult ? askAnswers(askResult.detail) : undefined,
+        result: askResult ? askResultOf(askResult.detail) : undefined,
       }
     : null;
   return {
@@ -2019,7 +2021,7 @@ function collapseData(item: MsgItem): CollapseData {
     calls: (item.toolCalls ?? []).filter((c) => c.name !== 'ask_user'),
     results: (item.toolResults ?? []).filter((r) => r.name !== 'ask_user'),
     ask: ask
-      ? { ...ask, failed: ask.result !== undefined && ask.result.length === 0 }
+      ? { ...ask, failed: ask.result !== undefined && ask.result.answers.length === 0 }
       : null,
     askCount: ask ? ask.questions.length : 0,
     background: item.background ? { key: item.key, text: item.content } : undefined,
@@ -2033,7 +2035,7 @@ function CollapsedToolBlocks({
   onOpenBackground,
 }: {
   d: CollapseData;
-  onAskAnswered: (answers: AskAnswerView[]) => void;
+  onAskAnswered: (result: AskResultView) => void;
   onOpenBackground?: (text: string) => void;
 }) {
   return (
@@ -2083,7 +2085,7 @@ function CollapsedTools({
 }: {
   d: CollapseData;
   streaming: boolean;
-  onAskAnswered: (answers: AskAnswerView[]) => void;
+  onAskAnswered: (result: AskResultView) => void;
 }) {
   const { reasoning, calls, results, ask, askCount } = d;
   // A pending question must stay visible so it can be answered — only
@@ -2135,7 +2137,7 @@ function CollapsedToolsGroup({
   onOpenBackground,
 }: {
   members: CollapseData[];
-  onAskAnswered: (answers: AskAnswerView[]) => void;
+  onAskAnswered: (result: AskResultView) => void;
   onOpenBackground?: (text: string) => void;
 }) {
   const anyPendingAsk = members.some((m) => m.ask != null && m.ask.result === undefined && !m.ask.failed);
@@ -2244,8 +2246,43 @@ function ToolBlocks({ calls, results }: { calls: ToolCall[]; results: ToolCall[]
   return <div className="flex flex-col gap-1.5">{out}</div>;
 }
 
-type AskQuestionView = { question: string; options: string[]; multi?: boolean };
-type AskAnswerView = { question: string; answer: string };
+type AskOptionView = { label: string; description?: string; preview?: string };
+type AskQuestionView = { question: string; options: AskOptionView[]; multi?: boolean };
+type AskAnswerView = {
+  question: string;
+  answer: string;
+  /** The option labels picked, in pick order. */
+  options?: string[];
+  /** What the user typed in the free-text row. */
+  text?: string;
+};
+/** An answered questionnaire: the answers plus the note on the ask as a whole. */
+type AskResultView = { answers: AskAnswerView[]; globalNote?: string };
+
+const str = (v: unknown): string => (typeof v === 'string' ? v : '');
+
+// An option is {label, description?, preview?}; older arguments (and older turn
+// records) used bare strings, and both render the same.
+function askOptionViews(value: unknown): AskOptionView[] {
+  if (!Array.isArray(value)) return [];
+  const out: AskOptionView[] = [];
+  for (const o of value) {
+    if (typeof o === 'string') {
+      if (o.trim()) out.push({ label: o });
+      continue;
+    }
+    if (!o || typeof o !== 'object') continue;
+    const v = o as { label?: unknown; description?: unknown; preview?: unknown };
+    const label = str(v.label);
+    if (!label.trim()) continue;
+    out.push({
+      label,
+      description: str(v.description).trim() || undefined,
+      preview: str(v.preview).trim() || undefined,
+    });
+  }
+  return out;
+}
 
 // Parses an ask_user tool call's arguments JSON into the question list
 // ("questions" array, or a single "question" with options). Falls back to the
@@ -2263,15 +2300,19 @@ function askQuestions(detail: string): AskQuestionView[] {
       options?: unknown;
       multi?: unknown;
     }): AskQuestionView | null => {
-      if (typeof q.question !== 'string' || !q.question.trim()) return null;
+      const question = str(q.question);
+      if (!question.trim()) return null;
       return {
-        question: q.question,
-        options: Array.isArray(q.options) ? q.options.filter((o): o is string => typeof o === 'string') : [],
+        question,
+        options: askOptionViews(q.options),
         multi: q.multi === true,
       };
     };
     if (Array.isArray(a.questions)) {
-      const list = a.questions.map(clean).filter((q): q is AskQuestionView => q !== null);
+      const list = a.questions
+        .filter((q): q is { question?: unknown; options?: unknown; multi?: unknown } => !!q && typeof q === 'object')
+        .map(clean)
+        .filter((q): q is AskQuestionView => q !== null);
       if (list.length > 0) return list;
     }
     const single = clean(a);
@@ -2282,15 +2323,23 @@ function askQuestions(detail: string): AskQuestionView[] {
   }
 }
 
-// Maps an array of {question,answer} objects to views, dropping blanks.
+// Maps an array of {question,answer,options,text} objects to views, dropping
+// blanks.
 function parseAnswerList(value: unknown): AskAnswerView[] {
   if (!Array.isArray(value)) return [];
   return value
-    .filter((a): a is { question?: unknown; answer?: unknown } => typeof a === 'object' && a !== null)
-    .map((a) => ({
-      question: typeof a.question === 'string' ? a.question : '',
-      answer: typeof a.answer === 'string' ? a.answer : '',
-    }))
+    .filter((a): a is Record<string, unknown> => typeof a === 'object' && a !== null)
+    .map((a) => {
+      const options = Array.isArray(a.options)
+        ? a.options.filter((o): o is string => typeof o === 'string')
+        : [];
+      return {
+        question: str(a.question),
+        answer: str(a.answer),
+        options: options.length > 0 ? options : undefined,
+        text: str(a.text) || undefined,
+      };
+    })
     .filter((a) => a.answer !== '');
 }
 
@@ -2321,39 +2370,49 @@ function normalizeAnswers(value: unknown): AskAnswerView[] {
   return out;
 }
 
-// Extracts the answers from an ask_user tool result: multi-question results
-// are {"answers":[{question,answer},…]}, single ones {"answer": "..."}. A bare
+// Extracts the answered questionnaire from an ask_user tool result: multi- and
+// single-question results are {"answer"/"answers":…, "globalNote":…}. A bare
 // array of {question,answer} (what some paths store) is accepted too.
-function askAnswers(detail: string): AskAnswerView[] {
+function askResultOf(detail: string): AskResultView {
   try {
     const parsed = JSON.parse(detail) as unknown;
     const r = (Array.isArray(parsed) ? { answers: parsed } : parsed) as {
       answer?: unknown;
       answers?: unknown;
+      globalNote?: unknown;
     };
+    const globalNote = str(r.globalNote).trim() || undefined;
     const list = normalizeAnswers(r.answers);
-    if (list.length > 0) return list;
+    if (list.length > 0) return { answers: list, globalNote };
     if (typeof r.answer === 'string' && r.answer !== '') {
       const nested = unwrapAnswer(r.answer);
-      if (nested.length > 0) return nested;
-      return [{ question: '', answer: r.answer }];
+      if (nested.length > 0) return { answers: nested, globalNote };
+      return { answers: [{ question: '', answer: r.answer }], globalNote };
     }
-    return [];
+    return { answers: [], globalNote };
   } catch {
-    return [];
+    return { answers: [] };
   }
 }
 
-// Answers in progress for an ask_user question, keyed by the questions asked.
-// The ask block lives in the transcript, so anything that rebuilds the
+// Answers in progress for an ask_user questionnaire, keyed by the questions
+// asked. The ask block lives in the transcript, so anything that rebuilds the
 // transcript — a dropped live stream (the watch effect reloads it), the app
 // returning from the background, a PWA relaunch — remounts the block, and its
-// local state would otherwise throw away everything the user had already typed
-// into a multi-question stepper. sessionStorage so a relaunch keeps it too, and
+// local state would otherwise throw away every option and every keystroke the
+// user had put into the form. sessionStorage so a relaunch keeps it too, and
 // bounded because only the asks still open in this tab matter.
-const ASK_DRAFTS_KEY = 'v1-ask-drafts';
+const ASK_DRAFTS_KEY = 'v1-ask-drafts-v2';
 const ASK_DRAFT_LIMIT = 8;
-type AskDraft = { step: number; drafts: string[] };
+type AskDraft = { picks: string[][]; texts: string[]; globalNote: string };
+
+function emptyAskDraft(questions: AskQuestionView[]): AskDraft {
+  return {
+    picks: questions.map(() => []),
+    texts: questions.map(() => ''),
+    globalNote: '',
+  };
+}
 
 function readAskDrafts(): Record<string, AskDraft> {
   try {
@@ -2368,14 +2427,22 @@ function readAskDrafts(): Record<string, AskDraft> {
 // The questions themselves are the identity: a reloaded or replayed ask carries
 // no request id here, and the signature survives it unchanged.
 function askDraftSignature(questions: AskQuestionView[]): string {
-  return questions.map((q) => `${q.question}\u0000${q.options.join('\u0001')}`).join('\u0002');
+  return questions
+    .map((q) => `${q.question}\u0000${q.options.map((o) => o.label).join('\u0001')}`)
+    .join('\u0002');
 }
 
 function loadAskDraft(questions: AskQuestionView[]): AskDraft | null {
   const d = readAskDrafts()[askDraftSignature(questions)];
-  if (!d || !Array.isArray(d.drafts) || d.drafts.length !== questions.length) return null;
-  const step = Number.isInteger(d.step) ? Math.min(Math.max(0, d.step), questions.length - 1) : 0;
-  return { step, drafts: d.drafts.map((x) => (typeof x === 'string' ? x : '')) };
+  if (!d || !Array.isArray(d.picks) || !Array.isArray(d.texts)) return null;
+  if (d.picks.length !== questions.length || d.texts.length !== questions.length) return null;
+  return {
+    picks: d.picks.map((p) =>
+      Array.isArray(p) ? p.filter((x): x is string => typeof x === 'string') : [],
+    ),
+    texts: d.texts.map((x) => (typeof x === 'string' ? x : '')),
+    globalNote: typeof d.globalNote === 'string' ? d.globalNote : '',
+  };
 }
 
 function storeAskDraft(signature: string, draft: AskDraft | null) {
@@ -2392,15 +2459,54 @@ function storeAskDraft(signature: string, draft: AskDraft | null) {
   }
 }
 
-// The agent's ask_user question: the question with tappable options while
-// pending, the chosen answer once answered. Rendered inline in the transcript
-// (never inside the tool collapse) and for live streams.
-// The agent's ask_user block. A single question shows the options + answer
-// input directly; multiple questions render as a stepper the user walks
-// through (back/next, answers editable) with a final "confirm all" action.
-// A pending question must stay open to be answered; once answered it collapses
-// to a summary line (click to expand), matching what a reloaded transcript
-// shows, so an answered question doesn't hold the chat open.
+// A pick row: checkbox (multi) or radio (single) marker + label + description.
+function AskOptionButton({
+  option,
+  picked,
+  multi,
+  onPick,
+}: {
+  option: AskOptionView;
+  picked: boolean;
+  multi: boolean;
+  onPick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onPick}
+      aria-pressed={picked}
+      className={`flex w-full items-start gap-2 rounded-md border px-2.5 py-2 text-left text-xs transition-colors ${
+        picked
+          ? 'border-accent bg-accent/10 text-text'
+          : 'border-border/60 text-dim hover:border-accent/50 hover:text-text'
+      }`}
+    >
+      <span
+        className={`mt-[2px] flex h-3.5 w-3.5 shrink-0 items-center justify-center border ${
+          multi ? 'rounded-sm' : 'rounded-full'
+        } ${picked ? 'border-accent bg-accent text-accent-text' : 'border-border-strong'}`}
+      >
+        {picked && <IconCheck className="h-2.5 w-2.5" />}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block break-words font-medium">{option.label}</span>
+        {option.description && (
+          <span className="mt-0.5 block break-words text-[11px] leading-snug text-faint">
+            {option.description}
+          </span>
+        )}
+      </span>
+    </button>
+  );
+}
+
+// The agent's ask_user questionnaire: every question stacked in one form, each
+// with its options (label + description, and the picked option's markdown
+// preview beside them), a free-text row so the user can always answer in their
+// own words, and one note for the whole ask. Pending it is a form; answered it
+// collapses to a summary line (click to expand), matching what a reloaded
+// transcript shows, so an answered question doesn't hold the chat open.
 function AskBlock({
   questions,
   result,
@@ -2408,19 +2514,14 @@ function AskBlock({
   onAnswer,
 }: {
   questions: AskQuestionView[];
-  result?: AskAnswerView[];
+  result?: AskResultView;
   /** The ask ended without answers (timed out, canceled). */
   failed?: boolean;
-  onAnswer?: (answers: AskAnswerView[]) => void;
+  onAnswer?: (result: AskResultView) => void;
 }) {
   const [draft, setDraft] = useState<AskDraft>(
-    () => loadAskDraft(questions) ?? { step: 0, drafts: questions.map(() => '') },
+    () => loadAskDraft(questions) ?? emptyAskDraft(questions),
   );
-  const { step, drafts } = draft;
-  const setStep = (next: number | ((prev: number) => number)) =>
-    setDraft((d) => ({ ...d, step: typeof next === 'function' ? next(d.step) : next }));
-  const setDrafts = (next: string[] | ((prev: string[]) => string[])) =>
-    setDraft((d) => ({ ...d, drafts: typeof next === 'function' ? next(d.drafts) : next }));
   const answered = result !== undefined;
   const [open, setOpen] = useState(!answered);
   useEffect(() => {
@@ -2432,20 +2533,50 @@ function AskBlock({
   useEffect(() => {
     storeAskDraft(signature, answered || failed ? null : draft);
   }, [signature, answered, failed, draft]);
+
   const multi = questions.length > 1;
-  const q = questions[Math.min(step, questions.length - 1)];
-  const cur = drafts[step] ?? '';
-  // A multi question still answers with one string — the options picked so far,
-  // joined — so the drafts, the input and the submitted answers keep their shape.
-  const picked = q.multi ? cur.split(', ').filter(Boolean) : [];
-  const allAnswered = drafts.every((d) => d.trim() !== '');
   const askSummary = multi ? `Asked ${questions.length} questions` : 'Asked 1 question';
 
-  const setCur = (v: string) =>
-    setDrafts((prev) => prev.map((d, i) => (i === step ? v : d)));
+  const answerOf = (i: number): string => {
+    const picks = draft.picks[i] ?? [];
+    const text = (draft.texts[i] ?? '').trim();
+    return [picks.join(', '), text].filter(Boolean).join(' — ');
+  };
+  const complete = questions.every((_, i) => answerOf(i) !== '');
+
+  const togglePick = (i: number, label: string) =>
+    setDraft((d) => ({
+      ...d,
+      picks: d.picks.map((p, j) => {
+        if (j !== i) return p;
+        if (questions[i].multi) {
+          return p.includes(label) ? p.filter((x) => x !== label) : [...p, label];
+        }
+        return p[0] === label ? [] : [label];
+      }),
+    }));
+  const setText = (i: number, v: string) =>
+    setDraft((d) => ({ ...d, texts: d.texts.map((t, j) => (j === i ? v : t)) }));
+
+  const submit = () => {
+    if (!complete || !onAnswer) return;
+    onAnswer({
+      answers: questions.map((q, i) => {
+        const picks = draft.picks[i] ?? [];
+        const text = (draft.texts[i] ?? '').trim();
+        return {
+          question: q.question,
+          answer: answerOf(i),
+          ...(picks.length > 0 ? { options: picks } : {}),
+          ...(text ? { text } : {}),
+        };
+      }),
+      globalNote: draft.globalNote.trim() || undefined,
+    });
+  };
 
   if (answered && !open) {
-    const answers = result!.map((r) => r.answer).filter(Boolean);
+    const answers = result!.answers.map((r) => r.answer).filter(Boolean);
     return (
       <button
         type="button"
@@ -2477,7 +2608,7 @@ function AskBlock({
           <div className="flex items-start gap-2">
             <IconUser className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
             <div className="min-w-0 flex-1 space-y-2">
-              {result!.map((r, i) => (
+              {result!.answers.map((r, i) => (
                 <div key={i}>
                   <div className="flex items-start gap-1.5 text-text">
                     {multi && (
@@ -2487,122 +2618,107 @@ function AskBlock({
                       <Markdown text={r.question || questions[i]?.question || ''} />
                     </div>
                   </div>
-                  <p className="mt-1 flex items-center gap-1.5 text-xs text-dim">
-                    <IconCheck className="h-3.5 w-3.5 shrink-0 text-emerald-400" />
-                    {r.answer}
+                  <p className="mt-1 flex items-start gap-1.5 text-xs text-dim">
+                    <IconCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-400" />
+                    <span className="min-w-0 flex-1 break-words">{r.answer}</span>
                   </p>
                 </div>
               ))}
+              {result!.globalNote && (
+                <p className="border-t border-border/40 pt-2 text-[11px] leading-snug text-faint">
+                  {result!.globalNote}
+                </p>
+              )}
             </div>
           </div>
         </>
       ) : failed ? (
         <div className="flex items-start gap-2">
           <IconUser className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
-          <div className="min-w-0 flex-1 text-text">
-            <Markdown text={multi ? questions.map((qq) => qq.question).join(' · ') : q.question} />
+          <div className="min-w-0 flex-1 space-y-1 text-text">
+            {questions.map((q, i) => (
+              <Markdown key={i} text={q.question} />
+            ))}
           </div>
         </div>
       ) : (
         <>
-          {multi && (
-            <div className="mb-1.5 px-1 text-[10px] font-medium uppercase tracking-wider text-faint">
-              Question {step + 1} of {questions.length}
-            </div>
-          )}
-          <div className="flex items-start gap-2">
-            <IconUser className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
-            <div className="min-w-0 flex-1 text-text">
-              <Markdown text={q.question} />
-            </div>
+          <div className="mb-2 flex items-center gap-1.5 text-[10px] text-dim">
+            <IconUser className="h-3 w-3 shrink-0 text-accent" />
+            <span className="min-w-0 flex-1 truncate text-faint">
+              {multi ? `${questions.length} questions from the agent` : 'The agent needs an answer'}
+            </span>
           </div>
-          {q.options.length > 0 && (
-            <div className="mt-2.5 flex flex-wrap gap-1.5">
-              {q.options.map((o) => {
-                const on = q.multi ? picked.includes(o) : cur === o;
-                return (
-                  <Button
-                    key={o}
-                    variant="outline"
-                    className={`px-3 text-xs whitespace-normal break-words text-left ${on ? 'border-accent text-text' : ''}`}
-                    onClick={() =>
-                      q.multi
-                        ? setCur(
-                            (picked.includes(o)
-                              ? picked.filter((x) => x !== o)
-                              : [...picked, o]
-                            ).join(', '),
-                          )
-                        : setCur(o)
-                    }
-                  >
-                    {q.multi && (
-                      <IconCheck
-                        className={`mr-1 inline h-3 w-3 shrink-0 ${on ? 'text-accent' : 'opacity-30'}`}
-                      />
+          <div className="space-y-4">
+            {questions.map((q, i) => {
+              const picks = draft.picks[i] ?? [];
+              const preview = q.options.find((o) => picks.includes(o.label))?.preview;
+              return (
+                <div key={i} className="space-y-2">
+                  <div className="flex items-start gap-1.5 text-text">
+                    {multi && (
+                      <span className="mt-0.5 shrink-0 font-mono text-[10px] text-faint">{i + 1}.</span>
                     )}
-                    {o}
-                  </Button>
-                );
-              })}
-            </div>
-          )}
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (multi && !allAnswered) {
-                setStep((s) => Math.min(s + 1, questions.length - 1));
-              } else if (onAnswer) {
-                onAnswer(questions.map((qq, i) => ({ question: qq.question, answer: drafts[i] ?? '' })));
-              }
-            }}
-            className="mt-2.5 flex items-end gap-2"
-          >
-            <div className="flex-1">
-              <Input
-                value={cur}
-                onChange={(e) => setCur(e.target.value)}
-                placeholder={q.options.length > 0 ? '…or type an answer' : 'Type an answer…'}
-                autoComplete="off"
-              />
-            </div>
-            {multi ? (
-              <div className="flex shrink-0 gap-1.5">
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="h-[42px] px-3 text-xs sm:h-[38px]"
-                  disabled={step === 0}
-                  onClick={() => setStep((s) => Math.max(0, s - 1))}
-                >
-                  Back
-                </Button>
-                {step < questions.length - 1 ? (
-                  <Button
-                    type="submit"
-                    variant="outline"
-                    className="h-[42px] px-3 text-xs sm:h-[38px]"
-                    disabled={!cur.trim()}
-                  >
-                    Next
-                  </Button>
-                ) : (
-                  <Button
-                    type="submit"
-                    variant="outline"
-                    className="h-[42px] px-3 text-xs sm:h-[38px]"
-                    disabled={!allAnswered}
-                  >
-                    Confirm all
-                  </Button>
-                )}
-              </div>
-            ) : (
-              <Button type="submit" variant="outline" className="h-[42px] sm:h-[38px]" disabled={!cur.trim()}>
-                Answer
-              </Button>
+                    <div className="min-w-0 flex-1">
+                      <Markdown text={q.question} />
+                      {q.multi && (
+                        <span className="text-[10px] text-faint">Select all that apply</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+                      {q.options.map((o) => (
+                        <AskOptionButton
+                          key={o.label}
+                          option={o}
+                          picked={picks.includes(o.label)}
+                          multi={q.multi === true}
+                          onPick={() => togglePick(i, o.label)}
+                        />
+                      ))}
+                      <Input
+                        value={draft.texts[i] ?? ''}
+                        onChange={(e) => setText(i, e.target.value)}
+                        placeholder={
+                          q.options.length > 0 ? '…or type your own answer' : 'Type your answer…'
+                        }
+                        autoComplete="off"
+                      />
+                    </div>
+                    {preview && (
+                      <div className="hidden min-w-0 flex-1 overflow-hidden rounded-md border border-border/60 bg-bg p-2 text-[11px] leading-snug lg:block">
+                        <Markdown text={preview} />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div className="mt-3 space-y-1 border-t border-border/40 pt-3">
+            <div className="text-[10px] text-faint">Anything else for the agent? (optional)</div>
+            <Input
+              value={draft.globalNote}
+              onChange={(e) => setDraft((d) => ({ ...d, globalNote: e.target.value }))}
+              placeholder="Add context that applies to the whole set…"
+              autoComplete="off"
+            />
+          </div>
+          <div className="mt-3 flex items-center justify-end gap-2">
+            {!complete && (
+              <span className="text-[10px] text-faint">Answer every question to send</span>
             )}
-          </form>
+            <Button
+              type="button"
+              variant="outline"
+              className="h-[42px] px-3 text-xs sm:h-[38px]"
+              disabled={!complete}
+              onClick={submit}
+            >
+              Send {multi ? 'answers' : 'answer'}
+            </Button>
+          </div>
         </>
       )}
     </div>
@@ -2953,7 +3069,8 @@ function DelegateTranscriptDialog({
   );
 }
 
-function AskResultBlock({ answers }: { answers: AskAnswerView[] }) {
+function AskResultBlock({ result }: { result: AskResultView }) {
+  const { answers } = result;
   return (
     <div className="rounded-lg border border-accent/30 bg-surface p-2.5">
       <div className="mb-1 flex items-center gap-1.5 text-[10px] text-faint">
@@ -2974,6 +3091,11 @@ function AskResultBlock({ answers }: { answers: AskAnswerView[] }) {
             </p>
           </div>
         ))}
+        {result.globalNote && (
+          <p className="border-t border-border/40 pt-1.5 text-[11px] leading-snug text-faint">
+            {result.globalNote}
+          </p>
+        )}
       </div>
     </div>
   );
@@ -2987,8 +3109,8 @@ function ToolResultBlock({ name, detail, display: resultDisplay }: ToolCall) {
   // or a result stored without its call) would otherwise show raw JSON. Render
   // the answers the way the question block does instead.
   if (name === 'ask_user') {
-    const answers = askAnswers(detail);
-    if (answers.length > 0) return <AskResultBlock answers={answers} />;
+    const answered = askResultOf(detail);
+    if (answered.answers.length > 0) return <AskResultBlock result={answered} />;
   }
   // A sub-agent result gets a card with its answer and a transcript action,
   // rather than the generic result body with a marker to strip.
@@ -3214,7 +3336,7 @@ const MessageRow = memo(function MessageRow({
   onEditStart: (key: string, editing: boolean) => void;
   onImageClick: (url: string, name: string) => void;
   onFileClick: (url: string, name: string) => void;
-  onAskAnswered: (answers: AskAnswerView[]) => void;
+  onAskAnswered: (result: AskResultView) => void;
   /** Open a finished background task's full output in the tasks modal. */
   onOpenBackground: (text: string) => void;
   currency: string;
@@ -3988,10 +4110,10 @@ export default function ChatPane({
           p.questions && p.questions.length > 0
             ? p.questions.map((q) => ({
                 question: q.question,
-                options: q.options ?? [],
+                options: askOptionViews(q.options),
                 multi: q.multi === true,
               }))
-            : [{ question: p.question, options: p.options ?? [] }];
+            : [{ question: p.question, options: askOptionViews(p.options) }];
         setAskPrompt({ requestId: p.requestId, questions });
       } else {
         setAskPrompt(null);
@@ -4735,14 +4857,15 @@ export default function ChatPane({
             // question_request never replaced the bare tool row (a reconnect
             // or timeout), convert that row into the ask block so it does not
             // fall through to the raw-JSON tool renderer.
-            const ans = ev.detail ? askAnswers(ev.detail) : [];
+            const ans = ev.detail ? askResultOf(ev.detail) : undefined;
+            const hasAns = (ans?.answers.length ?? 0) > 0;
             const stack = toolStackRef.current['ask_user'] ?? [];
             const pendingKey = stack.pop();
             update((prev) => {
               if (prev.some((it) => it.kind === 'ask')) {
                 return prev.map((it) =>
                   it.kind === 'ask'
-                    ? ans.length > 0
+                    ? hasAns
                       ? { ...it, result: ans }
                       : !ev.ok
                         ? { ...it, failed: true }
@@ -4757,8 +4880,8 @@ export default function ChatPane({
                         kind: 'ask' as const,
                         key: it.key,
                         questions: askQuestions(it.call ?? it.detail),
-                        result: ans.length > 0 ? ans : undefined,
-                        failed: ans.length === 0 && !ev.ok,
+                        result: hasAns ? ans : undefined,
+                        failed: !hasAns && !ev.ok,
                       }
                     : it,
                 );
@@ -4827,10 +4950,10 @@ export default function ChatPane({
             ev.questions && ev.questions.length > 0
               ? ev.questions.map((q) => ({
                   question: q.question,
-                  options: q.options ?? [],
+                  options: askOptionViews(q.options),
                   multi: q.multi === true,
                 }))
-              : [{ question: ev.text ?? '', options: ev.options ?? [] }];
+              : [{ question: ev.text ?? '', options: askOptionViews(ev.options) }];
           setAskPrompt({ requestId: ev.requestId, questions });
           // Replace the bare ask_user tool row with the inline question block.
           const stack = toolStackRef.current['ask_user'] ?? [];
@@ -5740,9 +5863,10 @@ export default function ChatPane({
   );
 
   const answerAsk = useCallback(
-    async (answers: AskAnswerView[]) => {
+    async (result: AskResultView) => {
       const a = askPrompt;
-      const clean = answers.filter((x) => x.answer.trim() !== '');
+      const clean = result.answers.filter((x) => x.answer.trim() !== '');
+      const globalNote = result.globalNote?.trim() || undefined;
       if (!a || clean.length === 0) return;
       // Show the answers in the transcript block right away — the persisted
       // tool result catches up on the next load.
@@ -5753,7 +5877,7 @@ export default function ChatPane({
           const it = prev[i];
           if (it.kind === 'ask') {
             const next = [...prev];
-            next[i] = { ...it, result: clean };
+            next[i] = { ...it, result: { answers: clean, globalNote } };
             return next;
           }
           if (
@@ -5766,7 +5890,7 @@ export default function ChatPane({
               ...it,
               toolResults: [
                 ...(it.toolResults ?? []),
-                { name: 'ask_user', detail: JSON.stringify({ answers: clean }) },
+                { name: 'ask_user', detail: JSON.stringify({ answers: clean, globalNote }) },
               ],
             };
             return next;
@@ -5776,7 +5900,7 @@ export default function ChatPane({
       });
       setAskPrompt(null);
       try {
-        await api.askRespond(projectId, sessionId, a.requestId, clean);
+        await api.askRespond(projectId, sessionId, a.requestId, clean, globalNote);
       } catch {
         // 404 — already answered or timed out
       }

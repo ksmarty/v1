@@ -51,16 +51,16 @@ func TestAskLifecycle(t *testing.T) {
 
 	answered := make(chan string, 1)
 	go func() {
-		ans, err := ask(ctx, []agent.AskQuestion{{Question: "Cats or dogs?", Options: []string{"Cats", "Dogs"}}})
+		ans, err := ask(ctx, []agent.AskQuestion{{Question: "Cats or dogs?", Options: []agent.AskOption{{Label: "Cats", Description: "quieter"}, {Label: "Dogs", Description: "needs walks"}}}})
 		if err != nil {
 			answered <- "err:" + err.Error()
 			return
 		}
-		if len(ans) != 1 || ans[0].Answer != "Cats" {
+		if len(ans.Answers) != 1 || ans.Answers[0].Answer != "Cats" {
 			answered <- "wrong:" + fmt.Sprint(ans)
 			return
 		}
-		answered <- ans[0].Answer
+		answered <- ans.Answers[0].Answer
 	}()
 
 	// The question is emitted and persisted.
@@ -169,38 +169,51 @@ func TestAskLifecycle(t *testing.T) {
 	}
 }
 
-// parseAskAnswers must accept the [{question,answer}] array the UI posts for a
-// single-question ask, not just the plain string the older client sent —
-// otherwise the whole JSON array is stored as the answer and shown in the chat.
+// parseAskAnswers must accept the {answers:[{question,answer}]} envelope the UI
+// posts for a single-question ask, not just the plain string the older client
+// sent — otherwise the whole JSON payload is stored as the answer and shown in
+// the chat. Notes and structured picks ride along with it.
 func TestParseAskAnswers(t *testing.T) {
 	one := []agent.AskQuestion{{Question: "Which days work best for you?"}}
-	got := parseAskAnswers(`[{"question":"Which days work best for you?","answer":"Wednesday"}]`, one)
-	if len(got) != 1 || got[0].Answer != "Wednesday" || got[0].Question != one[0].Question {
-		t.Fatalf("array payload: %+v", got)
+	got := parseAskAnswers(`{"answers":[{"question":"Which days work best for you?","answer":"Wednesday"}]}`, one)
+	if len(got.Answers) != 1 || got.Answers[0].Answer != "Wednesday" || got.Answers[0].Question != one[0].Question {
+		t.Fatalf("envelope payload: %+v", got)
+	}
+
+	// A bare array (the older UI's shape) still parses.
+	got = parseAskAnswers(`[{"question":"Which days work best for you?","answer":"Wednesday"}]`, one)
+	if len(got.Answers) != 1 || got.Answers[0].Answer != "Wednesday" {
+		t.Fatalf("bare array payload: %+v", got)
+	}
+
+	// Picks, typed text and the global note survive.
+	got = parseAskAnswers(`{"answers":[{"question":"Which days work best for you?","answer":"Wed, Fri","options":["Wed","Fri"],"text":"after 5"}],"globalNote":"ship friday"}`, one)
+	if len(got.Answers) != 1 || got.Answers[0].Answer != "Wed, Fri" || len(got.Answers[0].Options) != 2 || got.Answers[0].Text != "after 5" || got.GlobalNote != "ship friday" {
+		t.Fatalf("rich payload: %+v", got)
 	}
 
 	// A plain answer string still works (backward compatible).
 	got = parseAskAnswers("Cats", one)
-	if len(got) != 1 || got[0].Answer != "Cats" || got[0].Question != one[0].Question {
+	if len(got.Answers) != 1 || got.Answers[0].Answer != "Cats" || got.Answers[0].Question != one[0].Question {
 		t.Fatalf("plain payload: %+v", got)
 	}
 
 	// A literal JSON answer without an "answer" key is not the envelope.
 	got = parseAskAnswers(`[{"x":1}]`, one)
-	if len(got) != 1 || got[0].Answer != `[{"x":1}]` {
+	if len(got.Answers) != 1 || got.Answers[0].Answer != `[{"x":1}]` {
 		t.Fatalf("literal json: %+v", got)
 	}
 
 	// Multi-question: the array maps positionally.
 	two := []agent.AskQuestion{{Question: "a"}, {Question: "b"}}
-	got = parseAskAnswers(`[{"question":"a","answer":"1"},{"question":"b","answer":"2"}]`, two)
-	if len(got) != 2 || got[0].Answer != "1" || got[1].Answer != "2" {
+	got = parseAskAnswers(`{"answers":[{"question":"a","answer":"1"},{"question":"b","answer":"2"}]}`, two)
+	if len(got.Answers) != 2 || got.Answers[0].Answer != "1" || got.Answers[1].Answer != "2" {
 		t.Fatalf("multi payload: %+v", got)
 	}
 
 	// A malformed multi-question payload yields empty answers, not a JSON blob.
 	got = parseAskAnswers("garbage", two)
-	if len(got) != 2 || got[0].Answer != "" || got[1].Question != "b" {
+	if len(got.Answers) != 2 || got.Answers[0].Answer != "" || got.Answers[1].Question != "b" {
 		t.Fatalf("fallback: %+v", got)
 	}
 }

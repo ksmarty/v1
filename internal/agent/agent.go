@@ -30,7 +30,7 @@ Rules:
 - Use remember with a category (preference/episodic/fact/plan) and importance (2+ pins the memory so it never decays) for durable project facts.
 - Keep a visible todo list of your work using set_todos. Use it for any task with three or more steps: create the full list up front, mark exactly one item in_progress before you start it, and update the list the moment an item completes — never batch the updates. The list is how the user follows your progress, so keep it current even when the work looks straightforward.
 - Save durable facts, decisions and user preferences with the remember tool; delete stale ones with forget. Write each one as a clear sentence or short paragraph — there is no length limit, and the memory is only injected into the turns where it is relevant, so being precise costs nothing. Add tags (short technical terms like file names, symbols or technologies) to every memory: tags are matched separately from the prose and are the strongest signal that a memory is the right one for a question.
-- If something important is unclear or you need a decision, use ask_user instead of guessing.
+- If something important is unclear or you need a decision, use ask_user instead of guessing. Ask with written-out options (a label plus what the choice means or costs), group everything you need to know into one questionnaire of up to four questions, and add a preview when the choice is easier to see than to describe — one interruption with typed choices beats five free-form round trips. The user answers each question by picking options, typing their own answer, or both, and can add one note about the whole set: treat that note as context for your decision, not as an answer.
 - Never inspect secrets: do not read process environments (/proc/*/environ) or credential files (.env, *.pem, auth.json) to discover configuration. They hold live credentials, and anything you print is stored in the transcript and sent to the model. Ask the user instead.
 - Keep your responses concise.`
 
@@ -1322,8 +1322,12 @@ var tools = []llm.Tool{
 	{
 		Type: "function",
 		Function: llm.ToolFunction{
-			Name:        "ask_user",
-			Description: "Ask the user one or more questions and wait for their answers. Use when you need decisions, clarifications or preferences instead of guessing. Pass a single question in \"question\" (with optional \"options\"); to ask several in sequence, pass them in \"questions\" — the user steps through them and confirms all answers at once. Set multi to true on a question whose options are not mutually exclusive, so the user can pick several.",
+			Name: "ask_user",
+			Description: "Put a structured questionnaire to the user and wait for their answers — use it when a decision is buried in the task instead of guessing. " +
+				"Each question offers 2-4 authored options, every option a written-out label plus a description of what it means or costs, and optionally a markdown preview (a snippet, a config, a diagram, an ASCII mockup) the UI renders beside the list so the user compares artifacts, not labels. " +
+				"The user can always answer in their own words instead of picking, and can add a note about the questionnaire as a whole — read it as context. " +
+				"Pass a single question in \"question\" (with optional \"options\"); to ask several at once, pass them in \"questions\" (up to 4) — they arrive as one form the user fills in and sends in one go. " +
+				"Set multi to true on a question whose options are not mutually exclusive.",
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -1333,8 +1337,8 @@ var tools = []llm.Tool{
 					},
 					"options": map[string]any{
 						"type":        "array",
-						"description": "Optional 2-4 suggested answers for a single question.",
-						"items":       map[string]any{"type": "string"},
+						"description": "Optional 2-4 suggested answers for a single question. Each option is an object; a bare string is read as its label.",
+						"items":       askOptionSchema(),
 					},
 					"multi": map[string]any{
 						"type":        "boolean",
@@ -1342,14 +1346,14 @@ var tools = []llm.Tool{
 					},
 					"questions": map[string]any{
 						"type":        "array",
-						"description": "Multiple questions to ask in sequence (2-8). Each has a question and optional 2-4 options.",
+						"description": "Several questions to ask in one form (2-4). Each has a question and optional 2-4 options.",
 						"items": map[string]any{
 							"type": "object",
 							"properties": map[string]any{
 								"question": map[string]any{"type": "string"},
 								"options": map[string]any{
 									"type":  "array",
-									"items": map[string]any{"type": "string"},
+									"items": askOptionSchema(),
 								},
 								"multi": map[string]any{
 									"type":        "boolean",
@@ -1448,6 +1452,30 @@ var tools = []llm.Tool{
 			},
 		},
 	},
+}
+
+// askOptionSchema is the schema for one authored choice. The description and
+// preview are what make a typed option worth more than a free-form reply, so
+// the schema asks for them rather than leaving them to chance.
+func askOptionSchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"label": map[string]any{
+				"type":        "string",
+				"description": "Short label for the choice (what the user clicks, e.g. \"SQLite\").",
+			},
+			"description": map[string]any{
+				"type":        "string",
+				"description": "One line saying what picking this means or costs — the trade-off, not a restatement of the label.",
+			},
+			"preview": map[string]any{
+				"type":        "string",
+				"description": "Optional markdown artifact rendered beside the option list: a code snippet, a config file, a diagram or an ASCII mockup. Use it when the choice is easier to see than to describe.",
+			},
+		},
+		"required": []string{"label"},
+	}
 }
 
 // waitResumeBackoff sleeps between auto-resume retries: 2^attempt seconds

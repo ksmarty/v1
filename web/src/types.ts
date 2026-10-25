@@ -1,3 +1,20 @@
+/** One authored choice in an ask_user question: the label the user clicks,
+ * what picking it means, and an optional markdown artifact (a snippet, config or
+ * mockup) the reply renders beside the list. */
+export interface AskOptionDTO {
+  label: string;
+  description?: string;
+  preview?: string;
+}
+
+/** One question in an ask_user questionnaire. Older backends/turn records send
+ * options as bare strings, so both shapes are accepted. */
+export interface AskQuestionDTO {
+  question: string;
+  options?: (string | AskOptionDTO)[];
+  multi?: boolean;
+}
+
 export interface AuthStatus {
   authRequired: boolean;
   authenticated: boolean;
@@ -332,7 +349,7 @@ export type ChatEvent =
       text?: string;
       options?: string[];
       multi?: boolean;
-      questions?: { question: string; options?: string[]; multi?: boolean }[];
+      questions?: AskQuestionDTO[];
     }
   | { type: 'project_renamed'; text?: string }
   | { type: 'session_renamed'; text?: string }

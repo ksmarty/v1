@@ -226,22 +226,33 @@ or `make dev`), then report: (1) the new stamped build version (`v1 <version>
   arrives; `remember`/`forget` manage
   project-scoped memories (sqlite `memories` table, injected into the system
   prompt each turn, browsable in the Memories tab); `ask_user` blocks the
-  turn on a user question via the `askRegistry` (mirrors the permission
-  pattern) and renders as an in-chat answer card — the question is also
+  turn on a questionnaire via the `askRegistry` (mirrors the permission
+  pattern) and renders as an in-chat form — the question is also
   persisted per project in the sqlite `pending_asks` table and surfaced via
   `GET /api/projects/{id}/ask/pending`, so the card survives reloads and
-  reconnects (a new turn, an answer, or a timeout clears it). `ask_user` also
-  accepts a `questions` array for multi-question asks — the UI renders one
-  block the user steps through (back/next, editable answers, "Confirm all"),
-  and the tool resolves with the full answers array once confirmed. The
-  response is parsed from the UI's `[{question,answer}]` array (single-question
-  asks included) or a plain string (`parseAskAnswers`), and the UI unwraps a
-  stored answer that is itself a stringified array, so neither path shows JSON.
-  Answers in progress are kept in `sessionStorage` under `v1-ask-drafts`, keyed
-  by the questions asked and cleared once the ask is answered or fails, so a
-  remount cannot wipe them: the ask block lives in the transcript, and any
-  transcript rebuild — a dropped live stream (the watch effect reloads it), the
-  app returning from the background, a PWA relaunch — mounts a fresh block.
+  reconnects (a new turn, an answer, or a timeout clears it). The tool takes a
+  single `question` (with `options`/`multi`) or a `questions` array of up to 4
+  (`MaxAskQuestions`), each with up to 4 options (`MaxAskOptions`). An option is
+  `{label, description?, preview?}` — a bare string is read as its label — and
+  the UI renders the label with its description under it, plus the picked
+  option's markdown `preview` in a pane beside the list. Every question also
+  gets a free-text row (the UI appends it, so `askOptionSchema`/`isFreeTextLabel`
+  drop a "type something" option a model sends) and the form has one note for
+  the ask as a whole. All questions render stacked in one form; each answer is
+  `{question, answer, options?, text?}` where `answer` is the picks and typed
+  text joined and `options`/`text` are the structured parts, and the response
+  carries `globalNote`. The response is parsed from the
+  `{answers:[…], globalNote}` envelope (single-question asks included) or a
+  bare `[{question,answer}]` array, or a plain string from an older client
+  (`parseAskAnswers`), and the UI unwraps a stored answer that is itself a
+  stringified array, so neither path shows JSON.
+  Answers in progress are kept in `sessionStorage` under `v1-ask-drafts-v2`
+  (`{picks: string[][], texts: string[], globalNote}`, keyed by the questions and
+  their option labels, at most 8 entries) and cleared once the ask is answered
+  or fails, so a remount cannot wipe them: the ask block lives in the
+  transcript, and any transcript rebuild — a dropped live stream (the watch
+  effect reloads it), the app returning from the background, a PWA relaunch —
+  mounts a fresh block.
   The question text renders as markdown in every ask view (the answer stays
   plain text); `screenshot_app` is
   vision-gated (above); `fetch_url` fetches web pages for the model
