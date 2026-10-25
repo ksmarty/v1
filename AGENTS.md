@@ -237,6 +237,11 @@ or `make dev`), then report: (1) the new stamped build version (`v1 <version>
   response is parsed from the UI's `[{question,answer}]` array (single-question
   asks included) or a plain string (`parseAskAnswers`), and the UI unwraps a
   stored answer that is itself a stringified array, so neither path shows JSON.
+  Answers in progress are kept in `sessionStorage` under `v1-ask-drafts`, keyed
+  by the questions asked and cleared once the ask is answered or fails, so a
+  remount cannot wipe them: the ask block lives in the transcript, and any
+  transcript rebuild — a dropped live stream (the watch effect reloads it), the
+  app returning from the background, a PWA relaunch — mounts a fresh block.
   The question text renders as markdown in every ask view (the answer stays
   plain text); `screenshot_app` is
   vision-gated (above); `fetch_url` fetches web pages for the model

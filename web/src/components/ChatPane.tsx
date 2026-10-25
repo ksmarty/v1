@@ -2344,6 +2344,54 @@ function askAnswers(detail: string): AskAnswerView[] {
   }
 }
 
+// Answers in progress for an ask_user question, keyed by the questions asked.
+// The ask block lives in the transcript, so anything that rebuilds the
+// transcript — a dropped live stream (the watch effect reloads it), the app
+// returning from the background, a PWA relaunch — remounts the block, and its
+// local state would otherwise throw away everything the user had already typed
+// into a multi-question stepper. sessionStorage so a relaunch keeps it too, and
+// bounded because only the asks still open in this tab matter.
+const ASK_DRAFTS_KEY = 'v1-ask-drafts';
+const ASK_DRAFT_LIMIT = 8;
+type AskDraft = { step: number; drafts: string[] };
+
+function readAskDrafts(): Record<string, AskDraft> {
+  try {
+    const parsed = JSON.parse(sessionStorage.getItem(ASK_DRAFTS_KEY) ?? '{}') as unknown;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    return parsed as Record<string, AskDraft>;
+  } catch {
+    return {};
+  }
+}
+
+// The questions themselves are the identity: a reloaded or replayed ask carries
+// no request id here, and the signature survives it unchanged.
+function askDraftSignature(questions: AskQuestionView[]): string {
+  return questions.map((q) => `${q.question}\u0000${q.options.join('\u0001')}`).join('\u0002');
+}
+
+function loadAskDraft(questions: AskQuestionView[]): AskDraft | null {
+  const d = readAskDrafts()[askDraftSignature(questions)];
+  if (!d || !Array.isArray(d.drafts) || d.drafts.length !== questions.length) return null;
+  const step = Number.isInteger(d.step) ? Math.min(Math.max(0, d.step), questions.length - 1) : 0;
+  return { step, drafts: d.drafts.map((x) => (typeof x === 'string' ? x : '')) };
+}
+
+function storeAskDraft(signature: string, draft: AskDraft | null) {
+  const all = readAskDrafts();
+  delete all[signature];
+  if (draft) all[signature] = draft;
+  for (const k of Object.keys(all).slice(0, Math.max(0, Object.keys(all).length - ASK_DRAFT_LIMIT))) {
+    delete all[k];
+  }
+  try {
+    sessionStorage.setItem(ASK_DRAFTS_KEY, JSON.stringify(all));
+  } catch {
+    // storage unavailable — the draft then only survives within this mount
+  }
+}
+
 // The agent's ask_user question: the question with tappable options while
 // pending, the chosen answer once answered. Rendered inline in the transcript
 // (never inside the tool collapse) and for live streams.
@@ -2365,13 +2413,25 @@ function AskBlock({
   failed?: boolean;
   onAnswer?: (answers: AskAnswerView[]) => void;
 }) {
-  const [step, setStep] = useState(0);
-  const [drafts, setDrafts] = useState<string[]>(() => questions.map(() => ''));
+  const [draft, setDraft] = useState<AskDraft>(
+    () => loadAskDraft(questions) ?? { step: 0, drafts: questions.map(() => '') },
+  );
+  const { step, drafts } = draft;
+  const setStep = (next: number | ((prev: number) => number)) =>
+    setDraft((d) => ({ ...d, step: typeof next === 'function' ? next(d.step) : next }));
+  const setDrafts = (next: string[] | ((prev: string[]) => string[])) =>
+    setDraft((d) => ({ ...d, drafts: typeof next === 'function' ? next(d.drafts) : next }));
   const answered = result !== undefined;
   const [open, setOpen] = useState(!answered);
   useEffect(() => {
     if (answered) setOpen(false);
   }, [answered]);
+  // Keep the draft across remounts while the question is still open, and drop
+  // it once the ask ended (answered, or timed out/canceled).
+  const signature = askDraftSignature(questions);
+  useEffect(() => {
+    storeAskDraft(signature, answered || failed ? null : draft);
+  }, [signature, answered, failed, draft]);
   const multi = questions.length > 1;
   const q = questions[Math.min(step, questions.length - 1)];
   const cur = drafts[step] ?? '';
