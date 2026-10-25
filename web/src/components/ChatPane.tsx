@@ -118,6 +118,7 @@ type Suggestion = { insert: string; label: string; hint?: string };
 const CHAT_COMMANDS = [
   { name: '/plan', hint: 'Investigate and plan (read-only, no changes)' },
   { name: '/compact', hint: 'Summarize history to free up context' },
+  { name: '/fork', hint: 'Branch this chat into a new session (optional name)' },
   { name: '/clear', hint: 'Clear the chat history' },
   { name: '/model', hint: 'Choose a model' },
   { name: '/preview', hint: 'Restart the preview' },
@@ -5253,13 +5254,31 @@ export default function ChatPane({
           setLocalStatus(errMsg(e));
         }
         break;
+      case '/fork':
+        if (streaming) {
+          setLocalStatus('Stop the current run before forking.');
+          break;
+        }
+        try {
+          // The server copies the transcript and (on the harness path) forks the
+          // durable conversation too, so the new thread starts from the same
+          // history without sharing the original's future.
+          const res = await api.forkSession(projectId, sessionId, text.trim().slice('/fork'.length).trim() || undefined);
+          setSessions((prev) => [...prev, res.session]);
+          setSessionId(res.session.id);
+          rememberSession(res.session.id);
+          setLocalStatus(`Forked into ${res.session.name}.`);
+        } catch (e) {
+          setLocalStatus(errMsg(e));
+        }
+        break;
       case '/plan':
         // Not a local command — the message goes to the agent as-is.
         return false;
     }
     setInput('');
     return true;
-  }, [projectId, sessionId, streaming, load, loadContext]);
+  }, [projectId, sessionId, streaming, load, loadContext, rememberSession]);
 
   // Sends a mid-run message. `steer` hands it to the running turn, which is the
   // send button's default; without it the message waits its turn in the queue.

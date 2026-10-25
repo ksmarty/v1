@@ -132,7 +132,9 @@ built-in Go agent loop instead.
 - Tools, file access, previews, approvals and auth stay in Go. The sidecar
   never touches the workspace directly.
 - Transcripts live in `V1_HARNESS_DB` (separate from v1's own SQLite store),
-  so a chat session's conversation is remembered across restarts.
+  so a chat session's conversation is remembered across restarts. A forked chat
+  session (the `/fork` chat command) carries its own copy of the conversation,
+  so the two branches evolve independently.
 - The sidecar is plain ESM run by `node` (see `sidecar/`), so there is no
   build step; `npm install` in `sidecar/` is enough. Running v1 from a checkout
   needs that once — `make sidecar-deps`.

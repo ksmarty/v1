@@ -826,6 +826,35 @@ class Sidecar {
 		return { conversationId: String(rewound.id) };
 	}
 
+	/**
+	 * Copy a conversation's active history into a new one.
+	 *
+	 * This backs v1's "fork session" command: the new chat session starts from
+	 * the same transcript but must not share the parent's future, so it needs a
+	 * conversation of its own. Forking at the newest active entry inherits the
+	 * whole visible history — compaction summaries included, because the active
+	 * range is what `context()` reports. The parent stays alive and usable.
+	 */
+	async forkConversation(params) {
+		const conversation = await this.conversationFor(params);
+		const view = await conversation.context(this.ctx);
+		const entries = view.entries ?? [];
+		const at = entries[entries.length - 1];
+		const change = this.changes.get(String(conversation.id));
+		const options = { ownership: { kind: "ownerless" }, agent: change };
+		const forked = at
+			? await conversation.fork(at.id, options, this.ctx)
+			: await this.harness.createConversation(options, this.ctx);
+		this.conversations.set(String(forked.id), forked);
+		if (change) this.changes.set(String(forked.id), change);
+		log.info("conversation forked", {
+			from: String(conversation.id),
+			to: String(forked.id),
+			forkedAt: at ? String(at.id) : "start",
+		});
+		return { conversationId: String(forked.id) };
+	}
+
 	async abort(params) {
 		const conversation = await this.conversationFor(params);
 		await conversation.abort(this.ctx);
@@ -952,6 +981,8 @@ class Sidecar {
 				return await this.entries(params);
 			case "conversation.rewind":
 				return await this.rewind(params);
+			case "conversation.fork":
+				return await this.forkConversation(params);
 			case "conversation.usage":
 				return await this.usage(params);
 			case "watch.start":

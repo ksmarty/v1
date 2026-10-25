@@ -481,6 +481,39 @@ async function main() {
 			check("usage is reported per model", Object.keys(usage?.models ?? {}).length > 0, JSON.stringify(usage));
 		}
 
+		// A fork backs v1's "fork session" command: the new v1 session starts from
+		// the same transcript but must not share the parent's future, so it gets a
+		// conversation of its own, copied at the newest active entry. The fork has
+		// to be resolvable by id afterwards (Go stores it on the new session and
+		// re-sends it on every later turn), so the entries read below goes through
+		// the same lookup a turn would.
+		{
+			console.log("\nforking");
+			const parentBefore = await peer.call("conversation.entries", { conversationId, limit: 200 }, { timeoutMs: 30_000 });
+			const forked = await peer.call("conversation.fork", { conversationId }, { timeoutMs: 30_000 });
+			check(
+				"conversation.fork returns a new conversation id",
+				typeof forked?.conversationId === "string" && forked.conversationId.length > 0 && forked.conversationId !== conversationId,
+				JSON.stringify(forked),
+			);
+			const forkEntries = await peer.call(
+				"conversation.entries",
+				{ conversationId: forked?.conversationId, limit: 200 },
+				{ timeoutMs: 30_000 },
+			);
+			check(
+				"the fork carries the parent transcript",
+				(forkEntries?.items?.length ?? 0) === (parentBefore?.items?.length ?? 0),
+				`${forkEntries?.items?.length} vs ${parentBefore?.items?.length}`,
+			);
+			const parentAfter = await peer.call("conversation.entries", { conversationId, limit: 200 }, { timeoutMs: 30_000 });
+			check(
+				"forking leaves the parent transcript alone",
+				(parentAfter?.items?.length ?? 0) === (parentBefore?.items?.length ?? 0),
+				`${parentAfter?.items?.length} vs ${parentBefore?.items?.length}`,
+			);
+		}
+
 		// A steer is a second user input handed to a run already in flight, and Go
 		// sends it as turn.steer with the message in `content` — the same submit
 		// path a normal turn takes. Sent as {text} it was rejected as bad content,

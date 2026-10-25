@@ -1388,6 +1388,75 @@ func (s *Store) CreateChatSession(projectID, name string) (ChatSession, error) {
 	return cs, nil
 }
 
+// ForkChatSession copies a session's transcript into a new session, leaving the
+// original untouched so the user can take the conversation in another
+// direction. An empty name becomes "<source> (fork)".
+//
+// The copy carries the messages (ids are fresh, order and timestamps are
+// preserved) and the compaction snapshot, whose covered message id is remapped
+// to the copy's matching row. The durable harness conversation is not copied
+// here — only the sidecar can fork that, so the server does it and records the
+// result.
+func (s *Store) ForkChatSession(projectID, sessionID, name string) (ChatSession, error) {
+	var srcName string
+	err := s.db.QueryRow(`SELECT name FROM chat_sessions WHERE id = ? AND project_id = ?`, sessionID, projectID).Scan(&srcName)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ChatSession{}, ErrNotFound
+	}
+	if err != nil {
+		return ChatSession{}, err
+	}
+	if strings.TrimSpace(name) == "" {
+		name = srcName + " (fork)"
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return ChatSession{}, err
+	}
+	defer tx.Rollback()
+	cs := ChatSession{ID: NewID(), Name: name, CreatedAt: now()}
+	if _, err := tx.Exec(`INSERT INTO chat_sessions (id, project_id, name, created_at) VALUES (?, ?, ?, ?)`,
+		cs.ID, projectID, cs.Name, cs.CreatedAt); err != nil {
+		return ChatSession{}, err
+	}
+	if _, err := tx.Exec(`INSERT INTO messages (project_id, session_id, role, content, tool_json, model, reasoning, usage, attachments, checkpoint, created_at)
+		SELECT project_id, ?, role, content, tool_json, model, reasoning, usage, attachments, checkpoint, created_at
+		FROM messages WHERE project_id = ? AND session_id = ? ORDER BY id`, cs.ID, projectID, sessionID); err != nil {
+		return ChatSession{}, err
+	}
+	// A compaction summary is part of what the fork starts from. Its covered
+	// message id belongs to the source session, so translate it by position: the
+	// copy preserved order, so the same message sits at the same offset.
+	var summary string
+	var covered, snapAt int64
+	snapErr := tx.QueryRow(`SELECT summary, covered_message_id, created_at FROM compaction_snapshots WHERE project_id = ? AND session_id = ?`,
+		projectID, sessionID).Scan(&summary, &covered, &snapAt)
+	if snapErr == nil {
+		var offset int64
+		if err := tx.QueryRow(`SELECT COUNT(*) FROM messages WHERE project_id = ? AND session_id = ? AND id <= ?`,
+			projectID, sessionID, covered).Scan(&offset); err != nil {
+			return ChatSession{}, err
+		}
+		if offset > 0 {
+			var newCovered int64
+			if err := tx.QueryRow(`SELECT id FROM messages WHERE project_id = ? AND session_id = ? ORDER BY id LIMIT 1 OFFSET ?`,
+				projectID, cs.ID, offset-1).Scan(&newCovered); err != nil {
+				return ChatSession{}, err
+			}
+			if _, err := tx.Exec(`INSERT INTO compaction_snapshots (project_id, session_id, summary, covered_message_id, created_at) VALUES (?, ?, ?, ?, ?)`,
+				projectID, cs.ID, summary, newCovered, snapAt); err != nil {
+				return ChatSession{}, err
+			}
+		}
+	} else if !errors.Is(snapErr, sql.ErrNoRows) {
+		return ChatSession{}, snapErr
+	}
+	if err := tx.Commit(); err != nil {
+		return ChatSession{}, err
+	}
+	return cs, nil
+}
+
 // HarnessConversationID is the pi-durable conversation backing a chat session,
 // empty when the session has never run a turn on the pi harness.
 func (s *Store) HarnessConversationID(projectID, sessionID string) (string, error) {

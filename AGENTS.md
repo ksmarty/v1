@@ -199,7 +199,21 @@ or `make dev`), then report: (1) the new stamped build version (`v1 <version>
   the queue and the pending steers (`steering` array, one entry per message
   steered but not yet injected — the UI shows them as pending rows with a
   spinner until the `injected_message` lands). The chat UI shows the queue as a pinned block above the
-  composer. Sessions can be renamed (`POST /sessions/{id}/rename`). Edits and
+  composer. Sessions can be renamed (`POST /sessions/{id}/rename`) and forked
+  (`POST /sessions/{id}/fork`, the `/fork [name]` chat command): the fork copies
+  the transcript into a new session (name defaults to `<source> (fork)`) and the
+  composer switches to it, leaving the original untouched. Copying also remaps
+  the sessions' compaction snapshot's covered message id, which belongs to the
+  source session. On the harness path the durable conversation is forked too
+  (`conversation.fork` on the sidecar fork at the newest active entry, so
+  compaction summaries come along) and the copy's id is stored on the new
+  session; that failure is logged rather than failing the request, since the v1
+  transcript is still a correct fork. A fork during a run is refused with
+  `run_active` (409) — the sidecar would be copying a transcript it is still
+  writing. Not implemented: per-message forks (rewinding to a mid-transcript
+  point and branching there); the sidecar's `conversation.fork` already takes
+  any entry id, so that is a UI choice.
+  Edits and
   retries reject with `run_active` (409) while a run is active.
 - Agent tools beyond file/command work: `set_project_name` renames the
   project (emits a `project_renamed` event so the UI header updates) — only

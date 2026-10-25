@@ -372,6 +372,10 @@ export const api = {
     request<{ sessions: ChatSession[] }>(`/api/projects/${id}/sessions`),
   createSession: (id: string, name?: string) =>
     post<{ session: ChatSession }>(`/api/projects/${id}/sessions`, { name }),
+  // Fork copies the session's transcript into a new thread, leaving the
+  // original untouched so the conversation can go two ways.
+  forkSession: (id: string, sessionId: string, name?: string) =>
+    post<{ session: ChatSession }>(`/api/projects/${id}/sessions/${sessionId}/fork`, { name }),
   renameSession: (id: string, sessionId: string, name: string) =>
     post<void>(`/api/projects/${id}/sessions/${sessionId}/rename`, { name }),
   archiveSession: (id: string, sessionId: string) =>

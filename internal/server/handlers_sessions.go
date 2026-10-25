@@ -1,8 +1,14 @@
 package server
 
 import (
+	"context"
+	"errors"
+	"log"
 	"net/http"
 	"strings"
+	"time"
+
+	"v1/internal/store"
 )
 
 // handleListSessions returns the project's chat sessions, creating the
@@ -43,6 +49,54 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusCreated, map[string]any{"session": cs})
+}
+
+// handleForkSession copies a chat session's transcript into a new session, so
+// the user can take the conversation in another direction without disturbing
+// the original. The fork inherits the model's view too: the durable harness
+// conversation is forked in the sidecar and the copy is recorded on the new
+// session, otherwise its first turn would reach the model with no history.
+func (s *Server) handleForkSession(w http.ResponseWriter, r *http.Request) {
+	p := s.projectOr404(w, r)
+	if p == nil {
+		return
+	}
+	src := r.PathValue("sessionId")
+	// A fork while a turn runs would copy a transcript the sidecar is still
+	// writing, and the durable fork could land before the turn's answer does.
+	if s.turns.get(p.ID, src) != nil {
+		writeError(w, http.StatusConflict, "run_active")
+		return
+	}
+	var body struct {
+		Name string `json:"name"`
+	}
+	if !decodeJSON(w, r, &body) {
+		return
+	}
+	forked, err := s.st.ForkChatSession(p.ID, src, strings.TrimSpace(body.Name))
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "session not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if bridge := s.harnessBridge(); bridge != nil {
+		if srcConv, err := s.st.HarnessConversationID(p.ID, src); err == nil && srcConv != "" {
+			ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+			defer cancel()
+			if convID, err := bridge.ForkConversation(ctx, srcConv); err != nil {
+				// The v1 transcript is still a correct fork; the model would only
+				// start its durable history over, so log rather than fail the request.
+				log.Printf("fork session: copying the durable conversation failed: %v", err)
+			} else if err := s.st.SetHarnessConversationID(p.ID, forked.ID, convID); err != nil {
+				log.Printf("fork session: persisting the forked conversation id failed: %v", err)
+			}
+		}
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"session": forked})
 }
 
 // handleRenameSession renames one of the project's chat sessions.

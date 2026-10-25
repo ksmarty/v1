@@ -445,6 +445,19 @@ func (b *Bridge) Rewind(ctx context.Context, conversationID string, keepUserTurn
 	return out.ConversationID, err
 }
 
+// ForkConversation copies a conversation's durable history into a new one, so a
+// forked chat session starts from the same transcript without sharing the
+// parent's future. Returns the new conversation's id.
+func (b *Bridge) ForkConversation(ctx context.Context, conversationID string) (string, error) {
+	var out struct {
+		ConversationID string `json:"conversationId"`
+	}
+	err := b.sup.Call(ctx, "conversation.fork", map[string]any{
+		"conversationId": conversationID,
+	}, &out)
+	return out.ConversationID, err
+}
+
 // InputPart is one piece of a user submission, in the shape pi-durable hands
 // the model: a text block, or an image to look at.
 type InputPart struct {
