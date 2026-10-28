@@ -18,10 +18,11 @@ var errNotQueued = errors.New("message is not in the queue")
 // queuedMsg is one message waiting in a run's queue. Held messages are being
 // edited in the UI: the follow-up drain skips them until they are released.
 type queuedMsg struct {
-	ID       string
-	Text     string
-	Held     bool
-	QueuedAt time.Time
+	ID          string
+	Text        string
+	Attachments []agent.Attachment // files sent with the message
+	Held        bool
+	QueuedAt    time.Time
 }
 
 // turnQueue holds messages sent while a run is active. They process in order
@@ -34,11 +35,11 @@ type turnQueue struct {
 	steers  []queuedMsg // explicitly steered, consumed between rounds
 }
 
-// add appends a message to the queue and returns its id.
-func (q *turnQueue) add(text string) string {
+// add appends a message (with its attachments) to the queue and returns its id.
+func (q *turnQueue) add(text string, atts []agent.Attachment) string {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	m := queuedMsg{ID: store.NewID(), Text: text, QueuedAt: time.Now()}
+	m := queuedMsg{ID: store.NewID(), Text: text, Attachments: atts, QueuedAt: time.Now()}
 	q.pending = append(q.pending, m)
 	return m.ID
 }
@@ -83,18 +84,18 @@ func (q *turnQueue) reorder(ids []string) error {
 	if len(ids) != len(q.pending) {
 		return errNotQueued
 	}
-	byID := make(map[string]string, len(q.pending))
+	byID := make(map[string]queuedMsg, len(q.pending))
 	for _, m := range q.pending {
-		byID[m.ID] = m.Text
+		byID[m.ID] = m
 	}
 	next := make([]queuedMsg, 0, len(ids))
 	for _, id := range ids {
-		text, ok := byID[id]
+		m, ok := byID[id]
 		if !ok {
 			return errNotQueued
 		}
 		delete(byID, id)
-		next = append(next, queuedMsg{ID: id, Text: text})
+		next = append(next, m) // keeps text, attachments, hold state and time
 	}
 	q.pending = next
 	return nil
@@ -159,15 +160,15 @@ func (q *turnQueue) steer(id string) error {
 
 // steerDrain returns and clears the steered messages, oldest first — the
 // agent's mid-run steer hook.
-func (q *turnQueue) steerDrain() []string {
+func (q *turnQueue) steerDrain() []agent.SteerMessage {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	if len(q.steers) == 0 {
 		return nil
 	}
-	out := make([]string, 0, len(q.steers))
+	out := make([]agent.SteerMessage, 0, len(q.steers))
 	for _, m := range q.steers {
-		out = append(out, m.Text)
+		out = append(out, agent.SteerMessage{Text: m.Text, Attachments: m.Attachments})
 	}
 	q.steers = nil
 	return out
@@ -343,13 +344,14 @@ var errTooManyRuns = errors.New("too many concurrent runs for this user")
 // the caller runs it). Starting a new run for userID is refused with
 // errTooManyRuns when the user already has maxRuns active runs (maxRuns <= 0
 // disables the cap) so one user can't saturate the host.
-func (m *turnManager) beginOrQueue(projectID, sessionID, msg, userID string, maxRuns int) (q *turnQueue, started bool, queuedID string, err error) {
+func (m *turnManager) beginOrQueue(projectID, sessionID, msg string, atts []agent.Attachment, userID string, maxRuns int) (q *turnQueue, started bool, queuedID string, err error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	key := runKey(projectID, sessionID)
 	if rs, ok := m.runs[key]; ok {
-		if msg != "" {
-			queuedID = rs.queue.add(msg)
+		// An attachments-only message (no words) still queues.
+		if msg != "" || len(atts) > 0 {
+			queuedID = rs.queue.add(msg, atts)
 		}
 		return rs.queue, false, queuedID, nil
 	}

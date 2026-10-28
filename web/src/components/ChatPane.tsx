@@ -1991,11 +1991,21 @@ export default function ChatPane({
   // Messages sent while a run is active, in processing order. They become
   // follow-up turns when the run finishes; the steer button injects one into
   // the current run immediately.
-  const [queued, setQueued] = useState<{ id: string; text: string; position?: number; estimatedWaitSeconds?: number }[]>([]);
+  const [queued, setQueued] = useState<
+    {
+      id: string;
+      text: string;
+      position?: number;
+      estimatedWaitSeconds?: number;
+      attachments?: ChatAttachmentMeta[];
+    }[]
+  >([]);
   // Messages steered into the current run, waiting to be injected at the next
   // round boundary.
-  const [steering, setSteering] = useState<{ id: string; text: string }[]>([]);
-  const steeringRef = useRef<{ id: string; text: string }[]>([]);
+  const [steering, setSteering] = useState<
+    { id: string; text: string; attachments?: ChatAttachmentMeta[] }[]
+  >([]);
+  const steeringRef = useRef<{ id: string; text: string; attachments?: ChatAttachmentMeta[] }[]>([]);
   useEffect(() => {
     steeringRef.current = steering;
   }, [steering]);
@@ -2389,13 +2399,16 @@ export default function ChatPane({
     }
   }, [projectId, sessionId]);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (opts?: { quiet?: boolean }) => {
     if (!sessionId) return;
     // A session switch while this fetch is in flight must not let the old
     // session's messages overwrite the new one's transcript.
     const loadSession = sessionId;
     const loadSeq = ++loadSeqRef.current;
-    setLoading(true);
+    // A quiet resync (end of a turn) must not blank the transcript behind a
+    // spinner — the live rows are already on screen and stay until the
+    // authoritative rows land.
+    if (!opts?.quiet) setLoading(true);
     setLoadError(null);
     try {
       const msgs = await api.getMessages(projectId, sessionId);
@@ -2512,7 +2525,7 @@ export default function ChatPane({
     } catch (e) {
       setLoadError(errMsg(e));
     } finally {
-      setLoading(false);
+      if (!opts?.quiet) setLoading(false);
       // Re-surface a question the agent asked while the app was away — the
       // card must survive reloads and reconnects, not just live streams.
       void refreshPendingAsk();
@@ -2736,12 +2749,25 @@ export default function ChatPane({
       dotOf.push(grouped.length - 1);
     }
     bucketRef.current = grouped;
-    setBuckets(grouped);
     const stripH = stripRef.current?.clientHeight ?? 0;
     // Keep the dots at their full size (10px) until they no longer fit with
-    // the 8px gap (gap-2 on the strip column), then shrink to fit — floor 3px.
-    const n = grouped.length;
-    setDotSize(Math.min(10, Math.max(3, (stripH - 24 - (n - 1) * 8) / n)));
+    // the 8px gap (gap-2 on the strip column), then shrink to fit — floor 6px.
+    // Past that the oldest dots are dropped: the strip must never overflow
+    // (or clip asymmetrically) however long the thread gets.
+    const DMAX = 10;
+    const DMIN = 6;
+    const GAP = 8;
+    const PAD = 24; // py-3 top + bottom
+    const fits = Math.max(1, Math.floor((stripH - PAD + GAP) / (DMIN + GAP)));
+    let visible = grouped;
+    let size = Math.min(DMAX, Math.max(DMIN, (stripH - PAD - (grouped.length - 1) * GAP) / grouped.length));
+    if (grouped.length > fits && stripH > 0) {
+      visible = grouped.slice(grouped.length - fits);
+      size = Math.min(DMAX, Math.max(DMIN, (stripH - PAD - (visible.length - 1) * GAP) / visible.length));
+    }
+    const hidden = grouped.length - visible.length;
+    setBuckets(visible);
+    setDotSize(size);
     // The dot for the message nearest the viewport top is lit; at the very
     // bottom the last message can sit below the tracking line — light its
     // dot anyway.
@@ -2750,7 +2776,10 @@ export default function ChatPane({
     for (let i = 0; i < keys.length; i++) {
       if (nearBottom || (tops[i] >= 0 && tops[i] <= el.scrollTop + 80)) currentIdx = i;
     }
-    setCurrentDot(dotOf[currentIdx]);
+    // Highlight the shown dot for the current message. A current message
+    // whose dot was dropped (the thread's oldest end) lights nothing — the
+    // strip only covers the newest screens then.
+    setCurrentDot(dotOf[currentIdx] - hidden);
   }, []);
   const onScroll = useCallback(() => {
     const el = scrollRef.current;
@@ -2827,6 +2856,21 @@ export default function ChatPane({
     };
   }, [items]);
 
+  // The visible text in the composer is the echo layer, not the (transparent)
+  // textarea, so the echo must scroll with the textarea. The auto-grow effect
+  // rewrites the textarea height on every keystroke, which some browsers
+  // answer by resetting scrollTop to 0 — the caret then sits below the visible
+  // area and what you type scrolls out of sight. Re-pin after every grow.
+  const syncComposer = useCallback(() => {
+    const el = taRef.current;
+    if (!el) return;
+    const echo = echoRef.current;
+    if (echo) {
+      echo.scrollTop = el.scrollTop;
+      echo.scrollLeft = el.scrollLeft;
+    }
+  }, []);
+
   // Auto-grow the input textarea (full height while expanded on mobile).
   useEffect(() => {
     const el = taRef.current;
@@ -2834,11 +2878,19 @@ export default function ChatPane({
     if (expanded) {
       el.style.height = '100%';
       el.focus();
+      syncComposer();
       return;
     }
+    const atEnd = el.selectionStart === el.value.length && el.selectionEnd === el.value.length;
     el.style.height = 'auto';
     el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
-  }, [input, expanded]);
+    // Typing at the end must keep the caret's row in view; a mid-text edit
+    // keeps its own scroll offset.
+    if (atEnd) el.scrollTop = el.scrollHeight;
+    syncComposer();
+    const raf = requestAnimationFrame(syncComposer);
+    return () => cancelAnimationFrame(raf);
+  }, [input, expanded, syncComposer]);
 
   const finish = useCallback(() => {
     setStreaming(false);
@@ -3101,6 +3153,12 @@ export default function ChatPane({
           setSteering([]); // the turn ended — nothing is pending injection
           setLocalStatus(null); // drop the transient info notice (e.g. continuation)
           void refreshQueue(); // queued messages drained into follow-up turns
+          // Converge on the persisted transcript now the turn is over: the
+          // live rows are rebuilt from the server (the same thing re-entering
+          // the chat does), so a final reply that only landed in a table write
+          // — or one the stream truncated — is always on screen without
+          // leaving the chat.
+          void load({ quiet: true });
           finish();
           break;
         }
@@ -3117,6 +3175,7 @@ export default function ChatPane({
           setSteering([]);
           setLocalStatus(null);
           void refreshQueue();
+          void load({ quiet: true });
           finish();
           break;
         }
@@ -3155,7 +3214,7 @@ export default function ChatPane({
         }
       }
     },
-    [update, finish, projectId, sessionId, projectName, loadContext, refreshQueue, onProjectRename],
+    [update, finish, projectId, sessionId, projectName, loadContext, refreshQueue, load, onProjectRename],
   );
 
   useEffect(() => {
@@ -3303,7 +3362,9 @@ export default function ChatPane({
   const sendText = useCallback(
     (text: string) => {
       const trimmed = text.trim();
-      if (!trimmed || streaming || !llmReady || !modelOverride) return;
+      // A turn may be attachments only (files carry the request).
+      const hasAtts = attachments.length > 0;
+      if ((!trimmed && !hasAtts) || streaming || !llmReady || !modelOverride) return;
       setInput('');
       setAskPrompt(null); // a new turn supersedes any pending question
       const atts = attachments.length > 0 ? [...attachments] : undefined;
@@ -3458,34 +3519,53 @@ export default function ChatPane({
     if (streaming) {
       // Mid-run: the server steers the message into the current turn or
       // queues it as a follow-up; it renders via injected_message when
-      // consumed. Attachments can't ride along — they need a fresh turn.
+      // consumed. Attachments ride along on the queued/injected message, so
+      // files can be sent without waiting for the run to end.
       const text = input.trim();
-      if (!text) return;
-      if (attachments.length > 0) {
-        setAttachError('Attachments can only be sent when no run is active.');
-        return;
-      }
+      if (!text && attachments.length === 0) return;
+      const sent = attachments.map((a) => ({
+        name: a.name,
+        mime: a.mime,
+        kind: a.kind,
+        content: a.content,
+      }));
+      setAttachError(null);
       setInput('');
       setSuggestions([]);
+      setAttachments([]);
       try {
-        const res = await api.queueChat(projectId, sessionId, text, modelOverride, providerOverride);
+        const res = await api.queueChat(
+          projectId,
+          sessionId,
+          text,
+          modelOverride,
+          providerOverride,
+          sent.length > 0 ? sent : undefined,
+        );
         // Show it in the queue block right away; it drains in order when the
         // run finishes (or can be steered into the current run).
         if (res.queued) {
-          setQueued((prev) => [...prev, { id: res.id ?? '', text }]);
+          const metas: ChatAttachmentMeta[] = sent.map((a) => ({
+            name: a.name,
+            mime: a.mime,
+            kind: a.kind,
+            size: a.kind === 'image' ? Math.floor((a.content.length * 3) / 4) : a.content.length,
+          }));
+          setQueued((prev) => [...prev, { id: res.id ?? '', text, attachments: metas }]);
         } else {
           void refreshQueue();
         }
         setExpanded(false);
       } catch (e) {
         setInput(text);
+        void refreshQueue();
         setLoadError(errMsg(e));
       }
       return;
     }
     sendText(input);
     setExpanded(false);
-  }, [input, streaming, attachments.length, runLocalCommand, sendText, projectId, sessionId, modelOverride, providerOverride, refreshQueue]);
+  }, [input, streaming, attachments, runLocalCommand, sendText, projectId, sessionId, modelOverride, providerOverride, refreshQueue]);
 
   // Moves a queued message up/down (optimistically; the server is the source
   // of truth on the next refresh).
@@ -3579,7 +3659,11 @@ export default function ChatPane({
       try {
         await api.chatQueueSteer(projectId, sessionId, id);
         setQueued((prev) => prev.filter((m) => m.id !== id));
-        if (entry) setSteering((prev) => [...prev, { id: entry.id, text: entry.text }]);
+        if (entry)
+          setSteering((prev) => [
+            ...prev,
+            { id: entry.id, text: entry.text, attachments: entry.attachments },
+          ]);
       } catch {
         void refreshQueue();
       }
@@ -3888,18 +3972,38 @@ export default function ChatPane({
     return keys;
   }, [items, streaming, runActive]);
 
+  // Rounds in the live turn that must stay expanded while a run is in flight:
+  // everything after the last text output, back to the turn's user message.
+  // Collapsing those is what made a re-entered run show its earlier work folded
+  // while the tools that arrived after the reload sat outside the fold — the
+  // transcript may only fold a round once text came after it (or the turn
+  // ended).
+  const holdOpenKeys = useMemo(() => {
+    const keys = new Set<string>();
+    if (!streaming && !runActive) return keys;
+    for (let i = items.length - 1; i >= 0; i--) {
+      const it = items[i];
+      if (it.kind !== 'msg') continue;
+      if ((it.content ?? '').trim()) break; // text output — folding above is fine
+      if (it.role === 'user') break; // turn boundary
+      if (it.role === 'assistant') keys.add(it.key);
+    }
+    return keys;
+  }, [items, streaming, runActive]);
+
   // True when a message renders as a collapsed tool summary row (the tool
   // collapse setting is on and the message carries tools, ask included).
   const isCollapsedToolsRow = useCallback(
     (it: Item): boolean => {
       if (it.kind !== 'msg' || it.role !== 'assistant' || it.streaming) return false;
+      if (holdOpenKeys.has(it.key)) return false;
       if (!getToolCallsCollapsed()) return false;
       const askCount = it.toolCalls?.filter((c) => c.name === 'ask_user').length ?? 0;
       const calls = (it.toolCalls ?? []).filter((c) => c.name !== 'ask_user');
       const results = (it.toolResults ?? []).filter((r) => r.name !== 'ask_user');
       return calls.length + results.length > 0 || askCount > 0;
     },
-    [],
+    [holdOpenKeys],
   );
 
   // Composer pieces, shared between the normal row layout and the expanded
@@ -4007,7 +4111,7 @@ export default function ChatPane({
   const sendButton = (
     <IconButton
       onClick={() => void send()}
-      disabled={!input.trim() || !hasModel}
+      disabled={(!input.trim() && attachments.length === 0) || !hasModel}
       aria-label={streaming ? 'Steer or queue for the next turn' : 'Send message'}
       title={
         streaming
@@ -4052,23 +4156,55 @@ export default function ChatPane({
           void updateSuggestions(e.target.value);
         }}
         onPaste={(e) => {
-          const text = e.clipboardData.getData('text/plain');
-          // Large pastes become a text attachment instead of flooding the
-          // composer — the sent message references it as a highlighted chip.
-          if (!text || (text.length <= 1200 && text.split('\n').length <= 40)) return;
-          e.preventDefault();
-          if (text.length > MAX_ATTACHMENT_BYTES) {
-            setAttachError('Pasted text is too large to attach (max 2 MB).');
+          const cd = e.clipboardData;
+          if (!cd) return;
+          // An image (or file) on the clipboard attaches like a picked file.
+          if (cd.files && cd.files.length > 0) {
+            e.preventDefault();
+            void addFiles(cd.files);
             return;
           }
-          setAttachments((prev) => {
-            if (prev.length >= MAX_ATTACHMENTS) {
-              setAttachError(`Too many attachments (max ${MAX_ATTACHMENTS}).`);
-              return prev;
+          const text = cd.getData('text/plain');
+          if (!text) return;
+          // Large pastes become a text attachment instead of flooding the
+          // composer — the sent message references it as a highlighted chip.
+          if (text.length > 1200 || text.split('\n').length > 40) {
+            e.preventDefault();
+            if (text.length > MAX_ATTACHMENT_BYTES) {
+              setAttachError('Pasted text is too large to attach (max 2 MB).');
+              return;
             }
-            const name = `paste-${new Date().toISOString().replace(/[:.]/g, '-')}.txt`;
-            return [...prev, { name, mime: 'text/plain', kind: 'text', content: text }];
+            setAttachments((prev) => {
+              if (prev.length >= MAX_ATTACHMENTS) {
+                setAttachError(`Too many attachments (max ${MAX_ATTACHMENTS}).`);
+                return prev;
+              }
+              const name = `paste-${new Date().toISOString().replace(/[:.]/g, '-')}.txt`;
+              return [...prev, { name, mime: 'text/plain', kind: 'text', content: text }];
+            });
+            return;
+          }
+          // Small pastes are inserted here rather than natively. Clipboard
+          // plain text from rich sources (web pages, editors) carries the
+          // source's block whitespace, and the native paste drops it in
+          // verbatim, so the pasted words look pushed away from the caret by a
+          // space or a newline. Trim only the edges (internal line breaks are
+          // content) and insert exactly at the selection.
+          const clean = text.replace(/^[ \t\r\n]+|[ \t\r\n]+$/g, '');
+          const ta = taRef.current;
+          if (!ta) return;
+          e.preventDefault();
+          if (!clean) return;
+          const start = ta.selectionStart ?? ta.value.length;
+          const end = ta.selectionEnd ?? start;
+          const next = ta.value.slice(0, start) + clean + ta.value.slice(end);
+          setInput(next);
+          const pos = start + clean.length;
+          requestAnimationFrame(() => {
+            ta.setSelectionRange(pos, pos);
+            ta.focus();
           });
+          void updateSuggestions(next);
         }}
         onKeyDown={(e) => {
           if (suggestions.length > 0 && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
@@ -4491,6 +4627,23 @@ export default function ChatPane({
                 ) : (
                   <span className="min-w-0 flex-1 truncate text-dim">{m.text}</span>
                 )}
+                {m.attachments && m.attachments.length > 0 && (
+                  <span className="flex shrink-0 items-center gap-1">
+                    {m.attachments.slice(0, 2).map((a, k) => (
+                      <span
+                        key={k}
+                        title={a.name}
+                        className="inline-flex max-w-[70px] items-center gap-0.5 rounded border border-border bg-bg px-1 py-0.5 text-[10px] text-faint"
+                      >
+                        <IconPaperclip className="h-2.5 w-2.5 shrink-0" />
+                        <span className="truncate">{a.name}</span>
+                      </span>
+                    ))}
+                    {m.attachments.length > 2 && (
+                      <span className="text-[10px] text-faint">+{m.attachments.length - 2}</span>
+                    )}
+                  </span>
+                )}
                 {queued.length > 1 && (
                   <span className="flex shrink-0 flex-col">
                     <button
@@ -4565,6 +4718,12 @@ export default function ChatPane({
                   >
                     <Spinner className="h-3 w-3 shrink-0 text-accent" />
                     <span className="min-w-0 flex-1 truncate text-dim">{m.text}</span>
+                    {m.attachments && m.attachments.length > 0 && (
+                      <span className="inline-flex shrink-0 items-center gap-0.5 rounded border border-accent/30 px-1 py-0.5 text-[10px] text-accent">
+                        <IconPaperclip className="h-2.5 w-2.5 shrink-0" />
+                        {m.attachments.length}
+                      </span>
+                    )}
                   </div>
                 ))}
               </>

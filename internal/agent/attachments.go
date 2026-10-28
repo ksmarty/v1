@@ -50,6 +50,23 @@ type AttachmentMeta struct {
 	Size int    `json:"size"`
 }
 
+// AttachmentMetas summarises attachments without their content (SSE events,
+// queue listings), reporting the decoded byte size of each.
+func AttachmentMetas(atts []Attachment) []AttachmentMeta {
+	if len(atts) == 0 {
+		return nil
+	}
+	out := make([]AttachmentMeta, 0, len(atts))
+	for _, a := range atts {
+		size := len(a.Content)
+		if a.Kind == "image" {
+			size = len(a.Content) / 4 * 3 // base64 → raw bytes
+		}
+		out = append(out, AttachmentMeta{Name: a.Name, MIME: a.MIME, Kind: a.Kind, Size: size})
+	}
+	return out
+}
+
 func textPart(t string) map[string]any {
 	return map[string]any{"type": "text", "text": t}
 }

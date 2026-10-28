@@ -76,6 +76,14 @@ type ChatEvent struct {
 	Questions   []AskQuestion    `json:"questions,omitempty"`
 }
 
+// SteerMessage is a user message steered into a running turn: it is persisted
+// and injected into the conversation at the next round boundary, attachments
+// included (so a file attached mid-run reaches the model like any other turn).
+type SteerMessage struct {
+	Text        string
+	Attachments []Attachment
+}
+
 // ChatParams carries everything needed to run one chat turn.
 type ChatParams struct {
 	Store           *store.Store
@@ -100,7 +108,7 @@ type ChatParams struct {
 	// they are neither advertised to the model nor executable.
 	DisabledTools map[string]bool
 	Caveman       bool            // terse "caveman" response style (LLM settings)
-	Steer         func() []string // drains mid-run user messages, injected next round
+	Steer         func() []SteerMessage // drains mid-run user messages, injected next round
 	Background    *BackgroundManager
 	// PollBackground returns the session's finished background commands so the
 	// loop can inject their results into the conversation.
@@ -377,12 +385,12 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 		// normal user turn and rendered in the UI via injected_message.
 		if p.Steer != nil {
 			for _, msg := range p.Steer() {
-				msgID, err := p.Store.AddMessage(p.Project.ID, p.SessionID, "user", msg, "", p.Client.Model, "", "", "")
+				msgID, err := p.Store.AddMessage(p.Project.ID, p.SessionID, "user", msg.Text, "", p.Client.Model, "", "", MarshalAttachments(msg.Attachments))
 				if err != nil {
 					return nil, err
 				}
-				history = append(history, llm.Message{Role: "user", Content: msg})
-				p.Emit(ChatEvent{Type: "injected_message", MessageID: msgID, Text: msg})
+				history = append(history, userMessage(msg.Text, msg.Attachments))
+				p.Emit(ChatEvent{Type: "injected_message", MessageID: msgID, Text: msg.Text, Attachments: AttachmentMetas(msg.Attachments)})
 			}
 		}
 		// Finished background commands join the same way: their result was

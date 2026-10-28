@@ -241,7 +241,9 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &body) {
 		return
 	}
-	if body.Message == "" {
+	// A message can be attachments only (files carry the request) when sent
+	// mid-run, and the words may be empty for a follow-up too.
+	if body.Message == "" && len(body.Attachments) == 0 {
 		writeError(w, http.StatusBadRequest, "message is required")
 		return
 	}
@@ -319,7 +321,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "run_active")
 		return
 	}
-	q, started, queuedID, qerr := s.turns.beginOrQueue(p.ID, params.SessionID, body.Message, userID, s.cfg.MaxConcurrentRunsPerUser)
+	q, started, queuedID, qerr := s.turns.beginOrQueue(p.ID, params.SessionID, body.Message, body.Attachments, userID, s.cfg.MaxConcurrentRunsPerUser)
 	if qerr != nil {
 		if errors.Is(qerr, errTooManyRuns) {
 			writeError(w, http.StatusTooManyRequests, "too_many_runs")
@@ -407,7 +409,7 @@ func (s *Server) handleChatRetry(w http.ResponseWriter, r *http.Request) {
 		params.LastUserID = 0
 		params.ContinueFromID = partialID
 	}
-	q, started, _, qerr := s.turns.beginOrQueue(p.ID, sessionID, "", userID, s.cfg.MaxConcurrentRunsPerUser)
+	q, started, _, qerr := s.turns.beginOrQueue(p.ID, sessionID, "", nil, userID, s.cfg.MaxConcurrentRunsPerUser)
 	if qerr != nil {
 		if errors.Is(qerr, errTooManyRuns) {
 			writeError(w, http.StatusTooManyRequests, "too_many_runs")
@@ -655,17 +657,17 @@ func (s *Server) streamChatTurn(w http.ResponseWriter, r *http.Request, p *store
 			return
 		}
 		for _, extra := range msgs[1:] {
-			q.add(extra.Text)
+			q.add(extra.Text, extra.Attachments)
 		}
 		m := msgs[0]
-		msgID, err := s.st.AddMessage(p.ID, params.SessionID, "user", m.Text, "", params.Client.Model, "", "", "")
+		msgID, err := s.st.AddMessage(p.ID, params.SessionID, "user", m.Text, "", params.Client.Model, "", "", agent.MarshalAttachments(m.Attachments))
 		if err != nil {
 			emit(agent.ChatEvent{Type: "error", Error: err.Error()})
 			return
 		}
-		emit(agent.ChatEvent{Type: "injected_message", MessageID: msgID, Text: m.Text})
+		emit(agent.ChatEvent{Type: "injected_message", MessageID: msgID, Text: m.Text, Attachments: agent.AttachmentMetas(m.Attachments)})
 		params.Message = m.Text
-		params.Attachments = nil
+		params.Attachments = m.Attachments
 		params.LastUserID = msgID
 		params.SkipSnapshot = false
 	}

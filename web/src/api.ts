@@ -1,5 +1,6 @@
 import type {
   AuthStatus,
+  ChatAttachmentMeta,
   ChatEvent,
   ChatMessage,
   ChatSession,
@@ -360,17 +361,38 @@ export const api = {
     ),
   // Mid-run send: the same endpoint queues the message onto the active run
   // (steer/follow-up) instead of opening an SSE stream. When queued, the
-  // response carries the queue entry's id.
-  queueChat: (id: string, sessionId: string, message: string, model?: string, providerId?: string) =>
-    post<{ queued?: boolean; id?: string }>(`/api/projects/${id}/chat`, { message, sessionId, model, providerId }),
+  // response carries the queue entry's id. Attachments ride along, so files
+  // can be queued (or steered) while a turn is still running.
+  queueChat: (
+    id: string,
+    sessionId: string,
+    message: string,
+    model?: string,
+    providerId?: string,
+    attachments?: ChatAttachmentInput[],
+  ) =>
+    post<{ queued?: boolean; id?: string }>(`/api/projects/${id}/chat`, {
+      message,
+      sessionId,
+      model,
+      providerId,
+      ...(attachments && attachments.length > 0 ? { attachments } : {}),
+    }),
   chatStatus: (id: string, sessionId: string) =>
     request<{ running: boolean }>(
       `/api/projects/${id}/chat/status?sessionId=${encodeURIComponent(sessionId)}`,
     ),
   chatQueue: (id: string, sessionId: string) =>
     request<{
-      messages: { id: string; text: string; position?: number; estimatedWaitSeconds?: number; queuedAt?: string }[];
-      steering: { id: string; text: string }[];
+      messages: {
+        id: string;
+        text: string;
+        position?: number;
+        estimatedWaitSeconds?: number;
+        queuedAt?: string;
+        attachments?: ChatAttachmentMeta[];
+      }[];
+      steering: { id: string; text: string; attachments?: ChatAttachmentMeta[] }[];
     }>(
       `/api/projects/${id}/chat/queue?sessionId=${encodeURIComponent(sessionId)}`,
     ),
