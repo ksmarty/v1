@@ -525,12 +525,12 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 		// normal user turn and rendered in the UI via injected_message.
 		if p.Steer != nil {
 			for _, msg := range p.Steer() {
-				msgID, err := p.Store.AddMessage(p.Project.ID, p.SessionID, "user", msg.Text, "", p.Client.Model, "", "", MarshalAttachments(msg.Attachments))
+				msgID, err := p.Store.AddMessage(p.Project.ID, p.SessionID, "user", msg.Text, SteerToolJSON, p.Client.Model, "", "", MarshalAttachments(msg.Attachments))
 				if err != nil {
 					return nil, err
 				}
 				history = append(history, userMessage(msg.Text, msg.Attachments))
-				p.Emit(ChatEvent{Type: "injected_message", MessageID: msgID, Text: msg.Text, Attachments: AttachmentMetas(msg.Attachments)})
+				p.Emit(ChatEvent{Type: "injected_message", MessageID: msgID, Text: msg.Text, Tool: "steer", Attachments: AttachmentMetas(msg.Attachments)})
 			}
 		}
 		// Finished background commands join the same way: their result was
@@ -797,7 +797,7 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 					Content: base64.StdEncoding.EncodeToString(img),
 				}}
 				caption := "Screenshot of the current app preview (captured by the screenshot_app tool)."
-				msgID, err := p.Store.AddMessage(p.Project.ID, p.SessionID, "user", caption, "", "", "", "", MarshalAttachments(att))
+				msgID, err := p.Store.AddMessage(p.Project.ID, p.SessionID, "user", caption, AgentToolJSON, "", "", "", MarshalAttachments(att))
 				if err != nil {
 					return nil, err
 				}
@@ -806,6 +806,7 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 					Type:        "injected_message",
 					MessageID:   msgID,
 					Text:        caption,
+					Tool:        "agent",
 					Attachments: []AttachmentMeta{{Name: "screenshot.png", MIME: "image/png", Kind: "image", Size: len(img)}},
 				})
 			}

@@ -96,6 +96,11 @@ body {
   color: var(--v1-text);
   overflow-wrap: break-word;
 }
+/* A reply's embedded images open full size when the message supplies a
+   handler (screenshots, diagrams). */
+.md-clickable-images img {
+  cursor: zoom-in;
+}
 .md > :first-child {
   margin-top: 0;
 }

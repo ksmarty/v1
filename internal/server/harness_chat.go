@@ -877,7 +877,7 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge,
 			// loop's injected_message does — and v1's store has to hold it too, or
 			// the steered turn disappears from the transcript on the next reload.
 			msgID, addErr := s.st.AddMessage(
-				params.Project.ID, params.SessionID, "user", msg.Text, "", model, "", "",
+				params.Project.ID, params.SessionID, "user", msg.Text, agent.SteerToolJSON, model, "", "",
 				agent.MarshalAttachments(msg.Attachments),
 			)
 			if addErr != nil {
@@ -887,6 +887,7 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge,
 				Type:        "injected_message",
 				MessageID:   msgID,
 				Text:        msg.Text,
+				Tool:        "steer",
 				Attachments: agent.AttachmentMetas(msg.Attachments),
 			})
 		}
