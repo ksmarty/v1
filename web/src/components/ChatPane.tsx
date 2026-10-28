@@ -4529,7 +4529,6 @@ export default function ChatPane({
     if (!sessionId) return;
     let cancelled = false;
     let timer: number | undefined;
-    let wasRunning = false;
     const tick = async () => {
       if (cancelled) return;
       void refreshQueue();
@@ -4537,18 +4536,17 @@ export default function ChatPane({
         const st = await api.chatStatus(projectId, sessionId);
         if (cancelled) return;
         setRunActive(st.running);
-        // A return from the background counts as "was running". The app can be
-        // suspended for an entire run, so no tick ever sees it start, and the
-        // transcript would keep missing the final tokens until the session was
-        // reopened.
-        const returned = returnedRef.current;
+        // A return from the background has to re-check the transcript: the app
+        // can be suspended for an entire run, so no tick ever sees it start.
         returnedRef.current = false;
         const mark = transcriptMarkRef.current;
         const known = mark.session === sessionId ? mark.id : 0;
         const newer = (st.lastMessageId ?? 0) > known;
-        if ((wasRunning || returned) && !st.running && !streaming && !watchRef.current && newer) {
-          // The run wrote rows we do not have — fetch them, quietly so the
-          // transcript we are already reading is not torn down and rebuilt.
+        if (!st.running && !streaming && !watchRef.current && newer) {
+          // The server holds rows this transcript does not — a run that
+          // finished while the app was away, or a write that landed just after
+          // the turn's own reload. Fetch them quietly, so the transcript the
+          // reader is looking at is not torn down and rebuilt for nothing.
           void load({ quiet: true });
         }
         // A live run with nothing streaming it means the watch dropped, or never
@@ -4557,7 +4555,6 @@ export default function ChatPane({
         if (st.running && !streamingRef.current && !watchRef.current && !resuming) {
           setWatchTick((n) => n + 1);
         }
-        wasRunning = st.running;
       } catch {
         // transient — try again on the next tick
       }
