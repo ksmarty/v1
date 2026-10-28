@@ -4462,7 +4462,7 @@ export default function ChatPane({
   // Prepend an older page, holding the reader's place: the rows above the
   // viewport grow, so the scroll offset is corrected by the height they added.
   // Pinned to the bottom there is nothing to correct — the pin follows.
-  const pendingAdjustRef = useRef<{ prevH: number; prevTop: number } | null>(null);
+  const pendingAdjustRef = useRef<{ prevH: number; prevTop: number; toBottom: boolean } | null>(null);
   const prependOlder = useCallback((older: Item[]) => {
     if (older.length === 0) return;
     // A page can arrive twice (a scroll-triggered load racing the background
@@ -4471,24 +4471,27 @@ export default function ChatPane({
     const fresh = older.filter((it) => !have.has(it.key));
     if (fresh.length === 0) return;
     const box = scrollRef.current;
-    const atBottom = !box || box.scrollHeight - box.scrollTop - box.clientHeight < 80;
-    if (box && !atBottom) {
-      pendingAdjustRef.current = { prevH: box.scrollHeight, prevTop: box.scrollTop };
+    // Pinned to the bottom, the view has to end up at the bottom again; reading
+    // further up, it has to keep the same rows under the viewport.
+    const toBottom = !box || box.scrollHeight - box.scrollTop - box.clientHeight < 80;
+    if (box) {
+      pendingAdjustRef.current = { prevH: box.scrollHeight, prevTop: box.scrollTop, toBottom };
     }
     itemsRef.current = [...fresh, ...itemsRef.current];
     setItems((prev) => [...fresh, ...prev]);
   }, []);
 
   // Apply that correction before the browser paints. A requestAnimationFrame
-  // runs after paint, so the rows above the viewport had already shifted the
-  // content down for one frame — which is what made a backfill look like the
-  // app glitching.
+  // runs after paint, so the content had already shifted for one frame every
+  // time a page landed — which is what made a backfill look like the app
+  // glitching.
   useLayoutEffect(() => {
     const adj = pendingAdjustRef.current;
     if (!adj) return;
     pendingAdjustRef.current = null;
     const el = scrollRef.current;
-    if (el) el.scrollTop = adj.prevTop + (el.scrollHeight - adj.prevH);
+    if (!el) return;
+    el.scrollTop = adj.toBottom ? el.scrollHeight : adj.prevTop + (el.scrollHeight - adj.prevH);
   }, [items]);
 
   // Keep the history already on screen when a reload only brings the newest
