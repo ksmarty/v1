@@ -779,6 +779,25 @@ function partialBefore(items: Item[], i: number): boolean {
   return prev?.kind === 'msg' && prev.role === 'assistant' && !!prev.content?.trim();
 }
 
+/**
+ * A placeholder that only appears once a wait has actually been felt. A cached
+ * transcript is on screen a few milliseconds after the first render, and showing
+ * a skeleton for those few frames reads as the app flashing rather than loading.
+ * Flips back the moment `on` goes false, so the next wait starts clean.
+ */
+function useDelayedTrue(on: boolean, delay = 400): boolean {
+  const [shown, setShown] = useState(false);
+  useEffect(() => {
+    if (!on) {
+      setShown(false);
+      return;
+    }
+    const t = window.setTimeout(() => setShown(true), delay);
+    return () => window.clearTimeout(t);
+  }, [on, delay]);
+  return on && shown;
+}
+
 /** Newest persisted message id in a mapped transcript (0 when none). */
 function newestId(items: Item[]): number {
   return items.reduce((max, it) => (it.kind === 'msg' ? Math.max(max, Number(it.key) || 0) : max), 0);
@@ -3814,6 +3833,9 @@ export default function ChatPane({
 }) {
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
+  // The "loading" placeholder is delayed: a cached transcript paints within a
+  // frame or two, and flashing a skeleton for that long looks like a glitch.
+  const showSkeleton = useDelayedTrue(loading && items.length === 0, 400);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [input, setInput] = useState('');
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
@@ -3974,6 +3996,23 @@ export default function ChatPane({
   const itemsRef = useRef<Item[]>([]);
   const counterRef = useRef(0);
   const assistantKeyRef = useRef<string | null>(null);
+  // Best guess at the session this pane is about to show, read on the very first
+  // render: the deep link, else the last thread used in this project. The session
+  // list confirms it a moment later, but seeding from it means the cached
+  // transcript is already painted on the first frame instead of a blank pane.
+  const initialGuessRef = useRef<string | null>(null);
+  if (initialGuessRef.current === null) {
+    let guess = '';
+    try {
+      guess =
+        new URLSearchParams(window.location.search).get('session') ||
+        localStorage.getItem(sessionStorageKey(projectId)) ||
+        '';
+    } catch {
+      // storage or URL unavailable — start empty
+    }
+    initialGuessRef.current = guess;
+  }
   // Monotonic guard so a slow load() for an older session can't overwrite the
   // transcript after a switch; every load bumps it and stale results are dropped.
   const loadSeqRef = useRef(0);
@@ -3993,6 +4032,12 @@ export default function ChatPane({
   // return from the background only refetches when the run actually wrote
   // something we do not have.
   const transcriptMarkRef = useRef<{ session: string; id: number }>({ session: '', id: 0 });
+  // Which session the rows currently in state belong to, so a switch can be
+  // handled before the browser paints.
+  const itemsSessionRef = useRef('');
+  // What the pre-paint seed painted, so a following load() that resolves to the
+  // same cached transcript does not hand React an equal-but-new list.
+  const seededRef = useRef<{ session: string; newest: number } | null>(null);
   // Key of the last turn we notified about (persisted per project+session so
   // a reload does not re-notify for runs already seen).
   const notifiedKey = `v1.notified.${projectId}.${sessionId}`;
@@ -4463,6 +4508,11 @@ export default function ChatPane({
   // viewport grow, so the scroll offset is corrected by the height they added.
   // Pinned to the bottom there is nothing to correct — the pin follows.
   const pendingAdjustRef = useRef<{ prevH: number; prevTop: number; toBottom: boolean } | null>(null);
+  // Set when a whole transcript is swapped in (cache seed, session switch, a
+  // reload that replaced every row). The pin is applied in the layout effect
+  // below, i.e. before paint: pinning in a passive effect paints the top of the
+  // thread for a frame and then jumps to the bottom.
+  const pinPendingRef = useRef(false);
   const prependOlder = useCallback((older: Item[]) => {
     if (older.length === 0) return;
     // A page can arrive twice (a scroll-triggered load racing the background
@@ -4487,7 +4537,18 @@ export default function ChatPane({
   // glitching.
   useLayoutEffect(() => {
     const adj = pendingAdjustRef.current;
-    if (!adj) return;
+    if (!adj) {
+      if (!pinPendingRef.current) return;
+      pinPendingRef.current = false;
+      // Only a reader who was following the bottom gets moved; someone reading
+      // history stays exactly where they are.
+      if (!nearBottomRef.current) return;
+      const box = scrollRef.current;
+      if (!box) return;
+      box.scrollTop = box.scrollHeight;
+      pinnedTopRef.current = box.scrollTop;
+      return;
+    }
     pendingAdjustRef.current = null;
     const el = scrollRef.current;
     if (!el) return;
@@ -4563,14 +4624,24 @@ export default function ChatPane({
     // were away) keeps whatever is on screen and swaps it when the fetch lands,
     // so the transcript never flashes back to a skeleton.
     const cached = readChatCache(projectId, sessionId);
+    // True when the rows painted before this load are exactly this cache: the
+    // pre-paint seed in the layout effect already put them on screen.
+    const seeded =
+      cached != null &&
+      seededRef.current?.session === loadSession &&
+      seededRef.current.newest === cached.newest &&
+      itemsRef.current.length === cached.items.length;
     if (!opts?.quiet) {
       if (cached) {
-        itemsRef.current = cached.items;
-        setItems(cached.items);
+        if (!seeded) {
+          itemsRef.current = cached.items;
+          setItems(cached.items);
+          pinPendingRef.current = true;
+        }
         setHasOlder(!cached.complete);
         setLoading(false);
       } else {
-        setLoading(true);
+        setLoading(itemsRef.current.length === 0);
       }
     }
     setLoadError(null);
@@ -4588,8 +4659,11 @@ export default function ChatPane({
         !status.running &&
         cached.newest === (status.lastMessageId ?? 0);
       if (cacheFresh && cached) {
-        itemsRef.current = cached.items;
-        setItems(cached.items);
+        if (!seeded) {
+          itemsRef.current = cached.items;
+          setItems(cached.items);
+          pinPendingRef.current = true;
+        }
         setHasOlder(false);
         transcriptMarkRef.current = { session: loadSession, id: cached.newest };
         setLoading(false);
@@ -4608,6 +4682,7 @@ export default function ChatPane({
       const keptHistory = merged.length > mapped.length;
       itemsRef.current = merged;
       setItems(merged);
+      pinPendingRef.current = true;
       setHasOlder(page.hasMore && (!keptHistory || hasOlderRef.current));
       transcriptMarkRef.current = { session: loadSession, id: newestId(mapped) };
       writeChatCache(projectId, sessionId, merged, !page.hasMore);
@@ -4806,6 +4881,34 @@ export default function ChatPane({
     el.scrollTop = el.scrollHeight;
     pinnedTopRef.current = el.scrollTop;
   }, []);
+
+  // Adopt a session's cached transcript before paint. `load()` runs in an effect,
+  // i.e. after the first paint, so without this a chat opens on a frame of the
+  // previous thread (or of an empty pane with a skeleton) and then snaps to the
+  // real transcript — exactly the flash that reads as a visible load.
+  useLayoutEffect(() => {
+    const target = sessionId || initialGuessRef.current || '';
+    if (!target || itemsSessionRef.current === target) return;
+    itemsSessionRef.current = target;
+    const cached = readChatCache(projectId, target);
+    const seeded = cached?.items ?? [];
+    itemsRef.current = seeded;
+    setItems(seeded);
+    hasOlderRef.current = cached ? !cached.complete : false;
+    setHasOlderState(cached ? !cached.complete : false);
+    // Rows are on screen instantly; only a session with no cached transcript has
+    // to wait, and it keeps `loading` on so the empty-state copy never blinks in
+    // underneath the placeholder.
+    setLoading(seeded.length === 0);
+    setLoadError(null);
+    seededRef.current = { session: target, newest: cached?.newest ?? 0 };
+    transcriptMarkRef.current = { session: target, id: cached?.newest ?? 0 };
+    // A thread opens on its newest turn, whichever way the reader arrived.
+    if (seeded.length > 0) {
+      nearBottomRef.current = true;
+      pinPendingRef.current = true;
+    }
+  }, [sessionId, projectId]);
 
   // While a generation runs server-side (it survives client disconnects),
   // poll the run status: if a run is active and we are not already streaming
@@ -6868,11 +6971,6 @@ export default function ChatPane({
         onScroll={onScroll}
         className="fade-y h-full overflow-y-auto px-3 py-4 md:px-4"
       >
-        {loading && (
-          <div className="flex justify-center py-10">
-            <Spinner className="h-5 w-5" />
-          </div>
-        )}
         {loadError && (
           <div className="mx-auto max-w-2xl">
             <ErrorBox message={loadError} />
@@ -6916,7 +7014,7 @@ export default function ChatPane({
             </div>
           </div>
         )}
-        {loading && items.length === 0 && (
+        {showSkeleton && (
           // First open of a chat with no cached transcript: show its shape
           // rather than an empty pane, so the wait reads as loading instead of
           // a chat with nothing in it.
@@ -6934,7 +7032,7 @@ export default function ChatPane({
             </div>
           </div>
         )}
-        {!loading && !loadError && items.length === 0 && (
+        {!loading && !loadError && !showSkeleton && items.length === 0 && (
           <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
             <p className="text-sm font-medium text-text">What do you want to build?</p>
             <p className="max-w-[260px] text-xs text-faint">
@@ -6942,7 +7040,9 @@ export default function ChatPane({
             </p>
           </div>
         )}
-        {!loading && items.length > 0 && (
+        {/* Rows already on screen are never hidden for a reload: replacing them
+            in place (same keys) is invisible, unmounting them is not. */}
+        {items.length > 0 && (
           <div className="mx-auto flex max-w-2xl flex-col gap-3">
             {(() => {
               // Group a run of assistant rounds into one work collapse: the
