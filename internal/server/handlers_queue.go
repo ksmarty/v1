@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"v1/internal/agent"
 )
 
 // estSecondsPerTurn is the rough per-turn duration used to estimate how long
@@ -25,16 +27,26 @@ func (s *Server) handleChatQueue(w http.ResponseWriter, r *http.Request) {
 	steering := []map[string]any{}
 	if q := s.turns.get(p.ID, s.chatSessionID(p, r.URL.Query().Get("sessionId"))); q != nil {
 		for i, m := range q.list() {
-			messages = append(messages, map[string]any{
+			entry := map[string]any{
 				"id":                   m.ID,
 				"text":                 m.Text,
 				"position":             i + 1,
 				"estimatedWaitSeconds": (i + 1) * estSecondsPerTurn,
 				"queuedAt":             m.QueuedAt.Format(time.RFC3339),
-			})
+			}
+			// A queued message can carry files; the UI shows them as chips so the
+			// queue reads like the message the user actually composed.
+			if metas := agent.AttachmentMetas(m.Attachments); len(metas) > 0 {
+				entry["attachments"] = metas
+			}
+			messages = append(messages, entry)
 		}
 		for _, m := range q.listSteers() {
-			steering = append(steering, map[string]any{"id": m.ID, "text": m.Text})
+			entry := map[string]any{"id": m.ID, "text": m.Text}
+			if metas := agent.AttachmentMetas(m.Attachments); len(metas) > 0 {
+				entry["attachments"] = metas
+			}
+			steering = append(steering, entry)
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"messages": messages, "steering": steering})

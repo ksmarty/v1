@@ -196,11 +196,16 @@ type ChatParams struct {
 	// Tool approvals are enforced by the permission resolver; this only tells
 	// the model whether asking questions is still wanted.
 	ApprovalMode string
-	Steer        func() []string // drains mid-run user messages, injected next round
+	// SteerMessage is one mid-run user message: a steered follow-up. It carries
+	// attachments so a queued or steered message can bring files along, exactly
+	// like a fresh turn can.
+	Steer func() []SteerMessage // drains mid-run user messages, injected next round
 	// Requeue restores a steered message that the run could not take. The harness
 	// drains steers before it knows the sidecar will accept them, so a rejected
 	// one has to go back on the follow-up queue rather than vanish.
-	Requeue    func(text string)
+	// Requeue gets the whole message: a steer that could not be delivered must
+	// go back to the queue with its attachments, not just its text.
+	Requeue    func(msg SteerMessage)
 	Background *BackgroundManager
 	// PollBackground returns the session's finished background commands so the
 	// loop can inject their results into the conversation.
@@ -520,12 +525,12 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 		// normal user turn and rendered in the UI via injected_message.
 		if p.Steer != nil {
 			for _, msg := range p.Steer() {
-				msgID, err := p.Store.AddMessage(p.Project.ID, p.SessionID, "user", msg, "", p.Client.Model, "", "", "")
+				msgID, err := p.Store.AddMessage(p.Project.ID, p.SessionID, "user", msg.Text, "", p.Client.Model, "", "", MarshalAttachments(msg.Attachments))
 				if err != nil {
 					return nil, err
 				}
-				history = append(history, llm.Message{Role: "user", Content: msg})
-				p.Emit(ChatEvent{Type: "injected_message", MessageID: msgID, Text: msg})
+				history = append(history, userMessage(msg.Text, msg.Attachments))
+				p.Emit(ChatEvent{Type: "injected_message", MessageID: msgID, Text: msg.Text, Attachments: AttachmentMetas(msg.Attachments)})
 			}
 		}
 		// Finished background commands join the same way: their result was

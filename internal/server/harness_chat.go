@@ -847,10 +847,23 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge,
 			return
 		}
 		for _, msg := range params.Steer() {
-			if msg == "" {
+			if msg.Text == "" && len(msg.Attachments) == 0 {
 				continue
 			}
-			if err := bridge.Steer(ctx, sidecarID, fmt.Sprintf("v1-steer-%d", time.Now().UnixNano()), scrubHarnessText(msg)); err != nil {
+			// The sidecar takes text only: the attachments ride along as a note
+			// so the model at least knows files were sent (the built-in loop
+			// delivers them as real parts).
+			steerText := scrubHarnessText(msg.Text)
+			if len(msg.Attachments) > 0 {
+				names := make([]string, 0, len(msg.Attachments))
+				for _, a := range msg.Attachments {
+					names = append(names, a.Name)
+				}
+				steerText = strings.TrimSpace(
+					steerText + "\n\n[attached files: " + strings.Join(names, ", ") + "]",
+				)
+			}
+			if err := bridge.Steer(ctx, sidecarID, fmt.Sprintf("v1-steer-%d", time.Now().UnixNano()), steerText); err != nil {
 				log.Printf("harness: steer failed: %v", err)
 				// The steer was already drained from the queue, so put it back. A
 				// message the user sent must not vanish because the running turn could
@@ -863,11 +876,19 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge,
 			// The client shows it as a user message, exactly as the built-in
 			// loop's injected_message does — and v1's store has to hold it too, or
 			// the steered turn disappears from the transcript on the next reload.
-			msgID, addErr := s.st.AddMessage(params.Project.ID, params.SessionID, "user", msg, "", model, "", "", "")
+			msgID, addErr := s.st.AddMessage(
+				params.Project.ID, params.SessionID, "user", msg.Text, "", model, "", "",
+				agent.MarshalAttachments(msg.Attachments),
+			)
 			if addErr != nil {
 				log.Printf("chat: recording a steered message: %v", addErr)
 			}
-			emit(agent.ChatEvent{Type: "injected_message", MessageID: msgID, Text: msg})
+			emit(agent.ChatEvent{
+				Type:        "injected_message",
+				MessageID:   msgID,
+				Text:        msg.Text,
+				Attachments: agent.AttachmentMetas(msg.Attachments),
+			})
 		}
 	}
 

@@ -73,7 +73,7 @@ func TestForkSessionRejectsActiveRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, _, err := s.turns.beginOrQueue(pid, src.ID, "", "", 0); err != nil {
+	if _, _, _, err := s.turns.beginOrQueue(pid, src.ID, "", nil, "", 0); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { s.turns.end(pid, src.ID) })

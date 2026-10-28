@@ -24,6 +24,7 @@ import { freshThinkingLevel } from '../thinking';
 import type {
   ChatAttachmentMeta,
   ChatEvent,
+  ChatMessage,
   ChatSession,
   ChatUsage,
   DelegateContentPart,
@@ -671,6 +672,11 @@ function parseBackgroundResult(text: string): {
 // An oversized transcript is dropped rather than truncated: showing a partial
 // turn would be worse than showing a spinner.
 const CHAT_CACHE_MAX = 1_500_000;
+
+// How many messages one history page holds. A chat opens with the newest page
+// only; scrolling up pulls the previous one in, so the reply the reader came
+// back for never waits behind a long transcript.
+const CHAT_PAGE = 40;
 
 function chatCacheKey(projectId: string, sessionId: string): string {
   return `v1-chat-cache:${projectId}:${sessionId}`;
@@ -2081,20 +2087,29 @@ function collapseSummary(
 function CollapsedTools({
   d,
   streaming,
+  holdOpen,
   onAskAnswered,
 }: {
   d: CollapseData;
   streaming: boolean;
+  /**
+   * The turn this row belongs to is still live (streaming, or a run we are
+   * watching from outside). A row that was already finished when the reader
+   * left must not snap shut while the rest of the turn is still working — the
+   * whole turn opens and closes together.
+   */
+  holdOpen?: boolean;
   onAskAnswered: (result: AskResultView) => void;
 }) {
   const { reasoning, calls, results, ask, askCount } = d;
   // A pending question must stay visible so it can be answered — only
   // collapse once it has answers (or failed); manual toggles are respected.
   const pendingAsk = ask != null && ask.result === undefined && !ask.failed;
-  const [open, setOpen] = useState(streaming || pendingAsk);
+  const [open, setOpen] = useState(streaming || holdOpen || pendingAsk);
   useEffect(() => {
-    if (!streaming && !pendingAsk) setOpen(false);
-  }, [streaming, pendingAsk]);
+    if (streaming || holdOpen) setOpen(true);
+    else if (!pendingAsk) setOpen(false);
+  }, [streaming, holdOpen, pendingAsk]);
   const fullSummary = collapseSummary(calls, results, askCount, d.background ? 1 : 0);
   const hasTools = calls.length + results.length > 0 || askCount > 0 || !!d.background;
   return (
@@ -3049,6 +3064,7 @@ function DelegateTranscriptDialog({
               item={it}
               isLast={false}
               streaming={false}
+              live={false}
               turnEnd={false}
               validTag={() => false}
               onEdit={noop}
@@ -3306,6 +3322,7 @@ const MessageRow = memo(function MessageRow({
   item,
   isLast,
   streaming,
+  live,
   turnEnd,
   validTag,
   resolveImage,
@@ -3324,6 +3341,8 @@ const MessageRow = memo(function MessageRow({
   item: Item;
   isLast: boolean;
   streaming: boolean;
+  /** The transcript's active turn is still running (see CollapsedTools). */
+  live: boolean;
   turnEnd: boolean;
   validTag: (tag: string) => boolean;
   resolveImage?: (src: string) => string | null;
@@ -3405,12 +3424,24 @@ const MessageRow = memo(function MessageRow({
         />
       );
     }
+    // A message that is only files has no text: rendering the (empty) text
+    // block anyway left a blank line and a pill that read like a missing
+    // message. Drop it and let the chips carry the bubble.
+    const hasText = item.content.trim().length > 0;
     return (
       <div className="ml-auto flex max-w-[85%] flex-col items-end gap-1">
-        <div className="w-full rounded-2xl bg-border px-3.5 py-2 text-sm text-text">
-          <div className="whitespace-pre-wrap break-words"><TaggedText text={item.content} valid={validTag} /></div>
+        <div
+          className={
+            hasText
+              ? 'w-full rounded-2xl bg-border px-3.5 py-2 text-sm text-text'
+              : 'rounded-2xl bg-border px-2 py-2 text-sm text-text'
+          }
+        >
+          {hasText && (
+            <div className="whitespace-pre-wrap break-words"><TaggedText text={item.content} valid={validTag} /></div>
+          )}
           {item.attachments && item.attachments.length > 0 && (
-            <div className="mt-1.5 flex flex-wrap justify-end gap-1.5">
+            <div className={`flex flex-wrap justify-end gap-1.5 ${hasText ? 'mt-1.5' : ''}`}>
               {item.attachments.map((a, i) =>
                 a.kind === 'image' && a.url ? (
                   <button
@@ -3530,6 +3561,7 @@ const MessageRow = memo(function MessageRow({
         <CollapsedTools
           d={d}
           streaming={item.streaming ?? false}
+          holdOpen={live}
           onAskAnswered={onAskAnswered}
         />
       ) : (
@@ -3707,11 +3739,17 @@ export default function ChatPane({
   // Messages sent while a run is active, in processing order. They become
   // follow-up turns when the run finishes; the steer button injects one into
   // the current run immediately.
-  const [queued, setQueued] = useState<{ id: string; text: string; position?: number; estimatedWaitSeconds?: number }[]>([]);
+  const [queued, setQueued] = useState<{
+    id: string;
+    text: string;
+    position?: number;
+    estimatedWaitSeconds?: number;
+    attachments?: ChatAttachmentMeta[];
+  }[]>([]);
   // Messages steered into the current run, waiting to be injected at the next
   // round boundary.
-  const [steering, setSteering] = useState<{ id: string; text: string }[]>([]);
-  const steeringRef = useRef<{ id: string; text: string }[]>([]);
+  const [steering, setSteering] = useState<{ id: string; text: string; attachments?: ChatAttachmentMeta[] }[]>([]);
+  const steeringRef = useRef<{ id: string; text: string; attachments?: ChatAttachmentMeta[] }[]>([]);
   useEffect(() => {
     steeringRef.current = steering;
   }, [steering]);
@@ -3784,6 +3822,15 @@ export default function ChatPane({
   // Monotonic guard so a slow load() for an older session can't overwrite the
   // transcript after a switch; every load bumps it and stale results are dropped.
   const loadSeqRef = useRef(0);
+  // Whether older pages are left on the server, and a guard so two scroll
+  // events cannot fetch the same page twice.
+  const [hasOlder, setHasOlder] = useState(false);
+  const loadingOlderRef = useRef(false);
+  // Newest persisted message id this transcript already shows, per session. The
+  // status poll compares it with the server's before deciding to reload, so a
+  // return from the background only refetches when the run actually wrote
+  // something we do not have.
+  const transcriptMarkRef = useRef<{ session: string; id: number }>({ session: '', id: 0 });
   // Key of the last turn we notified about (persisted per project+session so
   // a reload does not re-notify for runs already seen).
   const notifiedKey = `v1.notified.${projectId}.${sessionId}`;
@@ -4136,27 +4183,13 @@ export default function ChatPane({
     }
   }, [projectId, sessionId]);
 
-  const load = useCallback(async () => {
-    if (!sessionId) return;
-    // A session switch while this fetch is in flight must not let the old
-    // session's messages overwrite the new one's transcript.
-    const loadSession = sessionId;
-    const loadSeq = ++loadSeqRef.current;
-    // Show the last transcript we saw for this session straight away — a blank
-    // chat on a slow link is worse than a slightly stale one — then let the
-    // fetch below replace it.
-    const cached = readChatCache(projectId, sessionId);
-    if (cached) {
-      setItems(cached);
-      setLoading(false);
-    } else {
-      setLoading(true);
-    }
-    setLoadError(null);
-    try {
-      const msgs = await api.getMessages(projectId, sessionId);
+  // Maps stored rows to transcript items. Shared by the newest-page load and the
+  // older-page reader: both need exactly this mapping, and a chunk boundary must
+  // not change how a row looks.
+  const mapMessages = useCallback(
+    (msgs: ChatMessage[], startUserAt: number): Item[] => {
       const mapped: Item[] = [];
-      let lastUserAt = 0;
+      let lastUserAt = startUserAt;
       for (const m of msgs) {
         if (m.role === 'tool') {
           const name = m.tool ? parseToolName(m.tool) : 'tool';
@@ -4232,6 +4265,49 @@ export default function ChatPane({
           mapped.push({ kind: 'msg', key: m.id, role: 'error', content: m.content });
         }
       }
+      return mapped;
+    },
+    [projectId],
+  );
+
+  const load = useCallback(async (opts?: { quiet?: boolean }) => {
+    if (!sessionId) return;
+    // A session switch while this fetch is in flight must not let the old
+    // session's messages overwrite the new one's transcript.
+    const loadSession = sessionId;
+    const loadSeq = ++loadSeqRef.current;
+    // Show the last transcript we saw for this session straight away — a blank
+    // chat on a slow link is worse than a slightly stale one — then let the
+    // fetch below replace it. A quiet reload (turn end, run finished while we
+    // were away) keeps whatever is on screen and swaps it when the fetch lands,
+    // so the transcript never flashes back to a skeleton.
+    if (!opts?.quiet) {
+      const cached = readChatCache(projectId, sessionId);
+      if (cached) {
+        setItems(cached);
+        setLoading(false);
+      } else {
+        setLoading(true);
+      }
+    }
+    setLoadError(null);
+    try {
+      // Only the newest page: the turns the reader came back for are at the
+      // bottom, and serialising a long history before showing anything is what
+      // made a big chat slow to open.
+      const page = await api.getMessagesPage(projectId, sessionId, CHAT_PAGE);
+      const mapped = mapMessages(page.messages, 0);
+      // Drop the result if a newer load started or the session changed while
+      // the fetch was in flight (switching mid-load shows the old transcript).
+      if (loadSeqRef.current !== loadSeq || sessionIdRef.current !== loadSession) return;
+      itemsRef.current = mapped;
+      setItems(mapped);
+      setHasOlder(page.hasMore);
+      transcriptMarkRef.current = {
+        session: loadSession,
+        id: mapped.reduce((max, it) => (it.kind === 'msg' ? Math.max(max, Number(it.key) || 0) : max), 0),
+      };
+      writeChatCache(projectId, sessionId, mapped);
       // Drop the result if a newer load started or the session changed while
       // the fetch was in flight (switching mid-load shows the old transcript).
       if (loadSeqRef.current !== loadSeq || sessionIdRef.current !== loadSession) return;
@@ -4270,12 +4346,53 @@ export default function ChatPane({
     } catch (e) {
       setLoadError(errMsg(e));
     } finally {
-      setLoading(false);
+      if (!opts?.quiet) setLoading(false);
       // Re-surface a question the agent asked while the app was away — the
       // card must survive reloads and reconnects, not just live streams.
       void refreshPendingAsk();
     }
-  }, [projectId, sessionId, projectName, notifiedKey, refreshPendingAsk]);
+  }, [projectId, sessionId, projectName, notifiedKey, refreshPendingAsk, mapMessages]);
+
+  // Fetch the next-older page and prepend it, holding the reader's place: the
+  // rows above the viewport grow, so the scroll offset is restored by the height
+  // they added. Without that the transcript jumps as history arrives.
+  const loadOlder = useCallback(async () => {
+    if (!hasOlder || loadingOlderRef.current) return;
+    const first = itemsRef.current.find((it) => it.kind === 'msg' && Number(it.key) > 0);
+    const before = first ? Number(first.key) : 0;
+    if (!before) return;
+    loadingOlderRef.current = true;
+    const box = scrollRef.current;
+    const prevH = box?.scrollHeight ?? 0;
+    const prevTop = box?.scrollTop ?? 0;
+    try {
+      const page = await api.getMessagesPage(projectId, sessionId, CHAT_PAGE, before);
+      setHasOlder(page.hasMore);
+      const older = mapMessages(page.messages, 0);
+      if (older.length > 0) {
+        itemsRef.current = [...older, ...itemsRef.current];
+        setItems((prev) => [...older, ...prev]);
+        writeChatCache(projectId, sessionId, itemsRef.current);
+        requestAnimationFrame(() => {
+          const el = scrollRef.current;
+          if (!el) return;
+          el.scrollTop = prevTop + (el.scrollHeight - prevH);
+        });
+      }
+    } catch {
+      // Transient: the next scroll up tries again.
+    } finally {
+      loadingOlderRef.current = false;
+    }
+  }, [hasOlder, mapMessages, projectId, sessionId]);
+  // A newest page shorter than the viewport leaves nothing to scroll, so the
+  // reader could never reach the older pages. Top the view up until it fills.
+  useEffect(() => {
+    if (!hasOlder || loading) return;
+    const el = scrollRef.current;
+    if (!el) return;
+    if (el.scrollHeight <= el.clientHeight + 80) void loadOlder();
+  }, [items, hasOlder, loading, loadOlder]);
 
   useEffect(() => {
     void load();
@@ -4426,8 +4543,13 @@ export default function ChatPane({
         // reopened.
         const returned = returnedRef.current;
         returnedRef.current = false;
-        if ((wasRunning || returned) && !st.running && !streaming && !watchRef.current) {
-          void load(); // the run finished while we were away — fetch the rest
+        const mark = transcriptMarkRef.current;
+        const known = mark.session === sessionId ? mark.id : 0;
+        const newer = (st.lastMessageId ?? 0) > known;
+        if ((wasRunning || returned) && !st.running && !streaming && !watchRef.current && newer) {
+          // The run wrote rows we do not have — fetch them, quietly so the
+          // transcript we are already reading is not torn down and rebuilt.
+          void load({ quiet: true });
         }
         // A live run with nothing streaming it means the watch dropped, or never
         // attached. Nudge the watch effect, which cannot notice this by itself:
@@ -4594,12 +4716,22 @@ export default function ChatPane({
       dotOf.push(grouped.length - 1);
     }
     bucketRef.current = grouped;
-    setBuckets(grouped);
     const stripH = stripRef.current?.clientHeight ?? 0;
-    // Keep the dots at their full size (10px) until they no longer fit with
-    // the 8px gap (gap-2 on the strip column), then shrink to fit — floor 3px.
-    const n = grouped.length;
-    setDotSize(Math.min(10, Math.max(3, (stripH - 24 - (n - 1) * 8) / n)));
+    // Keep the dots at their full size (10px) while they fit with the 8px gap
+    // (gap-2 on the strip column). Past that point the oldest messages are
+    // dropped from the strip instead of shrinking the dots to nothing: the
+    // minimap is a way to find the recent part of a long thread, and a column of
+    // invisible specks (or a strip that overflows its box) is not.
+    const DMAX = 10;
+    const DMIN = 6;
+    const GAP = 8;
+    const PAD = 24; // bottom-4 + top-4 on the strip
+    const fits = stripH > 0 ? Math.max(1, Math.floor((stripH - PAD + GAP) / (DMIN + GAP))) : grouped.length;
+    const hidden = Math.max(0, grouped.length - fits);
+    const visible = hidden > 0 ? grouped.slice(hidden) : grouped;
+    const n = visible.length;
+    setBuckets(visible);
+    setDotSize(Math.min(DMAX, Math.max(DMIN, (stripH - PAD - (n - 1) * GAP) / n)));
     // The dot for the message nearest the viewport top is lit; at the very
     // bottom the last message can sit below the tracking line — light its
     // dot anyway.
@@ -4608,7 +4740,9 @@ export default function ChatPane({
     for (let i = 0; i < keys.length; i++) {
       if (nearBottom || (tops[i] >= 0 && tops[i] <= el.scrollTop + 80)) currentIdx = i;
     }
-    setCurrentDot(dotOf[currentIdx]);
+    // dotOf indexes into the full bucket list; the strip now starts `hidden`
+    // dots later, so shift it to point at the dot on screen.
+    setCurrentDot(dotOf[currentIdx] - hidden);
   }, []);
   const onScroll = useCallback(() => {
     const el = scrollRef.current;
@@ -4628,7 +4762,10 @@ export default function ChatPane({
     if (gap < 24) setShowJump(false);
     else if (scrolledUp) setShowJump(true);
     if (mapOpen) updateCurrent();
-  }, [mapOpen, updateCurrent]);
+    // Reaching the top pulls in the page above, so a long chat fills in as the
+    // reader scrolls back through it instead of blocking on one big response.
+    if (el.scrollTop < 200) void loadOlder();
+  }, [mapOpen, updateCurrent, loadOlder]);
   useEffect(() => {
     if (!mapOpen) return;
     const raf = requestAnimationFrame(updateCurrent);
@@ -4699,6 +4836,19 @@ export default function ChatPane({
     };
   }, [items, pinBottom]);
 
+  // The textarea's own text is transparent: the visible text is the echo layer
+  // behind it. The two scroll independently, so copy the textarea's scroll
+  // offsets into the echo after anything that can scroll it — otherwise the
+  // caret row slides out of the visible box and the user cannot see what they
+  // are typing.
+  const syncComposer = useCallback(() => {
+    const el = taRef.current;
+    const echo = echoRef.current;
+    if (!el || !echo) return;
+    echo.scrollTop = el.scrollTop;
+    echo.scrollLeft = el.scrollLeft;
+  }, []);
+
   // Auto-grow the input textarea (full height while expanded on mobile).
   useEffect(() => {
     const el = taRef.current;
@@ -4708,9 +4858,17 @@ export default function ChatPane({
       el.focus();
       return;
     }
+    // Resetting the height to measure reflows the box and drops scrollTop back
+    // to 0, which hides the row the caret is on. Remember whether the caret was
+    // at the end and pin the box there again after the resize.
+    const atEnd = el.selectionStart === el.value.length && el.selectionEnd === el.value.length;
     el.style.height = 'auto';
     el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
-  }, [input, expanded]);
+    if (atEnd) el.scrollTop = el.scrollHeight;
+    syncComposer();
+    const raf = requestAnimationFrame(syncComposer);
+    return () => cancelAnimationFrame(raf);
+  }, [input, expanded, syncComposer]);
 
   const finish = useCallback(() => {
     setStreaming(false);
@@ -5046,6 +5204,11 @@ export default function ChatPane({
           setSteering([]); // the turn ended — nothing is pending injection
           setLocalStatus(null); // drop the transient info notice (e.g. continuation)
           void refreshQueue(); // queued messages drained into follow-up turns
+          // Converge on the persisted transcript, exactly like reopening the
+          // chat does. A reply whose last tokens never arrived (a dropped
+          // stream, a truncated event) is complete on the server, and without
+          // this the reader had to leave the chat and come back to see it.
+          void load({ quiet: true });
           finish();
           break;
         }
@@ -5062,6 +5225,7 @@ export default function ChatPane({
           setSteering([]);
           setLocalStatus(null);
           void refreshQueue();
+          void load({ quiet: true });
           finish();
           break;
         }
@@ -5072,8 +5236,16 @@ export default function ChatPane({
           // gets a "steered" badge.
           const id = ev.messageId ?? 0;
           clearFinishedBg(ev.text);
-          const steered = ev.text ? steeringRef.current.some((s) => s.text === ev.text) : false;
-          if (ev.text) setSteering((prev) => prev.filter((s) => s.text !== ev.text));
+          // Match the landed row to the steer that produced it. An attachment-
+          // only steer has no text to compare, so fall back to the first pending
+          // entry with the same file count — it is the only one it can be.
+          const pending = steeringRef.current.find((s) =>
+            ev.text
+              ? s.text === ev.text
+              : s.text === '' && (s.attachments?.length ?? 0) === (ev.attachments?.length ?? 0),
+          );
+          const steered = pending != null;
+          if (pending) setSteering((prev) => prev.filter((s) => s.id !== pending.id));
           update((prev) => [
             // A screenshot/injected message closes any thinking block that was
             // still open from the previous round. As with a tool call, this
@@ -5101,7 +5273,7 @@ export default function ChatPane({
         }
       }
     },
-    [update, finish, projectId, sessionId, projectName, loadContext, refreshQueue, onProjectRename],
+    [update, finish, projectId, sessionId, projectName, loadContext, refreshQueue, load, onProjectRename],
   );
 
   useEffect(() => {
@@ -5308,7 +5480,13 @@ export default function ChatPane({
             mime: a.mime,
             kind: a.kind,
             size: a.content.length,
-            url: a.kind === 'image' ? `data:${a.mime};base64,${a.content}` : undefined,
+            // Both kinds open straight away, before the turn is persisted:
+            // images inline, text through the file viewer, which fetches the
+            // data: URL like any other attachment.
+            url:
+              a.kind === 'image'
+                ? `data:${a.mime};base64,${a.content}`
+                : `data:${a.mime || 'text/plain'};charset=utf-8,${encodeURIComponent(a.content)}`,
           })),
         },
       ]);
@@ -5468,8 +5646,16 @@ export default function ChatPane({
   // Either way it renders from the server's queue state, so the two paths differ
   // only in when the agent sees it.
   const enqueue = useCallback(
-    async (text: string, steer: boolean) => {
-      const res = await api.queueChat(projectId, sessionId, text, modelOverride, providerOverride);
+    async (text: string, steer: boolean, atts: ChatAttachmentInput[] = []) => {
+      const res = await api.queueChat(
+        projectId,
+        sessionId,
+        text,
+        modelOverride,
+        providerOverride,
+        undefined,
+        atts,
+      );
       if (!res.queued) {
         // The run finished before this arrived, so it became a normal turn.
         void refreshQueue();
@@ -5482,7 +5668,18 @@ export default function ChatPane({
         void refreshQueue();
         return;
       }
-      setQueued((prev) => [...prev, { id: res.id ?? '', text }]);
+      // Optimistic row; the next refreshQueue() replaces it with the server's
+      // own metadata (which is what the chips read).
+      const metas: ChatAttachmentMeta[] | undefined =
+        atts.length > 0
+          ? atts.map((a) => ({
+              name: a.name,
+              mime: a.mime,
+              kind: a.kind,
+              size: a.content.length,
+            }))
+          : undefined;
+      setQueued((prev) => [...prev, { id: res.id ?? '', text, attachments: metas }]);
     },
     [projectId, sessionId, modelOverride, providerOverride, refreshQueue],
   );
@@ -5493,47 +5690,46 @@ export default function ChatPane({
     // does not delete it as an unused one.
     markSessionUsed(sessionId);
     if (streaming) {
-      // Attachments need a fresh turn, so they cannot ride along mid-run.
+      // Mid-run sends carry their attachments too: the queued message keeps
+      // them, and whichever turn drains it delivers the files with the text.
       const text = input.trim();
-      if (!text) return;
-      if (attachments.length > 0) {
-        setAttachError('Attachments can only be sent when no run is active.');
-        return;
-      }
+      if (!text && attachments.length === 0) return;
+      const atts = attachments;
       setInput('');
+      setAttachments([]);
       setSuggestions([]);
       try {
-        await enqueue(text, true);
+        await enqueue(text, true, atts);
         setExpanded(false);
       } catch (e) {
         setInput(text);
+        setAttachments(atts);
         setLoadError(errMsg(e));
       }
       return;
     }
     sendText(input);
     setExpanded(false);
-  }, [input, streaming, attachments.length, runLocalCommand, sendText, enqueue]);
+  }, [input, streaming, attachments, runLocalCommand, sendText, enqueue]);
 
   // The secondary action beside Send: queue without steering, so the message
   // waits for the next turn instead of joining the running one.
   const queueInput = useCallback(async () => {
     const text = input.trim();
-    if (!text || !streaming) return;
-    if (attachments.length > 0) {
-      setAttachError('Attachments can only be sent when no run is active.');
-      return;
-    }
+    if ((!text && attachments.length === 0) || !streaming) return;
+    const atts = attachments;
     setInput('');
+    setAttachments([]);
     setSuggestions([]);
     try {
-      await enqueue(text, false);
+      await enqueue(text, false, atts);
       setExpanded(false);
     } catch (e) {
       setInput(text);
+      setAttachments(atts);
       setLoadError(errMsg(e));
     }
-  }, [input, streaming, attachments.length, enqueue]);
+  }, [input, streaming, attachments, enqueue]);
 
   // Moves a queued message up/down (optimistically; the server is the source
   // of truth on the next refresh).
@@ -6111,10 +6307,44 @@ export default function ChatPane({
           void updateSuggestions(e.target.value);
         }}
         onPaste={(e) => {
-          const text = e.clipboardData.getData('text/plain');
+          const cd = e.clipboardData;
+          if (!cd) return;
+          // Files on the clipboard (a screenshot, a copied file) attach to the
+          // message instead of pasting their name as text.
+          if (cd.files && cd.files.length > 0) {
+            e.preventDefault();
+            void addFiles(cd.files);
+            return;
+          }
+          const text = cd.getData('text/plain');
           // Large pastes become a text attachment instead of flooding the
           // composer — the sent message references it as a highlighted chip.
-          if (!text || (text.length <= 1200 && text.split('\n').length <= 40)) return;
+          if (!text || (text.length <= 1200 && text.split('\n').length <= 40)) {
+            // Small pastes are inserted here rather than by the browser: rich
+            // sources (spreadsheets, terminals, editors) put block whitespace at
+            // the edges of the copied fragment, and the native paste drops it
+            // verbatim — which showed up as a stray space or blank line between
+            // the cursor and the pasted text.
+            if (!text) return;
+            e.preventDefault();
+            const ta = taRef.current;
+            if (!ta) return;
+            const clean = text.replace(/^[ \t\r\n]+|[ \t\r\n]+$/g, '');
+            if (!clean) return;
+            const start = ta.selectionStart;
+            const end = ta.selectionEnd;
+            const next = ta.value.slice(0, start) + clean + ta.value.slice(end);
+            setInput(next);
+            const pos = start + clean.length;
+            requestAnimationFrame(() => {
+              ta.selectionStart = pos;
+              ta.selectionEnd = pos;
+              ta.scrollTop = ta.scrollHeight;
+              syncComposer();
+            });
+            void updateSuggestions(next);
+            return;
+          }
           e.preventDefault();
           setAttachments((prev) => {
             if (prev.length >= MAX_ATTACHMENTS) {
@@ -6193,6 +6423,7 @@ export default function ChatPane({
                 requestAnimationFrame(() => {
                   ta.selectionStart = pos;
                   ta.selectionEnd = pos;
+                  syncComposer();
                 });
                 void updateSuggestions(next);
                 return;
@@ -6225,6 +6456,13 @@ export default function ChatPane({
                 requestAnimationFrame(() => {
                   ta.selectionStart = pos;
                   ta.selectionEnd = pos;
+                  // The caret is on the new last line, but the box has not grown
+                  // yet at this point, so pin it here as well: the auto-grow
+                  // effect runs later and only sees a selection it can no longer
+                  // tell apart from the previous one, which left the caret's row
+                  // below the fold until the next keystroke.
+                  ta.scrollTop = ta.scrollHeight;
+                  syncComposer();
                 });
                 return;
               }
@@ -6388,6 +6626,24 @@ export default function ChatPane({
             </div>
           </div>
         )}
+        {loading && items.length === 0 && (
+          // First open of a chat with no cached transcript: show its shape
+          // rather than an empty pane, so the wait reads as loading instead of
+          // a chat with nothing in it.
+          <div className="mx-auto flex w-full max-w-2xl animate-pulse flex-col gap-3" aria-busy="true">
+            <div className="ml-auto h-9 w-1/2 rounded-2xl bg-border/60" />
+            <div className="flex flex-col gap-1.5">
+              <div className="h-3 w-24 rounded bg-border/50" />
+              <div className="h-3 w-11/12 rounded bg-border/40" />
+              <div className="h-3 w-9/12 rounded bg-border/40" />
+            </div>
+            <div className="ml-auto h-9 w-2/5 rounded-2xl bg-border/60" />
+            <div className="flex flex-col gap-1.5">
+              <div className="h-3 w-32 rounded bg-border/50" />
+              <div className="h-3 w-10/12 rounded bg-border/40" />
+            </div>
+          </div>
+        )}
         {!loading && !loadError && items.length === 0 && (
           <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
             <p className="text-sm font-medium text-text">What do you want to build?</p>
@@ -6405,6 +6661,7 @@ export default function ChatPane({
               // group (matching MessageRow's tools-then-text order), so a
               // comment lands between the tool calls it follows and the ones
               // after it instead of at the end of the whole turn.
+              const live = streaming || runActive || resuming;
               const lastMsgIdx = (() => {
                 for (let i = items.length - 1; i >= 0; i--) {
                   if (items[i].kind === 'msg') return i;
@@ -6418,6 +6675,7 @@ export default function ChatPane({
                     item={shown}
                     isLast={i === lastMsgIdx}
                     streaming={streaming}
+                    live={live}
                     turnEnd={turnEndKeys.has(it.key)}
                     validTag={validTag}
                     resolveImage={resolveImage}
@@ -6447,8 +6705,13 @@ export default function ChatPane({
               let turn: { it: MsgItem; i: number }[] = [];
               const flushTurn = () => {
                 if (turn.length === 0) return;
+                // Nothing collapses while the turn is still working. A run the
+                // reader left and came back to used to fold every round that
+                // had already finished, leaving the live rounds outside the
+                // fold — a turn split in two. The whole turn folds at once,
+                // when it is done.
                 const groupable =
-                  getToolCallsCollapsed() && turn.every(({ it }) => !it.streaming);
+                  getToolCallsCollapsed() && !live && turn.every(({ it }) => !it.streaming);
                 if (!groupable) {
                   turn.forEach(({ it, i }) => rows.push(renderMessage(it, i)));
                   turn = [];
@@ -6607,7 +6870,22 @@ export default function ChatPane({
                     className="min-h-[52px] min-w-0 flex-1 resize-y rounded-md border border-border bg-bg px-2 py-1.5 text-xs text-text outline-none focus:border-subtle"
                   />
                 ) : (
-                  <span className="min-w-0 flex-1 truncate text-dim">{m.text}</span>
+                  <>
+                    {m.text ? (
+                      <span className="min-w-0 flex-1 truncate text-dim">{m.text}</span>
+                    ) : (
+                      <span className="min-w-0 flex-1 truncate text-faint italic">Attachment only</span>
+                    )}
+                    {m.attachments && m.attachments.length > 0 && (
+                      <span
+                        title={m.attachments.map((a) => a.name).join(', ')}
+                        className="flex shrink-0 items-center gap-0.5 rounded border border-border/80 px-1 py-0.5 text-[10px] text-faint"
+                      >
+                        <IconPaperclip className="h-2.5 w-2.5" />
+                        {m.attachments.length}
+                      </span>
+                    )}
+                  </>
                 )}
                 {queued.length > 1 && (
                   <span className="flex shrink-0 flex-col">
@@ -6682,7 +6960,18 @@ export default function ChatPane({
                     className="mb-1 flex items-center gap-1.5 rounded-md border border-accent/40 bg-accent/5 px-2 py-1.5 last:mb-0"
                   >
                     <Spinner className="h-3 w-3 shrink-0 text-accent" />
-                    <span className="min-w-0 flex-1 truncate text-dim">{m.text}</span>
+                    <span className="min-w-0 flex-1 truncate text-dim">
+                      {m.text || <span className="italic text-faint">Attachment only</span>}
+                    </span>
+                    {m.attachments && m.attachments.length > 0 && (
+                      <span
+                        title={m.attachments.map((a) => a.name).join(', ')}
+                        className="flex shrink-0 items-center gap-0.5 rounded border border-accent/30 px-1 py-0.5 text-[10px] text-accent/80"
+                      >
+                        <IconPaperclip className="h-2.5 w-2.5" />
+                        {m.attachments.length}
+                      </span>
+                    )}
                   </div>
                 ))}
               </>
@@ -7037,8 +7326,50 @@ export default function ChatPane({
                     key={i}
                     className="flex items-center gap-1.5 rounded-md border border-border bg-surface px-2 py-1 text-xs text-dim"
                   >
-                    <IconPaperclip className="h-3 w-3 shrink-0 text-faint" />
-                    <span className="max-w-[140px] truncate">{a.name}</span>
+                    {a.kind === 'image' ? (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          openLightbox(`data:${a.mime};base64,${a.content}`, a.name)
+                        }
+                        title={`Preview ${a.name}`}
+                        className="shrink-0 overflow-hidden rounded transition-opacity hover:opacity-80"
+                      >
+                        <img
+                          src={`data:${a.mime};base64,${a.content}`}
+                          alt={a.name}
+                          className="h-7 w-7 object-cover"
+                        />
+                      </button>
+                    ) : (
+                      <IconPaperclip className="h-3 w-3 shrink-0 text-faint" />
+                    )}
+                    {a.kind === 'image' ? (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          openLightbox(`data:${a.mime};base64,${a.content}`, a.name)
+                        }
+                        title={`Preview ${a.name}`}
+                        className="max-w-[140px] truncate text-left transition-colors hover:text-text"
+                      >
+                        {a.name}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          openFile(
+                            `data:${a.mime || 'text/plain'};charset=utf-8,${encodeURIComponent(a.content)}`,
+                            a.name,
+                          )
+                        }
+                        title={`Preview ${a.name}`}
+                        className="max-w-[140px] truncate text-left transition-colors hover:text-text"
+                      >
+                        {a.name}
+                      </button>
+                    )}
                     <button
                       type="button"
                       aria-label={`Remove ${a.name}`}

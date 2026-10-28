@@ -2,6 +2,7 @@ import type {
   AskQuestionDTO,
   AuthStatus,
   BackgroundJob,
+  ChatAttachmentMeta,
   ChatEvent,
   ChatMessage,
   ChatSession,
@@ -364,6 +365,16 @@ export const api = {
 
   getMessages: (id: string, sessionId: string) =>
     request<ChatMessage[]>(`/api/projects/${id}/messages?sessionId=${encodeURIComponent(sessionId)}`),
+  // One page of history, newest last. `before` walks backwards from a message
+  // id, so a long chat opens with only its last page and older turns stream in
+  // as the reader scrolls up.
+  getMessagesPage: (id: string, sessionId: string, limit: number, before?: number) => {
+    const q = new URLSearchParams({ sessionId, limit: String(limit) });
+    if (before && before > 0) q.set('before', String(before));
+    return request<{ messages: ChatMessage[]; hasMore: boolean }>(
+      `/api/projects/${id}/messages?${q.toString()}`,
+    );
+  },
   getDelegateMessages: (id: string, conversationId: string) =>
     request<DelegateTranscript>(
       `/api/projects/${id}/delegate/${encodeURIComponent(conversationId)}/messages`,
@@ -418,16 +429,40 @@ export const api = {
   // Mid-run send: the same endpoint queues the message onto the active run
   // (steer/follow-up) instead of opening an SSE stream. When queued, the
   // response carries the queue entry's id.
-  queueChat: (id: string, sessionId: string, message: string, model?: string, providerId?: string, thinking?: string) =>
-    post<{ queued?: boolean; id?: string }>(`/api/projects/${id}/chat`, { message, sessionId, model, providerId, thinking }),
+  queueChat: (
+    id: string,
+    sessionId: string,
+    message: string,
+    model?: string,
+    providerId?: string,
+    thinking?: string,
+    attachments?: ChatAttachmentInput[],
+  ) =>
+    post<{ queued?: boolean; id?: string }>(`/api/projects/${id}/chat`, {
+      message,
+      sessionId,
+      model,
+      providerId,
+      thinking,
+      // A message sent while a run is active can carry files: the server keeps
+      // them on the queue entry and the follow-up turn replays them.
+      ...(attachments && attachments.length > 0 ? { attachments } : {}),
+    }),
   chatStatus: (id: string, sessionId: string) =>
-    request<{ running: boolean }>(
+    request<{ running: boolean; lastMessageId?: number }>(
       `/api/projects/${id}/chat/status?sessionId=${encodeURIComponent(sessionId)}`,
     ),
   chatQueue: (id: string, sessionId: string) =>
     request<{
-      messages: { id: string; text: string; position?: number; estimatedWaitSeconds?: number; queuedAt?: string }[];
-      steering: { id: string; text: string }[];
+      messages: {
+        id: string;
+        text: string;
+        position?: number;
+        estimatedWaitSeconds?: number;
+        queuedAt?: string;
+        attachments?: ChatAttachmentMeta[];
+      }[];
+      steering: { id: string; text: string; attachments?: ChatAttachmentMeta[] }[];
     }>(
       `/api/projects/${id}/chat/queue?sessionId=${encodeURIComponent(sessionId)}`,
     ),

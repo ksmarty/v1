@@ -71,6 +71,33 @@ type AttachmentMeta struct {
 	Size int    `json:"size"`
 }
 
+// AttachmentMetas summarises attachments for an SSE event: the transcript
+// renders a chip from this and fetches the content only when the file is
+// opened, so a large image is not re-sent down the stream.
+func AttachmentMetas(atts []Attachment) []AttachmentMeta {
+	if len(atts) == 0 {
+		return nil
+	}
+	out := make([]AttachmentMeta, 0, len(atts))
+	for _, a := range atts {
+		size := len(a.Content)
+		if a.Kind == "image" {
+			// Content is base64, so the decoded size is 3/4 of the encoded one.
+			size = len(a.Content) / 4 * 3
+		}
+		out = append(out, AttachmentMeta{Name: a.Name, MIME: a.MIME, Kind: a.Kind, Size: size})
+	}
+	return out
+}
+
+// SteerMessage is one mid-run user message: a follow-up that joined a run that
+// was already in flight. It carries attachments so a queued or steered message
+// can bring files along exactly like a fresh turn can.
+type SteerMessage struct {
+	Text        string
+	Attachments []Attachment
+}
+
 func textPart(t string) map[string]any {
 	return map[string]any{"type": "text", "text": t}
 }

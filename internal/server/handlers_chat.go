@@ -80,7 +80,15 @@ func (s *Server) handleListMessages(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to resolve chat session")
 		return
 	}
-	msgs, err := s.st.ListMessages(p.ID, sessionID)
+	// Chunked history: `limit` asks for one page and `before` walks backwards
+	// from a message id. Without `limit` the whole transcript is returned as a
+	// plain array, which is what every other caller of this endpoint expects.
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	before, _ := strconv.ParseInt(r.URL.Query().Get("before"), 10, 64)
+	if limit < 0 {
+		limit = 0
+	}
+	msgs, hasMore, err := s.st.ListMessagesPage(p.ID, sessionID, before, limit)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -142,6 +150,10 @@ func (s *Server) handleListMessages(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		out = append(out, mj)
+	}
+	if limit > 0 {
+		writeJSON(w, http.StatusOK, map[string]any{"messages": out, "hasMore": hasMore})
+		return
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -370,7 +382,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "run_active")
 		return
 	}
-	q, started, queuedID, qerr := s.turns.beginOrQueue(p.ID, params.SessionID, body.Message, userID, s.cfg.MaxConcurrentRunsPerUser)
+	q, started, queuedID, qerr := s.turns.beginOrQueue(p.ID, params.SessionID, body.Message, body.Attachments, userID, s.cfg.MaxConcurrentRunsPerUser)
 	if qerr != nil {
 		if errors.Is(qerr, errTooManyRuns) {
 			writeError(w, http.StatusTooManyRequests, "too_many_runs")
@@ -464,7 +476,7 @@ func (s *Server) handleChatRetry(w http.ResponseWriter, r *http.Request) {
 		params.LastUserID = 0
 		params.ContinueFromID = partialID
 	}
-	q, started, _, qerr := s.turns.beginOrQueue(p.ID, sessionID, "", userID, s.cfg.MaxConcurrentRunsPerUser)
+	q, started, _, qerr := s.turns.beginOrQueue(p.ID, sessionID, "", nil, userID, s.cfg.MaxConcurrentRunsPerUser)
 	if qerr != nil {
 		if errors.Is(qerr, errTooManyRuns) {
 			writeError(w, http.StatusTooManyRequests, "too_many_runs")
@@ -591,7 +603,7 @@ func (s *Server) streamChatTurn(w http.ResponseWriter, r *http.Request, p *store
 	params.ContextThreshold = s.contextThreshold(userID)
 	params.Emit = emit
 	params.Steer = q.steerDrain
-	params.Requeue = func(text string) { q.add(text) }
+	params.Requeue = func(m agent.SteerMessage) { q.add(m.Text, m.Attachments) }
 	// Background commands are detached from the turn: the result is persisted
 	// as a user message when the command finishes (so nothing is lost if the
 	// turn ends first) and the running turn injects it at the next round.
@@ -760,17 +772,17 @@ func (s *Server) streamChatTurn(w http.ResponseWriter, r *http.Request, p *store
 			return
 		}
 		for _, extra := range msgs[1:] {
-			q.add(extra.Text)
+			q.add(extra.Text, extra.Attachments)
 		}
 		m := msgs[0]
-		msgID, err := s.st.AddMessage(p.ID, params.SessionID, "user", m.Text, "", params.Client.Model, "", "", "")
+		msgID, err := s.st.AddMessage(p.ID, params.SessionID, "user", m.Text, "", params.Client.Model, "", "", agent.MarshalAttachments(m.Attachments))
 		if err != nil {
 			emit(agent.ChatEvent{Type: "error", Error: err.Error()})
 			return
 		}
-		emit(agent.ChatEvent{Type: "injected_message", MessageID: msgID, Text: m.Text})
+		emit(agent.ChatEvent{Type: "injected_message", MessageID: msgID, Text: m.Text, Attachments: agent.AttachmentMetas(m.Attachments)})
 		params.Message = m.Text
-		params.Attachments = nil
+		params.Attachments = m.Attachments
 		params.LastUserID = msgID
 		params.SkipSnapshot = false
 	}
@@ -822,9 +834,15 @@ func (s *Server) handleChatStatus(w http.ResponseWriter, r *http.Request) {
 	if p == nil {
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"running": s.turns.running(p.ID, s.chatSessionID(p, r.URL.Query().Get("sessionId"))),
-	})
+	sessionID := s.chatSessionID(p, r.URL.Query().Get("sessionId"))
+	body := map[string]any{"running": s.turns.running(p.ID, sessionID)}
+	// lastMessageId lets the client skip a transcript reload when nothing was
+	// written while the app was in the background — a needless reload is what
+	// made a quick app switch flash the whole chat.
+	if last, err := s.st.SessionLastMessageID(p.ID, sessionID); err == nil {
+		body["lastMessageId"] = last
+	}
+	writeJSON(w, http.StatusOK, body)
 }
 
 // handleChatStop aborts the project's active run, if any. Runs are detached

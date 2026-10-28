@@ -1866,6 +1866,77 @@ func (s *Store) ListMessages(projectID, sessionID string) ([]*Message, error) {
 	return out, rows.Err()
 }
 
+// ListMessagesPage returns one page of a session's messages, newest last. With
+// beforeID > 0 only rows older than it are returned, so a client can walk
+// backwards through the transcript a page at a time; hasMore reports whether
+// anything older is left. limit <= 0 means "no limit" (the whole transcript).
+//
+// The chat UI loads the newest page first: the reply the user came back for is
+// in the last few rows, and waiting for the whole history to serialise is what
+// made a long chat feel slow to open.
+func (s *Store) ListMessagesPage(projectID, sessionID string, beforeID int64, limit int) ([]*Message, bool, error) {
+	if limit <= 0 && beforeID <= 0 {
+		msgs, err := s.ListMessages(projectID, sessionID)
+		return msgs, false, err
+	}
+	// Fetch one extra row to answer hasMore without a second query.
+	want := limit + 1
+	q := `SELECT id, project_id, role, content, tool_json, model, reasoning, usage, attachments, created_at
+		FROM messages WHERE project_id = ? AND session_id = ?`
+	args := []any{projectID, sessionID}
+	if beforeID > 0 {
+		q += ` AND id < ?`
+		args = append(args, beforeID)
+	}
+	q += ` ORDER BY id DESC`
+	if limit > 0 {
+		q += ` LIMIT ?`
+		args = append(args, want)
+	}
+	rows, err := s.db.Query(q, args...)
+	if err != nil {
+		return nil, false, err
+	}
+	defer rows.Close()
+	out := []*Message{}
+	for rows.Next() {
+		m, err := scanMessage(rows)
+		if err != nil {
+			return nil, false, err
+		}
+		out = append(out, m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, false, err
+	}
+	hasMore := false
+	if limit > 0 && len(out) >= want {
+		hasMore = true
+		out = out[:limit]
+	}
+	// Rows came back newest-first; the transcript reads oldest-first.
+	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
+		out[i], out[j] = out[j], out[i]
+	}
+	return out, hasMore, nil
+}
+
+// SessionLastMessageID reports the id of the newest message in a session (0
+// when empty). The chat status poll compares it against what the client holds
+// to decide whether the transcript actually needs re-fetching — a run that
+// ended while the app was away changes it, and nothing else does.
+func (s *Store) SessionLastMessageID(projectID, sessionID string) (int64, error) {
+	var id *int64
+	err := s.db.QueryRow(
+		`SELECT MAX(id) FROM messages WHERE project_id = ? AND session_id = ?`,
+		projectID, sessionID,
+	).Scan(&id)
+	if err != nil || id == nil {
+		return 0, err
+	}
+	return *id, nil
+}
+
 // SessionMessageCount reports how many messages a session holds. It answers the
 // one question the empty-session cleanup asks without loading the transcript.
 func (s *Store) SessionMessageCount(projectID, sessionID string) (int, error) {

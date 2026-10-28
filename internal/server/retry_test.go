@@ -66,7 +66,7 @@ func TestChatStatus(t *testing.T) {
 	}
 
 	// Active run -> running.
-	q, started, _, _ := s.turns.beginOrQueue(pid, session.ID, "", "", 0)
+	q, started, _, _ := s.turns.beginOrQueue(pid, session.ID, "", nil, "", 0)
 	if !started {
 		t.Fatal("should start a run")
 	}
