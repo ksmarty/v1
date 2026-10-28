@@ -4,6 +4,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -4460,22 +4461,35 @@ export default function ChatPane({
 
   // Prepend an older page, holding the reader's place: the rows above the
   // viewport grow, so the scroll offset is corrected by the height they added.
-  // Pinned to the bottom, nothing needs correcting — the pin follows.
+  // Pinned to the bottom there is nothing to correct — the pin follows.
+  const pendingAdjustRef = useRef<{ prevH: number; prevTop: number } | null>(null);
   const prependOlder = useCallback((older: Item[]) => {
     if (older.length === 0) return;
+    // A page can arrive twice (a scroll-triggered load racing the background
+    // backfill): rows already on screen are skipped rather than duplicated.
+    const have = new Set(itemsRef.current.map((it) => it.key));
+    const fresh = older.filter((it) => !have.has(it.key));
+    if (fresh.length === 0) return;
     const box = scrollRef.current;
-    const prevH = box?.scrollHeight ?? 0;
-    const prevTop = box?.scrollTop ?? 0;
     const atBottom = !box || box.scrollHeight - box.scrollTop - box.clientHeight < 80;
-    itemsRef.current = [...older, ...itemsRef.current];
-    setItems((prev) => [...older, ...prev]);
-    if (!atBottom) {
-      requestAnimationFrame(() => {
-        const el = scrollRef.current;
-        if (el) el.scrollTop = prevTop + (el.scrollHeight - prevH);
-      });
+    if (box && !atBottom) {
+      pendingAdjustRef.current = { prevH: box.scrollHeight, prevTop: box.scrollTop };
     }
+    itemsRef.current = [...fresh, ...itemsRef.current];
+    setItems((prev) => [...fresh, ...prev]);
   }, []);
+
+  // Apply that correction before the browser paints. A requestAnimationFrame
+  // runs after paint, so the rows above the viewport had already shifted the
+  // content down for one frame — which is what made a backfill look like the
+  // app glitching.
+  useLayoutEffect(() => {
+    const adj = pendingAdjustRef.current;
+    if (!adj) return;
+    pendingAdjustRef.current = null;
+    const el = scrollRef.current;
+    if (el) el.scrollTop = adj.prevTop + (el.scrollHeight - adj.prevH);
+  }, [items]);
 
   // Keep the history already on screen when a reload only brings the newest
   // page: every row older than that page's first message is still valid, so it
@@ -4492,6 +4506,9 @@ export default function ChatPane({
   // Pull every older page in the background, so the device ends up holding the
   // whole thread. A finished chat is then never fetched again, and the minimap
   // (which maps the messages it has) covers all of it rather than the last page.
+  // The pages are collected and applied in one prepend at the end: inserting a
+  // page every few hundred milliseconds made the whole transcript redraw again
+  // and again, which read as the app glitching.
   const backfillingRef = useRef(false);
   const backfill = useCallback(
     async (seq: number) => {
@@ -4499,19 +4516,28 @@ export default function ChatPane({
       backfillingRef.current = true;
       try {
         let before = oldestKey(itemsRef.current);
+        let collected: Item[] = [];
+        let more = false;
         while (before > 0) {
           const page = await api.getMessagesPage(projectId, sessionId, CHAT_PAGE, before);
-          if (seq !== loadSeqRef.current) return; // superseded by a newer load
+          if (seq !== loadSeqRef.current || sessionIdRef.current !== sessionId) return;
           const older = mapMessages(page.messages, 0);
-          prependOlder(older);
-          setHasOlder(page.hasMore);
-          writeChatCache(projectId, sessionId, itemsRef.current, !page.hasMore);
-          if (!page.hasMore) break;
+          if (older.length === 0) {
+            more = page.hasMore;
+            break;
+          }
+          collected = [...older, ...collected];
+          more = page.hasMore;
           const next = oldestKey(older);
-          if (next === 0 || next === before) break; // no progress — stop
+          if (!more || next === 0 || next === before) break; // no progress — stop
           before = next;
-          // Yield so a long backfill never blocks typing.
-          await new Promise((r) => setTimeout(r, 0));
+        }
+        if (collected.length > 0) {
+          prependOlder(collected);
+          setHasOlder(more);
+          writeChatCache(projectId, sessionId, itemsRef.current, !more);
+        } else if (!more) {
+          setHasOlder(false);
         }
       } catch {
         // Offline or interrupted: the next open picks it up again.
@@ -4627,7 +4653,9 @@ export default function ChatPane({
   // Fetch the next-older page on demand (scrolling up), holding the reader's
   // place.
   const loadOlder = useCallback(async () => {
-    if (!hasOlder || loadingOlderRef.current) return;
+    // A running backfill is already pulling this page in, and two writers
+    // prepending at once is what made the transcript redraw twice.
+    if (!hasOlder || loadingOlderRef.current || backfillingRef.current) return;
     const before = oldestKey(itemsRef.current);
     if (!before) return;
     loadingOlderRef.current = true;
@@ -4969,7 +4997,6 @@ export default function ChatPane({
       }
       dotOf.push(grouped.length - 1);
     }
-    bucketRef.current = grouped;
     const stripH = stripRef.current?.clientHeight ?? 0;
     // Keep the dots at their full size (10px) while they fit with the 8px gap
     // (gap-2 on the strip column). Past that point the oldest messages are
@@ -4983,6 +5010,10 @@ export default function ChatPane({
     const fits = stripH > 0 ? Math.max(1, Math.floor((stripH - PAD + GAP) / (DMIN + GAP))) : grouped.length;
     const hidden = Math.max(0, grouped.length - fits);
     const visible = hidden > 0 ? grouped.slice(hidden) : grouped;
+    // Only the drawn dots are reachable: scrubbing maps the pointer onto this
+    // list, so the strip covers the same stretch of the thread the dots show
+    // instead of the entire history.
+    bucketRef.current = visible;
     const n = visible.length;
     setBuckets(visible);
     setDotSize(Math.min(DMAX, Math.max(DMIN, (stripH - PAD - (n - 1) * GAP) / n)));
@@ -4996,7 +5027,7 @@ export default function ChatPane({
     }
     // dotOf indexes into the full bucket list; the strip now starts `hidden`
     // dots later, so shift it to point at the dot on screen.
-    setCurrentDot(dotOf[currentIdx] - hidden);
+    setCurrentDot(Math.max(-1, dotOf[currentIdx] - hidden));
   }, []);
   const onScroll = useCallback(() => {
     const el = scrollRef.current;
