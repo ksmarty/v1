@@ -803,6 +803,25 @@ function newestId(items: Item[]): number {
   return items.reduce((max, it) => (it.kind === 'msg' ? Math.max(max, Number(it.key) || 0) : max), 0);
 }
 
+/**
+ * A cheap fingerprint of a transcript: the keys of every row plus the parts a
+ * reload could actually change. Two fingerprints that match mean the fetch
+ * brought nothing new, so the state write (and the repaint that follows it) can
+ * be skipped outright — a quiet reload of an unchanged thread then does no work
+ * at all instead of handing React a fresh array of equivalent rows.
+ */
+function transcriptSignature(items: Item[]): string {
+  return items
+    .map((it) => {
+      if (it.kind !== 'msg') return `${it.kind}:${it.key}`;
+      const calls = it.toolCalls?.length ?? 0;
+      const results = it.toolResults?.length ?? 0;
+      const atts = it.attachments?.length ?? 0;
+      return `${it.key}:${it.content.length}:${calls}:${results}:${atts}:${it.usage ? 1 : 0}`;
+    })
+    .join('|');
+}
+
 function writeChatCache(
   projectId: string,
   sessionId: string,
@@ -3834,8 +3853,10 @@ export default function ChatPane({
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
   // The "loading" placeholder is delayed: a cached transcript paints within a
-  // frame or two, and flashing a skeleton for that long looks like a glitch.
-  const showSkeleton = useDelayedTrue(loading && items.length === 0, 400);
+  // frame or two, and flashing a skeleton for that long looks like a glitch. The
+  // delay is deliberately long — a normal load never reaches it, so the shape
+  // only appears when a chat is genuinely taking seconds (cold, slow link).
+  const showSkeleton = useDelayedTrue(loading && items.length === 0, 1500);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [input, setInput] = useState('');
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
@@ -4680,9 +4701,16 @@ export default function ChatPane({
       if (loadSeqRef.current !== loadSeq || sessionIdRef.current !== loadSession) return;
       const merged = page.hasMore ? mergeTail(itemsRef.current, mapped) : mapped;
       const keptHistory = merged.length > mapped.length;
+      // Only touch state when the fetch actually changed the thread. A poll or a
+      // turn-end reload of an unchanged chat then commits nothing, so the rows
+      // are not even re-rendered — the previous objects stay on screen.
+      const changed =
+        opts?.quiet !== true || transcriptSignature(merged) !== transcriptSignature(itemsRef.current);
       itemsRef.current = merged;
-      setItems(merged);
-      pinPendingRef.current = true;
+      if (changed) {
+        setItems(merged);
+        pinPendingRef.current = true;
+      }
       setHasOlder(page.hasMore && (!keptHistory || hasOlderRef.current));
       transcriptMarkRef.current = { session: loadSession, id: newestId(mapped) };
       writeChatCache(projectId, sessionId, merged, !page.hasMore);
@@ -6969,7 +6997,7 @@ export default function ChatPane({
       <div
         ref={scrollRef}
         onScroll={onScroll}
-        className="fade-y h-full overflow-y-auto px-3 py-4 md:px-4"
+        className="fade-y h-full overflow-y-auto px-3 py-4 [overflow-anchor:none] [scrollbar-gutter:stable] md:px-4"
       >
         {loadError && (
           <div className="mx-auto max-w-2xl">
