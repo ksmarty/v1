@@ -201,6 +201,55 @@ body {
   margin: 0.5rem 0;
 }
 
+/* A ```mermaid fence renders as an empty box that mermaid fills with an SVG.
+   The pending state is the element's own ::after, so the swap to the finished
+   diagram never reflows the row above it. */
+.md .v1-diagram {
+  position: relative;
+  margin: 0.6rem 0;
+  padding: 0.75rem;
+  border: 1px solid var(--v1-border);
+  border-radius: 8px;
+  background: var(--v1-surface);
+  overflow-x: auto;
+}
+.md .v1-diagram:empty::after {
+  content: 'Rendering diagram…';
+  display: block;
+  padding: 1.5rem 0;
+  text-align: center;
+  font-size: 0.75rem;
+  color: var(--v1-text-faint);
+}
+.md .v1-diagram.is-failed {
+  font-size: 0.75rem;
+  color: var(--v1-text-dim);
+  white-space: pre-wrap;
+}
+.md .v1-diagram svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0 auto;
+}
+.md-clickable-diagrams .v1-diagram.is-ready {
+  cursor: zoom-in;
+}
+.md-clickable-diagrams .v1-diagram.is-ready:hover {
+  border-color: var(--v1-border-strong);
+}
+
+/* The diagram dialog's copy of the SVG: as large as the viewport allows,
+   scrollable when the diagram is wider than the screen. */
+.v1-diagram-full svg {
+  display: block;
+  max-width: min(92vw, 1400px);
+  max-height: 70vh;
+  width: auto;
+  height: auto;
+  margin: 0 auto;
+}
+
 /* highlight.js token colors — fixed editor palettes (GitHub Dark / GitHub
    Light inspired), not blended with the active theme, so code keeps a proper
    scheme. Dark applies everywhere; `.v1-theme-light` (set on <body> for light

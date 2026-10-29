@@ -62,6 +62,7 @@ import BackgroundTasksModal from './BackgroundTasksModal';
 // threading a callback through every collapse/block layer.
 const DelegateOpenContext = createContext<(conversationId: string) => void>(() => {});
 import TrackBorder, { TRACK_DEFAULTS } from './TrackBorder';
+import DiagramDialog from './DiagramDialog';
 import {
   IconArrowUp,
   IconBookmark,
@@ -3203,6 +3204,7 @@ function DelegateTranscriptDialog({
               onRetrySend={noop}
               onEditStart={noop}
               onImageClick={noop}
+              onDiagramClick={noop}
               onFileClick={noop}
               onAskAnswered={noop}
               onOpenBackground={noop}
@@ -3480,6 +3482,7 @@ const MessageRow = memo(function MessageRow({
   canContinue,
   onEditStart,
   onImageClick,
+  onDiagramClick,
   onFileClick,
   onAskAnswered,
   onOpenBackground,
@@ -3501,6 +3504,8 @@ const MessageRow = memo(function MessageRow({
   canContinue?: boolean;
   onEditStart: (key: string, editing: boolean) => void;
   onImageClick: (url: string, name: string) => void;
+  /** Open a ```mermaid diagram the reply drew (its SVG markup and source). */
+  onDiagramClick: (svg: string, code: string) => void;
   onFileClick: (url: string, name: string) => void;
   onAskAnswered: (result: AskResultView) => void;
   /** Open a finished background task's full output in the tasks modal. */
@@ -3781,6 +3786,7 @@ const MessageRow = memo(function MessageRow({
             validTag={validTag}
             resolveImage={resolveImage}
             onImageClick={onImageClick}
+            onDiagramClick={onDiagramClick}
           />
         </div>
       )}
@@ -3915,6 +3921,9 @@ export default function ChatPane({
   // Mobile-only: the composer can cover the chat pane for long messages.
   const [expanded, setExpanded] = useState(false);
   const [lightbox, setLightbox] = useState<{ url: string; name: string } | null>(null);
+  // A mermaid diagram the reply drew, opened full size (the diagram dialog
+  // exports it as SVG or a 3x PNG).
+  const [diagram, setDiagram] = useState<{ svg: string; code: string } | null>(null);
   // Non-image attachment opened for reading (the lightbox handles images).
   const [fileView, setFileView] = useState<{ url: string; name: string } | null>(null);
   // Background tasks modal: the running list, or one finished job's output.
@@ -4090,6 +4099,7 @@ export default function ChatPane({
   onMemoriesRef.current = onMemories;
 
   const openLightbox = useCallback((url: string, name: string) => setLightbox({ url, name }), []);
+  const openDiagram = useCallback((svg: string, code: string) => setDiagram({ svg, code }), []);
   const openFile = useCallback((url: string, name: string) => setFileView({ url, name }), []);
   const openBackgroundOutput = useCallback((text: string) => {
     setBgTaskOutput({ title: 'Background task', text });
@@ -7106,6 +7116,7 @@ export default function ChatPane({
                     }
                     onEditStart={setItemEditing}
                     onImageClick={openLightbox}
+                    onDiagramClick={openDiagram}
                     onFileClick={openFile}
                     onAskAnswered={(answer) => void answerAsk(answer)}
                     onOpenBackground={openBackgroundOutput}
@@ -8001,6 +8012,9 @@ export default function ChatPane({
 
       {lightbox && (
         <ImageLightbox url={lightbox.url} name={lightbox.name} onClose={() => setLightbox(null)} />
+      )}
+      {diagram && (
+        <DiagramDialog svg={diagram.svg} code={diagram.code} onClose={() => setDiagram(null)} />
       )}
 
       {fileView && (

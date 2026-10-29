@@ -419,7 +419,10 @@ const (
 	// Set once the bundled skills have been seeded. Guarded so removing a
 	// bundled skill stays removed.
 	keySkillsSeeded = "skills_seeded"
-	keyExtensions   = "extensions_installed"
+	// Set once the bundled mermaid-diagrams skill has been seeded, so a user who
+	// removes it does not get it back on the next restart.
+	keySkillsMermaidSeeded = "skills_mermaid_seeded"
+	keyExtensions          = "extensions_installed"
 	// keyExtensionSettings holds every extension's configured values, keyed by
 	// extension id. They belong to v1 rather than to the extension so they survive
 	// a reload, a disable, and a container rebuild.

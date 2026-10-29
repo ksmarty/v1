@@ -231,6 +231,13 @@ function escapeHtml(s: string): string {
 const renderer = new Renderer();
 
 renderer.code = ({ text, lang, escaped }: Tokens.Code): string => {
+  // A ```mermaid fence is not code to display: it becomes an empty placeholder
+  // that the Markdown component fills with the rendered SVG (see
+  // web/src/mermaid.ts). Keeping it an empty div means the pending state is
+  // pure CSS, and a re-render can swap the cached SVG in by string replacement.
+  if (lang && /^mermaid\b/i.test(lang.trim())) {
+    return `<div class="v1-diagram" data-v1-diagram="${encodeDiagramSrc(text)}"></div>`;
+  }
   let body = text;
   if (!escaped) {
     const known = lang && hljs.getLanguage(lang);
@@ -349,4 +356,42 @@ export function renderMarkdown(
     tagValidator = null;
     imageResolver = null;
   }
+}
+
+// A mermaid fence's source travels in a data attribute, base64url-encoded: the
+// source is arbitrary text (quotes, newlines, angle brackets) and an attribute
+// would otherwise need escaping that survives both marked and innerHTML.
+export const DIAGRAM_ATTR = 'data-v1-diagram';
+
+export function encodeDiagramSrc(src: string): string {
+  const bytes = new TextEncoder().encode(src);
+  let bin = '';
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+export function decodeDiagramSrc(enc: string): string {
+  const b64 = enc.replace(/-/g, '+').replace(/_/g, '/');
+  const pad = b64.length % 4 ? '='.repeat(4 - (b64.length % 4)) : '';
+  const bin = atob(b64 + pad);
+  const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
+}
+
+// injectCachedDiagrams swaps a placeholder whose SVG is already cached for the
+// finished markup. A streaming reply re-parses its whole source for every
+// token, and without this every diagram would blink back to "Rendering…" on
+// each pass.
+export function injectCachedDiagrams(
+  html: string,
+  lookup: (code: string) => string | null,
+): string {
+  return html.replace(
+    /<div class="v1-diagram" data-v1-diagram="([A-Za-z0-9_-]+)"><\/div>/g,
+    (whole, enc: string) => {
+      const svg = lookup(decodeDiagramSrc(enc));
+      if (!svg) return whole;
+      return `<div class="v1-diagram is-ready" data-v1-diagram="${enc}">${svg}</div>`;
+    },
+  );
 }

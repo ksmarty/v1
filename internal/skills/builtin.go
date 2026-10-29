@@ -820,8 +820,97 @@ files or to write commits; the file tools and the git tool do that better.
 	},
 }
 
+// mermaidDiagrams is the bundled "mermaid-diagrams" skill: it teaches the agent
+// to answer with a diagram the chat renders inline — a ```mermaid fence — and
+// which diagram type and habits keep one readable.
+var mermaidDiagrams = Builtin{
+	Skill: Skill{
+		ID:          "mermaid-diagrams",
+		Name:        "Mermaid diagrams",
+		Author:      "v1",
+		Description: "Answer with diagrams the chat renders inline: flowcharts, sequence diagrams, state machines, ER models, timelines and Gantt charts written as mermaid fences, which the user can open full size and export as SVG or a 3x PNG.",
+		Dir:         "mermaid-diagrams",
+		Enabled:     true,
+	},
+	Files: map[string]string{
+		"SKILL.md": `# Mermaid diagrams
+
+Use this skill when a picture answers faster than prose: a flow with decisions,
+a request/response exchange, a state machine, a schema's relations, a schedule,
+a breakdown. v1 renders a mermaid fence inline in the chat, and the user can
+open it full size and export it as an SVG or a 3x PNG — so a diagram you emit is
+also a deliverable they can keep.
+
+Do not use it for a single fact ("the build takes 4 minutes"), for decoration at
+the end of every reply, or for a diagram whose nodes are just the sentences you
+would have written.
+
+## Emitting one
+
+Write a fenced code block whose info string is ` + "`mermaid`" + `, containing only the
+diagram source:
+
+` + "```mermaid" + `
+flowchart TD
+    A[Request] --> B{Cached?}
+    B -->|yes| C[Serve cache]
+    B -->|no| D[Render]
+    D --> C
+` + "```" + `
+
+Rules that keep it rendering:
+
+- One diagram per fence. Two diagrams means two fences.
+- The first line is the diagram type plus its direction.
+- No HTML inside labels, no markdown, no line-break tags.
+- Quote any label containing a space, a bracket or punctuation:
+  A["Retry (3x)"], not A[Retry (3x)].
+- Close every ` + "`subgraph`" + ` with ` + "`end`" + `, and every quote you open.
+- Keep to documented mermaid syntax; a plugin-only feature will not render.
+
+## Choosing the type
+
+- flowchart TD / LR — process, decision tree, architecture, data flow
+- sequenceDiagram — request/response, protocol steps, who calls whom
+- classDiagram — types, fields, relations
+- stateDiagram-v2 — a lifecycle, allowed transitions
+- erDiagram — tables, keys, cardinality
+- gantt, timeline — schedules, release history
+- pie, quadrantChart — proportions, prioritisation
+- mindmap — decomposing one idea
+- gitGraph — branch and merge history
+
+## Keeping it readable
+
+- Five words per node at most; put the detail in prose below the diagram.
+- Ten-ish nodes per diagram. If it needs more, split it into "the shape of the
+  system" and "one path through it".
+- Prefer TD for a process that descends, LR for one that reads as a timeline.
+- Group with ` + "`subgraph`" + ` before reaching for colour; use ` + "`classDef`" + ` only when the
+  user asks for styling.
+- Name the edges that matter (` + "`A -->|timeout| B`" + `); silent arrows make the reader
+  guess.
+
+## When it does not render
+
+The bubble shows "This diagram could not be rendered: <reason>" in place of the
+picture, and the user sees it. The usual causes are an unquoted parenthesis or
+bracket in a label, a missing ` + "`end`" + `, a ` + "`;`" + ` inside node text, or a typo in the
+diagram type. Fix the source and send the corrected fence — do not describe the
+diagram you meant in prose as a substitute.
+
+## Before you send
+
+- Every arrow has both endpoints.
+- Every ` + "`subgraph`" + ` is closed.
+- No stray backtick inside the fence, and the fence is closed.
+- The diagram earns its space: it shows structure or sequence, not a sentence.
+`,
+	},
+}
+
 func Builtins() []Builtin {
-	return []Builtin{githubWorkflows, persistentToolInstall, v1Extensions, sessionNaming, githubCLI}
+	return []Builtin{githubWorkflows, persistentToolInstall, v1Extensions, sessionNaming, githubCLI, mermaidDiagrams}
 }
 
 // FindBuiltin returns the builtin skill with the given id, or nil.

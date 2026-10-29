@@ -7,6 +7,7 @@ A self-hosted [v0](https://v0.dev) clone: chat with an AI and it builds real web
 - **Chat → app** — describe what you want; the AI scaffolds and iterates on a real web app.
 - **Live preview** — every generated app runs its own dev server, streamed straight into the browser.
 - **File browser** — inspect and edit the generated source.
+- **Diagrams in chat** — a model-written `mermaid` fence renders inline; tap it to open it full size and export SVG or a 3× PNG.
 - **Terminal** — a real shell inside the container, from the browser.
 - **GitHub integration** — import existing repos, or create and push new ones.
 - **Your models** — provider selector for any OpenAI-compatible endpoint (models.dev catalog, same data opencode/pi use).

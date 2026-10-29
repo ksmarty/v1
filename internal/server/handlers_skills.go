@@ -55,6 +55,10 @@ func (s *Server) skillsSystemPrompt() string {
 // the guard is what lets a user remove a bundled skill without it coming back on
 // the next restart.
 func (s *Server) ensureBuiltinSkills() {
+	// A bundled skill added after this seed already ran needs its own one-time
+	// flag: the global one above is spent, and a per-skill flag still keeps a
+	// removal sticky.
+	s.seedBuiltinSkill(keySkillsMermaidSeeded, "mermaid-diagrams")
 	if v, ok, _ := s.st.GetSetting(keySkillsSeeded); ok && v == "1" {
 		return
 	}
@@ -90,6 +94,36 @@ func (s *Server) ensureBuiltinSkills() {
 	if err := s.st.SetSetting(keySkillsSeeded, "1"); err != nil {
 		log.Printf("skills: cannot record the bundled-skill seed: %v", err)
 	}
+}
+
+// seedBuiltinSkill installs one bundled skill the first time v1 sees it and
+// records that it did, so a skill the user later removes never comes back. It
+// exists for bundled skills shipped after the global seed above ran.
+func (s *Server) seedBuiltinSkill(setting, id string) {
+	if v, ok, _ := s.st.GetSetting(setting); ok && v == "1" {
+		return
+	}
+	installed := s.installedSkills()
+	for _, sk := range installed {
+		if sk.ID == id || sk.Dir == id {
+			_ = s.st.SetSetting(setting, "1")
+			return
+		}
+	}
+	b := skills.FindBuiltin(id)
+	if b == nil {
+		return
+	}
+	if err := s.installBuiltinSkill(*b); err != nil {
+		log.Printf("skills: cannot install the bundled %s skill: %v", id, err)
+		return
+	}
+	installed = append(installed, b.Skill)
+	if err := s.saveSkills(installed); err != nil {
+		log.Printf("skills: cannot persist the bundled %s skill: %v", id, err)
+		return
+	}
+	_ = s.st.SetSetting(setting, "1")
 }
 
 // handleSkillsSearch queries the SkillsMP marketplace.

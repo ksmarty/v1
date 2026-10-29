@@ -1,0 +1,20 @@
+feat(chat): render mermaid diagrams with an export dialog
+
+A ```mermaid fence is no longer shown as code: it renders as a diagram in the
+bubble, and tapping it opens a full-size view that can export SVG or a 3x PNG.
+
+- markdown.ts turns a mermaid fence into an empty placeholder carrying its
+  source (base64url in a data attribute), so the pending state is pure CSS and
+  a re-render can swap a cached SVG in by string replacement.
+- mermaid.ts lazy-loads mermaid (its own chunk, never fetched until a diagram
+  appears), renders once per source+theme and memoises the SVG, picks the
+  palette from the page background, and disables htmlLabels so the SVG
+  rasterises to PNG on every engine.
+- Markdown.tsx fills placeholders in a layout effect (before paint), inlines
+  already-cached diagrams while rendering, and opens the dialog on click or
+  Enter.
+- DiagramDialog shows the diagram full size with Export SVG, Export PNG (3x)
+  and Copy source, using the safe-area offsets the image lightbox needed.
+- skills: a bundled mermaid-diagrams skill teaches the agent which diagram type
+  to use and what keeps one readable. It is seeded once behind its own setting,
+  so a user who removes it does not get it back on the next restart.
