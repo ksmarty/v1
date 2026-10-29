@@ -98,7 +98,7 @@ func New(cfg config.Config, st *store.Store) *Server {
 		auth:           auth.NewManager(st, cfg.AuthDisabled, cfg.Password),
 		previews:       preview.NewManager(cfg.MaxPreviews),
 		terminals:      terminal.NewManager(),
-		turns:          newTurnManager(),
+		turns:          newTurnManager(st),
 		background:     agent.NewBackgroundManager(cfg.GitHubToken),
 		oauthFlows:     map[string]*oauthFlow{},
 		oauthCodeFlows: map[string]*githubOAuthFlow{},
@@ -241,6 +241,7 @@ func (s *Server) routes(m *http.ServeMux) {
 	m.HandleFunc("POST /api/projects/{id}/chat/queue/edit", s.handleChatQueueEdit)
 	m.HandleFunc("POST /api/projects/{id}/chat/queue/hold", s.handleChatQueueHold)
 	m.HandleFunc("POST /api/projects/{id}/chat/queue/delete", s.handleChatQueueDelete)
+	m.HandleFunc("POST /api/projects/{id}/chat/queue/resume", s.handleChatQueueResume)
 	m.HandleFunc("GET /api/projects/{id}/sessions", s.handleListSessions)
 	m.HandleFunc("POST /api/projects/{id}/sessions", s.handleCreateSession)
 	m.HandleFunc("POST /api/projects/{id}/sessions/{sessionId}/fork", s.handleForkSession)

@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { IconX } from './icons';
-import { diagramName, exportPng, exportSvg } from '../mermaid';
+import { diagramName, exportPng, exportSvg, prepared } from '../mermaid';
 
 // Viewport-fixed overlays sit under the notch / Dynamic Island unless they add
 // the safe-area inset themselves (an absolutely positioned child ignores its
@@ -23,6 +23,11 @@ export default function DiagramDialog({
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const name = diagramName(code);
+  // Mermaid sizes its root <svg> with percentages ("width=100% height=100%"),
+  // which a flex container with no fixed height resolves to zero — the dialog
+  // opened onto an empty box. prepared() pins the natural pixel size from the
+  // viewBox, so the diagram draws and the CSS scales it down to fit.
+  const markup = useMemo(() => (svg.includes('<svg') ? prepared(svg) : ''), [svg]);
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
 
@@ -79,11 +84,21 @@ export default function DiagramDialog({
       <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto p-4">
         {/* The SVG comes from mermaid's own renderer, already sanitised by
             securityLevel: 'strict'. */}
-        <div
-          className="v1-diagram-full"
-          onClick={(e) => e.stopPropagation()}
-          dangerouslySetInnerHTML={{ __html: svg }}
-        />
+        {markup ? (
+          <div
+            className="v1-diagram-full"
+            onClick={(e) => e.stopPropagation()}
+            dangerouslySetInnerHTML={{ __html: markup }}
+          />
+        ) : (
+          <div
+            className="max-h-full max-w-[min(92vw,760px)] overflow-auto rounded-xl border border-border bg-surface p-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p className="text-xs text-red-400">This diagram could not be rendered.</p>
+            <pre className="mt-2 whitespace-pre-wrap font-mono text-[11px] text-dim">{code}</pre>
+          </div>
+        )}
       </div>
 
       <div

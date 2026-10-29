@@ -1,46 +1,87 @@
 // Mermaid support for markdown replies: render a fenced `mermaid` block to an
-// SVG once, cache it, and export it as SVG or a 3x PNG.
+// SVG once, cache it (in memory and on disk), and export it as SVG or a 3x PNG.
 //
 // Mermaid is heavy (~1.5 MB of parser + renderers), so it is imported
 // dynamically: a chat with no diagrams never downloads it, and the chunk is
-// fetched the first time the model draws one.
+// prefetched on idle so the first diagram does not have to wait for it.
 import type { MermaidConfig } from 'mermaid';
 
-export type DiagramTheme = 'dark' | 'light';
+// Diagrams are drawn with mermaid's light palette on a white card, in every
+// theme. Model-authored diagrams (and their classDef fills) are written for a
+// white canvas: rendering them on the dark surface produced pale text on pale
+// fills that could not be read.
+const FONT =
+  "ui-sans-serif, system-ui, -apple-system, 'Segoe UI', 'Helvetica Neue', sans-serif";
 
-// A rendered diagram, keyed by theme + source so a streaming message that
-// re-renders its markdown on every token does not re-run mermaid.
+// A rendered diagram, keyed by source so a streaming message that re-renders
+// its markdown on every token does not re-run mermaid.
 const cache = new Map<string, string>();
 let mermaidPromise: Promise<typeof import('mermaid').default> | null = null;
-let readyFor: DiagramTheme | null = null;
+let initialized = false;
 let seq = 0;
 
-function cssColor(name: string, fallback: string): string {
-  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-  return v || fallback;
+// --- on-disk cache -------------------------------------------------------
+//
+// A rendered SVG is deterministic, so a reopened chat can paint its diagrams
+// before mermaid has even been parsed. The store is small and bounded: a
+// couple of dozen diagrams fits comfortably in localStorage, and an entry that
+// does not fit is simply not persisted.
+
+const STORE_KEY = 'v1.diagrams.v1';
+const STORE_MAX = 24;
+const STORE_ENTRY_MAX = 160_000;
+type StoredEntry = { code: string; svg: string };
+let stored: StoredEntry[] | null = null;
+
+function hash(code: string): string {
+  let h = 2166136261;
+  for (let i = 0; i < code.length; i += 1) {
+    h ^= code.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return (h >>> 0).toString(36);
 }
 
-// The chat is dark by default, but a light theme is possible — mermaid picks
-// its palette from the threshold, so read the page background rather than
-// hard-coding one.
-export function diagramTheme(): DiagramTheme {
+function loadStored(): StoredEntry[] {
+  if (stored) return stored;
   try {
-    const bg = getComputedStyle(document.body).backgroundColor;
-    const m = /rgba?\(([^)]+)\)/.exec(bg);
-    if (!m) return 'dark';
-    const [r, g, b, a] = m[1].split(',').map((p) => Number.parseFloat(p));
-    if (a === 0) return 'dark';
-    const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-    return lum > 0.6 ? 'light' : 'dark';
+    const raw = localStorage.getItem(STORE_KEY);
+    const parsed = raw ? (JSON.parse(raw) as StoredEntry[]) : [];
+    stored = Array.isArray(parsed)
+      ? parsed.filter((e) => e && typeof e.code === 'string' && typeof e.svg === 'string')
+      : [];
   } catch {
-    return 'dark';
+    stored = [];
+  }
+  return stored;
+}
+
+function persist(code: string, svg: string) {
+  if (svg.length > STORE_ENTRY_MAX) return;
+  const list = loadStored();
+  const idx = list.findIndex((e) => hash(e.code) === hash(code));
+  if (idx >= 0) list.splice(idx, 1);
+  list.unshift({ code, svg });
+  if (list.length > STORE_MAX) list.length = STORE_MAX;
+  try {
+    localStorage.setItem(STORE_KEY, JSON.stringify(list));
+  } catch {
+    // Quota or a private-mode refusal: the in-memory cache still works.
   }
 }
 
-async function loadMermaid(theme: DiagramTheme) {
+function storedSvg(code: string): string | null {
+  const key = hash(code);
+  const hit = loadStored().find((e) => hash(e.code) === key);
+  return hit ? hit.svg : null;
+}
+
+// --- loading -------------------------------------------------------------
+
+async function loadMermaid() {
   if (!mermaidPromise) mermaidPromise = import('mermaid').then((m) => m.default);
   const mermaid = await mermaidPromise;
-  if (readyFor !== theme) {
+  if (!initialized) {
     // `htmlLabels: false` keeps every label a real <text> node, so the SVG
     // rasterises to PNG on every engine (a <foreignObject> label draws blank
     // in Safari's canvas).
@@ -48,40 +89,77 @@ async function loadMermaid(theme: DiagramTheme) {
       startOnLoad: false,
       securityLevel: 'strict',
       suppressErrorRendering: true,
-      theme: theme === 'dark' ? 'dark' : 'default',
-      fontFamily:
-        "ui-sans-serif, system-ui, -apple-system, 'Segoe UI', 'Helvetica Neue', sans-serif",
+      theme: 'default',
+      fontFamily: FONT,
       flowchart: { htmlLabels: false, useMaxWidth: true },
       sequence: { useMaxWidth: true },
       gantt: { useMaxWidth: true },
       er: { useMaxWidth: true },
       themeVariables: {
-        background: 'transparent',
-        fontFamily:
-          "ui-sans-serif, system-ui, -apple-system, 'Segoe UI', 'Helvetica Neue', sans-serif",
+        fontFamily: FONT,
+        fontSize: '14px',
+        background: '#ffffff',
+        darkMode: false,
+        primaryColor: '#eef2ff',
+        primaryTextColor: '#0f172a',
+        primaryBorderColor: '#818cf8',
+        secondaryColor: '#f1f5f9',
+        secondaryTextColor: '#0f172a',
+        tertiaryColor: '#f8fafc',
+        tertiaryTextColor: '#0f172a',
+        mainBkg: '#eef2ff',
+        nodeBorder: '#818cf8',
+        nodeTextColor: '#0f172a',
+        textColor: '#0f172a',
+        titleColor: '#0f172a',
+        lineColor: '#475569',
+        clusterBkg: '#f8fafc',
+        clusterBorder: '#cbd5e1',
+        edgeLabelBackground: '#ffffff',
+        labelBackground: '#ffffff',
+        noteBkgColor: '#fef9c3',
+        noteTextColor: '#422006',
+        noteBorderColor: '#eab308',
+        actorBkg: '#eef2ff',
+        actorBorder: '#818cf8',
+        actorTextColor: '#0f172a',
+        signalColor: '#475569',
+        signalTextColor: '#0f172a',
       },
     };
     mermaid.initialize(config);
-    readyFor = theme;
+    initialized = true;
   }
   return mermaid;
+}
+
+// prefetchMermaid starts the download while the app is idle, so the first
+// diagram in a conversation renders without a visible wait.
+export function prefetchMermaid() {
+  if (mermaidPromise) return;
+  const start = () => {
+    void loadMermaid().catch(() => undefined);
+  };
+  const idle = (window as unknown as { requestIdleCallback?: (cb: () => void, o?: object) => void })
+    .requestIdleCallback;
+  if (typeof idle === 'function') idle(start, { timeout: 4000 });
+  else window.setTimeout(start, 1500);
 }
 
 // renderDiagram turns mermaid source into SVG markup. The result is memoised,
 // so repeated markdown passes (a streaming reply re-renders on every token)
 // cost a map lookup.
 export async function renderDiagram(code: string): Promise<string> {
-  const theme = diagramTheme();
-  const key = `${theme}\u0000${code}`;
-  const hit = cache.get(key);
+  const hit = cache.get(code);
   if (hit) return hit;
-  const mermaid = await loadMermaid(theme);
+  const mermaid = await loadMermaid();
   seq += 1;
   const id = `v1-diagram-${Date.now().toString(36)}-${seq}`;
   try {
     const { svg } = await mermaid.render(id, code);
     if (cache.size > 80) cache.clear();
-    cache.set(key, svg);
+    cache.set(code, svg);
+    persist(code, svg);
     return svg;
   } finally {
     // mermaid measures in a scratch element; a failed render can leave it
@@ -91,8 +169,11 @@ export async function renderDiagram(code: string): Promise<string> {
   }
 }
 
+// cachedDiagram is the synchronous lookup used while rendering markdown: a
+// diagram that has been drawn before (this session or a previous one) is
+// inline from the very first paint, with no placeholder frame.
 export function cachedDiagram(code: string): string | null {
-  return cache.get(`${diagramTheme()}\u0000${code}`) ?? null;
+  return cache.get(code) ?? storedSvg(code);
 }
 
 // --- export -------------------------------------------------------------
@@ -117,9 +198,9 @@ function svgSize(markup: string): Size | null {
 }
 
 // prepared gives the root <svg> a namespace and fixed pixel dimensions: the
-// markup mermaid emits sizes itself with percentages, which an <img> and a
-// canvas both need resolved before they will draw it.
-function prepared(markup: string): string {
+// markup mermaid emits sizes itself with percentages, which an <img>, a canvas
+// and a flex container all resolve to nothing before they will draw it.
+export function prepared(markup: string): string {
   const size = svgSize(markup) ?? { w: 1024, h: 768 };
   return markup.replace(/<svg\b[^>]*>/, (tag) => {
     let t = tag;
@@ -151,13 +232,16 @@ function saveBlob(blob: Blob, filename: string) {
 }
 
 // diagramName turns the first line of the source into a filename, so
-// "flowchart TD" + "A[Login] --> B[Home]" exports as "flowchart-diagram.svg".
+// "flowchart TD" + "A[Login] --> B[Home]" exports as "flowchart.svg".
 export function diagramName(code: string): string {
   const first = code.trim().split('\n')[0]?.trim() ?? '';
-  const kind = /^(?:flowchart|graph|sequenceDiagram|classDiagram|stateDiagram(?:-v2)?|erDiagram|journey|gantt|pie|quadrantChart|requirementDiagram|gitGraph|mindmap|timeline|sankey|block|packet|xychart)/.exec(
-    first,
-  )?.[0];
-  return `${kind ? kind.toLowerCase() : 'diagram'}`;
+  const kind =
+    /^(?:flowchart|graph|sequenceDiagram|classDiagram|stateDiagram(?:-v2)?|erDiagram|journey|gantt|pie|quadrantChart|requirementDiagram|gitGraph|mindmap|timeline|sankey|block|packet|xychart)(?:[\s-]+\w+)?/.exec(
+      first,
+    )?.[0];
+  if (!kind) return 'diagram';
+  // "flowchart TD" reads as "flowchart-td" in a filename.
+  return kind.toLowerCase().replace(/\s+/g, '-');
 }
 
 export function exportSvg(markup: string, name = 'diagram'): void {
@@ -187,9 +271,9 @@ export async function exportPng(
   canvas.height = Math.max(1, Math.round(size.h * scale));
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('This browser cannot export images.');
-  // The SVG itself is transparent; paint the chat surface first so the PNG is
-  // readable when it lands somewhere white (or dark).
-  ctx.fillStyle = cssColor('--v1-bg', diagramTheme() === 'dark' ? '#0b0d10' : '#ffffff');
+  // The SVG itself is transparent; paint the same white card the diagram is
+  // drawn on so the PNG is readable wherever it lands.
+  ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
   const blob = await new Promise<Blob | null>((resolve) =>

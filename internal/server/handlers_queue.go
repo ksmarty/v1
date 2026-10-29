@@ -2,11 +2,13 @@ package server
 
 import (
 	"errors"
+	"log"
 	"net/http"
 	"strings"
 	"time"
 
 	"v1/internal/agent"
+	"v1/internal/store"
 )
 
 // estSecondsPerTurn is the rough per-turn duration used to estimate how long
@@ -25,7 +27,7 @@ func (s *Server) handleChatQueue(w http.ResponseWriter, r *http.Request) {
 	}
 	messages := []map[string]any{}
 	steering := []map[string]any{}
-	if q := s.turns.get(p.ID, s.chatSessionID(p, r.URL.Query().Get("sessionId"))); q != nil {
+	if q := s.turns.queueFor(p.ID, s.chatSessionID(p, r.URL.Query().Get("sessionId"))); q != nil {
 		for i, m := range q.list() {
 			entry := map[string]any{
 				"id":                   m.ID,
@@ -52,6 +54,81 @@ func (s *Server) handleChatQueue(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"messages": messages, "steering": steering})
 }
 
+// handleChatQueueResume starts the oldest stranded queued message as a turn.
+// A queue can outlive the run it was queued on — the provider failed, the
+// server restarted, the client was away for hours — and it is persisted
+// precisely so that this can pick it up again. The message is taken out of the
+// queue before the turn starts (so it can never be sent twice), and the rest of
+// the queue is hydrated into the new run, which runs it as follow-up turns.
+func (s *Server) handleChatQueueResume(w http.ResponseWriter, r *http.Request) {
+	p := s.projectOr404(w, r)
+	if p == nil {
+		return
+	}
+	userID := s.currentUser(r).ID
+	sessionID := s.chatSessionID(p, r.URL.Query().Get("sessionId"))
+	if s.turns.running(p.ID, sessionID) {
+		// Something is already running: the queue is that run's business.
+		writeJSON(w, http.StatusAccepted, map[string]any{"running": true})
+		return
+	}
+	rows, err := s.st.ListQueuedMessages(p.ID, sessionID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	// Steered rows are injected into a run, and a held row is being edited in
+	// the composer: neither is a turn to start here.
+	var pick *store.QueuedMessage
+	rest := make([]store.QueuedMessage, 0, len(rows))
+	for i := range rows {
+		if pick == nil && !rows[i].Steer && !rows[i].Held {
+			pick = &rows[i]
+			continue
+		}
+		rest = append(rest, rows[i])
+	}
+	if pick == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "queued": false})
+		return
+	}
+	providerID := r.URL.Query().Get("providerId")
+	model := r.URL.Query().Get("model")
+	if !s.requireLLMKey(w, userID, providerID) {
+		return
+	}
+	atts := agent.ParseAttachments(pick.Attachments)
+	params := agent.ChatParams{
+		Store:           s.st,
+		Project:         p,
+		Client:          s.llmClientFor(userID, providerID),
+		Message:         pick.Text,
+		SessionID:       sessionID,
+		Attachments:     atts,
+		Model:           model,
+		Vision:          s.modelSupportsImages(userID, providerID, model),
+		SoftTimeout:     s.cfg.TurnSoftTimeout,
+		HardTimeout:     s.cfg.TurnHardTimeout,
+		AutoPlan:        s.cfg.AutoPlan,
+	}
+	q, started, _, qerr := s.turns.beginOrQueue(p.ID, sessionID, pick.Text, atts, userID, s.cfg.MaxConcurrentRunsPerUser)
+	if qerr != nil || !started {
+		// Nothing lost: put the row back where it was and let the next attempt
+		// pick it up. The client reports queued, not an error.
+		if serr := s.st.SaveQueuedMessages(p.ID, sessionID, append([]store.QueuedMessage{*pick}, rest...)); serr != nil {
+			log.Printf("queue: restoring %s: %v", pick.ID, serr)
+		}
+		writeJSON(w, http.StatusAccepted, map[string]any{"queued": true})
+		return
+	}
+	// The turn starts from the row itself, so the persisted copy must go before
+	// any of it runs.
+	if _, derr := s.st.DeleteQueuedMessage(p.ID, sessionID, pick.ID); derr != nil {
+		log.Printf("queue: dropping resumed %s: %v", pick.ID, derr)
+	}
+	s.streamChatTurn(w, r, p, userID, params, q)
+}
+
 // handleChatQueueReorder reorders the pending queue to match the given id
 // list (a permutation of the current ids).
 func (s *Server) handleChatQueueReorder(w http.ResponseWriter, r *http.Request) {
@@ -66,7 +143,7 @@ func (s *Server) handleChatQueueReorder(w http.ResponseWriter, r *http.Request) 
 	if !decodeJSON(w, r, &body) {
 		return
 	}
-	q := s.turns.get(p.ID, s.chatSessionID(p, body.SessionID))
+	q := s.turns.queueFor(p.ID, s.chatSessionID(p, body.SessionID))
 	if q == nil {
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 		return
@@ -100,7 +177,7 @@ func (s *Server) handleChatQueueEdit(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "text is required")
 		return
 	}
-	q := s.turns.get(p.ID, s.chatSessionID(p, body.SessionID))
+	q := s.turns.queueFor(p.ID, s.chatSessionID(p, body.SessionID))
 	if q == nil {
 		writeError(w, http.StatusNotFound, "no active run")
 		return
@@ -132,7 +209,7 @@ func (s *Server) handleChatQueueHold(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &body) {
 		return
 	}
-	q := s.turns.get(p.ID, s.chatSessionID(p, body.SessionID))
+	q := s.turns.queueFor(p.ID, s.chatSessionID(p, body.SessionID))
 	if q == nil {
 		writeError(w, http.StatusNotFound, "no active run")
 		return
@@ -162,7 +239,7 @@ func (s *Server) handleChatQueueSteer(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &body) {
 		return
 	}
-	q := s.turns.get(p.ID, s.chatSessionID(p, body.SessionID))
+	q := s.turns.queueFor(p.ID, s.chatSessionID(p, body.SessionID))
 	if q == nil {
 		writeError(w, http.StatusNotFound, "no active run")
 		return
@@ -192,7 +269,7 @@ func (s *Server) handleChatQueueDelete(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &body) {
 		return
 	}
-	q := s.turns.get(p.ID, s.chatSessionID(p, body.SessionID))
+	q := s.turns.queueFor(p.ID, s.chatSessionID(p, body.SessionID))
 	if q == nil {
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 		return

@@ -63,6 +63,7 @@ import BackgroundTasksModal from './BackgroundTasksModal';
 const DelegateOpenContext = createContext<(conversationId: string) => void>(() => {});
 import TrackBorder, { TRACK_DEFAULTS } from './TrackBorder';
 import DiagramDialog from './DiagramDialog';
+import { prefetchMermaid } from '../mermaid';
 import {
   IconArrowUp,
   IconBookmark,
@@ -3953,6 +3954,12 @@ export default function ChatPane({
     estimatedWaitSeconds?: number;
     attachments?: ChatAttachmentMeta[];
   }[]>([]);
+  // The status tick resumes a stranded queue, but it must read the newest
+  // queue without depending on it (a dep would re-create the poll every time
+  // the queue changes).
+  const queuedRef = useRef(queued);
+  const resumeRef = useRef(false);
+  const resumeTriesRef = useRef(0);
   // Messages steered into the current run, waiting to be injected at the next
   // round boundary.
   const [steering, setSteering] = useState<{ id: string; text: string; attachments?: ChatAttachmentMeta[] }[]>([]);
@@ -4115,6 +4122,61 @@ export default function ChatPane({
     itemsRef.current = fn(itemsRef.current);
     setItems(itemsRef.current);
   }, []);
+
+  // Streaming text and reasoning arrive token by token. Applying each one
+  // re-rendered the transcript, so a keystroke landed in a busy frame and the
+  // composer stuttered while the model was thinking. Tokens are buffered and
+  // applied once per animation frame instead.
+  const streamBufRef = useRef<{
+    text: Map<string, { append: string; replace: string | null }>;
+    reasoning: Map<string, { append: string; replace: string | null }>;
+    raf: number | null;
+  }>({ text: new Map(), reasoning: new Map(), raf: null });
+
+  const flushStream = useCallback(() => {
+    const buf = streamBufRef.current;
+    if (buf.raf != null) {
+      cancelAnimationFrame(buf.raf);
+      buf.raf = null;
+    }
+    if (buf.text.size === 0 && buf.reasoning.size === 0) return;
+    const text = buf.text;
+    const reasoning = buf.reasoning;
+    buf.text = new Map();
+    buf.reasoning = new Map();
+    update((prev) =>
+      prev.map((it) => {
+        if (it.kind !== 'msg' || it.role !== 'assistant') return it;
+        const t = text.get(it.key);
+        const r = reasoning.get(it.key);
+        if (!t && !r) return it;
+        const next = { ...it };
+        if (t) next.content = t.replace != null ? t.replace : next.content + t.append;
+        if (r) next.reasoning = r.replace != null ? r.replace : (next.reasoning ?? '') + r.append;
+        return next;
+      }),
+    );
+  }, [update]);
+
+  const queueStream = useCallback(
+    (field: 'text' | 'reasoning', key: string, chunk: string, replace?: boolean) => {
+      const buf = streamBufRef.current;
+      const map = buf[field];
+      if (replace) map.set(key, { append: '', replace: chunk });
+      else {
+        const cur = map.get(key);
+        if (cur) cur.append += chunk;
+        else map.set(key, { append: chunk, replace: null });
+      }
+      if (buf.raf == null) {
+        buf.raf = requestAnimationFrame(() => {
+          streamBufRef.current.raf = null;
+          flushStream();
+        });
+      }
+    },
+    [flushStream],
+  );
 
   // Load the per-project chat selection (localStorage), the saved providers
   // and the models.dev catalog. The model shows as a plain selection whenever
@@ -4414,6 +4476,8 @@ export default function ChatPane({
     if (!sessionId) return;
     try {
       const q = await api.chatQueue(projectId, sessionId);
+      queuedRef.current = q.messages ?? [];
+      if ((q.messages ?? []).length === 0) resumeTriesRef.current = 0;
       setQueued(q.messages ?? []);
       setSteering(q.steering ?? []);
     } catch {
@@ -4488,17 +4552,12 @@ export default function ChatPane({
           // used to fall back to looking like something the user typed.
           const marker = typeof m.tool === 'string' ? m.tool : '';
           const background = marker === 'background';
-          // Rows written before the markers existed have none, and a user row
-          // that sits mid-turn cannot be something the user typed: a real
-          // message always starts a turn, so the row above it is a turn-final
-          // reply. One that follows tool calls was injected on the agent's
-          // behalf — the screenshot caption is the usual one.
-          const prevItem = mapped[mapped.length - 1];
-          const midTurn =
-            prevItem != null &&
-            prevItem.kind === 'msg' &&
-            prevItem.role === 'assistant' &&
-            ((prevItem.toolCalls?.length ?? 0) > 0 || (prevItem.toolResults?.length ?? 0) > 0);
+          // Only the persisted marker decides that a row was written by the
+          // agent. Guessing from position (a user row that follows tool calls)
+          // mislabels the user's own message when they send one mid-turn: the
+          // queue runs it as a follow-up turn, which lands it right after the
+          // tool calls of the turn before it. Rows written before the marker
+          // existed simply read as normal user messages.
           mapped.push({
             kind: 'msg',
             key: m.id,
@@ -4506,7 +4565,7 @@ export default function ChatPane({
             content: m.content,
             background,
             steered: marker === 'steer',
-            injected: marker === 'agent' || (marker === '' && !background && midTurn),
+            injected: marker === 'agent',
             sentAt: Number(m.createdAt) * 1000,
             attachments: m.attachments?.map((a, i) => ({
               ...a,
@@ -4798,6 +4857,10 @@ export default function ChatPane({
   useEffect(() => {
     void load();
     void refreshQueue();
+    // Mermaid is only needed once a reply contains a diagram, but the download
+    // is what makes the first one slow: start it on idle so the render itself
+    // is the only wait.
+    prefetchMermaid();
   }, [load, refreshQueue]);
 
   // Load the chat sessions, restoring the last-used thread for this project
@@ -4978,6 +5041,27 @@ export default function ChatPane({
           // reader is looking at is not torn down and rebuilt for nothing.
           void load({ quiet: true });
         }
+        // A queued message can outlive the run it was queued on — the provider
+        // failed mid-turn, or the app was away long enough for the run to be
+        // gone. It is in the store, the run is not, so start it here: the
+        // server takes the oldest row and runs the rest as follow-ups, which
+        // is what makes a queue survive a failure instead of vanishing.
+        if (!st.running && !streamingRef.current && !watchRef.current) {
+          const next = queuedRef.current[0];
+          if (next && next.id && !resumeRef.current && resumeTriesRef.current < 3) {
+            resumeRef.current = true;
+            resumeTriesRef.current += 1;
+            void api
+              .chatQueueResume(projectId, sessionId, modelOverride, providerOverride)
+              .catch(() => {
+                // transient — the next tick tries again, up to three times
+              })
+              .finally(() => {
+                resumeRef.current = false;
+                void refreshQueue();
+              });
+          }
+        }
         // A live run with nothing streaming it means the watch dropped, or never
         // attached. Nudge the watch effect, which cannot notice this by itself:
         // its dependencies are all unchanged.
@@ -5006,7 +5090,7 @@ export default function ChatPane({
       if (timer) window.clearTimeout(timer);
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [projectId, sessionId, load, refreshQueue, streaming, resuming, pinBottom]);
+  }, [projectId, sessionId, load, refreshQueue, streaming, resuming, pinBottom, modelOverride, providerOverride]);
 
   const [bgRunning, setBgRunning] = useState<string[]>([]);
 
@@ -5300,6 +5384,7 @@ export default function ChatPane({
   }, [input, expanded, syncComposer]);
 
   const finish = useCallback(() => {
+    flushStream();
     setStreaming(false);
     abortRef.current = null;
     assistantKeyRef.current = null;
@@ -5314,7 +5399,7 @@ export default function ChatPane({
       .listAllFiles(projectId)
       .then((r) => setFileList(r.entries.map((e) => e.path)))
       .catch(() => {});
-  }, [update, projectId]);
+  }, [update, flushStream, projectId]);
 
   const handleEvent = useCallback(
     (ev: ChatEvent) => {
@@ -5322,6 +5407,10 @@ export default function ChatPane({
       // or a queued follow-up fired after we moved on) must not touch the
       // current session's transcript.
       if (sessionIdRef.current !== sessionId) return;
+      // Anything that is not more stream text must see the buffered text
+      // applied first: a tool row, a done event or an error has to land after
+      // the words that preceded it, not before them.
+      if (ev.type !== 'delta' && ev.type !== 'reasoning') flushStream();
       switch (ev.type) {
         case 'reasoning': {
           let k = assistantKeyRef.current;
@@ -5359,14 +5448,7 @@ export default function ChatPane({
               ];
             });
           } else {
-            const ck = k;
-            update((prev) =>
-              prev.map((it) =>
-                it.kind === 'msg' && it.key === ck
-                  ? { ...it, reasoning: ev.replace ? ev.text : (it.reasoning ?? '') + ev.text }
-                  : it,
-              ),
-            );
+            queueStream('reasoning', k, ev.text, ev.replace);
           }
           break;
         }
@@ -5387,14 +5469,7 @@ export default function ChatPane({
               { kind: 'msg', key: nk, role: 'assistant', content: ev.replace ? ev.text : '', sentAt: Date.now(), streaming: true },
             ]);
           }
-          const ck: string = k;
-          update((prev) =>
-            prev.map((it) =>
-              it.kind === 'msg' && it.key === ck
-                ? { ...it, content: ev.replace ? ev.text : it.content + ev.text }
-                : it,
-            ),
-          );
+          queueStream('text', k, ev.text, ev.replace);
           break;
         }
         // The child conversation id for a running delegate, so its transcript
@@ -5704,7 +5779,7 @@ export default function ChatPane({
         }
       }
     },
-    [update, finish, projectId, sessionId, projectName, loadContext, refreshQueue, load, onProjectRename],
+    [update, queueStream, flushStream, finish, projectId, sessionId, projectName, loadContext, refreshQueue, load, onProjectRename],
   );
 
   useEffect(() => {
@@ -6536,6 +6611,16 @@ export default function ChatPane({
   );
 
   // Keys of the user's messages, in order — the minimap shows one dot each.
+
+  // Stable identity: an inline arrow here would make every row re-render on
+  // each transcript update (memo compares props by reference), which is what
+  // made typing stutter while tokens streamed.
+  const onAskAnswered = useCallback(
+    (answer: AskResultView) => {
+      void answerAsk(answer);
+    },
+    [answerAsk],
+  );
   const userKeys = useMemo(
     () =>
       items.filter((it) => it.kind === 'msg' && it.role === 'user').map((it) => it.key),
@@ -7118,7 +7203,7 @@ export default function ChatPane({
                     onImageClick={openLightbox}
                     onDiagramClick={openDiagram}
                     onFileClick={openFile}
-                    onAskAnswered={(answer) => void answerAsk(answer)}
+                    onAskAnswered={onAskAnswered}
                     onOpenBackground={openBackgroundOutput}
                     currency={currency}
                   />

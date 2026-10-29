@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"log"
 	"strings"
 	"sync"
 	"time"
@@ -36,6 +37,24 @@ type turnQueue struct {
 	mu      sync.Mutex
 	pending []queuedMsg // follow-ups, in processing order
 	steers  []queuedMsg // explicitly steered, consumed between rounds
+	// persist writes the queue through to the store after every change, so a
+	// provider failure, a server restart or a long absence cannot drop a
+	// message the user already sent. Nil when the queue is not backed by a
+	// store (tests, and any caller that does not want durability).
+	persist func(pending, steers []queuedMsg)
+}
+
+// persistLocked writes the queue through to the store. The caller must hold
+// the lock: it snapshots the slices directly instead of re-locking.
+func (q *turnQueue) persistLocked() {
+	if q.persist == nil {
+		return
+	}
+	pending := make([]queuedMsg, len(q.pending))
+	copy(pending, q.pending)
+	steers := make([]queuedMsg, len(q.steers))
+	copy(steers, q.steers)
+	q.persist(pending, steers)
 }
 
 // add appends a message to the queue and returns its id.
@@ -44,6 +63,7 @@ func (q *turnQueue) add(text string, atts []agent.Attachment) string {
 	defer q.mu.Unlock()
 	m := queuedMsg{ID: store.NewID(), Text: text, QueuedAt: time.Now(), Attachments: atts}
 	q.pending = append(q.pending, m)
+	q.persistLocked()
 	return m.ID
 }
 
@@ -73,6 +93,7 @@ func (q *turnQueue) remove(id string) error {
 	for i := range q.pending {
 		if q.pending[i].ID == id {
 			q.pending = append(q.pending[:i], q.pending[i+1:]...)
+			q.persistLocked()
 			return nil
 		}
 	}
@@ -103,6 +124,7 @@ func (q *turnQueue) reorder(ids []string) error {
 		next = append(next, m)
 	}
 	q.pending = next
+	q.persistLocked()
 	return nil
 }
 
@@ -115,6 +137,7 @@ func (q *turnQueue) edit(id, text string) error {
 		if q.pending[i].ID == id {
 			q.pending[i].Text = text
 			q.pending[i].Held = false
+			q.persistLocked()
 			return nil
 		}
 	}
@@ -129,6 +152,7 @@ func (q *turnQueue) hold(id string, held bool) error {
 	for i := range q.pending {
 		if q.pending[i].ID == id {
 			q.pending[i].Held = held
+			q.persistLocked()
 			return nil
 		}
 	}
@@ -157,6 +181,7 @@ func (q *turnQueue) steer(id string) error {
 		if m.ID == id {
 			q.pending = append(q.pending[:i], q.pending[i+1:]...)
 			q.steers = append(q.steers, m)
+			q.persistLocked()
 			return nil
 		}
 	}
@@ -176,6 +201,7 @@ func (q *turnQueue) steerDrain() []agent.SteerMessage {
 		out = append(out, agent.SteerMessage{Text: m.Text, Attachments: m.Attachments})
 	}
 	q.steers = nil
+	q.persistLocked()
 	return out
 }
 
@@ -200,6 +226,7 @@ func (q *turnQueue) drain() []queuedMsg {
 	}
 	q.pending = kept
 	q.steers = nil
+	q.persistLocked()
 	if len(out) == 0 {
 		return nil
 	}
@@ -325,16 +352,72 @@ type runState struct {
 // function for explicit stops (the stop endpoint).
 type turnManager struct {
 	mu       sync.Mutex
+	st       *store.Store // nil in tests: queues then live in memory only
 	runs     map[string]*runState
 	cancels  map[string]context.CancelFunc
 	userRuns map[string]int // active concurrent runs per user
 }
 
-func newTurnManager() *turnManager {
+func newTurnManager(st *store.Store) *turnManager {
 	return &turnManager{
+		st:       st,
 		runs:     map[string]*runState{},
 		cancels:  map[string]context.CancelFunc{},
 		userRuns: map[string]int{},
+	}
+}
+
+// newQueue builds a queue bound to one session, with its store persistence
+// hook installed, and hydrates whatever survived an earlier run.
+func (m *turnManager) newQueue(projectID, sessionID string) *turnQueue {
+	q := &turnQueue{}
+	if m.st == nil {
+		return q
+	}
+	q.persist = func(pending, steers []queuedMsg) {
+		rows := make([]store.QueuedMessage, 0, len(pending)+len(steers))
+		for i, msg := range pending {
+			rows = append(rows, store.QueuedMessage{
+				ID: msg.ID, Text: msg.Text, Held: msg.Held, Position: i,
+				Attachments: agent.MarshalAttachments(msg.Attachments), QueuedAt: msg.QueuedAt.Unix(),
+			})
+		}
+		for i, msg := range steers {
+			rows = append(rows, store.QueuedMessage{
+				ID: msg.ID, Text: msg.Text, Steer: true, Position: len(pending) + i,
+				Attachments: agent.MarshalAttachments(msg.Attachments), QueuedAt: msg.QueuedAt.Unix(),
+			})
+		}
+		if err := m.st.SaveQueuedMessages(projectID, sessionID, rows); err != nil {
+			log.Printf("queue: saving %d message(s) for %s: %v", len(rows), runKey(projectID, sessionID), err)
+		}
+	}
+	m.loadQueue(q, projectID, sessionID)
+	return q
+}
+
+// loadQueue re-adds the persisted messages of a session to a fresh queue.
+// This is what makes a queued message survive a provider failure or a restart:
+// the next run in the session starts with them still waiting.
+func (m *turnManager) loadQueue(q *turnQueue, projectID, sessionID string) {
+	if m.st == nil {
+		return
+	}
+	rows, err := m.st.ListQueuedMessages(projectID, sessionID)
+	if err != nil {
+		log.Printf("queue: loading %s: %v", runKey(projectID, sessionID), err)
+		return
+	}
+	for _, r := range rows {
+		msg := queuedMsg{
+			ID: r.ID, Text: r.Text, Held: r.Held, QueuedAt: time.Unix(r.QueuedAt, 0),
+			Attachments: agent.ParseAttachments(r.Attachments),
+		}
+		if r.Steer {
+			q.steers = append(q.steers, msg)
+		} else {
+			q.pending = append(q.pending, msg)
+		}
 	}
 }
 
@@ -364,7 +447,7 @@ func (m *turnManager) beginOrQueue(projectID, sessionID, msg string, atts []agen
 	if maxRuns > 0 && userID != "" && m.userRuns[userID] >= maxRuns {
 		return nil, false, "", errTooManyRuns
 	}
-	rs := &runState{queue: &turnQueue{}, hub: newRunHub(), userID: userID}
+	rs := &runState{queue: m.newQueue(projectID, sessionID), hub: newRunHub(), userID: userID}
 	m.runs[key] = rs
 	if userID != "" {
 		m.userRuns[userID]++
@@ -380,6 +463,46 @@ func (m *turnManager) get(projectID, sessionID string) *turnQueue {
 		return rs.queue
 	}
 	return nil
+}
+
+// queueFor returns the session's queue: the live run's when one is active,
+// otherwise a detached queue hydrated from the store. Queue endpoints use it
+// so messages left over from a failed run can still be listed, edited,
+// reordered or deleted — and so those edits persist.
+func (m *turnManager) queueFor(projectID, sessionID string) *turnQueue {
+	if q := m.get(projectID, sessionID); q != nil {
+		return q
+	}
+	if m.st == nil {
+		return nil
+	}
+	if rows, err := m.st.ListQueuedMessages(projectID, sessionID); err != nil || len(rows) == 0 {
+		return nil
+	}
+	return m.newQueue(projectID, sessionID)
+}
+
+// takeQueued removes one queued message by id, from the live run's queue and
+// from the store, and reports whether it was still there. A client re-sending
+// a stranded queued message passes its id, which makes the send idempotent:
+// the second attempt finds nothing and is reported as already queued.
+func (m *turnManager) takeQueued(projectID, sessionID, id string) bool {
+	removed := false
+	if q := m.get(projectID, sessionID); q != nil {
+		if q.remove(id) == nil {
+			removed = true
+		}
+	}
+	if m.st != nil {
+		ok, err := m.st.DeleteQueuedMessage(projectID, sessionID, id)
+		if err != nil {
+			log.Printf("queue: deleting %s: %v", id, err)
+		}
+		if ok {
+			removed = true
+		}
+	}
+	return removed
 }
 
 // hub returns the active run's event hub for the session, or nil when idle.

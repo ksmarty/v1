@@ -148,6 +148,18 @@ CREATE TABLE IF NOT EXISTS pending_asks (
   created_at INTEGER NOT NULL,
   PRIMARY KEY (project_id, session_id)
 );
+CREATE TABLE IF NOT EXISTS queued_messages (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  session_id TEXT NOT NULL DEFAULT '',
+  text TEXT NOT NULL DEFAULT '',
+  attachments TEXT NOT NULL DEFAULT '[]',
+  steer INTEGER NOT NULL DEFAULT 0,
+  held INTEGER NOT NULL DEFAULT 0,
+  position INTEGER NOT NULL DEFAULT 0,
+  queued_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_queued_messages_session ON queued_messages (project_id, session_id, position);
 CREATE TABLE IF NOT EXISTS vercel_deploys (
   id TEXT PRIMARY KEY,
   project_id TEXT NOT NULL,
@@ -1740,6 +1752,81 @@ func (s *Store) GetPlan(projectID string) (string, bool, error) {
 		return "", false, err
 	}
 	return plan, true, nil
+}
+
+// QueuedMessage is one chat message waiting behind an active run — or left
+// over from one that failed. The queue is persisted so a provider failure, a
+// server restart or a long absence cannot drop messages the user already
+// sent: they are re-queued when the session runs again.
+type QueuedMessage struct {
+	ID          string
+	Text        string
+	Attachments string // agent.MarshalAttachments JSON, "[]" when none
+	Steer       bool
+	Held        bool
+	Position    int
+	QueuedAt    int64
+}
+
+// SaveQueuedMessages replaces the persisted queue of one session, in one
+// transaction, so a partial write can never duplicate or reorder entries.
+func (s *Store) SaveQueuedMessages(projectID, sessionID string, rows []QueuedMessage) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`DELETE FROM queued_messages WHERE project_id = ? AND session_id = ?`, projectID, sessionID); err != nil {
+		return err
+	}
+	for _, r := range rows {
+		atts := r.Attachments
+		if atts == "" {
+			atts = "[]"
+		}
+		if _, err := tx.Exec(`INSERT INTO queued_messages (id, project_id, session_id, text, attachments, steer, held, position, queued_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			r.ID, projectID, sessionID, r.Text, atts, boolInt(r.Steer), boolInt(r.Held), r.Position, r.QueuedAt); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// ListQueuedMessages returns the persisted queue of one session, in order.
+func (s *Store) ListQueuedMessages(projectID, sessionID string) ([]QueuedMessage, error) {
+	rows, err := s.db.Query(`SELECT id, text, attachments, steer, held, position, queued_at
+		FROM queued_messages WHERE project_id = ? AND session_id = ? ORDER BY position, id`, projectID, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []QueuedMessage{}
+	for rows.Next() {
+		var m QueuedMessage
+		var steer, held int
+		if err := rows.Scan(&m.ID, &m.Text, &m.Attachments, &steer, &held, &m.Position, &m.QueuedAt); err != nil {
+			return nil, err
+		}
+		m.Steer = steer != 0
+		m.Held = held != 0
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
+// DeleteQueuedMessage removes one persisted message; it reports whether a row
+// was actually removed, which is what makes a client re-send idempotent.
+func (s *Store) DeleteQueuedMessage(projectID, sessionID, id string) (bool, error) {
+	res, err := s.db.Exec(`DELETE FROM queued_messages WHERE project_id = ? AND session_id = ? AND id = ?`, projectID, sessionID, id)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return n > 0, nil
 }
 
 // SetPlan upserts the project's active plan.

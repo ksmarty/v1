@@ -466,6 +466,21 @@ export const api = {
     }>(
       `/api/projects/${id}/chat/queue?sessionId=${encodeURIComponent(sessionId)}`,
     ),
+  // A queued message can outlive the run it was queued on (provider failure,
+  // restart, a long absence). The server keeps it in the store; this starts
+  // the oldest one as a turn and hydrates the rest behind it.
+  chatQueueResume: (
+    id: string,
+    sessionId: string,
+    model?: string,
+    providerId?: string,
+  ) =>
+    post<{ running?: boolean; ok?: boolean; queued?: boolean }>(
+      `/api/projects/${id}/chat/queue/resume?sessionId=${encodeURIComponent(sessionId)}` +
+        (model ? `&model=${encodeURIComponent(model)}` : '') +
+        (providerId ? `&providerId=${encodeURIComponent(providerId)}` : ''),
+      {},
+    ),
   chatQueueReorder: (id: string, sessionId: string, ids: string[]) =>
     post<void>(`/api/projects/${id}/chat/queue/reorder`, { ids, sessionId }),
   chatQueueSteer: (id: string, sessionId: string, entryId: string) =>

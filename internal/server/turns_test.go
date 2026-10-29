@@ -3,6 +3,9 @@ package server
 import (
 	"strings"
 	"testing"
+
+	"v1/internal/agent"
+	"v1/internal/store"
 )
 
 // TestConcurrencyLimitPerUser verifies beginOrQueue enforces the per-user
@@ -10,7 +13,7 @@ import (
 // an active session still works, other users are unaffected, and ending a
 // run frees a slot.
 func TestConcurrencyLimitPerUser(t *testing.T) {
-	m := newTurnManager()
+	m := newTurnManager(nil)
 	const max = 2
 
 	if _, started, _, err := m.beginOrQueue("p1", "s1", "first", nil, "userA", max); err != nil || !started {
@@ -50,7 +53,7 @@ func TestConcurrencyLimitPerUser(t *testing.T) {
 // TestQueueWaitFields verifies the queue snapshot exposes position, an
 // estimated wait and a queuedAt timestamp per entry.
 func TestQueueWaitFields(t *testing.T) {
-	m := newTurnManager()
+	m := newTurnManager(nil)
 	q, started, _, err := m.beginOrQueue("p1", "s1", "first", nil, "userA", 0)
 	if err != nil || !started {
 		t.Fatalf("start: started=%v err=%v", started, err)
@@ -64,5 +67,84 @@ func TestQueueWaitFields(t *testing.T) {
 	}
 	if list[0].QueuedAt.IsZero() || list[1].QueuedAt.Before(list[0].QueuedAt) {
 		t.Fatalf("queuedAt ordering wrong: %v, %v", list[0].QueuedAt, list[1].QueuedAt)
+	}
+}
+
+// TestQueueSurvivesFailedRun covers the durability contract: a message queued
+// onto a run that never drains it (a provider failure, a restart) is written
+// through to the store, and the next run in that session starts with it still
+// waiting — including its attachments.
+func TestQueueSurvivesFailedRun(t *testing.T) {
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+	m := newTurnManager(st)
+
+	q, started, _, err := m.beginOrQueue("p1", "s1", "first", nil, "userA", 0)
+	if err != nil || !started {
+		t.Fatalf("start: started=%v err=%v", started, err)
+	}
+	atts := []agent.Attachment{{Name: "log.txt", MIME: "text/plain", Kind: "text", Content: "hello"}}
+	id := q.add("second", atts)
+
+	// The run dies without draining (streamChatTurn returns on the error path).
+	m.end("p1", "s1")
+
+	rows, err := st.ListQueuedMessages("p1", "s1")
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(rows) != 1 || rows[0].ID != id || rows[0].Text != "second" {
+		t.Fatalf("persisted = %+v, want the queued message", rows)
+	}
+	if got := agent.ParseAttachments(rows[0].Attachments); len(got) != 1 || got[0].Name != "log.txt" {
+		t.Fatalf("attachments not persisted: %+v", rows[0].Attachments)
+	}
+
+	// The session is idle, so the queue endpoint still sees it.
+	idle := m.queueFor("p1", "s1")
+	if idle == nil || len(idle.list()) != 1 {
+		t.Fatalf("queueFor on an idle session should expose the stranded message")
+	}
+
+	// The next run rehydrates it, so it runs as a follow-up instead of vanishing.
+	q2, started, _, err := m.beginOrQueue("p1", "s1", "third", nil, "userA", 0)
+	if err != nil || !started {
+		t.Fatalf("restart: started=%v err=%v", started, err)
+	}
+	got := q2.list()
+	if len(got) != 1 || got[0].Text != "second" || len(got[0].Attachments) != 1 {
+		t.Fatalf("rehydrated = %+v, want the stranded message with its attachment", got)
+	}
+}
+
+// TestTakeQueuedIsIdempotent verifies the resume path cannot deliver the same
+// message twice: the first take removes it everywhere, the second finds none.
+func TestTakeQueuedIsIdempotent(t *testing.T) {
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+	m := newTurnManager(st)
+
+	q, _, _, err := m.beginOrQueue("p1", "s1", "first", nil, "userA", 0)
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	id := q.add("second", nil)
+	if !m.takeQueued("p1", "s1", id) {
+		t.Fatal("first take should remove the message")
+	}
+	if m.takeQueued("p1", "s1", id) {
+		t.Fatal("second take must report the message is gone")
+	}
+	if len(q.list()) != 0 {
+		t.Fatalf("live queue still holds it: %+v", q.list())
+	}
+	if rows, _ := st.ListQueuedMessages("p1", "s1"); len(rows) != 0 {
+		t.Fatalf("store still holds it: %+v", rows)
 	}
 }

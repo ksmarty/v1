@@ -203,14 +203,18 @@ body {
 
 /* A ```mermaid fence renders as an empty box that mermaid fills with an SVG.
    The pending state is the element's own ::after, so the swap to the finished
-   diagram never reflows the row above it. */
+   diagram never reflows the row above it.
+
+   The card stays white in every theme: diagrams (and the classDef fills models
+   write for them) assume a white canvas, and drawing them on the dark surface
+   left pale text on pale nodes. */
 .md .v1-diagram {
   position: relative;
   margin: 0.6rem 0;
   padding: 0.75rem;
-  border: 1px solid var(--v1-border);
+  border: 1px solid rgba(148, 163, 184, 0.35);
   border-radius: 8px;
-  background: var(--v1-surface);
+  background: #ffffff;
   overflow-x: auto;
 }
 .md .v1-diagram:empty::after {
@@ -219,11 +223,11 @@ body {
   padding: 1.5rem 0;
   text-align: center;
   font-size: 0.75rem;
-  color: var(--v1-text-faint);
+  color: #64748b;
 }
 .md .v1-diagram.is-failed {
   font-size: 0.75rem;
-  color: var(--v1-text-dim);
+  color: #64748b;
   white-space: pre-wrap;
 }
 .md .v1-diagram svg {
@@ -240,10 +244,19 @@ body {
 }
 
 /* The diagram dialog's copy of the SVG: as large as the viewport allows,
-   scrollable when the diagram is wider than the screen. */
+   scrollable when the diagram is wider than the screen. The SVG carries its
+   natural pixel size (mermaid's percentage sizing collapses inside a flex
+   container), so the CSS only has to cap it. */
+.v1-diagram-full {
+  background: #ffffff;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 12px;
+  padding: 1rem;
+  max-width: min(92vw, 1400px);
+}
 .v1-diagram-full svg {
   display: block;
-  max-width: min(92vw, 1400px);
+  max-width: 100%;
   max-height: 70vh;
   width: auto;
   height: auto;
