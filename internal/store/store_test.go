@@ -504,3 +504,52 @@ func TestArchiveExpiredEphemeralProjectsWindowAndOwner(t *testing.T) {
 		t.Fatalf("global sweep archived %d, want 1, err %v", n, err)
 	}
 }
+
+// TestDeleteErrorMessages: a new message after a failure means the user moved
+// on, so the failure rows leave the transcript — and only that session's.
+func TestDeleteErrorMessages(t *testing.T) {
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	p := &Project{ID: NewID(), Name: "t", Path: t.TempDir()}
+	if err := s.CreateProject(p); err != nil {
+		t.Fatal(err)
+	}
+	one, err := s.EnsureDefaultSession(p.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	two, err := s.CreateChatSession(p.ID, "second")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = s.AddMessage(p.ID, one.ID, "user", "hello", "", "", "", "", "")
+	_, _ = s.AddMessage(p.ID, one.ID, "error", "boom", "", "", "", "", "")
+	_, _ = s.AddMessage(p.ID, one.ID, "error", "boom again", "", "", "", "", "")
+	_, _ = s.AddMessage(p.ID, two.ID, "error", "other session", "", "", "", "", "")
+
+	n, err := s.DeleteErrorMessages(p.ID, one.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 2 {
+		t.Fatalf("cleared = %d, want 2", n)
+	}
+	msgs, err := s.ListMessages(p.ID, one.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 1 || msgs[0].Role != "user" {
+		t.Fatalf("session one after clear: %+v", msgs)
+	}
+	// Another session keeps its own failure row.
+	other, err := s.ListMessages(p.ID, two.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(other) != 1 || other[0].Role != "error" {
+		t.Fatalf("session two must be untouched: %+v", other)
+	}
+}

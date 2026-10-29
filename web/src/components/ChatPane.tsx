@@ -4123,6 +4123,25 @@ export default function ChatPane({
     setItems(itemsRef.current);
   }, []);
 
+  // Sending anything after a failure means the user read the error and moved
+  // on, so the error stops being part of the conversation: the row is dropped
+  // here and on the server (the transcript is persisted, so a reload would
+  // otherwise put it straight back and every later turn would sit under a red
+  // box that no longer describes the chat).
+  // Counts dismissals, so a fetch that was already in flight when the user
+  // dismissed an error cannot put it back on screen.
+  const errorsClearedRef = useRef(0);
+  const clearErrors = useCallback(() => {
+    if (!itemsRef.current.some((it) => it.kind === 'msg' && it.role === 'error')) return;
+    errorsClearedRef.current++;
+    update((prev) => prev.filter((it) => !(it.kind === 'msg' && it.role === 'error')));
+    // The transcript is cached per session as well, so the failure row has to
+    // leave the stored copy too — otherwise reopening the chat paints it back.
+    writeChatCache(projectId, sessionId, itemsRef.current, !hasOlderRef.current);
+    setLoadError(null); // a stale load banner is the same kind of leftover
+    void api.clearChatErrors(projectId, sessionId).catch(() => {});
+  }, [update, projectId, sessionId]);
+
   // Streaming text and reasoning arrive token by token. Applying each one
   // re-rendered the transcript, so a keystroke landed in a busy frame and the
   // composer stuttered while the model was thinking. Tokens are buffered and
@@ -4657,6 +4676,26 @@ export default function ChatPane({
     return [...older, ...fresh];
   }, []);
 
+  // Rows this client created while a fetch was in flight are newer than the
+  // page that just arrived, so replacing the transcript wholesale would swallow
+  // them — that is how a message sent right after an error vanished from the
+  // chat until the session was reopened. A live row is kept when it was created
+  // after the fetch started (live keys are `u`/`s`/`t`/`e` plus a counter) and
+  // the page does not already carry it: the persisted copy has a numeric id, so
+  // the two are matched by role and text instead.
+  const withLiveTail = useCallback((fresh: Item[], mark: number): Item[] => {
+    const seen = new Set(
+      fresh.flatMap((it) => (it.kind === 'msg' ? [`${it.role}\u0000${it.content}`] : [])),
+    );
+    const live = itemsRef.current.filter((it) => {
+      const m = /^[uste](\d+)$/.exec(it.key);
+      if (!m || Number(m[1]) <= mark) return false;
+      if (it.kind !== 'msg') return true;
+      return !seen.has(`${it.role}\u0000${it.content}`);
+    });
+    return live.length === 0 ? fresh : [...fresh, ...live];
+  }, []);
+
   // Pull every older page in the background, so the device ends up holding the
   // whole thread. A finished chat is then never fetched again, and the minimap
   // (which maps the messages it has) covers all of it rather than the last page.
@@ -4708,6 +4747,10 @@ export default function ChatPane({
     // session's messages overwrite the new one's transcript.
     const loadSession = sessionId;
     const loadSeq = ++loadSeqRef.current;
+    // Live rows created after this point must survive the swap below, and a
+    // failure the user dismissed while this fetch was running must not return.
+    const liveMark = counterRef.current;
+    const errorsMark = errorsClearedRef.current;
     // Show the last transcript we saw for this session straight away — a blank
     // chat on a slow link is worse than a slightly stale one — then let the
     // fetch below replace it. A quiet reload (turn end, run finished while we
@@ -4750,8 +4793,9 @@ export default function ChatPane({
         cached.newest === (status.lastMessageId ?? 0);
       if (cacheFresh && cached) {
         if (!seeded) {
-          itemsRef.current = cached.items;
-          setItems(cached.items);
+          const kept = withLiveTail(cached.items, liveMark);
+          itemsRef.current = kept;
+          setItems(kept);
           pinPendingRef.current = true;
         }
         setHasOlder(false);
@@ -4764,11 +4808,15 @@ export default function ChatPane({
       // bottom, and serialising a long history before showing anything is what
       // made a big chat slow to open.
       const page = await api.getMessagesPage(projectId, sessionId, CHAT_PAGE);
-      const mapped = mapMessages(page.messages, 0);
+      const fetched = mapMessages(page.messages, 0);
+      const mapped =
+        errorsClearedRef.current === errorsMark
+          ? fetched
+          : fetched.filter((it) => !(it.kind === 'msg' && it.role === 'error'));
       // Drop the result if a newer load started or the session changed while
       // the fetch was in flight (switching mid-load shows the old transcript).
       if (loadSeqRef.current !== loadSeq || sessionIdRef.current !== loadSession) return;
-      const merged = page.hasMore ? mergeTail(itemsRef.current, mapped) : mapped;
+      const merged = withLiveTail(page.hasMore ? mergeTail(itemsRef.current, mapped) : mapped, liveMark);
       const keptHistory = merged.length > mapped.length;
       // Only touch state when the fetch actually changed the thread. A poll or a
       // turn-end reload of an unchanged chat then commits nothing, so the rows
@@ -4823,7 +4871,7 @@ export default function ChatPane({
       // card must survive reloads and reconnects, not just live streams.
       void refreshPendingAsk();
     }
-  }, [projectId, sessionId, projectName, notifiedKey, refreshPendingAsk, mapMessages, mergeTail, backfill]);
+  }, [projectId, sessionId, projectName, notifiedKey, refreshPendingAsk, mapMessages, mergeTail, withLiveTail, backfill]);
 
   // Fetch the next-older page on demand (scrolling up), holding the reader's
   // place.
@@ -5970,6 +6018,7 @@ export default function ChatPane({
       if ((!trimmed && attachments.length === 0) || streaming || !llmReady || !modelOverride) return;
       setInput('');
       setAskPrompt(null); // a new turn supersedes any pending question
+      clearErrors(); // the user moved on from the last failure
       const atts = attachments.length > 0 ? [...attachments] : undefined;
       setAttachments([]);
       setAttachError(null);
@@ -6012,7 +6061,7 @@ export default function ChatPane({
         ),
       );
     },
-    [streaming, llmReady, projectId, sessionId, modelOverride, providerOverride, handleEvent, run, update, attachments, thinkingEffort],
+    [streaming, llmReady, projectId, sessionId, modelOverride, providerOverride, handleEvent, run, update, attachments, thinkingEffort, clearErrors],
   );
 
   // Auto-send the New project dialog's "what do you want to create?"
@@ -6201,6 +6250,7 @@ export default function ChatPane({
       const text = input.trim();
       if (!text && attachments.length === 0) return;
       const atts = attachments;
+      clearErrors();
       setInput('');
       setAttachments([]);
       setSuggestions([]);
@@ -6216,7 +6266,7 @@ export default function ChatPane({
     }
     sendText(input);
     setExpanded(false);
-  }, [input, streaming, attachments, runLocalCommand, sendText, enqueue]);
+  }, [input, streaming, attachments, runLocalCommand, sendText, enqueue, clearErrors]);
 
   // The secondary action beside Send: queue without steering, so the message
   // waits for the next turn instead of joining the running one.
@@ -6224,6 +6274,7 @@ export default function ChatPane({
     const text = input.trim();
     if ((!text && attachments.length === 0) || !streaming) return;
     const atts = attachments;
+    clearErrors();
     setInput('');
     setAttachments([]);
     setSuggestions([]);
@@ -6235,7 +6286,7 @@ export default function ChatPane({
       setAttachments(atts);
       setLoadError(errMsg(e));
     }
-  }, [input, streaming, attachments, enqueue]);
+  }, [input, streaming, attachments, enqueue, clearErrors]);
 
   // Moves a queued message up/down (optimistically; the server is the source
   // of truth on the next refresh).

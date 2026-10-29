@@ -1341,6 +1341,18 @@ func (s *Store) DeleteMessagesAfter(projectID, sessionID string, id int64) error
 	return err
 }
 
+// DeleteErrorMessages drops the persisted failure rows of a session. A new
+// message after a failure means the user moved on, so the error stops being
+// part of the transcript instead of sitting there forever.
+func (s *Store) DeleteErrorMessages(projectID, sessionID string) (int64, error) {
+	res, err := s.db.Exec(`DELETE FROM messages WHERE project_id = ? AND session_id = ? AND role = 'error'`, projectID, sessionID)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
+}
+
 // ---- chat sessions ----
 
 // ChatSession is one chat thread of a project.

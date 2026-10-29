@@ -54,6 +54,24 @@ func (s *Server) handleChatQueue(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"messages": messages, "steering": steering})
 }
 
+// handleChatErrorsClear drops the persisted failure rows of a session. Sending
+// anything after an error means the user ignored it, and a transcript that
+// keeps the failure in place reads as if the chat stopped working there: every
+// later turn sits below a red box that no longer describes the conversation.
+func (s *Server) handleChatErrorsClear(w http.ResponseWriter, r *http.Request) {
+	p := s.projectOr404(w, r)
+	if p == nil {
+		return
+	}
+	sessionID := s.chatSessionID(p, r.URL.Query().Get("sessionId"))
+	n, err := s.st.DeleteErrorMessages(p.ID, sessionID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "cleared": n})
+}
+
 // handleChatQueueResume starts the oldest stranded queued message as a turn.
 // A queue can outlive the run it was queued on — the provider failed, the
 // server restarted, the client was away for hours — and it is persisted

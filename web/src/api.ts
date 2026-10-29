@@ -481,6 +481,13 @@ export const api = {
         (providerId ? `&providerId=${encodeURIComponent(providerId)}` : ''),
       {},
     ),
+  // clearChatErrors drops the persisted failure rows of a session: sending
+  // anything after an error means it was ignored, so it leaves the transcript.
+  clearChatErrors: (id: string, sessionId: string) =>
+    post<{ ok?: boolean; cleared?: number }>(
+      `/api/projects/${id}/chat/errors/clear?sessionId=${encodeURIComponent(sessionId)}`,
+      {},
+    ),
   chatQueueReorder: (id: string, sessionId: string, ids: string[]) =>
     post<void>(`/api/projects/${id}/chat/queue/reorder`, { ids, sessionId }),
   chatQueueSteer: (id: string, sessionId: string, entryId: string) =>
