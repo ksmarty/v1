@@ -782,6 +782,19 @@ function partialBefore(items: Item[], i: number): boolean {
 }
 
 /**
+ * The message a failure should offer to send again: the last thing the reader
+ * actually wrote, not the error text. An error row used to re-send its own
+ * message — so a rejected turn handed the provider back its own complaint.
+ */
+function lastUserTextBefore(items: Item[], i: number): string {
+  for (let j = i - 1; j >= 0; j--) {
+    const it = items[j];
+    if (it.kind === 'msg' && it.role === 'user' && it.content.trim()) return it.content;
+  }
+  return '';
+}
+
+/**
  * A placeholder that only appears once a wait has actually been felt. A cached
  * transcript is on screen a few milliseconds after the first render, and showing
  * a skeleton for those few frames reads as the app flashing rather than loading.
@@ -3480,6 +3493,7 @@ const MessageRow = memo(function MessageRow({
   onRewind,
   onRegenerate,
   onRetrySend,
+  retryText,
   canContinue,
   onEditStart,
   onImageClick,
@@ -3501,6 +3515,8 @@ const MessageRow = memo(function MessageRow({
   onRewind: (key: string, text: string) => void;
   onRegenerate: () => void;
   onRetrySend: (text: string) => void;
+  /** The reader's own last message, offered for a re-send after a failure. */
+  retryText?: string;
   /** True when the error followed a partial reply, so retrying continues it. */
   canContinue?: boolean;
   onEditStart: (key: string, editing: boolean) => void;
@@ -3725,14 +3741,16 @@ const MessageRow = memo(function MessageRow({
                 >
                   Try again
                 </button>
-                <button
-                  type="button"
-                  onClick={() => onRetrySend(item.content)}
-                  className="ml-3 text-xs font-medium text-red-300 underline-offset-2 transition-colors hover:text-red-200 hover:underline"
-                  title="Send this message again"
-                >
-                  Send this message again
-                </button>
+                {retryText ? (
+                  <button
+                    type="button"
+                    onClick={() => onRetrySend(retryText)}
+                    className="ml-3 text-xs font-medium text-red-300 underline-offset-2 transition-colors hover:text-red-200 hover:underline"
+                    title="Send this message again"
+                  >
+                    Send this message again
+                  </button>
+                ) : null}
               </>
             )}
           </div>
@@ -4689,7 +4707,14 @@ export default function ChatPane({
     );
     const live = itemsRef.current.filter((it) => {
       const m = /^[uste](\d+)$/.exec(it.key);
-      if (!m || Number(m[1]) <= mark) return false;
+      if (!m) return false;
+      // A user or assistant row is something the reader has already seen. A
+      // reload whose snapshot predates the send — or the turn that produced
+      // the reply — must not erase it, or a message disappears mid-generation
+      // with nothing left to retry from. Error and tool rows are transient UI
+      // state, so they only survive when they postdate the fetch.
+      const message = it.kind === 'msg' && (it.role === 'user' || it.role === 'assistant');
+      if (!message && Number(m[1]) <= mark) return false;
       if (it.kind !== 'msg') return true;
       return !seen.has(`${it.role}\u0000${it.content}`);
     });
@@ -7247,6 +7272,11 @@ export default function ChatPane({
                     onRewind={requestRewind}
                     onRegenerate={regenerate}
                     onRetrySend={sendText}
+                    retryText={
+                      it.kind === 'msg' && it.role === 'error'
+                        ? lastUserTextBefore(items, i)
+                        : undefined
+                    }
                     canContinue={
                       it.kind === 'msg' && it.role === 'error' && partialBefore(items, i)
                     }

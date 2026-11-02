@@ -524,9 +524,18 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 		// Steered messages join the turn between rounds: persisted like a
 		// normal user turn and rendered in the UI via injected_message.
 		if p.Steer != nil {
-			for _, msg := range p.Steer() {
+			steered := p.Steer()
+			for i, msg := range steered {
 				msgID, err := p.Store.AddMessage(p.Project.ID, p.SessionID, "user", msg.Text, SteerToolJSON, p.Client.Model, "", "", MarshalAttachments(msg.Attachments))
 				if err != nil {
+					// The message is already out of the queue, so a failed write
+					// would drop it for good. Put it and everything behind it
+					// back; they run as follow-up turns instead.
+					if p.Requeue != nil {
+						for _, lost := range steered[i:] {
+							p.Requeue(lost)
+						}
+					}
 					return nil, err
 				}
 				history = append(history, userMessage(msg.Text, msg.Attachments))

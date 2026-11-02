@@ -98,13 +98,11 @@ func (s *Server) handleChatQueueResume(w http.ResponseWriter, r *http.Request) {
 	// Steered rows are injected into a run, and a held row is being edited in
 	// the composer: neither is a turn to start here.
 	var pick *store.QueuedMessage
-	rest := make([]store.QueuedMessage, 0, len(rows))
 	for i := range rows {
-		if pick == nil && !rows[i].Steer && !rows[i].Held {
+		if !rows[i].Steer && !rows[i].Held {
 			pick = &rows[i]
-			continue
+			break
 		}
-		rest = append(rest, rows[i])
 	}
 	if pick == nil {
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "queued": false})
@@ -129,20 +127,23 @@ func (s *Server) handleChatQueueResume(w http.ResponseWriter, r *http.Request) {
 		HardTimeout:     s.cfg.TurnHardTimeout,
 		AutoPlan:        s.cfg.AutoPlan,
 	}
+	// The turn starts from the row itself, so the persisted copy goes first: a
+	// queue created after this point (beginOrQueue hydrates from the store)
+	// must not contain it, or the message would run twice — once as this turn
+	// and once again when the run drains what it thinks is still queued.
+	if _, derr := s.st.DeleteQueuedMessage(p.ID, sessionID, pick.ID); derr != nil {
+		log.Printf("queue: dropping resumed %s: %v", pick.ID, derr)
+	}
 	q, started, _, qerr := s.turns.beginOrQueue(p.ID, sessionID, pick.Text, atts, userID, s.cfg.MaxConcurrentRunsPerUser)
 	if qerr != nil || !started {
-		// Nothing lost: put the row back where it was and let the next attempt
-		// pick it up. The client reports queued, not an error.
-		if serr := s.st.SaveQueuedMessages(p.ID, sessionID, append([]store.QueuedMessage{*pick}, rest...)); serr != nil {
+		// Nothing lost: put the row back on its own, so anything queued while
+		// this attempt was in flight survives too. The client reports queued,
+		// not an error, and the next tick tries again.
+		if serr := s.st.InsertQueuedMessage(p.ID, sessionID, *pick); serr != nil {
 			log.Printf("queue: restoring %s: %v", pick.ID, serr)
 		}
 		writeJSON(w, http.StatusAccepted, map[string]any{"queued": true})
 		return
-	}
-	// The turn starts from the row itself, so the persisted copy must go before
-	// any of it runs.
-	if _, derr := s.st.DeleteQueuedMessage(p.ID, sessionID, pick.ID); derr != nil {
-		log.Printf("queue: dropping resumed %s: %v", pick.ID, derr)
 	}
 	s.streamChatTurn(w, r, p, userID, params, q)
 }

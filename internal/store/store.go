@@ -1841,6 +1841,21 @@ func (s *Store) DeleteQueuedMessage(projectID, sessionID, id string) (bool, erro
 	return n > 0, nil
 }
 
+// InsertQueuedMessage writes one message into the persisted queue and leaves
+// the rest of it alone. A resume attempt that could not start its turn puts the
+// message back this way: SaveQueuedMessages replaces the whole queue, so it
+// would wipe anything that was queued while the attempt was in flight.
+func (s *Store) InsertQueuedMessage(projectID, sessionID string, row QueuedMessage) error {
+	atts := row.Attachments
+	if atts == "" {
+		atts = "[]"
+	}
+	_, err := s.db.Exec(`INSERT OR REPLACE INTO queued_messages (id, project_id, session_id, text, attachments, steer, held, position, queued_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		row.ID, projectID, sessionID, row.Text, atts, boolInt(row.Steer), boolInt(row.Held), row.Position, row.QueuedAt)
+	return err
+}
+
 // SetPlan upserts the project's active plan.
 func (s *Store) SetPlan(projectID, planJSON string) error {
 	_, err := s.db.Exec(`INSERT INTO plans (project_id, plan_json, updated_at) VALUES (?, ?, ?)

@@ -148,3 +148,39 @@ func TestTakeQueuedIsIdempotent(t *testing.T) {
 		t.Fatalf("store still holds it: %+v", rows)
 	}
 }
+
+// TestInsertQueuedMessageKeepsTheRest covers the resume restore path: putting a
+// message back after a resume attempt could not start its turn must leave every
+// other queued message alone, because a full save would wipe anything that
+// arrived while the attempt was in flight.
+func TestInsertQueuedMessageKeepsTheRest(t *testing.T) {
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+
+	first := store.QueuedMessage{ID: "a", Text: "first", Position: 0, QueuedAt: 1}
+	if err := st.InsertQueuedMessage("p1", "s1", first); err != nil {
+		t.Fatalf("insert first: %v", err)
+	}
+	// Queued while the resume attempt was running.
+	second := store.QueuedMessage{ID: "b", Text: "second", Position: 1, QueuedAt: 2}
+	if err := st.InsertQueuedMessage("p1", "s1", second); err != nil {
+		t.Fatalf("insert second: %v", err)
+	}
+	rows, err := st.ListQueuedMessages("p1", "s1")
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(rows) != 2 || rows[0].ID != "a" || rows[1].ID != "b" {
+		t.Fatalf("queue = %+v, want both messages in order", rows)
+	}
+	// A restore of the same row must not duplicate it.
+	if err := st.InsertQueuedMessage("p1", "s1", first); err != nil {
+		t.Fatalf("reinsert: %v", err)
+	}
+	if rows, _ := st.ListQueuedMessages("p1", "s1"); len(rows) != 2 {
+		t.Fatalf("queue = %+v, want no duplicate", rows)
+	}
+}
