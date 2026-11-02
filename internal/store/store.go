@@ -160,6 +160,18 @@ CREATE TABLE IF NOT EXISTS queued_messages (
   queued_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_queued_messages_session ON queued_messages (project_id, session_id, position);
+CREATE TABLE IF NOT EXISTS uploads (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  session_id TEXT NOT NULL DEFAULT '',
+  name TEXT NOT NULL DEFAULT '',
+  mime TEXT NOT NULL DEFAULT '',
+  kind TEXT NOT NULL DEFAULT 'text',
+  content TEXT NOT NULL DEFAULT '',
+  size INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_uploads_project ON uploads (project_id, created_at);
 CREATE TABLE IF NOT EXISTS vercel_deploys (
   id TEXT PRIMARY KEY,
   project_id TEXT NOT NULL,
@@ -1854,6 +1866,95 @@ func (s *Store) InsertQueuedMessage(projectID, sessionID string, row QueuedMessa
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		row.ID, projectID, sessionID, row.Text, atts, boolInt(row.Steer), boolInt(row.Held), row.Position, row.QueuedAt)
 	return err
+}
+
+// Upload is a file the client sent ahead of the message it belongs to. The
+// composer uploads on attach, so a large file is already stored by the time the
+// user sends: the chat request then references it by id instead of carrying
+// megabytes of base64 through the turn request (which is where a message used
+// to be lost when the connection dropped mid-upload).
+type Upload struct {
+	ID        string
+	ProjectID string
+	SessionID string
+	Name      string
+	MIME      string
+	Kind      string
+	Content   string
+	Size      int64
+	CreatedAt int64
+}
+
+// SaveUpload stores one uploaded file.
+func (s *Store) SaveUpload(u *Upload) error {
+	_, err := s.db.Exec(`INSERT OR REPLACE INTO uploads (id, project_id, session_id, name, mime, kind, content, size, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		u.ID, u.ProjectID, u.SessionID, u.Name, u.MIME, u.Kind, u.Content, u.Size, u.CreatedAt)
+	return err
+}
+
+// ListUploads returns the uploads among ids that belong to the project, in the
+// order they were given (an upload the user removed is simply absent).
+func (s *Store) ListUploads(projectID string, ids []string) ([]*Upload, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")
+	args := make([]any, 0, len(ids)+1)
+	args = append(args, projectID)
+	for _, id := range ids {
+		args = append(args, id)
+	}
+	rows, err := s.db.Query(`SELECT id, project_id, session_id, name, mime, kind, content, size, created_at
+		FROM uploads WHERE project_id = ? AND id IN (`+placeholders+`)`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	found := map[string]*Upload{}
+	for rows.Next() {
+		u := &Upload{}
+		if err := rows.Scan(&u.ID, &u.ProjectID, &u.SessionID, &u.Name, &u.MIME, &u.Kind, &u.Content, &u.Size, &u.CreatedAt); err != nil {
+			return nil, err
+		}
+		found[u.ID] = u
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	out := make([]*Upload, 0, len(found))
+	for _, id := range ids {
+		if u, ok := found[id]; ok {
+			out = append(out, u)
+		}
+	}
+	return out, nil
+}
+
+// DeleteUploads drops uploads once a message has taken them over, or when the
+// user removes the chip.
+func (s *Store) DeleteUploads(projectID string, ids []string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")
+	args := make([]any, 0, len(ids)+1)
+	args = append(args, projectID)
+	for _, id := range ids {
+		args = append(args, id)
+	}
+	_, err := s.db.Exec(`DELETE FROM uploads WHERE project_id = ? AND id IN (`+placeholders+`)`, args...)
+	return err
+}
+
+// PruneUploads deletes uploads older than the cutoff: a file attached and never
+// sent would otherwise sit in the database forever.
+func (s *Store) PruneUploads(cutoff int64) (int64, error) {
+	res, err := s.db.Exec(`DELETE FROM uploads WHERE created_at < ?`, cutoff)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
 }
 
 // SetPlan upserts the project's active plan.

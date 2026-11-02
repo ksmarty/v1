@@ -303,10 +303,29 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		EditMessageID int64              `json:"editMessageId"`
 		Thinking      string             `json:"thinking"`
 		Attachments   []agent.Attachment `json:"attachments"`
+		// Files the composer already uploaded when they were attached. The
+		// request carries their ids, not their bytes.
+		UploadIDs []string `json:"uploadIds"`
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxChatBody)
 	if !decodeJSON(w, r, &body) {
 		return
+	}
+	if len(body.UploadIDs) > 0 {
+		ups, err := s.st.ListUploads(p.ID, body.UploadIDs)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if len(ups) != len(body.UploadIDs) {
+			writeError(w, http.StatusBadRequest, "one of the attached files is no longer available — attach it again")
+			return
+		}
+		for _, u := range ups {
+			body.Attachments = append(body.Attachments, agent.Attachment{
+				Name: u.Name, MIME: u.MIME, Kind: u.Kind, Content: u.Content,
+			})
+		}
 	}
 	// A turn needs something to act on, but an attachment is enough: sending a
 	// screenshot with no comment is a normal way to ask. The model still gets a
@@ -390,6 +409,13 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		}
 		writeError(w, http.StatusInternalServerError, qerr.Error())
 		return
+	}
+	// The turn (or the queued entry) now owns the files, so the pending upload
+	// rows are no longer needed.
+	if len(body.UploadIDs) > 0 {
+		if err := s.st.DeleteUploads(p.ID, body.UploadIDs); err != nil {
+			log.Printf("chat: delete uploads: %v", err)
+		}
 	}
 	if !started {
 		writeJSON(w, http.StatusAccepted, map[string]any{"queued": true, "id": queuedID})

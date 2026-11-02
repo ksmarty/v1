@@ -243,6 +243,8 @@ func (s *Server) routes(m *http.ServeMux) {
 	m.HandleFunc("POST /api/projects/{id}/chat/queue/delete", s.handleChatQueueDelete)
 	m.HandleFunc("POST /api/projects/{id}/chat/queue/resume", s.handleChatQueueResume)
 	m.HandleFunc("POST /api/projects/{id}/chat/errors/clear", s.handleChatErrorsClear)
+	m.HandleFunc("POST /api/projects/{id}/uploads", s.handleUpload)
+	m.HandleFunc("POST /api/projects/{id}/uploads/delete", s.handleDeleteUploads)
 	m.HandleFunc("GET /api/projects/{id}/sessions", s.handleListSessions)
 	m.HandleFunc("POST /api/projects/{id}/sessions", s.handleCreateSession)
 	m.HandleFunc("POST /api/projects/{id}/sessions/{sessionId}/fork", s.handleForkSession)

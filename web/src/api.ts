@@ -437,6 +437,7 @@ export const api = {
     providerId?: string,
     thinking?: string,
     attachments?: ChatAttachmentInput[],
+    uploadIds?: string[],
   ) =>
     post<{ queued?: boolean; id?: string }>(`/api/projects/${id}/chat`, {
       message,
@@ -447,6 +448,7 @@ export const api = {
       // A message sent while a run is active can carry files: the server keeps
       // them on the queue entry and the follow-up turn replays them.
       ...(attachments && attachments.length > 0 ? { attachments } : {}),
+      ...(uploadIds && uploadIds.length > 0 ? { uploadIds } : {}),
     }),
   chatStatus: (id: string, sessionId: string) =>
     request<{ running: boolean; lastMessageId?: number }>(
@@ -755,6 +757,75 @@ export interface ChatAttachmentInput {
   content: string; // file text, or base64 data for images
 }
 
+/** A file the composer stored before the message that will use it exists. */
+export interface UploadResult {
+  id: string;
+  name: string;
+  mime: string;
+  kind: 'text' | 'image';
+  size: number;
+}
+
+/**
+ * Uploads one attached file ahead of sending, reporting real progress.
+ *
+ * The composer calls this the moment a file is attached, so a large file is
+ * already on the server when the user hits send: the turn request then carries
+ * an id instead of megabytes of base64, which is what used to lose a message
+ * when the connection dropped mid-upload. XMLHttpRequest (not fetch) is used
+ * because only it reports upload progress.
+ */
+export function uploadAttachment(
+  projectId: string,
+  sessionId: string,
+  input: ChatAttachmentInput,
+  onProgress?: (fraction: number) => void,
+  signal?: AbortSignal,
+): Promise<UploadResult> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `/api/projects/${projectId}/uploads?sessionId=${encodeURIComponent(sessionId)}`);
+    xhr.setRequestHeader('Content-Type', 'application/json');
+    xhr.upload.onprogress = (e) => {
+      if (onProgress && e.lengthComputable && e.total > 0) onProgress(e.loaded / e.total);
+    };
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          resolve(JSON.parse(xhr.responseText) as UploadResult);
+        } catch {
+          reject(new Error('the upload response could not be read'));
+        }
+        return;
+      }
+      let msg = `upload failed (${xhr.status})`;
+      try {
+        const parsed = JSON.parse(xhr.responseText) as { error?: string };
+        if (parsed.error) msg = parsed.error;
+      } catch {
+        // A non-JSON body is not worth surfacing verbatim.
+      }
+      reject(new Error(msg));
+    };
+    xhr.onerror = () => reject(new Error('upload failed — check the connection'));
+    xhr.onabort = () => reject(new Error('upload cancelled'));
+    if (signal) {
+      if (signal.aborted) {
+        xhr.abort();
+        return;
+      }
+      signal.addEventListener('abort', () => xhr.abort(), { once: true });
+    }
+    xhr.send(JSON.stringify(input));
+  });
+}
+
+/** Drops uploaded files the user removed from the composer before sending. */
+export function deleteUploads(projectId: string, ids: string[]): Promise<unknown> {
+  if (ids.length === 0) return Promise.resolve();
+  return post<{ ok: boolean }>(`/api/projects/${projectId}/uploads/delete`, { ids });
+}
+
 /** URL serving one stored message attachment (images usable as <img> src). */
 export function messageAttachmentUrl(projectId: string, messageId: string, idx: number): string {
   return `/api/projects/${projectId}/messages/${messageId}/attachments/${idx}`;
@@ -775,6 +846,8 @@ export function streamChat(
     editMessageId?: number;
     providerId?: string;
     attachments?: ChatAttachmentInput[];
+    /** Ids of files the composer already uploaded (see uploadAttachment). */
+    uploadIds?: string[];
     /** Thinking level for reasoning models ('' = off). */
     thinking?: string;
   } | undefined,
@@ -788,12 +861,14 @@ export function streamChat(
     editMessageId?: number;
     providerId?: string;
     attachments?: ChatAttachmentInput[];
+    uploadIds?: string[];
     thinking?: string;
   } = { message, sessionId };
   if (opts?.model && opts.model.trim() !== '') body.model = opts.model;
   if (opts?.editMessageId) body.editMessageId = opts.editMessageId;
   if (opts?.providerId) body.providerId = opts.providerId;
   if (opts?.attachments && opts.attachments.length > 0) body.attachments = opts.attachments;
+  if (opts?.uploadIds && opts.uploadIds.length > 0) body.uploadIds = opts.uploadIds;
   if (opts?.thinking) body.thinking = opts.thinking;
   return streamChatEvents(`/api/projects/${projectId}/chat`, body, onEvent, signal);
 }

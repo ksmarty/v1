@@ -553,3 +553,49 @@ func TestDeleteErrorMessages(t *testing.T) {
 		t.Fatalf("session two must be untouched: %+v", other)
 	}
 }
+
+func TestUploadsLifecycle(t *testing.T) {
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	p := &Project{ID: "p1", Name: "P"}
+	if err := s.CreateProject(p); err != nil {
+		t.Fatal(err)
+	}
+	first := &Upload{ID: "u1", ProjectID: p.ID, Name: "a.txt", MIME: "text/plain", Kind: "text", Content: "one", Size: 3, CreatedAt: 100}
+	second := &Upload{ID: "u2", ProjectID: p.ID, Name: "b.txt", MIME: "text/plain", Kind: "text", Content: "two", Size: 3, CreatedAt: 200}
+	for _, u := range []*Upload{first, second} {
+		if err := s.SaveUpload(u); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// The order the ids were given is the order they come back, so the message
+	// keeps the attachment order the user picked.
+	got, err := s.ListUploads(p.ID, []string{"u2", "u1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0].ID != "u2" || got[1].Content != "one" {
+		t.Fatalf("uploads = %+v", got)
+	}
+	// An id that does not exist (a removed chip, another project) is simply
+	// absent, which is how the chat handler notices a stale attachment.
+	if got, err := s.ListUploads(p.ID, []string{"u1", "nope"}); err != nil || len(got) != 1 {
+		t.Fatalf("partial list = %+v, %v", got, err)
+	}
+	if err := s.DeleteUploads(p.ID, []string{"u1"}); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.ListUploads(p.ID, []string{"u1", "u2"}); err != nil || len(got) != 1 || got[0].ID != "u2" {
+		t.Fatalf("after delete = %+v, %v", got, err)
+	}
+	// Pruning is age-based: only a row older than the cutoff goes.
+	if n, err := s.PruneUploads(300); err != nil || n != 1 {
+		t.Fatalf("pruned = %d, %v", n, err)
+	}
+	if got, err := s.ListUploads(p.ID, []string{"u2"}); err != nil || len(got) != 0 {
+		t.Fatalf("after prune = %+v, %v", got, err)
+	}
+}

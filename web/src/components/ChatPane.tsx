@@ -13,9 +13,11 @@ import {
 import { useNavigate } from 'react-router-dom';
 import {
   api,
+  deleteUploads,
   messageAttachmentUrl,
   retryChat,
   streamChat,
+  uploadAttachment,
   watchChat,
   THINKING_META_KEY,
   type ChatAttachmentInput,
@@ -626,6 +628,28 @@ function readText(file: File): Promise<string | null> {
     reader.onerror = () => resolve(null);
     reader.readAsText(file);
   });
+}
+
+// A chip in the composer: the file itself, plus how far its upload has got.
+// The upload starts the moment the file is attached, so the send request only
+// carries ids — a big file never has to travel inside the turn request, which
+// is where a message used to be lost when the connection dropped.
+type ComposerAttachment = ChatAttachmentInput & {
+  uid: string;
+  uploadId?: string;
+  /** 0..1 while the bytes are moving; 1 once the server has the file. */
+  progress: number;
+  uploadError?: string;
+};
+
+/** A stable per-chip id (no crypto.randomUUID: the preview runs on http). */
+function newAttachmentUID(): string {
+  return `a${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/** The wire shape: a chip minus its upload bookkeeping. */
+function toAttachmentInput(a: ComposerAttachment): ChatAttachmentInput {
+  return { name: a.name, mime: a.mime, kind: a.kind, content: a.content };
 }
 
 // readAttachment classifies a picked file: images are scaled and read as base64
@@ -3933,7 +3957,11 @@ export default function ChatPane({
   const ctxReqRef = useRef(0);
   const [ctxOpen, setCtxOpen] = useState(false);
   const [ctxCompacting, setCtxCompacting] = useState(false);
-  const [attachments, setAttachments] = useState<ChatAttachmentInput[]>([]);
+  const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
+  // Any chip still moving keeps Send disabled: sending now would carry that
+  // file inline through the turn request, which is the slow path the early
+  // upload exists to avoid.
+  const uploading = attachments.some((a) => !a.uploadId && !a.uploadError);
   const [attachError, setAttachError] = useState<string | null>(null);
   const [model, setModel] = useState('');
   const [thinking, setThinking] = useState('');
@@ -6003,7 +6031,7 @@ export default function ChatPane({
       // before the server emits anything, nothing was recorded — the message
       // and its files go back to the composer instead of being erased by the
       // next reload with nothing left to retry from.
-      sent?: { key: string; text: string; atts: ChatAttachmentInput[] },
+      sent?: { key: string; text: string; atts: ComposerAttachment[] },
     ) => {
       if (streaming) return;
       setStreaming(true);
@@ -6086,10 +6114,16 @@ export default function ChatPane({
       // An attachment on its own is a complete turn — the transcript shows the
       // file with no caption — so only refuse when there is nothing at all.
       if ((!trimmed && attachments.length === 0) || streaming || !llmReady || !modelOverride) return;
+      if (uploading) return;
       setInput('');
       setAskPrompt(null); // a new turn supersedes any pending question
       clearErrors(); // the user moved on from the last failure
-      const atts = attachments.length > 0 ? [...attachments] : undefined;
+      // A file that finished uploading travels as an id; one that failed (or
+      // was still moving) goes inline, so nothing is ever dropped from a send.
+      const chips = attachments;
+      const uploadIds = chips.flatMap((a) => (a.uploadId ? [a.uploadId] : []));
+      const inline = chips.filter((a) => !a.uploadId).map(toAttachmentInput);
+      const atts = inline.length > 0 ? inline : undefined;
       setAttachments([]);
       setAttachError(null);
       const sentKey = `u${++counterRef.current}`;
@@ -6101,7 +6135,7 @@ export default function ChatPane({
           role: 'user',
           content: trimmed,
           sentAt: Date.now(),
-          attachments: atts?.map((a) => ({
+          attachments: chips.map((a) => ({
             name: a.name,
             mime: a.mime,
             kind: a.kind,
@@ -6126,15 +6160,16 @@ export default function ChatPane({
               model: modelOverride,
               providerId: providerOverride,
               attachments: atts,
+              uploadIds,
               thinking: thinkingEffort || undefined,
             },
             handleEvent,
             signal,
           ),
-        { key: sentKey, text: trimmed, atts: atts ?? [] },
+        { key: sentKey, text: trimmed, atts: chips },
       );
     },
-    [streaming, llmReady, projectId, sessionId, modelOverride, providerOverride, handleEvent, run, update, attachments, thinkingEffort, clearErrors],
+    [streaming, llmReady, projectId, sessionId, modelOverride, providerOverride, handleEvent, run, update, attachments, uploading, thinkingEffort, clearErrors],
   );
 
   // Auto-send the New project dialog's "what do you want to create?"
@@ -6153,6 +6188,45 @@ export default function ChatPane({
     sendText(initialPrompt);
   }, [initialPrompt, loading, loadError, items.length, llmReady, modelOverride, sessionId, sendText]);
 
+  // Uploads one chip immediately. A failure leaves the chip in place with its
+  // error, and the send falls back to carrying that file inline, so an upload
+  // that cannot finish never blocks the message.
+  const startUpload = useCallback(
+    (chip: ComposerAttachment) => {
+      // XHR fires progress many times a second; only a whole percent is worth a
+      // re-render.
+      let lastPct = -1;
+      void uploadAttachment(
+        projectId,
+        sessionId,
+        toAttachmentInput(chip),
+        (fraction) => {
+          const pct = Math.round(fraction * 100);
+          if (pct === lastPct) return;
+          lastPct = pct;
+          setAttachments((prev) =>
+            prev.map((a) => (a.uid === chip.uid ? { ...a, progress: fraction } : a)),
+          );
+        },
+      )
+        .then((res) => {
+          setAttachments((prev) =>
+            prev.map((a) => (a.uid === chip.uid ? { ...a, uploadId: res.id, progress: 1 } : a)),
+          );
+        })
+        .catch((e: unknown) => {
+          setAttachments((prev) =>
+            prev.map((a) =>
+              a.uid === chip.uid
+                ? { ...a, uploadError: e instanceof Error ? e.message : 'upload failed' }
+                : a,
+            ),
+          );
+        });
+    },
+    [projectId, sessionId],
+  );
+
   const addFiles = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
     setAttachError(null);
@@ -6168,23 +6242,24 @@ export default function ChatPane({
       }
     }
     const results = await Promise.all(list.map(readAttachment));
-    setAttachments((prev) => {
-      const next = [...prev];
-      let firstError: string | null = null;
-      for (const r of results) {
-        if ('error' in r) {
-          firstError ??= r.error;
-          continue;
-        }
-        if (next.length >= MAX_ATTACHMENTS) {
-          firstError ??= `Too many attachments (max ${MAX_ATTACHMENTS}).`;
-          break;
-        }
-        next.push(r.value);
+    const room = Math.max(0, MAX_ATTACHMENTS - attachments.length);
+    const accepted: ComposerAttachment[] = [];
+    let firstError: string | null = null;
+    for (const r of results) {
+      if ('error' in r) {
+        firstError ??= r.error;
+        continue;
       }
-      if (firstError) setAttachError(firstError);
-      return next;
-    });
+      if (accepted.length >= room) {
+        firstError ??= `Too many attachments (max ${MAX_ATTACHMENTS}).`;
+        break;
+      }
+      accepted.push({ ...r.value, uid: newAttachmentUID(), progress: 0 });
+    }
+    if (accepted.length > 0) setAttachments((prev) => [...prev, ...accepted]);
+    if (firstError) setAttachError(firstError);
+    // Start moving the bytes now, not when the message is sent.
+    for (const chip of accepted) startUpload(chip);
   };
 
   const [localStatus, setLocalStatus] = useState<string | null>(null);
@@ -6274,7 +6349,10 @@ export default function ChatPane({
   // Either way it renders from the server's queue state, so the two paths differ
   // only in when the agent sees it.
   const enqueue = useCallback(
-    async (text: string, steer: boolean, atts: ChatAttachmentInput[] = []) => {
+    async (text: string, steer: boolean, chips: ComposerAttachment[] = []) => {
+      const uploadIds = chips.flatMap((a) => (a.uploadId ? [a.uploadId] : []));
+      const inline = chips.filter((a) => !a.uploadId).map(toAttachmentInput);
+      const atts = inline.length > 0 ? inline : [];
       const res = await api.queueChat(
         projectId,
         sessionId,
@@ -6283,6 +6361,7 @@ export default function ChatPane({
         providerOverride,
         undefined,
         atts,
+        uploadIds,
       );
       if (!res.queued) {
         // The run finished before this arrived, so it became a normal turn.
@@ -6299,8 +6378,8 @@ export default function ChatPane({
       // Optimistic row; the next refreshQueue() replaces it with the server's
       // own metadata (which is what the chips read).
       const metas: ChatAttachmentMeta[] | undefined =
-        atts.length > 0
-          ? atts.map((a) => ({
+        chips.length > 0
+          ? chips.map((a) => ({
               name: a.name,
               mime: a.mime,
               kind: a.kind,
@@ -6313,6 +6392,7 @@ export default function ChatPane({
   );
 
   const send = useCallback(async () => {
+    if (uploading) return;
     if (await runLocalCommand(input)) return;
     // Anything that really sends marks the session used, so leaving it later
     // does not delete it as an unused one.
@@ -6339,13 +6419,13 @@ export default function ChatPane({
     }
     sendText(input);
     setExpanded(false);
-  }, [input, streaming, attachments, runLocalCommand, sendText, enqueue, clearErrors]);
+  }, [input, streaming, attachments, uploading, runLocalCommand, sendText, enqueue, clearErrors]);
 
   // The secondary action beside Send: queue without steering, so the message
   // waits for the next turn instead of joining the running one.
   const queueInput = useCallback(async () => {
     const text = input.trim();
-    if ((!text && attachments.length === 0) || !streaming) return;
+    if ((!text && attachments.length === 0) || !streaming || uploading) return;
     const atts = attachments;
     clearErrors();
     setInput('');
@@ -6359,7 +6439,7 @@ export default function ChatPane({
       setAttachments(atts);
       setLoadError(errMsg(e));
     }
-  }, [input, streaming, attachments, enqueue, clearErrors]);
+  }, [input, streaming, attachments, uploading, enqueue, clearErrors]);
 
   // Moves a queued message up/down (optimistically; the server is the source
   // of truth on the next refresh).
@@ -6902,14 +6982,16 @@ export default function ChatPane({
   const sendButton = (
     <IconButton
       onClick={() => void send()}
-      disabled={(!input.trim() && attachments.length === 0) || !hasModel}
+      disabled={(!input.trim() && attachments.length === 0) || !hasModel || uploading}
       aria-label={streaming ? 'Steer the running turn' : 'Send message'}
       title={
-        streaming
-          ? 'Send to steer the current run — it becomes a follow-up turn if the run finishes first'
-          : hasModel
-            ? 'Send message'
-            : 'Select a model first'
+        uploading
+          ? 'Still uploading the attached file…'
+          : streaming
+            ? 'Send to steer the current run — it becomes a follow-up turn if the run finishes first'
+            : hasModel
+              ? 'Send message'
+              : 'Select a model first'
       }
       className="h-8! w-8! shrink-0 bg-primary text-primary-text hover:opacity-90 hover:text-primary-text disabled:bg-border disabled:text-faint md:h-9! md:w-9!"
     >
@@ -6986,14 +7068,23 @@ export default function ChatPane({
             return;
           }
           e.preventDefault();
-          setAttachments((prev) => {
-            if (prev.length >= MAX_ATTACHMENTS) {
-              setAttachError(`Too many attachments (max ${MAX_ATTACHMENTS}).`);
-              return prev;
-            }
-            const name = `paste-${new Date().toISOString().replace(/[:.]/g, '-')}.txt`;
-            return [...prev, { name, mime: 'text/plain', kind: 'text', content: text }];
-          });
+          if (attachments.length >= MAX_ATTACHMENTS) {
+            setAttachError(`Too many attachments (max ${MAX_ATTACHMENTS}).`);
+            return;
+          }
+          const name = `paste-${new Date().toISOString().replace(/[:.]/g, '-')}.txt`;
+          const chip: ComposerAttachment = {
+            name,
+            mime: 'text/plain',
+            kind: 'text',
+            content: text,
+            uid: newAttachmentUID(),
+            progress: 0,
+          };
+          setAttachments((prev) => (prev.length >= MAX_ATTACHMENTS ? prev : [...prev, chip]));
+          // A large paste is a file like any other: upload it now, so sending
+          // does not carry it.
+          startUpload(chip);
         }}
         onKeyDown={(e) => {
           if (suggestions.length > 0 && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
@@ -7966,8 +8057,11 @@ export default function ChatPane({
               <div className="flex flex-wrap items-center gap-1.5">
                 {attachments.map((a, i) => (
                   <span
-                    key={i}
-                    className="flex items-center gap-1.5 rounded-md border border-border bg-surface px-2 py-1 text-xs text-dim"
+                    key={a.uid}
+                    className={`flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs ${
+                      a.uploadError ? 'border-red-400/60 bg-surface text-red-400' : 'border-border bg-surface text-dim'
+                    }`}
+                    title={a.uploadError ?? (a.uploadId ? `${a.name} — uploaded` : `${a.name} — uploading…`)}
                   >
                     {a.kind === 'image' ? (
                       <button
@@ -8013,16 +8107,33 @@ export default function ChatPane({
                         {a.name}
                       </button>
                     )}
+                    {!a.uploadId && !a.uploadError && (
+                      <span className="shrink-0 tabular-nums text-[10px] text-faint">
+                        {Math.round(a.progress * 100)}%
+                      </span>
+                    )}
+                    {a.uploadError && (
+                      <span className="shrink-0 text-[10px]" title={a.uploadError}>
+                        !
+                      </span>
+                    )}
                     <button
                       type="button"
                       aria-label={`Remove ${a.name}`}
-                      onClick={() => setAttachments((prev) => prev.filter((_, j) => j !== i))}
+                      onClick={() => {
+                        // Removing a chip also drops the file the server is
+                        // holding for it, so an abandoned attachment does not
+                        // wait out the cleanup window.
+                        if (a.uploadId) void deleteUploads(projectId, [a.uploadId]);
+                        setAttachments((prev) => prev.filter((_, j) => j !== i));
+                      }}
                       className="text-faint transition-colors hover:text-text"
                     >
                       <IconX className="h-3 w-3" />
                     </button>
                   </span>
                 ))}
+                {uploading && <span className="text-xs text-faint">Uploading…</span>}
                 {attachError && <span className="text-xs text-red-400">{attachError}</span>}
               </div>
             )}
