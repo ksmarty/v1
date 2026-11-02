@@ -843,23 +843,44 @@ function writeChatCache(
   items: Item[],
   complete = false,
 ): void {
-  try {
-    // A cached row must never look like it is still streaming: the run it
-    // belonged to is over by the time this is read back.
-    const raw = JSON.stringify({
-      items: items.map((it) => ('streaming' in it && it.streaming ? { ...it, streaming: false } : it)),
+  // A cached row must never look like it is still streaming: the run it
+  // belonged to is over by the time this is read back.
+  const serialise = (rows: Item[]): string =>
+    JSON.stringify({
+      items: rows.map((it) => ('streaming' in it && it.streaming ? { ...it, streaming: false } : it)),
       newest: newestId(items),
       complete,
     });
+  try {
+    const key = chatCacheKey(projectId, sessionId);
+    let raw = serialise(items);
     if (raw.length > CHAT_CACHE_MAX) {
-      localStorage.removeItem(chatCacheKey(projectId, sessionId));
-      return;
+      // A pasted or uploaded file rides in its row as a data: URL, which can
+      // be megabytes on its own. Keep the transcript and drop just those URLs:
+      // the chip keeps its name and size, and a persisted row comes back from
+      // the server with a URL of its own. Dropping the whole cache instead
+      // would make every open of this chat refetch.
+      raw = serialise(items.map(dropInlineAttachmentUrls));
+      if (raw.length > CHAT_CACHE_MAX) {
+        localStorage.removeItem(key);
+        return;
+      }
     }
-    localStorage.setItem(chatCacheKey(projectId, sessionId), raw);
+    localStorage.setItem(key, raw);
   } catch {
     // Full or unavailable storage: the cache is an optimisation, never a
     // requirement.
   }
+}
+
+/** Strip `data:` attachment URLs so an oversized file cannot evict a chat's cache. */
+function dropInlineAttachmentUrls(it: Item): Item {
+  if (it.kind !== 'msg' || !it.attachments || it.attachments.length === 0) return it;
+  if (!it.attachments.some((a) => a.url?.startsWith('data:'))) return it;
+  return {
+    ...it,
+    attachments: it.attachments.map((a) => (a.url?.startsWith('data:') ? { ...a, url: undefined } : a)),
+  };
 }
 
 function BackgroundResultRow({ text, onOpen }: { text: string; onOpen: (t: string) => void }) {
@@ -4050,6 +4071,9 @@ export default function ChatPane({
 
   const itemsRef = useRef<Item[]>([]);
   const counterRef = useRef(0);
+  // True once the running turn has emitted anything at all: proof the server
+  // recorded the message, so a failure must not hand it back to the composer.
+  const turnAliveRef = useRef(false);
   const assistantKeyRef = useRef<string | null>(null);
   // Best guess at the session this pane is about to show, read on the very first
   // render: the deep link, else the last thread used in this project. The session
@@ -5480,6 +5504,10 @@ export default function ChatPane({
       // or a queued follow-up fired after we moved on) must not touch the
       // current session's transcript.
       if (sessionIdRef.current !== sessionId) return;
+      // The turn is alive: whatever happens next, the message that started it
+      // has been recorded, so a later failure must not put it back in the
+      // composer.
+      turnAliveRef.current = true;
       // Anything that is not more stream text must see the buffered text
       // applied first: a tool row, a done event or an error has to land after
       // the words that preceded it, not before them.
@@ -5969,11 +5997,19 @@ export default function ChatPane({
   );
 
   const run = useCallback(
-    async (start: (signal: AbortSignal) => Promise<void>) => {
+    async (
+      start: (signal: AbortSignal) => Promise<void>,
+      // What the caller just put on screen for this turn. If the request dies
+      // before the server emits anything, nothing was recorded — the message
+      // and its files go back to the composer instead of being erased by the
+      // next reload with nothing left to retry from.
+      sent?: { key: string; text: string; atts: ChatAttachmentInput[] },
+    ) => {
       if (streaming) return;
       setStreaming(true);
       turnStartRef.current = Date.now();
       assistantKeyRef.current = null;
+      turnAliveRef.current = false;
       const ctrl = new AbortController();
       abortRef.current = ctrl;
       try {
@@ -6020,6 +6056,15 @@ export default function ChatPane({
             return;
           }
         }
+        if (sent && !turnAliveRef.current) {
+          // The turn never started: drop the placeholder row and put the text
+          // and files back in the composer, so a failed upload — a large file
+          // on a flaky connection is the usual way — is recoverable rather
+          // than a message that silently disappears.
+          update((prev) => prev.filter((it) => it.key !== sent.key));
+          setInput((prev) => (prev.trim() ? prev : sent.text));
+          if (sent.atts.length > 0) setAttachments((prev) => (prev.length > 0 ? prev : sent.atts));
+        }
         update((prev) => [
           ...prev,
           {
@@ -6047,11 +6092,12 @@ export default function ChatPane({
       const atts = attachments.length > 0 ? [...attachments] : undefined;
       setAttachments([]);
       setAttachError(null);
+      const sentKey = `u${++counterRef.current}`;
       update((prev) => [
         ...prev,
         {
           kind: 'msg',
-          key: `u${++counterRef.current}`,
+          key: sentKey,
           role: 'user',
           content: trimmed,
           sentAt: Date.now(),
@@ -6070,20 +6116,22 @@ export default function ChatPane({
           })),
         },
       ]);
-      void run((signal) =>
-        streamChat(
-          projectId,
-          sessionId,
-          trimmed,
-          {
-            model: modelOverride,
-            providerId: providerOverride,
-            attachments: atts,
-            thinking: thinkingEffort || undefined,
-          },
-          handleEvent,
-          signal,
-        ),
+      void run(
+        (signal) =>
+          streamChat(
+            projectId,
+            sessionId,
+            trimmed,
+            {
+              model: modelOverride,
+              providerId: providerOverride,
+              attachments: atts,
+              thinking: thinkingEffort || undefined,
+            },
+            handleEvent,
+            signal,
+          ),
+        { key: sentKey, text: trimmed, atts: atts ?? [] },
       );
     },
     [streaming, llmReady, projectId, sessionId, modelOverride, providerOverride, handleEvent, run, update, attachments, thinkingEffort, clearErrors],
