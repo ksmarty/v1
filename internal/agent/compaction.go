@@ -197,7 +197,7 @@ func contentString(v any) string {
 func messageContent(m llm.Message) string { return contentString(m.Content) }
 
 // compactHistory compresses only the request copy. Persisted transcript remains intact.
-func compactHistory(ctx context.Context, history []llm.Message, budget int, threshold float64, summarizer Summarizer) []llm.Message {
+func compactHistory(ctx context.Context, history []llm.Message, budget int, threshold float64, summarizer Summarizer) ([]llm.Message, bool) {
 	if budget <= 0 {
 		budget = defaultContextBudget
 	}
@@ -207,7 +207,7 @@ func compactHistory(ctx context.Context, history []llm.Message, budget int, thre
 	limit := int(float64(budget) * threshold)
 	out := protocolSafeHistory(history)
 	if EstimateTokens(out) <= limit {
-		return out
+		return out, false
 	}
 
 	out = append([]llm.Message(nil), out...)
@@ -221,7 +221,7 @@ func compactHistory(ctx context.Context, history []llm.Message, budget int, thre
 		}
 	}
 	if EstimateTokens(out) <= limit {
-		return out
+		return out, false
 	}
 
 	// Select an old prefix ending on a complete message boundary. Keep the
@@ -239,7 +239,7 @@ func compactHistory(ctx context.Context, history []llm.Message, budget int, thre
 		prefixStart = firstUser + 1
 	}
 	if prefixStart >= len(out)-1 {
-		return out
+		return out, false
 	}
 	end := prefixStart
 	for end < len(out)-1 && EstimateTokens(out[:end+1]) < limit/2 {
@@ -262,7 +262,7 @@ func compactHistory(ctx context.Context, history []llm.Message, budget int, thre
 	}
 	prefix := out[prefixStart:end]
 	if len(prefix) == 0 {
-		return out
+		return out, false
 	}
 	summary := ""
 	if summarizer != nil {
@@ -274,7 +274,7 @@ func compactHistory(ctx context.Context, history []llm.Message, budget int, thre
 	result := append([]llm.Message(nil), out[:prefixStart]...)
 	result = append(result, llm.Message{Role: "system", Content: "Conversation summary (historical, not user-visible):\n" + summary})
 	result = append(result, out[end:]...)
-	return result
+	return result, true
 }
 
 func protocolSafeHistory(history []llm.Message) []llm.Message {
@@ -392,10 +392,21 @@ func CompactProject(ctx context.Context, st *store.Store, projectID, sessionID s
 	return lastID, nil
 }
 
-func compactForModel(ctx context.Context, history []llm.Message, p ChatParams) []llm.Message {
+func compactForModel(ctx context.Context, history []llm.Message, p *ChatParams) []llm.Message {
 	var s Summarizer = p.Summarizer
 	if s == nil && p.Client != nil {
 		s = clientSummarizer{client: p.Client}
 	}
-	return compactHistory(ctx, history, p.ContextBudget, p.ContextThreshold, s)
+	out, compacted := compactHistory(ctx, history, p.ContextBudget, p.ContextThreshold, s)
+	// Say it in the transcript, once per turn. The reader sees the model
+	// forget things it was told an hour ago, and without this row that looks
+	// like a fault rather than the context window doing its job.
+	if compacted && !p.compactionNoted && p.Store != nil && p.Project != nil && p.SessionID != "" {
+		p.compactionNoted = true
+		notice := CompactionNotice("threshold")
+		if id, err := p.Store.AddMessage(p.Project.ID, p.SessionID, store.RoleNotice, notice, "", "", "", "", ""); err == nil {
+			p.Emit(ChatEvent{Type: "notice", MessageID: id, Text: notice})
+		}
+	}
+	return out
 }

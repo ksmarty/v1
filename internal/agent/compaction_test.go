@@ -76,7 +76,7 @@ func TestCompactHistoryPreservesMultiToolPairs(t *testing.T) {
 	old := "old context " + string(make([]byte, 3000))
 	h := []llm.Message{{Role: "system", Content: "system"}, {Role: "user", Content: old}, {Role: "assistant", ToolCalls: []llm.ToolCall{{ID: "a", Type: "function", Function: llm.FunctionCall{Name: "read_file"}}, {ID: "b", Type: "function", Function: llm.FunctionCall{Name: "list_files"}}}}, {Role: "tool", ToolCallID: "a", Content: old}, {Role: "tool", ToolCallID: "b", Content: old}, {Role: "user", Content: "latest"}}
 	f := &fakeSummarizer{}
-	got := compactHistory(context.Background(), h, 100, 1, f)
+	got, _ := compactHistory(context.Background(), h, 100, 1, f)
 	if f.calls == 0 {
 		t.Fatal("summarizer was not called")
 	}
@@ -86,9 +86,28 @@ func TestCompactHistoryPreservesMultiToolPairs(t *testing.T) {
 	assertProtocolSafe(t, got)
 }
 
+// The transcript only says "compacted" when the history really was compacted:
+// a short conversation must not claim a summary it never got, and a long one
+// must never be compacted silently.
+func TestCompactHistoryReportsWhetherItCompacted(t *testing.T) {
+	small := []llm.Message{{Role: "system", Content: "s"}, {Role: "user", Content: "hi"}, {Role: "assistant", Content: "hello"}}
+	if _, compacted := compactHistory(context.Background(), small, 100000, 1, nil); compacted {
+		t.Fatal("a short history reported a compaction")
+	}
+	big := []llm.Message{
+		{Role: "system", Content: "s"},
+		{Role: "user", Content: "initial request"},
+		{Role: "assistant", Content: strings.Repeat("long ", 2000)},
+		{Role: "user", Content: "latest"},
+	}
+	if _, compacted := compactHistory(context.Background(), big, 100, 1, nil); !compacted {
+		t.Fatal("an over-budget history was compacted without saying so")
+	}
+}
+
 func TestCompactHistoryDropsOrphanToolMessages(t *testing.T) {
 	h := []llm.Message{{Role: "system", Content: "s"}, {Role: "tool", ToolCallID: "missing", Content: "bad"}, {Role: "assistant", ToolCalls: []llm.ToolCall{{ID: "call", Type: "function"}}}, {Role: "tool", ToolCallID: "other", Content: "bad"}, {Role: "user", Content: "latest"}}
-	got := compactHistory(context.Background(), h, 100000, 1, nil)
+	got, _ := compactHistory(context.Background(), h, 100000, 1, nil)
 	assertProtocolSafe(t, got)
 	if got[len(got)-1].Content != "latest" {
 		t.Fatalf("lost latest message: %#v", got)
@@ -102,7 +121,7 @@ func TestCompactHistoryFallback(t *testing.T) {
 		{Role: "assistant", Content: string(make([]byte, 5000))},
 		{Role: "user", Content: "latest"},
 	}
-	got := compactHistory(context.Background(), h, 100, 1, nil)
+	got, _ := compactHistory(context.Background(), h, 100, 1, nil)
 	if len(got) < 4 || got[2].Role != "system" {
 		t.Fatalf("missing fallback summary: %#v", got)
 	}
@@ -122,7 +141,7 @@ func TestCompactHistoryKeepsParallelToolResults(t *testing.T) {
 		{Role: "tool", ToolCallID: "c", Content: "rc"},
 		{Role: "user", Content: "latest"},
 	}
-	got := compactHistory(context.Background(), h, 100000, 1, nil)
+	got, _ := compactHistory(context.Background(), h, 100000, 1, nil)
 	tools := 0
 	for _, m := range got {
 		if m.Role == "tool" {

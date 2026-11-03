@@ -189,6 +189,9 @@ type ChatParams struct {
 	// injecting v1's snapshot as well would hand the model the same history
 	// verbatim and summarised.
 	SkipCompactionSnapshot bool
+	// compactionNoted records that this turn already wrote its compaction
+	// notice, so a retried request does not add a second identical row.
+	compactionNoted bool
 	// DisabledTools are builtin tool names the user turned off in Settings;
 	// they are neither advertised to the model nor executable.
 	DisabledTools map[string]bool
@@ -559,7 +562,7 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 			}
 		}
 		allTools := p.ToolSet()
-		requestHistory := compactForModel(ctx, history, p)
+		requestHistory := compactForModel(ctx, history, &p)
 		res, err := p.Client.ChatStream(turnCtx, requestHistory, allTools,
 			func(d string) { p.Emit(ChatEvent{Type: "delta", Text: d}) },
 			func(d string) { p.Emit(ChatEvent{Type: "reasoning", Text: d}) })
@@ -568,7 +571,7 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 		if err != nil && !assistantSaved && vision {
 			history = stripImageParts(history)
 			vision = false
-			res, err = p.Client.ChatStream(turnCtx, compactForModel(ctx, history, p), allTools,
+			res, err = p.Client.ChatStream(turnCtx, compactForModel(ctx, history, &p), allTools,
 				func(d string) { p.Emit(ChatEvent{Type: "delta", Text: d}) },
 				func(d string) { p.Emit(ChatEvent{Type: "reasoning", Text: d}) })
 		}
