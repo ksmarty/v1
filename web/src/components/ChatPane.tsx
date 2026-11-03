@@ -526,6 +526,12 @@ type MsgItem = {
   toolResults?: ToolCall[];
   /** True for a finished background command's result row (not the user). */
   background?: boolean;
+  /**
+   * True for a notice the transcript keeps about itself — a compaction. It is
+   * a block in the chat, not a banner: a banner is gone the moment the page
+   * reloads, and the reader is left wondering why the model forgot things.
+   */
+  notice?: boolean;
   /** Token usage for the turn this message closed (turn-final messages only). */
   usage?: ChatUsage;
   /** Duration of the turn this message closed, in milliseconds. */
@@ -923,11 +929,11 @@ function writeChatCache(
 ): void {
   // A cached row must never look like it is still streaming: the run it
   // belonged to is over by the time this is read back.
-  const serialise = (rows: Item[]): string =>
+  const serialise = (rows: Item[], done = complete): string =>
     JSON.stringify({
       items: rows.map((it) => ('streaming' in it && it.streaming ? { ...it, streaming: false } : it)),
       newest: newestId(items),
-      complete,
+      complete: done,
       writtenAt: Date.now(),
     });
   try {
@@ -958,7 +964,10 @@ function writeChatCache(
       raw = serialise(rows);
       if (raw.length > CHAT_CACHE_MAX) return;
     }
-    localStorage.setItem(key, raw);
+    // A trimmed snapshot is not the whole chat. Saying it is would make the next
+    // open trust it and never fetch the rest — the transcript then showed only
+    // its newest turn, with nothing to scroll back through.
+    localStorage.setItem(key, serialise(rows, complete && rows.length === items.length));
     pruneChatCaches(key);
   } catch {
     // Full or unavailable storage: the cache is an optimisation, never a
@@ -1010,6 +1019,24 @@ function dropInlineAttachmentUrls(it: Item): Item {
     ...it,
     attachments: it.attachments.map((a) => (a.url?.startsWith('data:') ? { ...a, url: undefined } : a)),
   };
+}
+
+/**
+ * A block the transcript keeps about itself — a compaction, so far.
+ *
+ * It used to be announced in the status line under the composer, which meant
+ * the reader could not see it after a reload and, worse, could not see it at
+ * all while the announcement was still on screen: the chat above the fold said
+ * nothing about why the model had stopped remembering. A row is part of the
+ * conversation's history, so it is where it happened and it stays.
+ */
+function NoticeBlock({ text }: { text: string }) {
+  return (
+    <div className="mr-auto flex w-full max-w-[85%] items-start gap-2 rounded-md border border-border/70 bg-surface/40 px-2.5 py-1.5 text-[11px] leading-relaxed text-dim">
+      <IconCompress className="mt-0.5 h-3.5 w-3.5 shrink-0 text-faint" />
+      <span className="min-w-0 flex-1 whitespace-pre-wrap break-words">{text}</span>
+    </div>
+  );
 }
 
 function BackgroundResultRow({ text, onOpen }: { text: string; onOpen: (t: string) => void }) {
@@ -3709,6 +3736,9 @@ const MessageRow = memo(function MessageRow({
       />
     );
   }
+  if (item.notice) {
+    return <NoticeBlock text={item.content} />;
+  }
   if (item.role === 'user') {
     // Background job results are not the user speaking — render them on the
     // left with a branded "Recived bg task" header instead of a user bubble.
@@ -4782,6 +4812,18 @@ export default function ChatPane({
             })),
           });
           if (!background) lastUserAt = Number(m.createdAt);
+        } else if (m.role === 'notice') {
+          // Something the transcript did to itself (a compaction). It belongs
+          // in the flow of the chat, where it happened, and it is never sent to
+          // the model — the server skips these rows when it rebuilds history.
+          mapped.push({
+            kind: 'msg',
+            key: m.id,
+            role: 'assistant',
+            content: m.content,
+            notice: true,
+            sentAt: Number(m.createdAt) * 1000,
+          });
         } else {
           mapped.push({ kind: 'msg', key: m.id, role: 'error', content: m.content });
         }
@@ -5993,6 +6035,26 @@ export default function ChatPane({
           setLocalStatus(ev.text);
           break;
         }
+        case 'notice': {
+          // A block the transcript keeps (a compaction). Appended like any other
+          // row, keyed by its persisted id, so a reload replaces it in place
+          // instead of showing it twice.
+          const id = ev.messageId ?? 0;
+          update((prev) => [
+            ...prev.map((it) =>
+              it.kind === 'msg' && it.role === 'assistant' ? { ...it, reasoningCollapsed: true } : it,
+            ),
+            {
+              kind: 'msg',
+              key: id > 0 ? String(id) : `n${++counterRef.current}`,
+              role: 'assistant',
+              content: ev.text,
+              notice: true,
+              sentAt: Date.now(),
+            },
+          ]);
+          break;
+        }
         case 'context': {
           // A per-round context fill from the server — move the ring live while
           // the turn runs, keeping the budget from the last full fetch.
@@ -6469,6 +6531,14 @@ export default function ChatPane({
   };
 
   const [localStatus, setLocalStatus] = useState<string | null>(null);
+  // A status line is a moment, not a record. Without this, an announcement (a
+  // compaction, an automatic retry) sat under the composer until the page was
+  // reloaded, long after it stopped being true.
+  useEffect(() => {
+    if (!localStatus) return;
+    const t = window.setTimeout(() => setLocalStatus(null), 8000);
+    return () => window.clearTimeout(t);
+  }, [localStatus]);
   const runLocalCommand = useCallback(async (text: string): Promise<boolean> => {
     const command = text.trim().split(/\s+/)[0];
     if (!CHAT_COMMANDS.some((c) => c.name === command)) return false;

@@ -345,6 +345,21 @@ func fallbackSummary(messages []llm.Message) string {
 	return b.String()
 }
 
+// CompactionNotice is what the transcript says when the conversation was
+// compacted. It is persisted as a notice row rather than announced in a banner,
+// because a banner is gone the moment the page reloads — and the reader then
+// has no way to tell why the model forgot what it was told an hour ago.
+func CompactionNotice(reason string) string {
+	switch reason {
+	case "overflow":
+		return "Compacted the conversation — it had filled the model's context window. Older turns are now a summary."
+	case "threshold":
+		return "Compacted the conversation to stay within the model's context window. Older turns are now a summary."
+	default:
+		return "Compacted the conversation. Older turns are now a summary."
+	}
+}
+
 // CompactProject summarizes the persisted transcript without adding a visible message.
 func CompactProject(ctx context.Context, st *store.Store, projectID, sessionID string, client *llm.Client) (int64, error) {
 	messages, err := st.ListMessages(projectID, sessionID)
@@ -367,6 +382,11 @@ func CompactProject(ctx context.Context, st *store.Store, projectID, sessionID s
 	}
 	lastID := messages[len(messages)-1].ID
 	if err := st.SaveCompactionSnapshot(projectID, sessionID, summary, lastID); err != nil {
+		return 0, err
+	}
+	// Leave a mark in the transcript. A compaction that says nothing is
+	// indistinguishable from the model forgetting things for no reason.
+	if _, err := st.AddMessage(projectID, sessionID, store.RoleNotice, CompactionNotice(""), "", "", "", "", ""); err != nil {
 		return 0, err
 	}
 	return lastID, nil

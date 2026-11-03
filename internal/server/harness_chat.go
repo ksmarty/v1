@@ -1096,7 +1096,18 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge,
 					emit(agent.ChatEvent{Type: "info", Text: "Compacting the conversation to stay within the model's context window."})
 				}
 			case "compaction_end":
-				emit(agent.ChatEvent{Type: "info", Text: "Compacted the conversation; older turns are now a summary."})
+				// Persisted, not announced: a notice row is part of the
+				// transcript, so it is still there after a reload and the reader
+				// can see why the model stopped remembering earlier turns.
+				notice := agent.CompactionNotice(ev.Reason)
+				msgID, addErr := s.st.AddMessage(
+					params.Project.ID, params.SessionID, store.RoleNotice,
+					notice, "", "", "", "", "",
+				)
+				if addErr != nil {
+					log.Printf("chat: recording a compaction notice: %v", addErr)
+				}
+				emit(agent.ChatEvent{Type: "notice", MessageID: msgID, Text: notice})
 			case "auto_retry_start":
 				// The sidecar retries a failed model call on its own; say so, the
 				// way the built-in loop announces a mid-reply resume.

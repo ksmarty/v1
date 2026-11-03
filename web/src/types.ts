@@ -334,6 +334,8 @@ export type ChatEvent =
   | { type: 'delta'; text: string; replace?: boolean; turn_id?: string }
   | { type: 'reasoning'; text: string; replace?: boolean; turn_id?: string }
   | { type: 'info'; text: string }
+  /** A block the transcript keeps: a compaction, a turn the app rewrote. */
+  | { type: 'notice'; messageId?: number; text: string }
   | { type: 'tool_start'; name: string; detail: string }
   | { type: 'tool_end'; name: string; ok: boolean; detail: string; display?: unknown }
   | { type: 'delegate_started'; detail: string }

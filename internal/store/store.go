@@ -1198,6 +1198,11 @@ var ErrInjectedMessageNeedsMarker = errors.New("store: an injected message needs
 // RoleUser is the role whose rows belong to the reader's side of a transcript.
 const RoleUser = "user"
 
+// RoleNotice is a row the app writes to explain something the transcript did to
+// itself — a compaction, say. It is shown as a block in the chat and is never
+// sent to the model: it is the reader's context, not the conversation's.
+const RoleNotice = "notice"
+
 // AddMessage stores a non-user message: assistant replies, tool results, error
 // rows, plan rows. User-role rows go through AddUserMessage or
 // AddInjectedMessage, which record who wrote them.
