@@ -21,14 +21,14 @@ func TestForkChatSessionCopiesTranscript(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	firstID, err := s.AddMessage(p.ID, src.ID, "user", "first", "", "", "", "", "")
+	firstID, err := s.AddUserMessage(p.ID, src.ID, "first", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.AddMessage(p.ID, src.ID, "assistant", "answer", `{"tool_calls":[]}`, "m", "r", `{"total":1}`, ""); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.AddMessage(p.ID, src.ID, "user", "second", "", "", "", "", "[{\"name\":\"a.txt\"}]"); err != nil {
+	if _, err := s.AddUserMessage(p.ID, src.ID, "second", "", "[{\"name\":\"a.txt\"}]"); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.SaveCompactionSnapshot(p.ID, src.ID, "summary", firstID); err != nil {

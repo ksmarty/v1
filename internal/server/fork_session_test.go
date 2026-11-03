@@ -18,7 +18,7 @@ func TestForkSessionCopiesMessages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.st.AddMessage(pid, src.ID, "user", "hello", "", "", "", "", ""); err != nil {
+	if _, err := s.st.AddUserMessage(pid, src.ID, "hello", "", ""); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.st.AddMessage(pid, src.ID, "assistant", "hi", "", "m", "", "", ""); err != nil {

@@ -121,7 +121,7 @@ func contextUsageFor(t *testing.T, s *Server, projectID string) (used, budget in
 func TestContextUsagePrefersTheProviderReport(t *testing.T) {
 	s, p, sessionID := newHarnessTestServer(t)
 	// 40K of characters the durable transcript has already folded away.
-	if _, err := s.st.AddMessage(p.ID, sessionID, "user", strings.Repeat("x", 40000), "", "", "", "", ""); err != nil {
+	if _, err := s.st.AddUserMessage(p.ID, sessionID, strings.Repeat("x", 40000), "", ""); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.st.AddMessage(p.ID, sessionID, "assistant", "answer", "", "m", "", `{"context":900}`, ""); err != nil {
@@ -142,7 +142,7 @@ func TestContextUsageEstimatesTheTail(t *testing.T) {
 		t.Fatal(err)
 	}
 	// 400 characters ≈ 100 tokens by v1's bytes/4 estimate.
-	if _, err := s.st.AddMessage(p.ID, sessionID, "user", strings.Repeat("y", 400), "", "", "", "", ""); err != nil {
+	if _, err := s.st.AddUserMessage(p.ID, sessionID, strings.Repeat("y", 400), "", ""); err != nil {
 		t.Fatal(err)
 	}
 
@@ -155,7 +155,7 @@ func TestContextUsageEstimatesTheTail(t *testing.T) {
 // With no usage recorded yet the byte estimate is all there is.
 func TestContextUsageFallsBackToTheEstimate(t *testing.T) {
 	s, p, sessionID := newHarnessTestServer(t)
-	if _, err := s.st.AddMessage(p.ID, sessionID, "user", strings.Repeat("z", 4000), "", "", "", "", ""); err != nil {
+	if _, err := s.st.AddUserMessage(p.ID, sessionID, strings.Repeat("z", 4000), "", ""); err != nil {
 		t.Fatal(err)
 	}
 

@@ -30,7 +30,7 @@ func TestListSessionsReportsLastTurn(t *testing.T) {
 	}
 
 	// The user's own message is not the agent finishing, so it must not move it.
-	if _, err := s.AddMessage(p.ID, cs.ID, "user", "hi", "", "", "", "", ""); err != nil {
+	if _, err := s.AddUserMessage(p.ID, cs.ID, "hi", "", ""); err != nil {
 		t.Fatal(err)
 	}
 	if got, _ = s.ListSessions(p.ID); got[0].LastTurnAt != 0 {

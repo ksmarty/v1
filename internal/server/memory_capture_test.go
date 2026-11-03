@@ -162,7 +162,7 @@ func captureFixture(t *testing.T, s *Server, user *store.User) (string, string, 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.st.AddMessage(p.ID, session.ID, "user", "where does the deploy script live?", "", "m", "", "", ""); err != nil {
+	if _, err := s.st.AddUserMessage(p.ID, session.ID, "where does the deploy script live?", "m", ""); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.st.AddMessage(p.ID, session.ID, "assistant", "It is scripts/deploy.sh, and it restarts the service.", "", "m", "", "", ""); err != nil {

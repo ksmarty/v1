@@ -17,7 +17,7 @@ func TestMessageCheckpoint(t *testing.T) {
 		t.Fatal(err)
 	}
 	// A column added by migrateAddColumns must be usable immediately.
-	uid, err := s.AddMessage(proj.ID, "sess", "user", "build it", "", "m", "", "", "")
+	uid, err := s.AddUserMessage(proj.ID, "sess", "build it", "m", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,7 +38,7 @@ func TestMessageCheckpoint(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Attach to a second user turn; latest resolves to it.
-	uid2, err := s.AddMessage(proj.ID, "sess", "user", "again", "", "", "", "", "")
+	uid2, err := s.AddUserMessage(proj.ID, "sess", "again", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}

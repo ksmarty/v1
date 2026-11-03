@@ -185,7 +185,7 @@ func TestChatRetryUsesRequestedProviderKey(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.st.AddMessage(created.ID, session.ID, "user", "hi", "", "m", "", "", ""); err != nil {
+	if _, err := s.st.AddUserMessage(created.ID, session.ID, "hi", "m", ""); err != nil {
 		t.Fatal(err)
 	}
 

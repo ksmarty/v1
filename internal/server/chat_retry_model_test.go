@@ -42,7 +42,7 @@ func TestChatRetryUsesRequestedModel(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The turn being retried was sent with stored-model.
-	if _, err := s.st.AddMessage(created.ID, session.ID, "user", "hi", "", "stored-model", "", "", ""); err != nil {
+	if _, err := s.st.AddUserMessage(created.ID, session.ID, "hi", "stored-model", ""); err != nil {
 		t.Fatal(err)
 	}
 	saveProviders(t, s, adminCookie, fmt.Sprintf(

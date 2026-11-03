@@ -25,7 +25,7 @@ func TestContinuedPartialDetection(t *testing.T) {
 	}
 	sid := session.ID
 
-	uid, _ := s.st.AddMessage(pid, sid, "user", "hi", "", "", "", "", "")
+	uid, _ := s.st.AddUserMessage(pid, sid, "hi", "", "")
 	// no error yet -> 0
 	if got := s.continuedPartial(pid, sid, uid); got != 0 {
 		t.Fatalf("expected 0 before failure, got %d", got)
