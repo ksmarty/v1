@@ -63,21 +63,25 @@ type TurnResult struct {
 
 // ChatEvent is one SSE event sent to the chat client.
 type ChatEvent struct {
-	Type        string           `json:"type"`
-	TurnID      string           `json:"turn_id,omitempty"` // run-scoped id, same for every event of one turn
-	Text        string           `json:"text,omitempty"`
-	Replace     bool             `json:"replace,omitempty"` // text/reasoning replaces the live value instead of appending
-	Reasoning   string           `json:"reasoning,omitempty"`
-	Name        string           `json:"name,omitempty"`
-	Detail      string           `json:"detail,omitempty"`
-	OK          bool             `json:"ok,omitempty"`
-	Error       string           `json:"error,omitempty"`
-	Usage       *Usage           `json:"usage,omitempty"`
-	Todos       []store.Todo     `json:"todos,omitempty"`
-	Memories    []store.Memory   `json:"memories,omitempty"`
-	RequestID   string           `json:"requestId,omitempty"`
-	Tool        string           `json:"tool,omitempty"`
-	MessageID   int64            `json:"messageId,omitempty"`
+	Type      string         `json:"type"`
+	TurnID    string         `json:"turn_id,omitempty"` // run-scoped id, same for every event of one turn
+	Text      string         `json:"text,omitempty"`
+	Replace   bool           `json:"replace,omitempty"` // text/reasoning replaces the live value instead of appending
+	Reasoning string         `json:"reasoning,omitempty"`
+	Name      string         `json:"name,omitempty"`
+	Detail    string         `json:"detail,omitempty"`
+	OK        bool           `json:"ok,omitempty"`
+	Error     string         `json:"error,omitempty"`
+	Usage     *Usage         `json:"usage,omitempty"`
+	Todos     []store.Todo   `json:"todos,omitempty"`
+	Memories  []store.Memory `json:"memories,omitempty"`
+	RequestID string         `json:"requestId,omitempty"`
+	Tool      string         `json:"tool,omitempty"`
+	MessageID int64          `json:"messageId,omitempty"`
+	// ToolJSON is the marker the row is persisted with, sent so a live row is
+	// styled by who wrote it rather than guessed from the event's shape. "" is
+	// the reader; every reserved marker means the app wrote the row.
+	ToolJSON    string           `json:"toolJson,omitempty"`
 	Attachments []AttachmentMeta `json:"attachments,omitempty"`
 	Options     []string         `json:"options,omitempty"`
 	Questions   []AskQuestion    `json:"questions,omitempty"`
@@ -369,7 +373,7 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 			return nil, err
 		}
 	} else if p.ContinueFromID <= 0 {
-		if _, err := p.Store.AddMessage(p.Project.ID, p.SessionID, "user", p.Message, "", p.Client.Model, "", "", MarshalAttachments(p.Attachments)); err != nil {
+		if _, err := p.Store.AddUserMessage(p.Project.ID, p.SessionID, p.Message, p.Client.Model, MarshalAttachments(p.Attachments)); err != nil {
 			return nil, err
 		}
 	}
@@ -526,7 +530,7 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 		if p.Steer != nil {
 			steered := p.Steer()
 			for i, msg := range steered {
-				msgID, err := p.Store.AddMessage(p.Project.ID, p.SessionID, "user", msg.Text, SteerToolJSON, p.Client.Model, "", "", MarshalAttachments(msg.Attachments))
+				msgID, err := p.Store.AddInjectedMessage(p.Project.ID, p.SessionID, msg.Text, SteerToolJSON, p.Client.Model, MarshalAttachments(msg.Attachments))
 				if err != nil {
 					// The message is already out of the queue, so a failed write
 					// would drop it for good. Put it and everything behind it
@@ -539,7 +543,7 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 					return nil, err
 				}
 				history = append(history, userMessage(msg.Text, msg.Attachments))
-				p.Emit(ChatEvent{Type: "injected_message", MessageID: msgID, Text: msg.Text, Tool: "steer", Attachments: AttachmentMetas(msg.Attachments)})
+				p.Emit(ChatEvent{Type: "injected_message", MessageID: msgID, Text: msg.Text, Tool: "steer", ToolJSON: SteerToolJSON, Attachments: AttachmentMetas(msg.Attachments)})
 			}
 		}
 		// Finished background commands join the same way: their result was
@@ -548,7 +552,7 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 		if p.PollBackground != nil {
 			for _, r := range p.PollBackground() {
 				history = append(history, llm.Message{Role: "user", Content: r.Text})
-				p.Emit(ChatEvent{Type: "injected_message", MessageID: r.MessageID, Text: r.Text})
+				p.Emit(ChatEvent{Type: "injected_message", MessageID: r.MessageID, Text: r.Text, Tool: "background", ToolJSON: BackgroundToolJSON})
 			}
 		}
 		allTools := p.ToolSet()
@@ -806,7 +810,7 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 					Content: base64.StdEncoding.EncodeToString(img),
 				}}
 				caption := "Screenshot of the current app preview (captured by the screenshot_app tool)."
-				msgID, err := p.Store.AddMessage(p.Project.ID, p.SessionID, "user", caption, AgentToolJSON, "", "", "", MarshalAttachments(att))
+				msgID, err := p.Store.AddInjectedMessage(p.Project.ID, p.SessionID, caption, AgentToolJSON, "", MarshalAttachments(att))
 				if err != nil {
 					return nil, err
 				}
@@ -816,6 +820,7 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 					MessageID:   msgID,
 					Text:        caption,
 					Tool:        "agent",
+					ToolJSON:    AgentToolJSON,
 					Attachments: []AttachmentMeta{{Name: "screenshot.png", MIME: "image/png", Kind: "image", Size: len(img)}},
 				})
 			}

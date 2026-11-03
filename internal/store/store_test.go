@@ -1,6 +1,7 @@
 package store
 
 import (
+	"errors"
 	"testing"
 	"time"
 )
@@ -270,7 +271,7 @@ func TestMergeContinuedTurn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	userID, _ := s.AddMessage(p.ID, sid.ID, "user", "hello", "", "", "", "", "")
+	userID, _ := s.AddUserMessage(p.ID, sid.ID, "hello", "", "")
 	partialID, _ := s.AddMessage(p.ID, sid.ID, "assistant", "Partial reply", "", "", "thinking", "", "")
 	_, _ = s.AddMessage(p.ID, sid.ID, "error", "boom", "", "", "", "", "")
 	contID, _ := s.AddMessage(p.ID, sid.ID, "assistant", " continuation text", "", "", "more thinking", `{"input":1}`, "")
@@ -525,7 +526,7 @@ func TestDeleteErrorMessages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _ = s.AddMessage(p.ID, one.ID, "user", "hello", "", "", "", "", "")
+	_, _ = s.AddUserMessage(p.ID, one.ID, "hello", "", "")
 	_, _ = s.AddMessage(p.ID, one.ID, "error", "boom", "", "", "", "", "")
 	_, _ = s.AddMessage(p.ID, one.ID, "error", "boom again", "", "", "", "", "")
 	_, _ = s.AddMessage(p.ID, two.ID, "error", "other session", "", "", "", "", "")
@@ -597,5 +598,105 @@ func TestUploadsLifecycle(t *testing.T) {
 	}
 	if got, err := s.ListUploads(p.ID, []string{"u2"}); err != nil || len(got) != 0 {
 		t.Fatalf("after prune = %+v, %v", got, err)
+	}
+}
+
+// A user row must say who wrote it. AddMessage refuses the role outright, so a
+// call site cannot store a tool caption as a plain user message — the bug that
+// put screenshot captions on the reader's side of the transcript.
+func TestUserRowsMustNameTheirAuthor(t *testing.T) {
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	p := &Project{ID: "p1", Name: "P"}
+	if err := s.CreateProject(p); err != nil {
+		t.Fatal(err)
+	}
+	cs, err := s.EnsureDefaultSession(p.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := s.AddMessage(p.ID, cs.ID, RoleUser, "typed", "", "", "", "", ""); !errors.Is(err, ErrUserRoleNeedsAuthor) {
+		t.Fatalf("AddMessage(user) err = %v; want ErrUserRoleNeedsAuthor", err)
+	}
+	if _, err := s.AddInjectedMessage(p.ID, cs.ID, "caption", "", "", ""); !errors.Is(err, ErrInjectedMessageNeedsMarker) {
+		t.Fatalf("AddInjectedMessage without a marker err = %v; want ErrInjectedMessageNeedsMarker", err)
+	}
+
+	mine, err := s.AddUserMessage(p.ID, cs.ID, "mine", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	theirs, err := s.AddInjectedMessage(p.ID, cs.ID, "caption", `"agent"`, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	msgs, err := s.ListMessages(p.ID, cs.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	marker := map[int64]string{}
+	for _, m := range msgs {
+		marker[m.ID] = m.ToolJSON
+	}
+	if marker[mine] != "" || marker[theirs] != `"agent"` {
+		t.Fatalf("markers = %q / %q; want \"\" / \"agent\"", marker[mine], marker[theirs])
+	}
+}
+
+// Rows stored before the author was required are repaired on open: the
+// screenshot_app caption the harness path wrote without a marker moves to the
+// left instead of staying on the reader's side forever.
+func TestMarkLegacyAgentRows(t *testing.T) {
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	p := &Project{ID: "p1", Name: "P"}
+	if err := s.CreateProject(p); err != nil {
+		t.Fatal(err)
+	}
+	cs, err := s.EnsureDefaultSession(p.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	const caption = "Screenshot of the current app preview (captured by the screenshot_app tool)."
+	// The old harness path: a user row with no marker at all.
+	captionID, err := s.addMessage(p.ID, cs.ID, RoleUser, caption, "", "", "", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mineID, err := s.AddUserMessage(p.ID, cs.ID, "a real question", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := markLegacyAgentRows(s.db); err != nil {
+		t.Fatal(err)
+	}
+	// Idempotent.
+	if err := markLegacyAgentRows(s.db); err != nil {
+		t.Fatal(err)
+	}
+
+	msgs, err := s.ListMessages(p.ID, cs.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	marker := map[int64]string{}
+	for _, m := range msgs {
+		marker[m.ID] = m.ToolJSON
+	}
+	if marker[captionID] != `"agent"` {
+		t.Fatalf("legacy caption marker = %q; want \"agent\"", marker[captionID])
+	}
+	if marker[mineID] != "" {
+		t.Fatalf("reader row marker = %q; want untouched", marker[mineID])
 	}
 }

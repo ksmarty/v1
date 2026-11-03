@@ -250,7 +250,13 @@ func TestHarnessKeepUserTurns(t *testing.T) {
 	s, p, sessionID := newHarnessTestServer(t)
 	add := func(role string) {
 		t.Helper()
-		if _, err := s.st.AddMessage(p.ID, sessionID, role, role+" text", "", "", "", "", ""); err != nil {
+		var err error
+		if role == "user" {
+			_, err = s.st.AddUserMessage(p.ID, sessionID, role+" text", "", "")
+		} else {
+			_, err = s.st.AddMessage(p.ID, sessionID, role, role+" text", "", "", "", "", "")
+		}
+		if err != nil {
 			t.Fatal(err)
 		}
 	}

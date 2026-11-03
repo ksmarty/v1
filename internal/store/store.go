@@ -311,6 +311,9 @@ CREATE TABLE pending_asks_v2 (
 	if _, err := db.Exec(`UPDATE projects SET session_seq = (SELECT COUNT(*) FROM chat_sessions WHERE chat_sessions.project_id = projects.id) WHERE session_seq = 0`); err != nil {
 		return err
 	}
+	if err := markLegacyAgentRows(db); err != nil {
+		return err
+	}
 	if err := scrubStoredMessages(db); err != nil {
 		return err
 	}
@@ -329,6 +332,21 @@ CREATE TABLE pending_asks_v2 (
 		"ephemeral": "ALTER TABLE projects ADD COLUMN ephemeral INTEGER NOT NULL DEFAULT 0",
 		"archived":  "ALTER TABLE projects ADD COLUMN archived INTEGER NOT NULL DEFAULT 0",
 	})
+}
+
+// markLegacyAgentRows repairs user rows that a tool wrote before the store
+// required an author. The harness path stored the screenshot_app caption as a
+// plain user message, so those rows rendered on the reader's side as if they
+// had written them. That caption is the only text the app ever injected without
+// a marker; the literal is frozen here on purpose, because a migration must
+// describe the data it was written against, not follow a constant that may
+// change later. Idempotent: an already-marked row is left alone.
+func markLegacyAgentRows(db *sql.DB) error {
+	_, err := db.Exec(`UPDATE messages SET tool_json = '"agent"'
+		WHERE role = 'user'
+		  AND (tool_json IS NULL OR tool_json = '')
+		  AND content = 'Screenshot of the current app preview (captured by the screenshot_app tool).'`)
+	return err
 }
 
 // scrubStoredMessages sanitizes message text that was stored before the
@@ -1160,8 +1178,52 @@ type Message struct {
 	CreatedAt   int64
 }
 
-// AddMessage appends a message to a chat session's history.
+// ErrUserRoleNeedsAuthor is returned when a caller tries to store a user-role
+// message through AddMessage, which cannot say whether the reader wrote it.
+// A user row is the only kind that appears on the reader's side of the
+// transcript, so the author has to be part of the call: AddUserMessage for
+// something they typed, AddInjectedMessage for anything the app wrote on their
+// behalf. Before this split, a call site could (and one did) store a tool
+// caption as a plain user message, and the transcript then showed it as theirs.
+var ErrUserRoleNeedsAuthor = errors.New(`store: use AddUserMessage or AddInjectedMessage for role "user"`)
+
+// ErrInjectedMessageNeedsMarker is returned when an injected user row is stored
+// without the marker that identifies it as not the reader's.
+var ErrInjectedMessageNeedsMarker = errors.New("store: an injected message needs a marker")
+
+// RoleUser is the role whose rows belong to the reader's side of a transcript.
+const RoleUser = "user"
+
+// AddMessage stores a non-user message: assistant replies, tool results, error
+// rows, plan rows. User-role rows go through AddUserMessage or
+// AddInjectedMessage, which record who wrote them.
 func (s *Store) AddMessage(projectID, sessionID, role, content, toolJSON, model, reasoning, usage, attachments string) (int64, error) {
+	if role == RoleUser {
+		return 0, ErrUserRoleNeedsAuthor
+	}
+	return s.addMessage(projectID, sessionID, role, content, toolJSON, model, reasoning, usage, attachments)
+}
+
+// AddUserMessage stores a message the reader typed. It is the only way to
+// persist a row that will render on their side of the transcript, and it
+// deliberately cannot carry a marker.
+func (s *Store) AddUserMessage(projectID, sessionID, content, model, attachments string) (int64, error) {
+	return s.addMessage(projectID, sessionID, RoleUser, content, "", model, "", "", attachments)
+}
+
+// AddInjectedMessage stores a user-role row the app wrote on the reader's
+// behalf: a tool caption (screenshot_app), a message steered into a running
+// turn, or a finished background command's output. The marker is required and
+// persisted in tool_json, and it is what keeps the row off the reader's side
+// after a reload as well as while it is live.
+func (s *Store) AddInjectedMessage(projectID, sessionID, content, marker, model, attachments string) (int64, error) {
+	if strings.TrimSpace(marker) == "" {
+		return 0, ErrInjectedMessageNeedsMarker
+	}
+	return s.addMessage(projectID, sessionID, RoleUser, content, marker, model, "", "", attachments)
+}
+
+func (s *Store) addMessage(projectID, sessionID, role, content, toolJSON, model, reasoning, usage, attachments string) (int64, error) {
 	res, err := s.db.Exec(`INSERT INTO messages (project_id, session_id, role, content, tool_json, model, reasoning, usage, attachments, created_at)
 		VALUES (?, NULLIF(?, ''), ?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?)`,
 		projectID, sessionID, role, content, toolJSON, model, reasoning, usage, attachments, now())

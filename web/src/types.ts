@@ -360,6 +360,12 @@ export type ChatEvent =
       attachments?: ChatAttachmentMeta[];
       /** 'background' when the injected message is a finished background job. */
       tool?: string;
+      /**
+       * The marker the row is persisted with, i.e. who wrote it: '' for the
+       * reader, a reserved marker for anything the app wrote. Authoritative —
+       * `tool` is only a hint for the row's styling.
+       */
+      toolJson?: string;
     }
   | { type: 'background_started'; text?: string }
   | { type: 'background_done'; text?: string };

@@ -642,7 +642,7 @@ func (s *Server) streamChatTurn(w http.ResponseWriter, r *http.Request, p *store
 		// speaking). The marker must stay valid JSON — the API sends tool_json
 		// to the browser as json.RawMessage, and a non-JSON marker made the whole
 		// message list fail to encode.
-		msgID, err := s.st.AddMessage(p.ID, params.SessionID, "user", text, agent.BackgroundToolJSON, params.Client.Model, "", "", "")
+		msgID, err := s.st.AddInjectedMessage(p.ID, params.SessionID, text, agent.BackgroundToolJSON, params.Client.Model, "")
 		if err == nil {
 			job.Text = text
 			job.MsgID = msgID
@@ -801,7 +801,7 @@ func (s *Server) streamChatTurn(w http.ResponseWriter, r *http.Request, p *store
 			q.add(extra.Text, extra.Attachments)
 		}
 		m := msgs[0]
-		msgID, err := s.st.AddMessage(p.ID, params.SessionID, "user", m.Text, "", params.Client.Model, "", "", agent.MarshalAttachments(m.Attachments))
+		msgID, err := s.st.AddUserMessage(p.ID, params.SessionID, m.Text, params.Client.Model, agent.MarshalAttachments(m.Attachments))
 		if err != nil {
 			emit(agent.ChatEvent{Type: "error", Error: err.Error()})
 			return

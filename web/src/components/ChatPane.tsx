@@ -476,6 +476,21 @@ function TaggedText({
 // just-sent images, or the attachment endpoint URL for persisted ones.
 type AttachmentView = ChatAttachmentMeta & { url?: string };
 
+/**
+ * Who wrote a user-role row.
+ *
+ * The server stores a marker with every user row — nothing for a message the
+ * reader typed, one of the reserved markers for a row the app wrote on their
+ * behalf. The right side of the transcript is the reader's own words, so only
+ * the markers that mean "they wrote this" belong there; anything unrecognised
+ * is the app's, which is what keeps a marker added later from silently landing
+ * on their side.
+ */
+const USER_WRITTEN_MARKERS = new Set(['', 'steer']);
+function writtenByUser(marker: string | null | undefined): boolean {
+  return USER_WRITTEN_MARKERS.has(marker ?? '');
+}
+
 type MsgItem = {
   kind: 'msg';
   key: string;
@@ -4641,12 +4656,10 @@ export default function ChatPane({
           // used to fall back to looking like something the user typed.
           const marker = typeof m.tool === 'string' ? m.tool : '';
           const background = marker === 'background';
-          // Only the persisted marker decides that a row was written by the
-          // agent. Guessing from position (a user row that follows tool calls)
-          // mislabels the user's own message when they send one mid-turn: the
-          // queue runs it as a follow-up turn, which lands it right after the
-          // tool calls of the turn before it. Rows written before the marker
-          // existed simply read as normal user messages.
+          // Who wrote the row is a fact the server recorded with it, not
+          // something to guess from position: a user row that follows tool
+          // calls is often the reader's own message sent mid-turn, which the
+          // queue runs as a follow-up turn.
           mapped.push({
             kind: 'msg',
             key: m.id,
@@ -4654,7 +4667,7 @@ export default function ChatPane({
             content: m.content,
             background,
             steered: marker === 'steer',
-            injected: marker === 'agent',
+            injected: !writtenByUser(marker) && !background,
             sentAt: Number(m.createdAt) * 1000,
             attachments: m.attachments?.map((a, i) => ({
               ...a,
@@ -5877,8 +5890,15 @@ export default function ChatPane({
               ? s.text === ev.text
               : s.text === '' && (s.attachments?.length ?? 0) === (ev.attachments?.length ?? 0),
           );
-          const steered = ev.tool === 'steer' || pending != null;
-          const injected = ev.tool === 'agent';
+          // The event carries the same marker the row is persisted with, so a
+          // live row is styled by who wrote it — the screenshot caption the
+          // harness emits has no `tool` hint, and guessing from one is what put
+          // it on the reader's side until the next reload.
+          const marker =
+            ev.toolJson ?? (ev.tool === 'steer' || ev.tool === 'agent' || ev.tool === 'background' ? ev.tool : '');
+          const background = marker === 'background';
+          const steered = marker === 'steer' || pending != null;
+          const injected = !writtenByUser(marker) && !background;
           if (pending) setSteering((prev) => prev.filter((s) => s.id !== pending.id));
           update((prev) => [
             // A screenshot/injected message closes any thinking block that was
@@ -5896,7 +5916,7 @@ export default function ChatPane({
               content: ev.text ?? '',
               steered,
               injected,
-              background: ev.tool === 'background',
+              background,
               sentAt: Date.now(),
               attachments: ev.attachments?.map((a, i) => ({
                 ...a,

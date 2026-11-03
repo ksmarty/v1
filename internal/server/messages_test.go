@@ -47,7 +47,16 @@ func TestListMessagesSurvivesBackgroundMarker(t *testing.T) {
 
 	add := func(role, content, toolJSON string) {
 		t.Helper()
-		if _, err := s.st.AddMessage(pid, session.ID, role, content, toolJSON, "m", "", "", ""); err != nil {
+		var err error
+		switch {
+		case role != "user":
+			_, err = s.st.AddMessage(pid, session.ID, role, content, toolJSON, "m", "", "", "")
+		case toolJSON == "":
+			_, err = s.st.AddUserMessage(pid, session.ID, content, "m", "")
+		default:
+			_, err = s.st.AddInjectedMessage(pid, session.ID, content, toolJSON, "m", "")
+		}
+		if err != nil {
 			t.Fatal(err)
 		}
 	}

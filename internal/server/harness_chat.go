@@ -366,7 +366,7 @@ func (s *Server) runHarnessTurn(ctx context.Context, p *store.Project, params ag
 			return nil, err
 		}
 	} else if params.ContinueFromID <= 0 {
-		if _, err := s.st.AddMessage(p.ID, params.SessionID, "user", params.Message, "", model, "", "", agent.MarshalAttachments(params.Attachments)); err != nil {
+		if _, err := s.st.AddUserMessage(p.ID, params.SessionID, params.Message, model, agent.MarshalAttachments(params.Attachments)); err != nil {
 			return nil, err
 		}
 	}
@@ -876,8 +876,8 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge,
 			// The client shows it as a user message, exactly as the built-in
 			// loop's injected_message does — and v1's store has to hold it too, or
 			// the steered turn disappears from the transcript on the next reload.
-			msgID, addErr := s.st.AddMessage(
-				params.Project.ID, params.SessionID, "user", msg.Text, agent.SteerToolJSON, model, "", "",
+			msgID, addErr := s.st.AddInjectedMessage(
+				params.Project.ID, params.SessionID, msg.Text, agent.SteerToolJSON, model,
 				agent.MarshalAttachments(msg.Attachments),
 			)
 			if addErr != nil {
@@ -888,6 +888,7 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge,
 				MessageID:   msgID,
 				Text:        msg.Text,
 				Tool:        "steer",
+				ToolJSON:    agent.SteerToolJSON,
 				Attachments: agent.AttachmentMetas(msg.Attachments),
 			})
 		}
@@ -910,7 +911,7 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge,
 				log.Printf("harness: background result injection failed: %v", err)
 				continue
 			}
-			emit(agent.ChatEvent{Type: "injected_message", MessageID: r.MessageID, Text: r.Text})
+			emit(agent.ChatEvent{Type: "injected_message", MessageID: r.MessageID, Text: r.Text, Tool: "background", ToolJSON: agent.BackgroundToolJSON})
 		}
 	}
 
@@ -1071,7 +1072,7 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge,
 					}
 					att := []agent.Attachment{{Name: "screenshot.png", MIME: mime, Kind: "image", Content: img.Data}}
 					caption := "Screenshot of the current app preview (captured by the screenshot_app tool)."
-					msgID, addErr := s.st.AddMessage(params.Project.ID, params.SessionID, "user", caption, "", "", "", "", agent.MarshalAttachments(att))
+					msgID, addErr := s.st.AddInjectedMessage(params.Project.ID, params.SessionID, caption, agent.AgentToolJSON, "", agent.MarshalAttachments(att))
 					if addErr != nil {
 						log.Printf("chat: recording a screenshot: %v", addErr)
 						continue
@@ -1080,6 +1081,8 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge,
 						Type:        "injected_message",
 						MessageID:   msgID,
 						Text:        caption,
+						Tool:        "agent",
+						ToolJSON:    agent.AgentToolJSON,
 						Attachments: []agent.AttachmentMeta{{Name: "screenshot.png", MIME: mime, Kind: "image", Size: len(raw)}},
 					})
 				}
