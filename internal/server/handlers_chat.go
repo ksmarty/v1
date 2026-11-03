@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"path/filepath"
@@ -594,6 +595,41 @@ func (s *Server) streamChatTurn(w http.ResponseWriter, r *http.Request, p *store
 		fmt.Fprintf(w, "data: %s\n\n", b)
 		flusher.Flush()
 	}
+	// A turn can run for minutes inside one tool call, and a silent socket is
+	// indistinguishable from a dead one: after a server restart the page kept
+	// showing "running" with nothing on screen, because the browser had no way
+	// to tell that the stream behind it was gone. An SSE comment every
+	// sseHeartbeat gives the client something to measure silence against, and
+	// keeps intermediaries from closing an idle connection.
+	beatStop := make(chan struct{})
+	beatStopped := make(chan struct{})
+	// The heartbeat must be gone before the handler returns: the response
+	// writer is not safe to touch once it has.
+	defer func() {
+		close(beatStop)
+		<-beatStopped
+	}()
+	go func() {
+		defer close(beatStopped)
+		t := time.NewTicker(sseHeartbeat)
+		defer t.Stop()
+		for {
+			select {
+			case <-beatStop:
+				return
+			case <-t.C:
+				emitMu.Lock()
+				_, err := io.WriteString(w, ": ping\n\n")
+				if err == nil {
+					flusher.Flush()
+				}
+				emitMu.Unlock()
+				if err != nil {
+					return
+				}
+			}
+		}
+	}()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	s.turns.register(p.ID, params.SessionID, cancel)
@@ -842,15 +878,30 @@ func (s *Server) handleChatWatch(w http.ResponseWriter, r *http.Request) {
 
 	ch, release := hub.subscribe()
 	defer release()
-	for ev := range ch {
-		b, err := json.Marshal(ev)
-		if err != nil {
-			continue
+	// Same heartbeat as a turn's own stream: a watcher that hears nothing for
+	// half a minute knows the connection died rather than the run being slow.
+	beat := time.NewTicker(sseHeartbeat)
+	defer beat.Stop()
+	for {
+		select {
+		case ev, ok := <-ch:
+			if !ok {
+				return
+			}
+			b, err := json.Marshal(ev)
+			if err != nil {
+				continue
+			}
+			if _, err := fmt.Fprintf(w, "data: %s\n\n", b); err != nil {
+				return
+			}
+			flusher.Flush()
+		case <-beat.C:
+			if _, err := io.WriteString(w, ": ping\n\n"); err != nil {
+				return
+			}
+			flusher.Flush()
 		}
-		if _, err := fmt.Fprintf(w, "data: %s\n\n", b); err != nil {
-			return
-		}
-		flusher.Flush()
 	}
 }
 

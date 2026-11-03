@@ -669,6 +669,29 @@ export const api = {
     post<void>(`/api/projects/${projectId}/chat/permission`, { requestId, allow }),
 };
 
+// How long a chat stream may go completely silent before it is treated as
+// dead. The server writes an SSE comment every 15s, so silence this long means
+// the connection is gone — not that a tool is slow. Without it a restarted
+// server left the page "running" with nothing on screen forever: a half-open
+// socket never errors, so the reader simply waited.
+const STREAM_IDLE_MS = 45_000;
+
+/** reader.read() with a deadline: resolves to 'idle' when the stream goes quiet. */
+async function readWithIdleDeadline(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  ms: number,
+): Promise<ReadableStreamReadResult<Uint8Array> | 'idle'> {
+  let timer = 0;
+  const idle = new Promise<'idle'>((resolve) => {
+    timer = window.setTimeout(() => resolve('idle'), ms);
+  });
+  try {
+    return await Promise.race([reader.read(), idle]);
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
 /**
  * Shared SSE streaming helper: fetches `path` (POST with an optional JSON
  * body, or GET), parses `data:` events and dispatches them to `onEvent`.
@@ -724,14 +747,22 @@ async function streamChatEvents(
   };
 
   for (;;) {
-    let chunk: ReadableStreamReadResult<Uint8Array>;
+    let chunk: ReadableStreamReadResult<Uint8Array> | 'idle';
     try {
-      chunk = await reader.read();
+      chunk = await readWithIdleDeadline(reader, STREAM_IDLE_MS);
     } catch (e) {
       // A dead/incomplete stream (e.g. the connection dropped mid-run) must
       // not leave a zombie reader that keeps the tab spinning forever.
       if (signal.aborted) throw e;
       return;
+    }
+    if (chunk === 'idle') {
+      // Nothing at all for three heartbeats: the connection is gone, even
+      // though the socket never errored. End the stream so the caller reloads
+      // the transcript (and re-attaches if the run is still alive) instead of
+      // waiting on a reader that will never resolve.
+      void reader.cancel().catch(() => {});
+      break;
     }
     const { done, value } = chunk;
     if (done) break;
