@@ -65,6 +65,7 @@ import BackgroundTasksModal from './BackgroundTasksModal';
 const DelegateOpenContext = createContext<(conversationId: string) => void>(() => {});
 import TrackBorder, { TRACK_DEFAULTS } from './TrackBorder';
 import DiagramDialog from './DiagramDialog';
+import Zoomable from './Zoomable';
 import { prefetchMermaid } from '../mermaid';
 import {
   IconArrowUp,
@@ -491,6 +492,29 @@ function writtenByUser(marker: string | null | undefined): boolean {
   return USER_WRITTEN_MARKERS.has(marker ?? '');
 }
 
+/**
+ * The bare name of a marker, whichever shape it arrives in.
+ *
+ * A persisted row hands `tool` over as JSON, so a marker reads as `steer`; a
+ * live event carries the same marker as the raw JSON text the server stores,
+ * so it reads as `"steer"`. Comparing those two directly made a steered
+ * message unrecognisable while it streamed — it lost its badge and, because an
+ * unrecognised marker belongs to the app, was drawn as an agent row until the
+ * next reload. One decoding rule on the way in means the shape never decides
+ * who wrote a row.
+ */
+function markerName(raw: string | null | undefined): string {
+  const s = (raw ?? '').trim();
+  if (!s.startsWith('"')) return s;
+  try {
+    const v: unknown = JSON.parse(s);
+    if (typeof v === 'string') return v;
+  } catch {
+    // Not JSON after all — the text is the marker.
+  }
+  return s;
+}
+
 type MsgItem = {
   kind: 'msg';
   key: string;
@@ -719,12 +743,27 @@ function parseBackgroundResult(text: string): {
 // mapped items are what gets cached, so reading it back is a plain setItems.
 // An oversized transcript is dropped rather than truncated: showing a partial
 // turn would be worse than showing a spinner.
-const CHAT_CACHE_MAX = 1_500_000;
+// A cached transcript is a snapshot to paint before the fetch lands, not a
+// second copy of the chat. It is deliberately small: a chat whose rows hold big
+// tool output used to overflow the browser's storage, and a failed write meant
+// every return to that chat opened blank and then filled in — the flicker this
+// cache exists to prevent. Keeping the newest rows that fit always leaves
+// something to paint.
+const CHAT_CACHE_MAX = 300_000;
+// Everything cached together has to fit in the origin's storage quota, which is
+// shared with the rest of the app. The oldest chats are dropped first.
+const CHAT_CACHE_TOTAL = 3_000_000;
+const CHAT_CACHE_MIN_ROWS = 6;
 
 // How many messages one history page holds. A chat opens with the newest page
 // only; scrolling up pulls the previous one in, so the reply the reader came
 // back for never waits behind a long transcript.
 const CHAT_PAGE = 40;
+
+// How often buffered stream tokens are applied, in milliseconds. Fast enough to
+// read as live text, slow enough that a reasoning burst cannot starve the
+// composer of frames.
+const STREAM_FLUSH_MS = 70;
 
 function chatCacheKey(projectId: string, sessionId: string): string {
   return `v1-chat-cache:${projectId}:${sessionId}`;
@@ -778,7 +817,7 @@ function AgentInjectedRow({
         From the agent
       </span>
       <div className="w-full rounded-xl border border-sky-300/25 bg-sky-300/5 px-3.5 py-2 text-sm text-subtle">
-        <div className="whitespace-pre-wrap break-words">{text}</div>
+        {text.trim() !== '' && <div className="whitespace-pre-wrap break-words">{text}</div>}
         {attachments && attachments.length > 0 && (
           <div className="mt-1.5 flex flex-wrap gap-1.5">
             {attachments.map((a, i) =>
@@ -889,26 +928,77 @@ function writeChatCache(
       items: rows.map((it) => ('streaming' in it && it.streaming ? { ...it, streaming: false } : it)),
       newest: newestId(items),
       complete,
+      writtenAt: Date.now(),
     });
   try {
     const key = chatCacheKey(projectId, sessionId);
-    let raw = serialise(items);
+    // A pasted or uploaded file rides in its row as a data: URL, which can be
+    // megabytes on its own. Drop just those URLs first: the chip keeps its name
+    // and size, and a persisted row comes back from the server with a URL of
+    // its own.
+    let rows = items;
+    let raw = serialise(rows);
     if (raw.length > CHAT_CACHE_MAX) {
-      // A pasted or uploaded file rides in its row as a data: URL, which can
-      // be megabytes on its own. Keep the transcript and drop just those URLs:
-      // the chip keeps its name and size, and a persisted row comes back from
-      // the server with a URL of its own. Dropping the whole cache instead
-      // would make every open of this chat refetch.
-      raw = serialise(items.map(dropInlineAttachmentUrls));
-      if (raw.length > CHAT_CACHE_MAX) {
-        localStorage.removeItem(key);
-        return;
-      }
+      rows = items.map(dropInlineAttachmentUrls);
+      raw = serialise(rows);
+    }
+    // Still too big: keep the newest rows that fit. What is dropped is old
+    // history the fetch pulls back in; what is kept is what the reader sees
+    // first. A snapshot is never abandoned for being large — that is what made
+    // a long chat open blank.
+    while (raw.length > CHAT_CACHE_MAX && rows.length > CHAT_CACHE_MIN_ROWS) {
+      rows = rows.slice(Math.ceil((rows.length - CHAT_CACHE_MIN_ROWS) / 2));
+      raw = serialise(rows);
+    }
+    if (raw.length > CHAT_CACHE_MAX) {
+      // One row can be bigger than the whole budget (a huge tool result). Keep
+      // its identity and let the fetch fill in the body.
+      const last = rows[rows.length - 1];
+      rows = last ? [{ ...last, content: '' } as Item] : [];
+      raw = serialise(rows);
+      if (raw.length > CHAT_CACHE_MAX) return;
     }
     localStorage.setItem(key, raw);
+    pruneChatCaches(key);
   } catch {
     // Full or unavailable storage: the cache is an optimisation, never a
     // requirement.
+  }
+}
+
+/**
+ * Drop the oldest chat snapshots until every cached transcript together fits
+ * the budget. Without this, one big chat could fill the origin's storage and
+ * every other chat silently lost its cache — which is what made chats open
+ * blank after a while.
+ */
+function pruneChatCaches(keep: string): void {
+  try {
+    const entries: { key: string; at: number; size: number }[] = [];
+    let total = 0;
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key || !key.startsWith('v1-chat-cache:')) continue;
+      const raw = localStorage.getItem(key) ?? '';
+      total += raw.length;
+      let at = 0;
+      try {
+        at = (JSON.parse(raw) as { writtenAt?: number }).writtenAt ?? 0;
+      } catch {
+        at = 0;
+      }
+      entries.push({ key, at, size: raw.length });
+    }
+    if (total <= CHAT_CACHE_TOTAL) return;
+    entries.sort((a, b) => a.at - b.at);
+    for (const e of entries) {
+      if (total <= CHAT_CACHE_TOTAL) return;
+      if (e.key === keep) continue;
+      localStorage.removeItem(e.key);
+      total -= e.size;
+    }
+  } catch {
+    // Storage unavailable: nothing to prune.
   }
 }
 
@@ -3463,12 +3553,14 @@ function ImageLightbox({
       className="v1-safe-top fixed inset-0 z-50 flex items-center justify-center bg-bg/90 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] backdrop-blur-sm"
       onClick={onClose}
     >
-      <img
-        src={url}
-        alt={name}
-        className="max-h-full max-w-full rounded-lg object-contain shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      />
+      <Zoomable className="h-full w-full" label="Zoom image">
+        <img
+          src={url}
+          alt={name}
+          className="max-h-full max-w-full rounded-lg object-contain shadow-2xl"
+          onClick={(e) => e.stopPropagation()}
+        />
+      </Zoomable>
       <button
         type="button"
         onClick={onClose}
@@ -3478,7 +3570,7 @@ function ImageLightbox({
         // the inset has to be added here or the button disappears under the
         // Dynamic Island.
         style={{ top: SAFE_TOP, right: '0.75rem' }}
-        className="absolute inline-flex h-10 w-10 items-center justify-center rounded-lg bg-surface/80 text-dim transition-colors hover:bg-border hover:text-text"
+        className="absolute z-10 inline-flex h-10 w-10 items-center justify-center rounded-lg bg-surface/80 text-dim transition-colors hover:bg-border hover:text-text"
       >
         <IconX className="h-5 w-5" />
       </button>
@@ -4174,6 +4266,9 @@ export default function ChatPane({
   // When the current turn started — for the elapsed time shown with usage.
   const turnStartRef = useRef(0);
   const scrollRef = useRef<HTMLDivElement>(null);
+  // The transcript's own content box, observed so a change in its height that
+  // does not change the row list still moves the pin (see below).
+  const contentRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
   const echoRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -4230,19 +4325,26 @@ export default function ChatPane({
   // Streaming text and reasoning arrive token by token. Applying each one
   // re-rendered the transcript, so a keystroke landed in a busy frame and the
   // composer stuttered while the model was thinking. Tokens are buffered and
-  // applied once per animation frame instead.
+  // applied on a timer instead — and not once per frame: a reasoning model
+  // emits hundreds of tokens a second, and repainting the transcript 60 times
+  // for them is what made typing lag. Nothing the reader can perceive is lost
+  // at 14 updates a second, and the frame is left free for the keystroke.
   const streamBufRef = useRef<{
     text: Map<string, { append: string; replace: string | null }>;
     reasoning: Map<string, { append: string; replace: string | null }>;
-    raf: number | null;
-  }>({ text: new Map(), reasoning: new Map(), raf: null });
+    timer: number | null;
+  }>({ text: new Map(), reasoning: new Map(), timer: null });
+  // When the buffer was last applied, so a burst of tokens cannot schedule a
+  // flush for every token.
+  const lastFlushRef = useRef(0);
 
   const flushStream = useCallback(() => {
     const buf = streamBufRef.current;
-    if (buf.raf != null) {
-      cancelAnimationFrame(buf.raf);
-      buf.raf = null;
+    if (buf.timer != null) {
+      window.clearTimeout(buf.timer);
+      buf.timer = null;
     }
+    lastFlushRef.current = performance.now();
     if (buf.text.size === 0 && buf.reasoning.size === 0) return;
     const text = buf.text;
     const reasoning = buf.reasoning;
@@ -4272,11 +4374,14 @@ export default function ChatPane({
         if (cur) cur.append += chunk;
         else map.set(key, { append: chunk, replace: null });
       }
-      if (buf.raf == null) {
-        buf.raf = requestAnimationFrame(() => {
-          streamBufRef.current.raf = null;
+      if (buf.timer == null) {
+        // First token of a burst: apply it as soon as the last flush is far
+        // enough behind, then let the rest ride the same cadence.
+        const wait = Math.max(0, STREAM_FLUSH_MS - (performance.now() - lastFlushRef.current));
+        buf.timer = window.setTimeout(() => {
+          streamBufRef.current.timer = null;
           flushStream();
-        });
+        }, wait);
       }
     },
     [flushStream],
@@ -4654,7 +4759,7 @@ export default function ChatPane({
           // The marker is persisted with the row, so a steered message and an
           // agent-injected one keep their own styling across a reload — they
           // used to fall back to looking like something the user typed.
-          const marker = typeof m.tool === 'string' ? m.tool : '';
+          const marker = markerName(typeof m.tool === 'string' ? m.tool : '');
           const background = marker === 'background';
           // Who wrote the row is a fact the server recorded with it, not
           // something to guess from position: a user row that follows tool
@@ -4868,6 +4973,17 @@ export default function ChatPane({
       }
     }
     setLoadError(null);
+    // Start the page fetch now instead of after the status round trip: two
+    // serial requests are two chances to see a blank pane, and the page is
+    // needed on every path that is not a finished chat served from its cache.
+    let pageErr: unknown = null;
+    const pagePromise =
+      !cached || !cached.complete
+        ? api.getMessagesPage(projectId, sessionId, CHAT_PAGE).catch((e: unknown) => {
+            pageErr = e;
+            return null;
+          })
+        : null;
     try {
       // A finished chat never changes, and the cache records the id it ends on.
       // When the server reports the same id and nothing is running, the stored
@@ -4897,7 +5013,8 @@ export default function ChatPane({
       // Only the newest page: the turns the reader came back for are at the
       // bottom, and serialising a long history before showing anything is what
       // made a big chat slow to open.
-      const page = await api.getMessagesPage(projectId, sessionId, CHAT_PAGE);
+      const page = pagePromise ? await pagePromise : await api.getMessagesPage(projectId, sessionId, CHAT_PAGE);
+      if (!page) throw pageErr ?? new Error('The transcript could not be loaded.');
       const fetched = mapMessages(page.messages, 0);
       const mapped =
         errorsClearedRef.current === errorsMark
@@ -5105,6 +5222,9 @@ export default function ChatPane({
   // the bottom — otherwise reading history during a stream gets yanked around.
   // Declared here because the run-status effect below re-pins on return.
   const nearBottomRef = useRef(true);
+  // When the reader last scrolled up themselves. A growth-triggered pin skips
+  // that moment so it can never fight a finger on the screen.
+  const lastUpScrollRef = useRef(0);
   // The scrollTop our last pin landed on. Sticking is judged against this rather
   // than against the distance to the bottom: a pin's own scroll event can arrive
   // after React has committed another chunk of the stream, so measuring the gap
@@ -5405,6 +5525,7 @@ export default function ChatPane({
     // pinned anchor stale — which used to make the user scroll far up before
     // the button appeared.
     const scrolledUp = el.scrollTop < prevTopRef.current - 1;
+    if (scrolledUp) lastUpScrollRef.current = Date.now();
     prevTopRef.current = el.scrollTop;
     // Still near the bottom, or at/below where we last pinned — so the event is
     // ours, or the user heading further down. Either way, keep following.
@@ -5486,6 +5607,66 @@ export default function ChatPane({
       timers.forEach(clearTimeout);
     };
   }, [items, pinBottom]);
+
+  // Keep the snapshot in step with what is on screen. Without this, a chat left
+  // while it was still settling came back to whatever an earlier load happened
+  // to write — or to nothing at all, which is the blank the reader saw.
+  // Debounced: a streaming turn changes rows many times a second and the cache
+  // is read once, on the way back in.
+  useEffect(() => {
+    if (!sessionId || items.length === 0) return;
+    const t = window.setTimeout(() => {
+      writeChatCache(projectId, sessionId, itemsRef.current, !hasOlderRef.current);
+    }, 800);
+    return () => window.clearTimeout(t);
+  }, [items, sessionId, projectId]);
+
+  // Leaving the chat (another project, another session, a closed tab) keeps the
+  // rows that were on screen, so coming back paints them before anything is
+  // fetched. `itemsSessionRef` pairs the rows with the session they belong to,
+  // which is not necessarily the selected one by the time this runs.
+  useEffect(() => {
+    return () => {
+      const forSession = itemsSessionRef.current;
+      if (forSession && itemsRef.current.length > 0) {
+        writeChatCache(projectId, forSession, itemsRef.current, !hasOlderRef.current);
+      }
+    };
+  }, [projectId]);
+
+  // Sending is a statement that the reader wants to watch the answer, so the
+  // transcript follows from here even if they had scrolled up to reread.
+  const stickToBottom = useCallback(() => {
+    nearBottomRef.current = true;
+    pinPendingRef.current = true;
+    const el = scrollRef.current;
+    if (el) pinBottom(el);
+  }, [pinBottom]);
+
+  // The transcript can change height without its row list changing: a finished
+  // turn's tool calls fold away, a new run unfolds them again, an image or a
+  // diagram finishes laying out, a code block re-renders. None of those touched
+  // `items`, so no pin ran and the reader was left a screen or two above the
+  // bottom — the jump they saw on send was a turn unfolding. Watching the
+  // content box itself keeps a reader who is following the thread at the
+  // bottom, whatever grew.
+  // The box it watches only exists once there is a row to show, so the observer
+  // is attached when the first one appears, not just on mount.
+  const hasRows = items.length > 0;
+  useEffect(() => {
+    const box = scrollRef.current;
+    const content = contentRef.current;
+    if (!box || !content || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => {
+      if (!nearBottomRef.current) return;
+      // Their own scroll wins for a moment, so a finger dragging up is never
+      // yanked back down by a row finishing its layout.
+      if (Date.now() - lastUpScrollRef.current < 250) return;
+      pinBottom(box);
+    });
+    ro.observe(content);
+    return () => ro.disconnect();
+  }, [pinBottom, hasRows]);
 
   // The textarea's own text is transparent: the visible text is the echo layer
   // behind it. The two scroll independently, so copy the textarea's scroll
@@ -5894,10 +6075,14 @@ export default function ChatPane({
           // live row is styled by who wrote it — the screenshot caption the
           // harness emits has no `tool` hint, and guessing from one is what put
           // it on the reader's side until the next reload.
-          const marker =
-            ev.toolJson ?? (ev.tool === 'steer' || ev.tool === 'agent' || ev.tool === 'background' ? ev.tool : '');
+          const marker = markerName(
+            ev.toolJson ?? (ev.tool === 'steer' || ev.tool === 'agent' || ev.tool === 'background' ? ev.tool : ''),
+          );
           const background = marker === 'background';
-          const steered = marker === 'steer' || pending != null;
+          // Styling comes from the marker the server persisted, never from
+          // whether a pending steer happened to match: a row that carried both
+          // readings used to render as the agent's and lose its badge.
+          const steered = marker === 'steer';
           const injected = !writtenByUser(marker) && !background;
           if (pending) setSteering((prev) => prev.filter((s) => s.id !== pending.id));
           update((prev) => [
@@ -6135,6 +6320,7 @@ export default function ChatPane({
       // file with no caption — so only refuse when there is nothing at all.
       if ((!trimmed && attachments.length === 0) || streaming || !llmReady || !modelOverride) return;
       if (uploading) return;
+      stickToBottom();
       setInput('');
       setAskPrompt(null); // a new turn supersedes any pending question
       clearErrors(); // the user moved on from the last failure
@@ -6189,7 +6375,7 @@ export default function ChatPane({
         { key: sentKey, text: trimmed, atts: chips },
       );
     },
-    [streaming, llmReady, projectId, sessionId, modelOverride, providerOverride, handleEvent, run, update, attachments, uploading, thinkingEffort, clearErrors],
+    [streaming, llmReady, projectId, sessionId, modelOverride, providerOverride, handleEvent, run, update, attachments, uploading, thinkingEffort, clearErrors, stickToBottom],
   );
 
   // Auto-send the New project dialog's "what do you want to create?"
@@ -6423,6 +6609,7 @@ export default function ChatPane({
       const text = input.trim();
       if (!text && attachments.length === 0) return;
       const atts = attachments;
+      stickToBottom();
       clearErrors();
       setInput('');
       setAttachments([]);
@@ -6439,7 +6626,7 @@ export default function ChatPane({
     }
     sendText(input);
     setExpanded(false);
-  }, [input, streaming, attachments, uploading, runLocalCommand, sendText, enqueue, clearErrors]);
+  }, [input, streaming, attachments, uploading, runLocalCommand, sendText, enqueue, clearErrors, stickToBottom]);
 
   // The secondary action beside Send: queue without steering, so the message
   // waits for the next turn instead of joining the running one.
@@ -7401,7 +7588,7 @@ export default function ChatPane({
         {/* Rows already on screen are never hidden for a reload: replacing them
             in place (same keys) is invisible, unmounting them is not. */}
         {items.length > 0 && (
-          <div className="mx-auto flex max-w-2xl flex-col gap-3">
+          <div ref={contentRef} className="mx-auto flex max-w-2xl flex-col gap-3">
             {(() => {
               // Group a run of assistant rounds into one work collapse: the
               // reasoning and tool calls up to the next round that says

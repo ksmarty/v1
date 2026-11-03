@@ -888,7 +888,7 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge,
 				MessageID:   msgID,
 				Text:        msg.Text,
 				Tool:        "steer",
-				ToolJSON:    agent.SteerToolJSON,
+				ToolJSON:    agent.MarkerName(agent.SteerToolJSON),
 				Attachments: agent.AttachmentMetas(msg.Attachments),
 			})
 		}
@@ -911,7 +911,7 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge,
 				log.Printf("harness: background result injection failed: %v", err)
 				continue
 			}
-			emit(agent.ChatEvent{Type: "injected_message", MessageID: r.MessageID, Text: r.Text, Tool: "background", ToolJSON: agent.BackgroundToolJSON})
+			emit(agent.ChatEvent{Type: "injected_message", MessageID: r.MessageID, Text: r.Text, Tool: "background", ToolJSON: agent.MarkerName(agent.BackgroundToolJSON)})
 		}
 	}
 
@@ -1071,8 +1071,8 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge,
 						mime = "image/png"
 					}
 					att := []agent.Attachment{{Name: "screenshot.png", MIME: mime, Kind: "image", Content: img.Data}}
-					caption := "Screenshot of the current app preview (captured by the screenshot_app tool)."
-					msgID, addErr := s.st.AddInjectedMessage(params.Project.ID, params.SessionID, caption, agent.AgentToolJSON, "", agent.MarshalAttachments(att))
+					// No caption: the image is the message (see the built-in loop).
+					msgID, addErr := s.st.AddInjectedMessage(params.Project.ID, params.SessionID, "", agent.AgentToolJSON, "", agent.MarshalAttachments(att))
 					if addErr != nil {
 						log.Printf("chat: recording a screenshot: %v", addErr)
 						continue
@@ -1080,9 +1080,9 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge,
 					emit(agent.ChatEvent{
 						Type:        "injected_message",
 						MessageID:   msgID,
-						Text:        caption,
+						Text:        "",
 						Tool:        "agent",
-						ToolJSON:    agent.AgentToolJSON,
+						ToolJSON:    agent.MarkerName(agent.AgentToolJSON),
 						Attachments: []agent.AttachmentMeta{{Name: "screenshot.png", MIME: mime, Kind: "image", Size: len(raw)}},
 					})
 				}

@@ -690,8 +690,17 @@ func TestMarkLegacyAgentRows(t *testing.T) {
 		t.Fatal(err)
 	}
 	marker := map[int64]string{}
+	body := map[int64]string{}
 	for _, m := range msgs {
 		marker[m.ID] = m.ToolJSON
+		body[m.ID] = m.Content
+	}
+	// The row is a picture now: the sentence the tool wrote goes with it.
+	if body[captionID] != "" {
+		t.Fatalf("legacy caption text = %q; want it cleared", body[captionID])
+	}
+	if body[mineID] != "a real question" {
+		t.Fatalf("reader row text = %q; want untouched", body[mineID])
 	}
 	if marker[captionID] != `"agent"` {
 		t.Fatalf("legacy caption marker = %q; want \"agent\"", marker[captionID])

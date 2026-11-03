@@ -183,6 +183,12 @@ export const IconTrash = (p: SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
+export const IconMinus = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}>
+    <path d="M5 12h14" />
+  </svg>
+);
+
 export const IconPlus = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}>
     <path d="M5 12h14" />

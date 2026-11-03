@@ -78,9 +78,12 @@ type ChatEvent struct {
 	RequestID string         `json:"requestId,omitempty"`
 	Tool      string         `json:"tool,omitempty"`
 	MessageID int64          `json:"messageId,omitempty"`
-	// ToolJSON is the marker the row is persisted with, sent so a live row is
-	// styled by who wrote it rather than guessed from the event's shape. "" is
-	// the reader; every reserved marker means the app wrote the row.
+	// ToolJSON is who wrote the row, sent so a live row is styled by its author
+	// rather than guessed from the event's shape. It is the BARE marker name
+	// ("steer", "agent", "background") — MarkerName of what the row is stored
+	// with — because the client compares it against a plain string, and the
+	// quoted JSON form the column holds is not one it recognises. "" is the
+	// reader; every reserved marker means the app wrote the row.
 	ToolJSON    string           `json:"toolJson,omitempty"`
 	Attachments []AttachmentMeta `json:"attachments,omitempty"`
 	Options     []string         `json:"options,omitempty"`
@@ -543,7 +546,7 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 					return nil, err
 				}
 				history = append(history, userMessage(msg.Text, msg.Attachments))
-				p.Emit(ChatEvent{Type: "injected_message", MessageID: msgID, Text: msg.Text, Tool: "steer", ToolJSON: SteerToolJSON, Attachments: AttachmentMetas(msg.Attachments)})
+				p.Emit(ChatEvent{Type: "injected_message", MessageID: msgID, Text: msg.Text, Tool: "steer", ToolJSON: MarkerName(SteerToolJSON), Attachments: AttachmentMetas(msg.Attachments)})
 			}
 		}
 		// Finished background commands join the same way: their result was
@@ -552,7 +555,7 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 		if p.PollBackground != nil {
 			for _, r := range p.PollBackground() {
 				history = append(history, llm.Message{Role: "user", Content: r.Text})
-				p.Emit(ChatEvent{Type: "injected_message", MessageID: r.MessageID, Text: r.Text, Tool: "background", ToolJSON: BackgroundToolJSON})
+				p.Emit(ChatEvent{Type: "injected_message", MessageID: r.MessageID, Text: r.Text, Tool: "background", ToolJSON: MarkerName(BackgroundToolJSON)})
 			}
 		}
 		allTools := p.ToolSet()
@@ -809,18 +812,21 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 					Kind:    "image",
 					Content: base64.StdEncoding.EncodeToString(img),
 				}}
-				caption := "Screenshot of the current app preview (captured by the screenshot_app tool)."
-				msgID, err := p.Store.AddInjectedMessage(p.Project.ID, p.SessionID, caption, AgentToolJSON, "", MarshalAttachments(att))
+				// The image is the message. A caption saying what the tool already
+				// said ("Screenshot of the current app preview…") is a sentence
+				// the reader did not write and cannot act on, so the row carries
+				// the picture alone — the tool call above it names the tool.
+				msgID, err := p.Store.AddInjectedMessage(p.Project.ID, p.SessionID, "", AgentToolJSON, "", MarshalAttachments(att))
 				if err != nil {
 					return nil, err
 				}
-				history = append(history, userMessage(caption, att))
+				history = append(history, userMessage("", att))
 				p.Emit(ChatEvent{
 					Type:        "injected_message",
 					MessageID:   msgID,
-					Text:        caption,
+					Text:        "",
 					Tool:        "agent",
-					ToolJSON:    AgentToolJSON,
+					ToolJSON:    MarkerName(AgentToolJSON),
 					Attachments: []AttachmentMeta{{Name: "screenshot.png", MIME: "image/png", Kind: "image", Size: len(img)}},
 				})
 			}

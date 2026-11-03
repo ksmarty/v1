@@ -341,10 +341,14 @@ CREATE TABLE pending_asks_v2 (
 // a marker; the literal is frozen here on purpose, because a migration must
 // describe the data it was written against, not follow a constant that may
 // change later. Idempotent: an already-marked row is left alone.
+//
+// The caption itself is dropped as well. It said what the tool call above it
+// already says, and it was never the reader's to read back: the screenshot is
+// the message, so those rows keep their image and lose the sentence.
 func markLegacyAgentRows(db *sql.DB) error {
-	_, err := db.Exec(`UPDATE messages SET tool_json = '"agent"'
+	_, err := db.Exec(`UPDATE messages
+		SET tool_json = '"agent"', content = ''
 		WHERE role = 'user'
-		  AND (tool_json IS NULL OR tool_json = '')
 		  AND content = 'Screenshot of the current app preview (captured by the screenshot_app tool).'`)
 	return err
 }

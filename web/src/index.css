@@ -156,6 +156,10 @@ body {
 }
 .md pre {
   position: relative;
+  /* A strip above the code holds the copy button. Reserving it as padding —
+     rather than padding the text's right edge — means no line, scrolled or not,
+     can ever pass under the button. */
+  padding-top: 1.9em;
   margin: 0.75em 0;
   border: 1px solid var(--v1-border);
   border-radius: 8px;
@@ -164,7 +168,7 @@ body {
 }
 .md pre code {
   display: block;
-  padding: 0.75em 1em;
+  padding: 0 1em 0.75em;
   overflow-x: auto;
   font-family: var(--font-mono);
   font-size: 0.8125rem;

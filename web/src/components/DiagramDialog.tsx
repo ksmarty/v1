@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { IconX } from './icons';
 import { diagramName, exportPng, exportSvg, prepared } from '../mermaid';
+import Zoomable from './Zoomable';
 
 // Viewport-fixed overlays sit under the notch / Dynamic Island unless they add
 // the safe-area inset themselves (an absolutely positioned child ignores its
@@ -81,15 +82,17 @@ export default function DiagramDialog({
         </button>
       </div>
 
-      <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto p-4">
+      <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden p-4">
         {/* The SVG comes from mermaid's own renderer, already sanitised by
             securityLevel: 'strict'. */}
         {markup ? (
-          <div
-            className="v1-diagram-full"
-            onClick={(e) => e.stopPropagation()}
-            dangerouslySetInnerHTML={{ __html: markup }}
-          />
+          <Zoomable className="h-full w-full" label="Zoom diagram">
+            <div
+              className="v1-diagram-full"
+              onClick={(e) => e.stopPropagation()}
+              dangerouslySetInnerHTML={{ __html: markup }}
+            />
+          </Zoomable>
         ) : (
           <div
             className="max-h-full max-w-[min(92vw,760px)] overflow-auto rounded-xl border border-border bg-surface p-4"
