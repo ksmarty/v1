@@ -4175,6 +4175,12 @@ export default function ChatPane({
   const [queueEditText, setQueueEditText] = useState('');
   const queueEditIdRef = useRef<string | null>(null);
   const watchRef = useRef<AbortController | null>(null);
+  // The run's direct SSE stream, open as long as the POST /chat response is —
+  // which outlives `streaming`: queued follow-up turns keep the same stream
+  // alive across done events. The status poll must not attach a watch while
+  // this is open: a hub with two live consumers delivers the same events to
+  // both, so tool cards and assistant rows appeared twice on screen.
+  const mainStreamRef = useRef(false);
   // Mirrors of streaming/handleEvent for effects that must react to state
   // changes without re-running on them.
   const streamingRef = useRef(false);
@@ -4917,6 +4923,16 @@ export default function ChatPane({
     const seen = new Set(
       fresh.flatMap((it) => (it.kind === 'msg' ? [`${it.role}\u0000${it.content}`] : [])),
     );
+    // Tool cards the fetched page already renders are duplicates, not rows the
+    // fetch missed: the assistant row carries the call's arguments and the
+    // result row folds into it, so a reload used to leave a second card for
+    // every call — the pile of tool calls appearing after the turn summary.
+    const toolSigs = new Set<string>();
+    for (const it of fresh) {
+      if (it.kind !== 'msg') continue;
+      for (const c of it.toolCalls ?? []) toolSigs.add(`call\u0000${c.name}\u0000${c.detail}`);
+      for (const r of it.toolResults ?? []) toolSigs.add(`res\u0000${r.name}\u0000${r.detail}`);
+    }
     const live = itemsRef.current.filter((it) => {
       const m = /^[uste](\d+)$/.exec(it.key);
       if (!m) return false;
@@ -4927,6 +4943,16 @@ export default function ChatPane({
       // state, so they only survive when they postdate the fetch.
       const message = it.kind === 'msg' && (it.role === 'user' || it.role === 'assistant');
       if (!message && Number(m[1]) <= mark) return false;
+      if (it.kind === 'tool') {
+        // Drop the card when the fetched transcript already shows the call:
+        // its result is folded in (resSig), or only the call chip is and the
+        // result never persisted (finished card). A still-running card whose
+        // page predates the result stays up so it can land here.
+        const callSig = it.call !== undefined ? toolSigs.has(`call\u0000${it.name}\u0000${it.call}`) : false;
+        const resSig = it.detail ? toolSigs.has(`res\u0000${it.name}\u0000${it.detail}`) : false;
+        if (resSig || (callSig && !it.running)) return false;
+        return true;
+      }
       if (it.kind !== 'msg') return true;
       return !seen.has(`${it.role}\u0000${it.content}`);
     });
@@ -5277,6 +5303,17 @@ export default function ChatPane({
   // The scrollTop of the previous scroll event, so a scroll can be classified
   // as the user moving up (reveal the jump button) or a pin moving down.
   const prevTopRef = useRef(0);
+  // What the reader is looking at while away from the bottom: the first row
+  // in the viewport and where it sits within it. Content that grows ABOVE the
+  // viewport afterwards — an image decoding in an older row, a diagram
+  // finishing layout — shifts everything down without moving scrollTop (the
+  // container sets overflow-anchor:none by design), so the view silently
+  // slides up over older messages. The resize observer re-anchors to this
+  // whenever the content box changes while the reader is not at the bottom.
+  const anchorRef = useRef<{ key: string; offset: number } | null>(null);
+  // When the last scroll event fired, so the observer does not re-anchor
+  // against a reader who is mid-drag.
+  const lastScrollAtRef = useRef(0);
   const pinBottom = useCallback((el: HTMLElement) => {
     nearBottomRef.current = true;
     el.scrollTop = el.scrollHeight;
@@ -5365,7 +5402,7 @@ export default function ChatPane({
         // A live run with nothing streaming it means the watch dropped, or never
         // attached. Nudge the watch effect, which cannot notice this by itself:
         // its dependencies are all unchanged.
-        if (st.running && !streamingRef.current && !watchRef.current && !resuming) {
+        if (st.running && !streamingRef.current && !watchRef.current && !mainStreamRef.current && !resuming) {
           setWatchTick((n) => n + 1);
         }
       } catch {
@@ -5569,10 +5606,28 @@ export default function ChatPane({
     const scrolledUp = el.scrollTop < prevTopRef.current - 1;
     if (scrolledUp) lastUpScrollRef.current = Date.now();
     prevTopRef.current = el.scrollTop;
+    lastScrollAtRef.current = Date.now();
     // Still near the bottom, or at/below where we last pinned — so the event is
     // ours, or the user heading further down. Either way, keep following.
     const stuck = gap < 80 || el.scrollTop >= pinnedTopRef.current - 4;
     nearBottomRef.current = stuck;
+    // Record (or drop) the reading anchor with every scroll event while away
+    // from the bottom. Both rects must come from the same frame, so the two
+    // getBoundingClientRect calls run together after the class read above.
+    if (stuck) {
+      anchorRef.current = null;
+    } else if (!document.hidden) {
+      const boxRect = el.getBoundingClientRect();
+      const probe = document
+        .elementsFromPoint(boxRect.left + boxRect.width / 2, boxRect.top + 48)
+        .find(
+          (e): e is HTMLElement =>
+            e instanceof Element && !!e.closest('[data-msg-key]') && el.contains(e.closest('[data-msg-key]') as Node),
+        );
+      const row = probe ? (probe.closest('[data-msg-key]') as HTMLElement | null) : null;
+      const key = row?.getAttribute('data-msg-key') ?? '';
+      anchorRef.current = row && key ? { key, offset: row.getBoundingClientRect().top - boxRect.top } : null;
+    }
     if (gap < 24) setShowJump(false);
     else if (scrolledUp) setShowJump(true);
     if (mapOpen) updateCurrent();
@@ -5700,7 +5755,28 @@ export default function ChatPane({
     const content = contentRef.current;
     if (!box || !content || typeof ResizeObserver === 'undefined') return;
     const ro = new ResizeObserver(() => {
-      if (!nearBottomRef.current) return;
+      if (!nearBottomRef.current) {
+        // The reader is away from the bottom, so growth at the bottom never
+        // moved them — but growth ABOVE the viewport does: with
+        // overflow-anchor:none an image decoding or a diagram finishing
+        // layout in an older row silently shifts every visible row down,
+        // sliding the reader up over history. Re-anchor to what they were
+        // looking at instead. Skipped while they are mid-drag, and no-ops
+        // when the change was below the viewport (delta 0).
+        const anchor = anchorRef.current;
+        if (!anchor || Date.now() - lastScrollAtRef.current < 250) return;
+        const boxRect = box.getBoundingClientRect();
+        const row = box.querySelector(
+          `[data-msg-key="${CSS.escape(anchor.key)}"]`,
+        ) as HTMLElement | null;
+        if (!row) {
+          anchorRef.current = null;
+          return;
+        }
+        const delta = row.getBoundingClientRect().top - boxRect.top - anchor.offset;
+        if (Math.abs(delta) > 1) box.scrollTop = Math.max(0, box.scrollTop + delta);
+        return;
+      }
       // Their own scroll wins for a moment, so a finger dragging up is never
       // yanked back down by a row finishing its layout.
       if (Date.now() - lastUpScrollRef.current < 250) return;
@@ -6190,7 +6266,7 @@ export default function ChatPane({
   // re-checked at attach time so a turn we just streamed ourselves (whose
   // runActive state is still settling) never triggers a spurious watch.
   useEffect(() => {
-    if (!sessionId || !runActive || streamingRef.current || resuming) return;
+    if (!sessionId || !runActive || streamingRef.current || mainStreamRef.current || resuming) return;
     if (watchRef.current) return; // already attached
     let cancelled = false;
     let retry: number | undefined;
@@ -6307,10 +6383,17 @@ export default function ChatPane({
       turnAliveRef.current = false;
       const ctrl = new AbortController();
       abortRef.current = ctrl;
+      // The request owns this session's stream until it resolves: even after a
+      // done event (the composer goes idle), queued follow-up turns keep it
+      // streaming. mainStreamRef stays set for the whole request so the status
+      // poll never attaches a watch alongside it.
+      mainStreamRef.current = true;
       try {
         await start(ctrl.signal);
+        mainStreamRef.current = false;
         finish();
       } catch (e) {
+        mainStreamRef.current = false;
         const aborted = e instanceof DOMException && e.name === 'AbortError';
         if (!aborted && e instanceof TypeError && !ctrl.signal.aborted) {
           // The connection died (backgrounded tab, suspended app). Resync the
