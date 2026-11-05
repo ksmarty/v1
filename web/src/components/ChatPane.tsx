@@ -837,10 +837,13 @@ function normalizeCached(items: Item[]): Item[] {
     if (it.kind !== 'msg') return true;
     if (it.role === 'assistant') {
       const text = it.content.trim();
-      // An empty live row in a snapshot holds nothing — drop it; a drifted
-      // tail is covered by the persisted copy's fuller text.
+      // An empty live row in a snapshot holds nothing — drop it. A drifted
+      // tail (from a truncated ring replay the snapshot was written during)
+      // is covered by the persisted copy: it is either a prefix of it or a
+      // fragment inside it. Only long fragments qualify for the substring
+      // test, so a two-word reply cannot be swallowed by coincidence.
       if (!text) return false;
-      return !assistantTexts.some((t) => t.startsWith(text));
+      return !assistantTexts.some((t) => t.startsWith(text) || (text.length >= 64 && t.includes(text)));
     }
     if (it.role === 'user') return !userTexts.has(it.content);
     return true;
@@ -5091,16 +5094,21 @@ export default function ChatPane({
       }
       if (it.kind !== 'msg') return true;
       if (seen.has(`${it.role}\u0000${it.content}`)) return false;
+      const liveText = it.content.trim();
       if (
         it.role === 'assistant' &&
-        it.content.trim() &&
-        assistantTexts.some((text) => text.startsWith(it.content.trim()))
+        liveText &&
+        assistantTexts.some(
+          (text) => text.startsWith(liveText) || (liveText.length >= 64 && text.includes(liveText)),
+        )
       ) {
-        // The streamed copy is covered by the persisted one: drop it and let
-        // the store's copy take over at its correct position. A row that is
-        // still being written by the run only goes if the run is actually
-        // streaming this turn — the live store copy would otherwise blink
-        // the tail out from under a generation in flight.
+        // The streamed copy is covered by the persisted one — its full text,
+        // a prefix of it, or (a truncated replay/cached drift) a long
+        // fragment inside it. Drop it and let the store's copy take over at
+        // its correct position. A row that is still being written by the run
+        // only goes if the run is actually streaming this turn — the live
+        // store copy would otherwise blink the tail out from under a
+        // generation in flight.
         if (it.streaming) return runLive;
         return false;
       }
