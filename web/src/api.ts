@@ -704,6 +704,7 @@ async function streamChatEvents(
   onEvent: (ev: ChatEvent) => void,
   signal: AbortSignal,
   get = false,
+  idleMs = STREAM_IDLE_MS,
 ): Promise<void> {
   const res = await fetch(path, {
     method: get ? 'GET' : 'POST',
@@ -749,7 +750,7 @@ async function streamChatEvents(
   for (;;) {
     let chunk: ReadableStreamReadResult<Uint8Array> | 'idle';
     try {
-      chunk = await readWithIdleDeadline(reader, STREAM_IDLE_MS);
+      chunk = await readWithIdleDeadline(reader, idleMs);
     } catch (e) {
       // A dead/incomplete stream (e.g. the connection dropped mid-run) must
       // not leave a zombie reader that keeps the tab spinning forever.
@@ -943,6 +944,12 @@ export function retryChat(
  * events from now on are relayed here until it finishes. Used when returning
  * to a chat mid-generation — the UI behaves exactly as if we had never left.
  */
+// The watch endpoint pings every sseHeartbeat (15s), so a normal watch never
+// goes quiet this long — a dead socket is recognized after one missed ping
+// instead of three, which is what keeps a dropped watch from freezing a chat
+// for most of a minute before the status poll steps in.
+const WATCH_IDLE_MS = 20_000;
+
 export function watchChat(
   projectId: string,
   sessionId: string,
@@ -955,6 +962,7 @@ export function watchChat(
     onEvent,
     signal,
     true,
+    WATCH_IDLE_MS,
   );
 }
 

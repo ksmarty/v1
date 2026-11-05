@@ -4298,6 +4298,10 @@ export default function ChatPane({
     } catch {}
   }, [notifiedKey]);
   const toolStackRef = useRef<Record<string, string[]>>({});
+  // Frames left in the watch connection's replay (see replay_count above).
+  // Reaching 0 is the cue to converge with the store; a main-stream
+  // connection never receives the marker, so it stays 0 there.
+  const replayLeftRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
   // When the current turn started — for the elapsed time shown with usage.
   const turnStartRef = useRef(0);
@@ -5905,11 +5909,24 @@ export default function ChatPane({
       // has been recorded, so a later failure must not put it back in the
       // composer.
       turnAliveRef.current = true;
+      // The replayed prefix of a watch connection ends here: converge on the
+      // persisted transcript. Everything the replay drew (in-flight rounds
+      // included) is either already in the store or now folded in, so this
+      // clear instead of duplicate is what a turn watched from the middle
+      // shows when it is over — without waiting for its own done event.
+      if (ev.type !== 'replay_count' && replayLeftRef.current > 0) {
+        replayLeftRef.current--;
+        if (replayLeftRef.current === 0) void load({ quiet: true });
+      }
       // Anything that is not more stream text must see the buffered text
       // applied first: a tool row, a done event or an error has to land after
       // the words that preceded it, not before them.
       if (ev.type !== 'delta' && ev.type !== 'reasoning') flushStream();
       switch (ev.type) {
+        case 'replay_count': {
+          replayLeftRef.current = ev.count ?? 0;
+          break;
+        }
         case 'reasoning': {
           let k = assistantKeyRef.current;
           if (!k) {
@@ -6068,18 +6085,33 @@ export default function ChatPane({
               ),
             );
           } else {
-            update((prev) => [
-              ...prev,
-              {
-                kind: 'tool',
-                key: `t${++counterRef.current}`,
-                name: ev.name,
-                detail: ev.detail,
-                display: ev.display,
-                running: false,
-                ok: ev.ok,
-              },
-            ]);
+            // tool_start was never seen (an event lost by an older server
+            // build, or a stream that died mid-pair): the result still gets
+            // its card, but before any trailing tool/ask cluster rather than
+            // unconditionally at the end — plainer appends are what put
+            // result cards below a turn summary that had already rendered.
+            const card: ToolItem = {
+              kind: 'tool',
+              key: `t${++counterRef.current}`,
+              name: ev.name,
+              detail: ev.detail,
+              display: ev.display,
+              running: false,
+              ok: ev.ok,
+            };
+            update((prev) => {
+              let idx = prev.length;
+              while (
+                idx > 0 &&
+                (prev[idx - 1].kind === 'tool' || prev[idx - 1].kind === 'ask')
+              ) {
+                idx--;
+              }
+              if (idx === prev.length) return [...prev, card];
+              const next = [...prev];
+              next.splice(idx, 0, card);
+              return next;
+            });
           }
           break;
         }
@@ -6340,6 +6372,7 @@ export default function ChatPane({
       // from before the drop as finished in the wrong place.
       toolStackRef.current = {};
       assistantKeyRef.current = null;
+      replayLeftRef.current = 0; // the replay_count marker sets it again
       watchRef.current = active;
       setStreaming(true);
       void (async () => {
@@ -6360,6 +6393,9 @@ export default function ChatPane({
         }
         if (cancelled) return; // a newer attach owns this state now
         if (watchRef.current === active) watchRef.current = null;
+        // A stream that died inside its replay leaves the counter half
+        // counted; a later main-stream event must not spend it.
+        replayLeftRef.current = 0;
         setStreaming(false);
         if (stillRunning) void load();
         // Nothing else re-runs this effect — its dependencies are unchanged —
@@ -6378,6 +6414,7 @@ export default function ChatPane({
       const active = ctrl;
       ctrl = null;
       if (active && watchRef.current === active) watchRef.current = null;
+      replayLeftRef.current = 0;
       active?.abort();
     };
   }, [sessionId, runActive, resuming, projectId, load, watchTick]);

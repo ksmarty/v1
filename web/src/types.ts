@@ -370,7 +370,15 @@ export type ChatEvent =
       toolJson?: string;
     }
   | { type: 'background_started'; text?: string }
-  | { type: 'background_done'; text?: string };
+  | { type: 'background_done'; text?: string }
+  /**
+   * The watch endpoint starts every connection with this frame: `count` says
+   * how many of the frames that follow are the run's event-history replay.
+   * Reaching the end of the replay is the client's cue to converge on the
+   * persisted transcript — a turn watched from the middle otherwise keeps
+   * the replay's duplicate rows until the run finishes.
+   */
+  | { type: 'replay_count'; count: number };
 
 /**
  * A detached command the agent started with run_command_background and that is

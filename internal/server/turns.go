@@ -275,12 +275,16 @@ func (h *runHub) record(ev agent.ChatEvent) {
 // client sees exactly what a client that stayed on the page saw: streamed
 // deltas/reasoning, tool starts/ends, side effects, the final done — not a
 // lossy text-only snapshot. Subsequent events are live. The channel closes
-// when the run ends.
-func (h *runHub) subscribe() (chan agent.ChatEvent, func()) {
+// when the run ends. The returned count is the number of replayed events
+// already sitting in the channel: the watch handler forwards it as a marker
+// so the client knows where the replay ends (and can converge with the
+// store at that point instead of waiting for the run to finish).
+func (h *runHub) subscribe() (chan agent.ChatEvent, func(), int) {
 	// Larger than the ring so the synchronous replay never drops events on a
 	// normal-speed reader; slow consumers still degrade gracefully on live
 	// events (publish uses non-blocking sends).
 	ch := make(chan agent.ChatEvent, 1024)
+	replayed := 0
 	h.mu.Lock()
 	if h.closed {
 		close(ch)
@@ -292,6 +296,7 @@ func (h *runHub) subscribe() (chan agent.ChatEvent, func()) {
 			}
 			for i := 0; i < len(h.history); i++ {
 				ch <- h.history[(start+i)%len(h.history)]
+				replayed++
 			}
 		}
 		h.subs[ch] = struct{}{}
@@ -304,7 +309,7 @@ func (h *runHub) subscribe() (chan agent.ChatEvent, func()) {
 			close(ch)
 		}
 		h.mu.Unlock()
-	}
+	}, replayed
 }
 
 func (h *runHub) publish(ev agent.ChatEvent) {

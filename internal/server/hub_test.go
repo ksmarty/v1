@@ -26,7 +26,7 @@ func TestHubReplayMatchesLive(t *testing.T) {
 		h.publish(ev)
 	}
 
-	ch, release := h.subscribe()
+	ch, release, _ := h.subscribe()
 	defer release()
 	h.close()
 	var got []agent.ChatEvent
@@ -53,7 +53,7 @@ func TestHubLiveAndReplayOrder(t *testing.T) {
 	h.publish(agent.ChatEvent{Type: "delta", Text: "a"})
 	h.publish(agent.ChatEvent{Type: "delta", Text: "b"})
 
-	ch, release := h.subscribe()
+	ch, release, _ := h.subscribe()
 	defer release()
 	// consume the replay concurrently so the live publish below can deliver
 	go func() {
@@ -93,7 +93,7 @@ func TestHubReplayAcrossRingWrap(t *testing.T) {
 	for i := 0; i < h.histSize+40; i++ {
 		h.publish(agent.ChatEvent{Type: "delta", Text: "x"})
 	}
-	ch, release := h.subscribe()
+	ch, release, _ := h.subscribe()
 	defer release()
 	h.close()
 	got := 0
@@ -111,7 +111,7 @@ func TestHubClosedSubscriber(t *testing.T) {
 	h := newRunHub()
 	h.publish(agent.ChatEvent{Type: "delta", Text: "x"})
 	h.close()
-	ch, release := h.subscribe()
+	ch, release, _ := h.subscribe()
 	defer release()
 	select {
 	case _, ok := <-ch:

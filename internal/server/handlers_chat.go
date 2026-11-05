@@ -876,8 +876,18 @@ func (s *Server) handleChatWatch(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Accel-Buffering", "no")
 	w.WriteHeader(http.StatusOK)
 
-	ch, release := hub.subscribe()
+	ch, release, replayed := hub.subscribe()
 	defer release()
+	// A marker ahead of the buffered replay tells the client how many of the
+	// frames it is about to read are the replay (the channel holds exactly
+	// `replayed` events before the live ones). Watching a turn from the
+	// middle used to mean re-reading a run the transcript already shows,
+	// keeping duplicate rows until the run finally finished — the count lets
+	// the client converge on the store right after the replay instead.
+	if b, err := json.Marshal(map[string]any{"type": "replay_count", "count": replayed}); err == nil {
+		fmt.Fprintf(w, "data: %s\n\n", b)
+		flusher.Flush()
+	}
 	// Same heartbeat as a turn's own stream: a watcher that hears nothing for
 	// half a minute knows the connection died rather than the run being slow.
 	beat := time.NewTicker(sseHeartbeat)
