@@ -321,6 +321,17 @@ func (h *runHub) publish(ev agent.ChatEvent) {
 		select {
 		case ch <- ev:
 		default:
+			// A subscriber whose buffer is full is too slow to keep up (a
+			// backgrounded tab). The old behaviour dropped single events,
+			// which stranded the client: a lost `done` meant the transcript
+			// never converged and a lost `tool_start` made its `tool_end`
+			// fall through to a card appended after the turn's summary.
+			// Ending the subscriber's stream instead is recoverable — the
+			// watch handler returns, the client reloads, and the status poll
+			// re-attaches — while every event for the remaining listeners is
+			// still delivered.
+			delete(h.subs, ch)
+			close(ch)
 		}
 	}
 }
@@ -567,17 +578,29 @@ func (m *turnManager) cancelRun(projectID, sessionID string) bool {
 }
 
 // end removes the run; the caller must drain follow-ups before calling it.
+// Ending the run also closes its event hub, so watch listeners — clients
+// attached to GET /chat/watch — see the stream end instead of being kept
+// alive by heartbeats on a run that no longer exists (that was the "chat
+// never shows the end of the turn" bug: the watch stream hung forever and
+// the client kept waiting).
 func (m *turnManager) end(projectID, sessionID string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	key := runKey(projectID, sessionID)
-	if rs, ok := m.runs[key]; ok && rs.userID != "" {
-		if n := m.userRuns[rs.userID]; n > 1 {
-			m.userRuns[rs.userID] = n - 1
-		} else {
-			delete(m.userRuns, rs.userID)
+	var hub *runHub
+	if rs, ok := m.runs[key]; ok {
+		hub = rs.hub
+		if rs.userID != "" {
+			if n := m.userRuns[rs.userID]; n > 1 {
+				m.userRuns[rs.userID] = n - 1
+			} else {
+				delete(m.userRuns, rs.userID)
+			}
 		}
 	}
 	delete(m.runs, key)
 	delete(m.cancels, key)
+	if hub != nil {
+		hub.close()
+	}
 }
