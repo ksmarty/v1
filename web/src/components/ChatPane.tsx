@@ -4986,6 +4986,10 @@ export default function ChatPane({
       for (const c of it.toolCalls ?? []) toolSigs.add(`call\u0000${c.name}\u0000${c.detail}`);
       for (const r of it.toolResults ?? []) toolSigs.add(`res\u0000${r.name}\u0000${r.detail}`);
     }
+    // Is the run still writing? A run that is over cannot be streaming a row;
+    // anything still running in the live tail is then an orphan — its tool_end
+    // event died with a dropped stream — and stops pretending to spin.
+    const runLive = itemsRef.current.some((x) => x.kind === 'msg' && x.streaming === true);
     const live = itemsRef.current.filter((it) => {
       const m = /^[uste](\d+)$/.exec(it.key);
       if (!m) return false;
@@ -5004,21 +5008,47 @@ export default function ChatPane({
         const callSig = it.call !== undefined ? toolSigs.has(`call\u0000${it.name}\u0000${it.call}`) : false;
         const resSig = it.detail ? toolSigs.has(`res\u0000${it.name}\u0000${it.detail}`) : false;
         if (resSig || (callSig && !it.running)) return false;
+        // An interrupted or orphaned run never delivered the tool_end, so the
+        // live card would spin forever below the summary. The transcript keeps
+        // it as a failed chip — the result row exists or the run ended without
+        // one, and either way it is not still running.
+        if (!runLive && it.running) {
+          return { ...it, running: false, ok: false };
+        }
         return true;
       }
       if (it.kind !== 'msg') return true;
       if (seen.has(`${it.role}\u0000${it.content}`)) return false;
       if (
         it.role === 'assistant' &&
-        !it.streaming &&
         it.content.trim() &&
         assistantTexts.some((text) => text.startsWith(it.content.trim()))
       ) {
+        // The streamed copy is covered by the persisted one: drop it and let
+        // the store's copy take over at its correct position. A row that is
+        // still being written by the run only goes if the run is actually
+        // streaming this turn — the live store copy would otherwise blink
+        // the tail out from under a generation in flight.
+        if (it.streaming) return runLive;
+        return false;
+      }
+      if (it.role === 'assistant' && !it.streaming && !it.content.trim() && !runLive) {
         return false;
       }
       return true;
     });
-    return live.length === 0 ? fresh : [...fresh, ...live];
+    // Canonical order for everything: persisted rows sort by store id — the
+    // id is the write order, so id order IS message order, retroactively for
+    // any chat whose rows were merged in a different sequence — and live
+    // rows keep their own relative order at the tail (stable sort). Nothing
+    // that survives any of the merge paths above can land out of order.
+    const merged = live.length === 0 ? fresh : [...fresh, ...live];
+    const rank = (it: Item): number => {
+      const n = Number(it.key);
+      return Number.isFinite(n) && n > 0 ? n : Number.MAX_SAFE_INTEGER;
+    };
+    merged.sort((a, b) => rank(a) - rank(b));
+    return merged;
   }, []);
 
   // Pull every older page in the background, so the device ends up holding the
