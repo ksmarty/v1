@@ -5384,7 +5384,13 @@ export default function ChatPane({
         const mark = transcriptMarkRef.current;
         const known = mark.session === sessionId ? mark.id : 0;
         const newer = (st.lastMessageId ?? 0) > known;
-        if (!st.running && !streaming && !watchRef.current && newer) {
+        // The main connection may outlive the streaming flag: a queued
+        // follow-up turn runs on the same request after its predecessor's done
+        // event, and `streaming` is false between the two. Reloading while
+        // that connection is still live would tear the follow-up's rows out
+        // from under the events still arriving for it.
+        const mainLive = mainStreamRef.current;
+        if (!st.running && !streaming && newer && !watchRef.current && !mainLive) {
           // The server holds rows this transcript does not — a run that
           // finished while the app was away, or a write that landed just after
           // the turn's own reload. Fetch them quietly, so the transcript the
@@ -5396,7 +5402,7 @@ export default function ChatPane({
         // gone. It is in the store, the run is not, so start it here: the
         // server takes the oldest row and runs the rest as follow-ups, which
         // is what makes a queue survive a failure instead of vanishing.
-        if (!st.running && !streamingRef.current && !watchRef.current) {
+        if (!st.running && !streamingRef.current && !mainLive && !watchRef.current) {
           const next = queuedRef.current[0];
           if (next && next.id && !resumeRef.current && resumeTriesRef.current < 3) {
             resumeRef.current = true;
@@ -5870,6 +5876,12 @@ export default function ChatPane({
     setStreaming(false);
     abortRef.current = null;
     assistantKeyRef.current = null;
+    // A run that ended mid-pair (stop button, error, a stream cut) leaves its
+    // open tool_start key behind; the next run's tool_end for the same tool
+    // would pop that stale key and finish a card from the previous turn — or,
+    // finding the card gone, append an orphan card after the turn's summary.
+    // Drop the stack with the rest of the run's state.
+    toolStackRef.current = {};
     setPermPrompt(null);
     setAskPrompt(null);
     update((prev) =>
@@ -6320,6 +6332,14 @@ export default function ChatPane({
       if (cancelled || !st.running) return;
       ctrl = new AbortController();
       const active = ctrl;
+      // The replay re-streams everything from the ring's head. The turn's
+      // previous client-side state — the live assistant row a cut stream left
+      // open, tool_start keys pending their tool_end — must go: replayed
+      // deltas appending into a dead key drew a phantom duplicate of the
+      // round, and a replayed tool_end pairing with a stale key marked a card
+      // from before the drop as finished in the wrong place.
+      toolStackRef.current = {};
+      assistantKeyRef.current = null;
       watchRef.current = active;
       setStreaming(true);
       void (async () => {
