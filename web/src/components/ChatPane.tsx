@@ -783,17 +783,89 @@ function chatCacheKey(projectId: string, sessionId: string): string {
  */
 type CachedChat = { items: Item[]; newest: number; complete: boolean };
 
+// canonicalRank orders a row for the transcript: a persisted row by its store
+// id (AUTOINCREMENT — write order IS message order), anything synthetic/live
+// at the end in its own relative order.
+function canonicalRank(it: Item): number {
+  const n = Number(it.key);
+  return Number.isFinite(n) && n > 0 ? n : Number.MAX_SAFE_INTEGER;
+}
+
+function canonicalize(items: Item[]): Item[] {
+  const out = [...items];
+  out.sort((a, b) => canonicalRank(a) - canonicalRank(b));
+  return out;
+}
+
+// Live-key shape: u/s/t/e/i/n plus a counter (see handleEvent).
+function isLiveKey(it: Item): boolean {
+  return !/^\d+$/.test(String(it.key));
+}
+
+// normalizeCached brings a cached snapshot back into the canonical shape —
+// this is the retroactive fix for every chat whose snapshot was written by an
+// older build: (1) rows are re-sorted by store id, so a snapshot saved with
+// merged-out-of-order rows reads back in message order; (2) synthetic rows the
+// snapshot kept (a steered row, a tool card, a drifted text tail) are dropped
+// when the persisted copy of the same message is right there in the snapshot;
+// (3) a tool card that was mid-run when the snapshot was taken shows as a
+// failed chip instead of spinning forever — the run it belonged to is over by
+// the time the cache is read back, and a live tool_end still updates it by
+// key when a run does resume.
+function normalizeCached(items: Item[]): Item[] {
+  const calls = new Set<string>();
+  const results = new Set<string>();
+  const assistantTexts: string[] = [];
+  const userTexts = new Set<string>();
+  for (const it of items) {
+    if (isLiveKey(it)) continue;
+    if (it.kind === 'msg') {
+      for (const c of it.toolCalls ?? []) calls.add(`call\u0000${c.name}\u0000${c.detail}`);
+      for (const r of it.toolResults ?? []) results.add(`res\u0000${r.name}\u0000${r.detail}`);
+      if (it.role === 'assistant' && it.content.trim()) assistantTexts.push(it.content.trim());
+      if (it.role === 'user') userTexts.add(it.content);
+    }
+  }
+  const out = items.filter((it) => {
+    if (!isLiveKey(it)) return true;
+    if (it.kind === 'tool') {
+      const callSig = it.call !== undefined ? calls.has(`call\u0000${it.name}\u0000${it.call}`) : false;
+      const resSig = it.detail ? results.has(`res\u0000${it.name}\u0000${it.detail}`) : false;
+      if (resSig || callSig) return false;
+      return true;
+    }
+    if (it.kind !== 'msg') return true;
+    if (it.role === 'assistant') {
+      const text = it.content.trim();
+      // An empty live row in a snapshot holds nothing — drop it; a drifted
+      // tail is covered by the persisted copy's fuller text.
+      if (!text) return false;
+      return !assistantTexts.some((t) => t.startsWith(text));
+    }
+    if (it.role === 'user') return !userTexts.has(it.content);
+    return true;
+  }).map((it) =>
+    it.kind === 'tool' && it.running ? { ...it, running: false, ok: false } : it,
+  );
+  return canonicalize(out);
+}
+
 function readChatCache(projectId: string, sessionId: string): CachedChat | null {
   try {
     const raw = localStorage.getItem(chatCacheKey(projectId, sessionId));
     if (!raw) return null;
     const parsed = JSON.parse(raw) as { items?: Item[]; newest?: number; complete?: boolean };
     if (!Array.isArray(parsed.items) || parsed.items.length === 0) return null;
-    return {
-      items: parsed.items,
-      newest: typeof parsed.newest === 'number' ? parsed.newest : 0,
-      complete: parsed.complete === true,
-    };
+    const items = normalizeCached(parsed.items);
+    if (items.length === 0) return null;
+    // The newest id is recomputed from the normalized rows: a snapshot whose
+    // last row was a synthetic (dropped) one still reports its real newest.
+    let newest = 0;
+    for (const it of items) {
+      const n = Number(it.key);
+      if (Number.isFinite(n) && n > 0 && it.kind === 'msg') newest = Math.max(newest, n);
+    }
+    return { items, newest: newest > 0 ? newest : (parsed.newest ?? 0), complete: parsed.complete === true };
   } catch {
     return null;
   }
