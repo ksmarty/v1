@@ -372,12 +372,18 @@ func (c *Client) ChatStream(ctx context.Context, messages []Message, tools []Too
 			continue
 		}
 		defer resp.Body.Close()
-		if err := scanStream(resp.Body, res, onDelta, onReasoning); err != nil {
+		// Guard against a half-open connection: a stream that stops
+		// producing bytes for streamStallTimeout fails here instead of
+		// blocking until the client's whole-request timeout, and the agent's
+		// auto-resume path continues the turn from what streamed out.
+		sr := withStallTimeout(resp.Body)
+		if err := scanStream(sr, res, onDelta, onReasoning); err != nil {
 			// Return what streamed so far — a mid-response failure (token
 			// limit, network drop) still leaves a partial reply the caller
 			// can persist and resume from.
 			return res, err
 		}
+		sr.close()
 		// A 200 stream can carry the provider's real error as a data chunk
 		// (rate limit, missing provider credentials, quota). Surface it
 		// instead of letting the caller treat an empty stream as a reply.

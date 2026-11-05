@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"v1/internal/agent"
@@ -578,6 +579,10 @@ func (s *Server) streamChatTurn(w http.ResponseWriter, r *http.Request, p *store
 	// gone client simply fail and are ignored. The cancel function is
 	// registered so the stop endpoint can still abort it explicitly.
 	runID := store.NewID()
+	rc := http.NewResponseController(w)
+	// Dead-socket bookkeeping: one failed write stops all further writes for
+	// this stream. The run itself keeps going, the hub keeps publishing.
+	var writeDead atomic.Bool
 	var emitMu sync.Mutex
 	emit := func(ev agent.ChatEvent) {
 		ev.TurnID = runID
@@ -592,7 +597,18 @@ func (s *Server) streamChatTurn(w http.ResponseWriter, r *http.Request, p *store
 		// same writer, from its own goroutine, so frames are serialized.
 		emitMu.Lock()
 		defer emitMu.Unlock()
-		fmt.Fprintf(w, "data: %s\n\n", b)
+		if writeDead.Load() {
+			return
+		}
+		// A dead connection with a full kernel buffer used to block this
+		// write (inside the agent's turn loop) forever; with a deadline the
+		// write fails in seconds and the run continues detached from the
+		// socket.
+		_ = rc.SetWriteDeadline(time.Now().Add(sseWriteDeadline))
+		if _, err := fmt.Fprintf(w, "data: %s\n\n", b); err != nil {
+			writeDead.Store(true)
+			return
+		}
 		flusher.Flush()
 	}
 	// A turn can run for minutes inside one tool call, and a silent socket is
@@ -619,12 +635,22 @@ func (s *Server) streamChatTurn(w http.ResponseWriter, r *http.Request, p *store
 				return
 			case <-t.C:
 				emitMu.Lock()
+				if writeDead.Load() {
+					emitMu.Unlock()
+					return
+				}
+				_ = rc.SetWriteDeadline(time.Now().Add(sseWriteDeadline))
 				_, err := io.WriteString(w, ": ping\n\n")
 				if err == nil {
 					flusher.Flush()
 				}
 				emitMu.Unlock()
 				if err != nil {
+					// Proactively stop emitting event frames too: a write
+					// that failed once in this window means the socket is
+					// gone, and every later frame would just block on its
+					// own deadline (counting against nothing).
+					writeDead.Store(true)
 					return
 				}
 			}
@@ -878,6 +904,11 @@ func (s *Server) handleChatWatch(w http.ResponseWriter, r *http.Request) {
 
 	ch, release, replayed := hub.subscribe()
 	defer release()
+	// Same deadline discipline as a turn's own stream: a watcher that stopped
+	// reading must fail the write instead of blocking the loop until the hub
+	// evicts this subscriber.
+	rcWatch := http.NewResponseController(w)
+	_ = rcWatch.SetWriteDeadline(time.Now().Add(sseWriteDeadline))
 	// A marker ahead of the buffered replay tells the client how many of the
 	// frames it is about to read are the replay (the channel holds exactly
 	// `replayed` events before the live ones). Watching a turn from the
@@ -902,11 +933,13 @@ func (s *Server) handleChatWatch(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				continue
 			}
+			_ = rcWatch.SetWriteDeadline(time.Now().Add(sseWriteDeadline))
 			if _, err := fmt.Fprintf(w, "data: %s\n\n", b); err != nil {
 				return
 			}
 			flusher.Flush()
 		case <-beat.C:
+			_ = rcWatch.SetWriteDeadline(time.Now().Add(sseWriteDeadline))
 			if _, err := io.WriteString(w, ": ping\n\n"); err != nil {
 				return
 			}

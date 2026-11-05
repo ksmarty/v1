@@ -18,6 +18,7 @@ import {
   getNotifyTurnError,
   getThinkingCollapsed,
   getToolCallsCollapsed,
+  getTurnFoldEnabled,
   iosVersion,
   isIOS,
   isStandalone,
@@ -33,6 +34,7 @@ import {
   setNotifyTurnError,
   setThinkingCollapsed,
   setToolCallsCollapsed,
+  setTurnFoldEnabled,
   type ChatSide,
   type ChatTab,
 } from '../utils';
@@ -137,6 +139,7 @@ const SETTINGS_SEARCH: {
   { id: 'sec-chat-side', page: 'appearance', label: 'Chat side', hint: 'Chat pane left or right', keywords: 'chat side left right desktop layout appearance' },
   { id: 'sec-chat-tabs', page: 'appearance', label: 'Chat tabs', hint: 'Reorder and hide project tabs', keywords: 'tabs chat files terminal git memories project order hide drag' },
   { id: 'sec-tool-calls', page: 'appearance', label: 'Tool calls', hint: 'Pretty-print JSON', keywords: 'tool calls json pretty print format result arguments' },
+  { id: 'sec-turn-fold', page: 'appearance', label: 'Turns', hint: 'Fold finished turns to their summary', keywords: 'turn fold collapse summary rounds tools in between steps hide' },
   { id: 'sec-thinking-collapsed', page: 'appearance', label: 'Thinking blocks', hint: 'Collapse reasoning blocks by default', keywords: 'thinking reasoning collapse blocks default stream hide' },
   { id: 'sec-terminal', page: 'appearance', label: 'Terminal', hint: 'Font size and wrapping', keywords: 'terminal font size wrap prompt output appearance' },
   { id: 'sec-clear-cache', page: 'llm', label: 'Cached data', hint: 'Clear the provider catalog cache', keywords: 'cache clear providers catalog thinking metadata refetch reset' },
@@ -292,6 +295,32 @@ function ToolCallsCollapseControl() {
   const choose = (v: boolean) => {
     setOn(v);
     setToolCallsCollapsed(v);
+  };
+
+  return (
+    <div className="grid w-full max-w-xs grid-cols-2 gap-1 rounded-lg border border-border bg-surface p-1">
+      {([false, true] as const).map((v) => (
+        <button
+          key={String(v)}
+          type="button"
+          onClick={() => choose(v)}
+          className={`min-h-[36px] rounded-md text-sm transition-colors ${
+            on === v ? 'bg-border text-text' : 'text-dim hover:text-text'
+          }`}
+        >
+          {v ? 'On' : 'Off'}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function TurnFoldControl() {
+  const [on, setOn] = useState(() => getTurnFoldEnabled());
+
+  const choose = (v: boolean) => {
+    setOn(v);
+    setTurnFoldEnabled(v);
   };
 
   return (
@@ -3289,6 +3318,16 @@ export default function Settings() {
           <div>
             <span className="mb-1 block text-xs text-subtle">Collapse tool calls</span>
             <ToolCallsCollapseControl />
+          </div>
+        </Section>
+        <Section
+          id="sec-turn-fold"
+          title="Turns"
+          description="Fold finished chat turns so only each turn's summary shows. Expanding a turn reveals the tool calls, thinking and intermediate comments in between, with no extra indentation."
+        >
+          <div>
+            <span className="mb-1 block text-xs text-subtle">Fold finished turns to their summary</span>
+            <TurnFoldControl />
           </div>
         </Section>
         <Section

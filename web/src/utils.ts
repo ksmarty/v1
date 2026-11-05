@@ -185,6 +185,27 @@ export function setToolCallsCollapsed(on: boolean): void {
   }
 }
 
+// Whether everything a turn did in between rounds groups behind one toggle so
+// only the turn's summary shows (Settings → Appearance → Turns). Default off:
+// every round's work visible, as before.
+const TURN_FOLD_KEY = 'v1.turnFold';
+
+export function getTurnFoldEnabled(): boolean {
+  try {
+    return localStorage.getItem(TURN_FOLD_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export function setTurnFoldEnabled(on: boolean): void {
+  try {
+    localStorage.setItem(TURN_FOLD_KEY, on ? '1' : '0');
+  } catch {
+    // ignore (private mode etc.)
+  }
+}
+
 // Whether reasoning blocks start collapsed instead of following the stream
 // (Settings → Appearance → Thinking). Default off: thinking is visible.
 const THINKING_COLLAPSED_KEY = 'v1.thinkingCollapsed';

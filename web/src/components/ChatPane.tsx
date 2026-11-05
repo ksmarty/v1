@@ -40,7 +40,7 @@ import type {
   SavedProvider,
   Todo,
 } from '../types';
-import { errMsg, diffLines, findCatalogModel, findProviderForModel, getDebugHud, getJsonPretty, getThinkingCollapsed, getToolCallsCollapsed, humanizeModelId, modelMatches, normalizeBaseURL } from '../utils';
+import { errMsg, diffLines, findCatalogModel, findProviderForModel, getDebugHud, getJsonPretty, getThinkingCollapsed, getToolCallsCollapsed, getTurnFoldEnabled, humanizeModelId, modelMatches, normalizeBaseURL } from '../utils';
 import { notifyTurnDone, notifyTurnError, notifyAsk } from '../notify';
 import { pushActive } from '../push';
 import { permissionMeta } from '../permissions';
@@ -2460,6 +2460,28 @@ function CollapsedTools({
           <CollapsedToolBlocks d={d} onAskAnswered={onAskAnswered} />
         </div>
       )}
+    </div>
+  );
+}
+
+// One more collapse level: wraps everything a finished turn did in between —
+// tool groups, thinking, intermediate comments — behind a single toggle so
+// the transcript reads as the summaries a turn produced. Expanding renders
+// the same rows inline, with no extra indentation.
+function TurnFold({ children }: { children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  if (open) return <>{children}</>;
+  return (
+    <div className="text-[10px]">
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="flex min-h-[26px] w-full items-center gap-1.5 px-1 py-1 text-left text-dim transition-colors hover:text-text"
+      >
+        <IconChevronRight className="h-3 w-3 shrink-0" />
+        <IconWrench className="h-3 w-3 shrink-0 text-faint" />
+        <span className="min-w-0 flex-1 truncate text-faint">Show the steps in between</span>
+      </button>
     </div>
   );
 }
@@ -4903,8 +4925,10 @@ export default function ChatPane({
       if (!pinPendingRef.current) return;
       pinPendingRef.current = false;
       // Only a reader who was following the bottom gets moved; someone reading
-      // history stays exactly where they are.
-      if (!nearBottomRef.current) return;
+      // history stays exactly where they are — and a reader whose swipe-up
+      // happened mid-stream keeps their place too (holdTop is only released
+      // once they scroll back into pin range).
+      if (!nearBottomRef.current || holdTopRef.current) return;
       const box = scrollRef.current;
       if (!box) return;
       box.scrollTop = box.scrollHeight;
@@ -4940,6 +4964,18 @@ export default function ChatPane({
     const seen = new Set(
       fresh.flatMap((it) => (it.kind === 'msg' ? [`${it.role}\u0000${it.content}`] : [])),
     );
+    // A live assistant row's text usually drifts while it streams, so an exact
+    // match against the persisted copy misses and the row survived a reload —
+    // appended at the tail, i.e. BELOW rows the store ordered before it (a
+    // steered user row landing "inside" the previous turn's summary). The
+    // streamed copy is a prefix of the persisted one, so containment drops it
+    // too and the store's own copy takes over at its correct position.
+    const assistantTexts: string[] = [];
+    for (const it of fresh) {
+      if (it.kind === 'msg' && it.role === 'assistant' && it.content.trim()) {
+        assistantTexts.push(it.content.trim());
+      }
+    }
     // Tool cards the fetched page already renders are duplicates, not rows the
     // fetch missed: the assistant row carries the call's arguments and the
     // result row folds into it, so a reload used to leave a second card for
@@ -4971,7 +5007,16 @@ export default function ChatPane({
         return true;
       }
       if (it.kind !== 'msg') return true;
-      return !seen.has(`${it.role}\u0000${it.content}`);
+      if (seen.has(`${it.role}\u0000${it.content}`)) return false;
+      if (
+        it.role === 'assistant' &&
+        !it.streaming &&
+        it.content.trim() &&
+        assistantTexts.some((text) => text.startsWith(it.content.trim()))
+      ) {
+        return false;
+      }
+      return true;
     });
     return live.length === 0 ? fresh : [...fresh, ...live];
   }, []);
@@ -4984,7 +5029,7 @@ export default function ChatPane({
   // and again, which read as the app glitching.
   const backfillingRef = useRef(false);
   const backfill = useCallback(
-    async (seq: number) => {
+    async () => {
       if (backfillingRef.current) return;
       backfillingRef.current = true;
       try {
@@ -4993,7 +5038,12 @@ export default function ChatPane({
         let more = false;
         while (before > 0) {
           const page = await api.getMessagesPage(projectId, sessionId, CHAT_PAGE, before);
-          if (seq !== loadSeqRef.current || sessionIdRef.current !== sessionId) return;
+          // A session switch destroys the whole premise; drop everything. A
+          // newer load for the SAME session merely raced this backfill — the
+          // collected prefix is still valid (prependOlder skips rows already
+          // on screen), and discarding it here is what kept the cache
+          // incomplete while turns fired reloads, so scroll-up kept fetching.
+          if (sessionIdRef.current !== sessionId) return;
           const older = mapMessages(page.messages, 0);
           if (older.length === 0) {
             more = page.hasMore;
@@ -5125,7 +5175,7 @@ export default function ChatPane({
       writeChatCache(projectId, sessionId, merged, !page.hasMore);
       // Fill the rest of the thread in behind the reader, unless it is already
       // here (a reload that only brought new turns must not refetch it).
-      if (page.hasMore && (!keptHistory || hasOlderRef.current)) void backfill(loadSeq);
+      if (page.hasMore && (!keptHistory || hasOlderRef.current)) void backfill();
 
       // Runs that finished while the app was away are discovered here (the
       // live SSE event was lost). Notify for the newest one, unless it was
@@ -5310,6 +5360,13 @@ export default function ChatPane({
   // When the reader last scrolled up themselves. A growth-triggered pin skips
   // that moment so it can never fight a finger on the screen.
   const lastUpScrollRef = useRef(0);
+  // Set once the reader has pulled well above the last pin while a stream is
+  // running, and cleared when they come back. The 250ms up-scroll window alone
+  // was not enough on touch: pauses between swipes outlast it, so every
+  // growth-triggered pinBottom fired again and dragged the reader back down
+  // mid-read. While this is set the bottom pin stays off; scrolling back near
+  // the bottom, or sending a message, releases it.
+  const holdTopRef = useRef(false);
   // The scrollTop our last pin landed on. Sticking is judged against this rather
   // than against the distance to the bottom: a pin's own scroll event can arrive
   // after React has committed another chunk of the stream, so measuring the gap
@@ -5333,6 +5390,7 @@ export default function ChatPane({
   const lastScrollAtRef = useRef(0);
   const pinBottom = useCallback((el: HTMLElement) => {
     nearBottomRef.current = true;
+    holdTopRef.current = false; // pinning releases the reader's held position
     el.scrollTop = el.scrollHeight;
     pinnedTopRef.current = el.scrollTop;
   }, []);
@@ -5630,6 +5688,12 @@ export default function ChatPane({
     if (scrolledUp) lastUpScrollRef.current = Date.now();
     prevTopRef.current = el.scrollTop;
     lastScrollAtRef.current = Date.now();
+    // A swipe well above the last pin holds a silent "don't pin me" flag while
+    // content keeps streaming: pauses between touch swipes outlast the
+    // 250ms window, and a paused reader was still dragged back to the bottom.
+    // Coming back into pin range clears it again.
+    if (el.scrollTop < pinnedTopRef.current - 80) holdTopRef.current = true;
+    else if (el.scrollTop >= pinnedTopRef.current - 4) holdTopRef.current = false;
     // Still near the bottom, or at/below where we last pinned — so the event is
     // ours, or the user heading further down. Either way, keep following.
     const stuck = gap < 80 || el.scrollTop >= pinnedTopRef.current - 4;
@@ -5834,7 +5898,7 @@ export default function ChatPane({
       }
       // Their own scroll wins for a moment, so a finger dragging up is never
       // yanked back down by a row finishing its layout.
-      if (Date.now() - lastUpScrollRef.current < 250) return;
+      if (holdTopRef.current || Date.now() - lastUpScrollRef.current < 250) return;
       pinBottom(box);
     });
     ro.observe(content);
@@ -7898,7 +7962,32 @@ export default function ChatPane({
                 d.ask != null ||
                 !!d.reasoning ||
                 !!d.background;
+
               let turn: { it: MsgItem; i: number }[] = [];
+              // The turn-fold: each finished round pushes its rows into
+              // partNodes, with summaryNode tracking the round's text row.
+              // When the turn ends, everything except the last summary goes
+              // behind one TurnFold toggle, so the transcript reads as a
+              // series of summaries.
+              let partNodes: ReactNode[] = [];
+              let partKey = '';
+              let summaryNode: ReactNode = null;
+              const finishPartTurn = () => {
+                const nodes = partNodes;
+                const foldKey = partKey || 'turn';
+                const summary = summaryNode;
+                partNodes = [];
+                partKey = '';
+                summaryNode = null;
+                if (nodes.length === 0) return;
+                const work = summary != null ? nodes.filter((n) => n !== summary) : nodes;
+                if (getTurnFoldEnabled() && summary != null && work.length > 0) {
+                  rows.push(<TurnFold key={`fold-${foldKey}`}>{work}</TurnFold>);
+                  rows.push(summary);
+                } else {
+                  rows.push(...nodes);
+                }
+              };
               const flushTurn = () => {
                 if (turn.length === 0) return;
                 // Nothing collapses while the turn is still working. A run the
@@ -7906,13 +7995,17 @@ export default function ChatPane({
                 // had already finished, leaving the live rounds outside the
                 // fold — a turn split in two. The whole turn folds at once,
                 // when it is done.
-                const groupable =
-                  getToolCallsCollapsed() && !live && turn.every(({ it }) => !it.streaming);
-                if (!groupable) {
+                if (live || turn.some(({ it }) => it.streaming)) {
+                  // Anything still gathered from earlier finished rounds lines
+                  // up first, then this working stretch renders verbatim.
+                  finishPartTurn();
                   turn.forEach(({ it, i }) => rows.push(renderMessage(it, i)));
                   turn = [];
                   return;
                 }
+                if (!partKey) partKey = turn[0]?.it.key ?? '';
+                let lastText: ReactNode = null;
+                if (getToolCallsCollapsed()) {
                 const members: CollapseData[] = [];
                 for (const { it } of turn) {
                   const d = collapseData(it);
@@ -7923,7 +8016,7 @@ export default function ChatPane({
                 );
                 if (hasTools) {
                   const first = turn.find(({ it }) => isWork(collapseData(it)));
-                  rows.push(
+                  partNodes.push(
                     <div key={`group-${first?.it.key}`} data-msg-key={first?.it.key}>
                       <CollapsedToolsGroup
                         members={members}
@@ -7935,19 +8028,32 @@ export default function ChatPane({
                   for (const { it, i } of turn) {
                     if (it.background) continue;
                     if (it.content?.trim()) {
-                      rows.push(
-                        renderMessage(it, i, {
-                          ...it,
-                          reasoning: undefined,
-                          toolCalls: undefined,
-                          toolResults: undefined,
-                        }),
-                      );
+                      lastText = renderMessage(it, i, {
+                        ...it,
+                        reasoning: undefined,
+                        toolCalls: undefined,
+                        toolResults: undefined,
+                      });
+                      partNodes.push(lastText);
                     }
                   }
                 } else {
-                  turn.forEach(({ it, i }) => rows.push(renderMessage(it, i)));
+                  turn.forEach(({ it, i }) => {
+                    const node = renderMessage(it, i);
+                    if (it.content?.trim()) lastText = node;
+                    partNodes.push(node);
+                  });
                 }
+                } else {
+                  // Tool-call collapse is off, but the turn fold can still
+                  // wrap the verbatim rows; they render exactly as before.
+                  turn.forEach(({ it, i }) => {
+                    const node = renderMessage(it, i);
+                    if (it.content?.trim()) lastText = node;
+                    partNodes.push(node);
+                  });
+                }
+                if (lastText != null) summaryNode = lastText;
                 turn = [];
               };
               items.forEach((it, i) => {
@@ -7960,16 +8066,19 @@ export default function ChatPane({
                   // tools before it (and this round's own reasoning) collapse
                   // into one group above, and its text renders just below that
                   // group. Without this the group swallowed the whole turn and
-                  // every comment stacked at the bottom.
+                  // every comment stacked at the bottom. Rows without text
+                  // keep accumulating so they stay in the same group.
                   if (it.role === 'assistant' && it.content?.trim()) {
                     flushTurn();
                   }
                 } else {
                   flushTurn();
+                  finishPartTurn();
                   rows.push(renderMessage(it, i));
                 }
               });
               flushTurn();
+              finishPartTurn();
               return rows;
             })()}
             {!streaming && (resuming || runActive) && (
