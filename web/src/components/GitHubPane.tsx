@@ -11,7 +11,12 @@ import { IconCheck, IconGitHub, IconRefresh } from './icons';
 // and a fresh repo query both bypass this and hit the network.
 const repoCache = new Map<
   string,
-  { workflows: GitHubWorkflowRun[]; images: GitHubContainerImage[]; error: string | null }
+  {
+    workflows: GitHubWorkflowRun[];
+    images: GitHubContainerImage[];
+    totalTags: number;
+    error: string | null;
+  }
 >();
 
 // GitHub Actions runs + published container-image repos for any public repo
@@ -29,6 +34,7 @@ export default function GitHubPane({ repoUrl }: { repoUrl?: string }) {
   const [owner, setOwner] = useState(suggested.split('/')[0] ?? '');
   const [workflows, setWorkflows] = useState<GitHubWorkflowRun[] | null>(null);
   const [images, setImages] = useState<GitHubContainerImage[] | null>(null);
+  const [totalTags, setTotalTags] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const autoLoaded = useRef('');
@@ -45,6 +51,7 @@ export default function GitHubPane({ repoUrl }: { repoUrl?: string }) {
         if (hit) {
           setWorkflows(hit.workflows);
           setImages(hit.images);
+          setTotalTags(hit.totalTags);
           setError(hit.error);
         } else {
           void loadRepo(suggested);
@@ -65,6 +72,7 @@ export default function GitHubPane({ repoUrl }: { repoUrl?: string }) {
     setOwner(own);
     setWorkflows(null);
     setImages(null);
+    setTotalTags(0);
     try {
       const [w, im] = await Promise.allSettled([
         api.githubWorkflows(repo),
@@ -72,13 +80,15 @@ export default function GitHubPane({ repoUrl }: { repoUrl?: string }) {
       ]);
       const wf = w.status === 'fulfilled' ? w.value.workflows : [];
       const imgs = im.status === 'fulfilled' ? im.value.images : [];
+      const tagTotal = im.status === 'fulfilled' ? (im.value.totalTags ?? 0) : 0;
       const e1 = w.status === 'rejected' ? errMsg(w.reason) : null;
       const e2 = im.status === 'rejected' ? errMsg(im.reason) : null;
       const merged = [e1, e2].filter(Boolean).join(' · ') || null;
       setWorkflows(wf);
       setImages(imgs);
+      setTotalTags(tagTotal);
       if (merged) setError(merged);
-      repoCache.set(repo, { workflows: wf, images: imgs, error: merged });
+      repoCache.set(repo, { workflows: wf, images: imgs, totalTags: tagTotal, error: merged });
     } catch (err) {
       setError(errMsg(err));
     } finally {
@@ -158,6 +168,11 @@ export default function GitHubPane({ repoUrl }: { repoUrl?: string }) {
                       </code>
                     ))}
                   </div>
+                )}
+                {(img.tags?.length ?? 0) > 0 && totalTags > (img.tags?.length ?? 0) && (
+                  <p className="mt-1 text-[10px] text-subtle">
+                    newest {img.tags!.length} of {totalTags} tags
+                  </p>
                 )}
                 <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-dim">
                   {img.url && (

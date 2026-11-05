@@ -604,6 +604,10 @@ export interface GitHubContainerImage {
 export interface GitHubImages {
   owner: string;
   count: number;
+  /** How many newest tags the backend returns per image. */
+  limit?: number;
+  /** Total tags the registry holds for the image, before that cap. */
+  totalTags?: number;
   images: GitHubContainerImage[];
 }
 

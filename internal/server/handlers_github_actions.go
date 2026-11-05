@@ -103,7 +103,8 @@ func (s *Server) handleGitHubWorkflows(w http.ResponseWriter, r *http.Request) {
 // which works anonymously for public images — no GitHub token or
 // read:packages scope needed. Auth still applies to private repos via the
 // configured GitHub token through the standard registry bearer-token flow.
-// A fixed 15 most-recent tags are returned.
+// Every page of the (paginated) tag list is walked and the 15 newest tags are
+// returned, newest first, plus the total tag count.
 func (s *Server) handleGitHubImages(w http.ResponseWriter, r *http.Request) {
 	owner, repo := githubOwnerRepo(r.URL.Query().Get("repo"))
 	if owner == "" || repo == "" {
@@ -111,16 +112,17 @@ func (s *Server) handleGitHubImages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	imageName := strings.ToLower(repo)
-	tags, err := registryTags(r.Context(), "https://ghcr.io", owner+"/"+imageName, s.githubToken(s.currentUser(r).ID))
+	list, err := registryTags(r.Context(), "https://ghcr.io", owner+"/"+imageName, s.githubToken(s.currentUser(r).ID))
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "ghcr.io "+err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"owner":     owner,
+		"repo":      repo,
 		"count":     1,
-		"limit":     15,
-		"totalTags": len(tags),
+		"limit":     maxRegistryTags,
+		"totalTags": list.Total,
 		"images": []map[string]any{{
 			"name":       imageName,
 			"visibility": "public",
@@ -128,73 +130,162 @@ func (s *Server) handleGitHubImages(w http.ResponseWriter, r *http.Request) {
 			"created_at": "",
 			"updated_at": "",
 			"full":       "ghcr.io/" + owner + "/" + imageName,
-			"tags":       tags,
+			"tags":       list.Newest,
 		}},
 	})
 }
 
-const maxRegistryTags = 15
+const (
+	// maxRegistryTags is how many newest tags the UI shows.
+	maxRegistryTags = 15
+	// maxRegistryTagPages bounds the walk of a registry's paginated tag list
+	// (100 tags per page at ghcr.io, so this covers 100k tags).
+	maxRegistryTagPages = 1000
+)
+
+// registryTagList is the result of listing a published image's tags: Newest
+// holds the maxRegistryTags most recent ones (newest first), Total is how many
+// tags the registry actually has, before the cap.
+type registryTagList struct {
+	Newest []string
+	Total  int
+}
 
 // registryTags lists the most recent tags for image on the Docker Registry
 // HTTP API v2 (registry/v2/<image>/tags/list). For ghcr.io, anonymous pulls
 // work for public images; when the repo is private the registry returns a
 // bearer challenge which we satisfy with the configured GitHub token (ghcr
-// accepts PATs/OAuth tokens via the token endpoint). Returns newest first,
-// capped at maxRegistryTags.
-func registryTags(ctx context.Context, registry, image, token string) ([]string, error) {
-	tagsURL := registry + "/v2/" + image + "/tags/list"
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, tagsURL, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Accept", "application/vnd.docker.distribution.manifest.list.v2+json")
-	resp, err := registryClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	if resp.StatusCode == http.StatusUnauthorized {
-		// Bearer token flow: ghcr.io's WWW-Authenticate gives the token
-		// realm/service/scope. Fetch a token (optionally using the GitHub
-		// token as the username) and retry the tags list with it.
-		challenge := resp.Header.Get("WWW-Authenticate")
-		resp.Body.Close()
-		tok, terr := fetchRegistryToken(ctx, registry, challenge, token)
-		if terr != nil {
-			return nil, terr
+// accepts PATs/OAuth tokens via the token endpoint).
+//
+// The registry paginates the tag list (100 tags per page, newest page linked
+// via the "Link: <...>; rel=next" header) and orders each page
+// alphabetically, NOT by recency. Reading only the first page therefore
+// returns the alphabetically smallest tags — for v1, v0.0.1..v0.56.4 while
+// the image is at v0.11x — so the UI showed "some versions from the middle"
+// instead of the newest. Every page is walked, then all tags are sorted
+// semver-descending and capped at maxRegistryTags.
+func registryTags(ctx context.Context, registry, image, token string) (registryTagList, error) {
+	var out registryTagList
+	pageURL := registry + "/v2/" + image + "/tags/list"
+	bearer := ""
+	seenPages := map[string]bool{}
+	all := make([]string, 0, 256)
+	for page := 0; pageURL != ""; page++ {
+		if page >= maxRegistryTagPages || seenPages[pageURL] {
+			break
 		}
-		req2, _ := http.NewRequestWithContext(ctx, http.MethodGet, tagsURL, nil)
-		req2.Header.Set("Authorization", "Bearer "+tok)
-		req2.Header.Set("Accept", "application/vnd.docker.distribution.manifest.list.v2+json")
-		resp, err = registryClient.Do(req2)
+		seenPages[pageURL] = true
+		tags, next, tok, err := registryTagsPage(ctx, pageURL, bearer, registry, token)
 		if err != nil {
-			return nil, err
+			return out, err
+		}
+		bearer = tok
+		all = append(all, tags...)
+		if next == "" {
+			break
+		}
+		if strings.HasPrefix(next, "http://") || strings.HasPrefix(next, "https://") {
+			pageURL = next
+		} else if strings.HasPrefix(next, "/") {
+			pageURL = registry + next
+		} else {
+			pageURL = registry + "/" + next
 		}
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		b, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-		return nil, fmt.Errorf("tags list (HTTP %d): %s", resp.StatusCode, strings.TrimSpace(string(b)))
-	}
-	var body struct {
-		Tags []string `json:"tags"`
-	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&body); err != nil {
-		return nil, err
-	}
-	// The registry does not order tags by recency — sort ALL of them
-	// semver-descending first, THEN cap at the 15 most recent.
-	tags := make([]string, 0, len(body.Tags))
-	for _, t := range body.Tags {
+	// Sort ALL tags semver-descending, THEN cap — the registry's own order is
+	// alphabetical per page and meaningless across pages.
+	tags := make([]string, 0, len(all))
+	for _, t := range all {
 		if t == "" || t == "latest" {
 			continue
 		}
 		tags = append(tags, t)
 	}
+	out.Total = len(tags)
 	sortTags(tags)
 	if len(tags) > maxRegistryTags {
 		tags = tags[:maxRegistryTags]
 	}
-	return tags, nil
+	out.Newest = tags
+	return out, nil
+}
+
+// registryTagsPage fetches one page of a tag list, transparently completing
+// the bearer-token handshake on a 401. It returns the page's tags, the next
+// page URL from the Link header ("" on the last page) and the bearer token it
+// used, so a multi-page walk authenticates once.
+func registryTagsPage(ctx context.Context, pageURL, bearer, registry, token string) (tags []string, next, usedToken string, err error) {
+	do := func(auth string) (*http.Response, error) {
+		req, rerr := http.NewRequestWithContext(ctx, http.MethodGet, pageURL, nil)
+		if rerr != nil {
+			return nil, rerr
+		}
+		req.Header.Set("Accept", "application/json")
+		if auth != "" {
+			req.Header.Set("Authorization", "Bearer "+auth)
+		}
+		return registryClient.Do(req)
+	}
+	resp, err := do(bearer)
+	if err != nil {
+		return nil, "", bearer, err
+	}
+	if resp.StatusCode == http.StatusUnauthorized {
+		// Bearer token flow: ghcr.io's WWW-Authenticate gives the token
+		// realm/service/scope. Fetch a token (optionally using the GitHub
+		// token as the username) and retry the same page with it.
+		challenge := resp.Header.Get("WWW-Authenticate")
+		resp.Body.Close()
+		tok, terr := fetchRegistryToken(ctx, registry, challenge, token)
+		if terr != nil {
+			return nil, "", bearer, terr
+		}
+		bearer = tok
+		resp, err = do(bearer)
+		if err != nil {
+			return nil, "", bearer, err
+		}
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		return nil, "", bearer, fmt.Errorf("tags list (HTTP %d): %s", resp.StatusCode, strings.TrimSpace(string(b)))
+	}
+	var body struct {
+		Tags []string `json:"tags"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 8<<20)).Decode(&body); err != nil {
+		return nil, "", bearer, err
+	}
+	return body.Tags, nextTagPage(resp.Header.Get("Link")), bearer, nil
+}
+
+// nextTagPage extracts the rel="next" URL from a registry Link header, e.g.
+// `</v2/owner/image/tags/list?last=v0.56.4&n=0>; rel="next"`.
+func nextTagPage(link string) string {
+	for _, part := range strings.Split(link, ",") {
+		segs := strings.Split(part, ";")
+		if len(segs) < 2 {
+			continue
+		}
+		isNext := false
+		for _, attr := range segs[1:] {
+			attr = strings.TrimSpace(attr)
+			if attr == `rel="next"` || attr == "rel=next" {
+				isNext = true
+			}
+		}
+		if !isNext {
+			continue
+		}
+		u := strings.TrimSpace(segs[0])
+		if start := strings.IndexByte(u, '<'); start >= 0 {
+			if end := strings.IndexByte(u[start:], '>'); end > 0 {
+				return strings.TrimSpace(u[start+1 : start+end])
+			}
+		}
+	}
+	return ""
 }
 
 // fetchRegistryToken performs the Docker registry bearer-token flow. When a
