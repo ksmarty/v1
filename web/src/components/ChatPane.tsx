@@ -4516,26 +4516,32 @@ export default function ChatPane({
   useEffect(() => {
     if (providerResolvedRef.current) return;
     if (!model || providers.length === 0 || catalog.length === 0) return;
-    const current = providers.find((p) => p.id === providerId) ?? null;
-    if (current) {
-      const base = normalizeBaseURL(current.baseURL);
-      const serves = catalog.some(
-        (c) =>
-          normalizeBaseURL(c.baseURL) === base &&
-          c.models.some((m) => modelMatches(m.id, model)),
-      );
-      if (serves) {
-        providerResolvedRef.current = true;
-        return;
-      }
-    }
-    // The persisted provider is gone, no longer serves the model, or the model
-    // was persisted as Custom (`providerId === ''`). Point the picker at the
-    // provider that owns it, so the label and thinking levels resolve instead
-    // of showing a raw id and "thinking off" until the model is re-picked.
     providerResolvedRef.current = true;
-    const owner = findProviderForModel(providers, catalog, model);
-    if (owner && owner.id !== providerId) setProviderId(owner.id);
+    const current = providers.find((p) => p.id === providerId) ?? null;
+    if (!current) {
+      // The persisted provider was deleted; fall back to whoever serves the
+      // model (or Custom when nobody does — a switcher pokes the fresh list).
+      const owner = findProviderForModel(providers, catalog, model);
+      if (owner && owner.id !== providerId) setProviderId(owner.id);
+      return;
+    }
+    if (providerId === '') return; // Custom is a real pick, never resolved.
+    const base = normalizeBaseURL(current.baseURL);
+    const serving = catalog.filter(
+      (c) => normalizeBaseURL(c.baseURL) === base && c.models.length > 0,
+    );
+    // Trust the saved provider unless its listing affirmatively excludes the
+    // model: an unknown baseURL means a list the catalog has never published,
+    // and a published list that merely omits our model is weaker evidence than
+    // the user's own pick. Both previously swapped the picker to the first
+    // look-alike provider and re-keyed the thinking meta, dropping the level.
+    if (
+      serving.length > 0 &&
+      !serving.some((c) => c.models.some((m) => modelMatches(m.id, model)))
+    ) {
+      const owner = findProviderForModel(providers, catalog, model);
+      if (owner && owner.id !== providerId) setProviderId(owner.id);
+    }
   }, [catalog, providers, model, providerId]);
 
   // A provider-backed model shows as a searchable combobox (free text is also
@@ -4589,7 +4595,9 @@ export default function ChatPane({
   };
 
   // Applies the new model's thinking level immediately when its options are
-  // cached; otherwise clears to the loading state and the fetch resolves it.
+  // cached; otherwise resets to the loading state and the fetch resolves it
+  // from the global default. A user picking a model is a fresh selection, so
+  // the previous setting is not kept.
   const applyThinkingForModel = (m: string) => {
     const cached = m ? thinkingMetaCache.current.get(`${providerId}|${m}`) : undefined;
     if (cached) {
@@ -4644,7 +4652,9 @@ export default function ChatPane({
         setThinking((prev) => (prev === '' ? freshThinkingLevel(defaultThinking, meta) : prev));
       })
       .catch(() => {
-        if (active) setThinkingMeta(null);
+        // Keep the last good meta for this model when the refresh fails
+        // (flaky endpoint): an empty option list would blank the persisted
+        // level and display Off, which read like the setting had reset.
       })
       .finally(() => {
         if (active) setThinkingLoading(false);
@@ -4666,13 +4676,16 @@ export default function ChatPane({
   const thinkingOffValue = thinkingMeta?.levels.includes('none') ? 'none' : '';
   const thinkingOffSupported = (thinkingMeta?.off ?? false) || thinkingOffValue !== '';
   // The level actually sent: 'off' sends nothing (or 'none'), otherwise the
-  // selection when it is one of the model's options.
+  // selection. A persisted level is trusted even when the fetched option list
+  // mismatches — the models.dev fallback can publish different names than the
+  // provider actually accepts, and degrading the picker to off after a
+  // leave+return looked like the setting had reset itself.
   const thinkingEffort =
-    thinking === 'off' ? thinkingOffValue : thinkingOptions.includes(thinking) ? thinking : '';
+    thinking === 'off' ? thinkingOffValue : thinking ? thinking : '';
   // What the button/popup show: the current selection, with Off standing in
   // for "unset" when the model supports turning thinking off.
   const thinkingDisplay =
-    thinking === 'off' || (thinkingEffort === '' && thinkingMeta?.off)
+    thinking === 'off' || (!thinkingEffort && thinkingMeta?.off)
       ? 'off'
       : thinkingEffort || '';
   // Button colors escalate with the level (low = green … max = red).
@@ -5704,6 +5717,38 @@ export default function ChatPane({
       timers.forEach(clearTimeout);
     };
   }, [items, pinBottom]);
+
+  // Opening the keyboard shrinks the visual viewport and the browser scrolls
+  // the focused composer into view, which drags the transcript up slightly
+  // even when the reader is pinned to the bottom. Re-pin when the viewport
+  // changes size and the reader was at the bottom.
+  const [viewportH, setViewportH] = useState(
+    () => window.visualViewport?.height ?? window.innerHeight,
+  );
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const onResize = () => setViewportH(vv.height);
+    vv.addEventListener('resize', onResize);
+    return () => vv.removeEventListener('resize', onResize);
+  }, []);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || !nearBottomRef.current) return;
+    const pin = () => {
+      if (nearBottomRef.current) pinBottom(el);
+    };
+    // The browser's own scrollIntoView for the focused field settles over a
+    // few frames, and Android can report the resize before finishing it —
+    // re-pin on a short window so we land on (and stay on) the true bottom.
+    pin();
+    const raf = requestAnimationFrame(pin);
+    const timers = [100, 250, 400, 700].map((ms) => setTimeout(pin, ms));
+    return () => {
+      cancelAnimationFrame(raf);
+      timers.forEach(clearTimeout);
+    };
+  }, [viewportH, pinBottom]);
 
   // Keep the snapshot in step with what is on screen. Without this, a chat left
   // while it was still settling came back to whatever an earlier load happened
