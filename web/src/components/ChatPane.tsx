@@ -6412,9 +6412,17 @@ export default function ChatPane({
           // row, keyed by its persisted id, so a reload replaces it in place
           // instead of showing it twice.
           const id = ev.messageId ?? 0;
+          // The notice closes the round in flight: it is persisted now, and the
+          // server writes the text it had already streamed ahead of it, so
+          // whatever the model says next belongs to a new row BELOW it. Keeping
+          // the old row open glued that text above the notice, which is the
+          // order the reader then saw until a reload.
+          assistantKeyRef.current = null;
           update((prev) => [
             ...prev.map((it) =>
-              it.kind === 'msg' && it.role === 'assistant' ? { ...it, reasoningCollapsed: true } : it,
+              it.kind === 'msg' && it.role === 'assistant'
+                ? { ...it, reasoningCollapsed: true, streaming: false }
+                : it,
             ),
             {
               kind: 'msg',
@@ -6519,13 +6527,19 @@ export default function ChatPane({
           const steered = marker === 'steer';
           const injected = !writtenByUser(marker) && !background;
           if (pending) setSteering((prev) => prev.filter((s) => s.id !== pending.id));
+          // The injected message ends the round in flight: the server persisted
+          // the text it had already streamed ahead of this row, so the model's
+          // next words belong to a row BELOW it. Leaving the open row as the
+          // target appended them above the user's message instead — the message
+          // then sat at the bottom with the reply it started continuing above it.
+          assistantKeyRef.current = null;
           update((prev) => [
             // A screenshot/injected message closes any thinking block that was
             // still open from the previous round. As with a tool call, this
             // includes a message still marked `streaming`.
             ...prev.map((it) =>
               it.kind === 'msg' && it.role === 'assistant'
-                ? { ...it, reasoningCollapsed: true }
+                ? { ...it, reasoningCollapsed: true, streaming: false }
                 : it,
             ),
             {

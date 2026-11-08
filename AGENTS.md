@@ -228,7 +228,17 @@ or `make dev`), then report: (1) the new stamped build version (`v1 <version>
   `turn.steer` call the sidecar routes through its own submit path, so the text
   travels in `content` (a `text` field is ignored and the steer bounces back to
   the queue); the Go side persists the injected message and emits its id, so the
-  row survives a reload. `GET /chat/queue` lists
+  row survives a reload. INVARIANT: a mid-round injection (a steer, a
+  screenshot, a compaction notice) lands after the text the round had already
+  streamed: v1 writes that text as its own assistant row first
+  (`flushRound` in `internal/server/harness_chat.go`, and the round's commit
+  writes only the remainder, `unsavedText`). Store ids are the transcript's
+  order, so a row persisted ahead of that text took an id before it and a reload
+  put the user's message above the reply text that preceded it. The client
+  mirrors the same boundary: `injected_message`/`notice` close the open
+  assistant round (`assistantKeyRef`), or the model's next words are appended to
+  the row above the user's message instead of below it.
+ `GET /chat/queue` lists
   the queue and the pending steers (`steering` array, one entry per message
   steered but not yet injected — the UI shows them as pending rows with a
   spinner until the `injected_message` lands). The chat UI shows the queue as a pinned block above the

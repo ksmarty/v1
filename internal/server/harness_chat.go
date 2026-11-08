@@ -629,6 +629,19 @@ func reconcile(streamed *strings.Builder, committed, typ string, emit func(agent
 	streamed.WriteString(committed)
 }
 
+// unsavedText is the part of a committed round's text that a mid-round flush has
+// not persisted yet: the flush wrote the prefix into its own row, so only the
+// remainder belongs to the row that commits.
+func unsavedText(committed, flushed string) string {
+	if flushed == "" {
+		return committed
+	}
+	if rest, ok := strings.CutPrefix(committed, flushed); ok {
+		return rest
+	}
+	return committed
+}
+
 // entryToolJSON renders a committed assistant entry's tool calls in the shape
 // the UI reads back: messages.tool_json holding an OpenAI-style tool_calls
 // array, identical to what the built-in loop stores for the same round.
@@ -918,6 +931,10 @@ const harnessStallTimeout = 60 * time.Second
 func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge, sidecarID string, q *harness.EventQueue, runner *harnessToolRunner, params agent.ChatParams, model string, emit func(agent.ChatEvent)) (*agent.TurnResult, error) {
 	turn := &agent.TurnResult{Model: model}
 	var text, reasoning strings.Builder
+	// The part of the round in flight that a mid-round flush already persisted.
+	// The round's remainder is written when it commits, so this prefix is what
+	// keeps the two rows from covering the same words.
+	var flushed, flushedReasoning string
 	var in, out int64
 	var cost float64
 	var hasCost bool
@@ -932,6 +949,9 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge,
 	var sawText, sawTool bool
 
 	persist := func(round *harness.Usage) error {
+		// Whatever a flush already wrote belongs to the round that is committing
+		// now; the next round starts from nothing.
+		flushed, flushedReasoning = "", ""
 		if text.Len() == 0 && reasoning.Len() == 0 && toolJSON == "" {
 			return nil
 		}
@@ -955,6 +975,27 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge,
 		reasoning.Reset()
 		toolJSON = ""
 		return err
+	}
+	// flushRound persists the text and reasoning the round has streamed so far as
+	// their own assistant row, so a message injected mid-round lands AFTER what
+	// the model had already said. Ids are write order — the client sorts by them —
+	// so without this the injected row took an id before the round it interrupted
+	// and a reload put the user's message above the reply text that preceded it.
+	flushRound := func() {
+		if text.Len() == 0 && reasoning.Len() == 0 {
+			return
+		}
+		said, thought := text.String(), reasoning.String()
+		if said != "" {
+			sawText = true
+		}
+		flushed += said
+		flushedReasoning += thought
+		if _, err := s.st.AddMessage(params.Project.ID, params.SessionID, "assistant", said, "", model, thought, "", ""); err != nil {
+			log.Printf("chat: flushing a round before an injected message: %v", err)
+		}
+		text.Reset()
+		reasoning.Reset()
 	}
 	// One model call's usage is that round's own totals, so rounds are summed as
 	// they complete: Input/Output cover the whole turn for billing, Context is
@@ -985,8 +1026,17 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge,
 	// the pi path polls it here and hands each message to the sidecar as a
 	// steer, which joins the running turn after the current tool round.
 	pollSteer := func() {
-		if params.Steer == nil || bridge == nil {
+		if params.Steer == nil {
 			return
+		}
+		// No bridge means nowhere to deliver the steer, but the transcript still
+		// records it — the same thing the built-in loop does with a nil client.
+		// Production only reaches this path with a live bridge.
+		deliver := func(text string) error {
+			if bridge == nil {
+				return nil
+			}
+			return bridge.Steer(ctx, sidecarID, fmt.Sprintf("v1-steer-%d", time.Now().UnixNano()), text)
 		}
 		for _, msg := range params.Steer() {
 			if msg.Text == "" && len(msg.Attachments) == 0 {
@@ -1005,7 +1055,7 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge,
 					steerText + "\n\n[attached files: " + strings.Join(names, ", ") + "]",
 				)
 			}
-			if err := bridge.Steer(ctx, sidecarID, fmt.Sprintf("v1-steer-%d", time.Now().UnixNano()), steerText); err != nil {
+			if err := deliver(steerText); err != nil {
 				log.Printf("harness: steer failed: %v", err)
 				// The steer was already drained from the queue, so put it back. A
 				// message the user sent must not vanish because the running turn could
@@ -1015,6 +1065,9 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge,
 				}
 				continue
 			}
+			// The text the round already streamed is written first: the store's
+			// ids are the transcript's order, so the steer has to land behind it.
+			flushRound()
 			// The client shows it as a user message, exactly as the built-in
 			// loop's injected_message does — and v1's store has to hold it too, or
 			// the steered turn disappears from the transcript on the next reload.
@@ -1151,8 +1204,11 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge,
 				// partial (progress.partialIntervalMs, 100 ms), so a fast round may
 				// stream no deltas at all and only this event carries the answer.
 				if t, r := entryText(ev.Entry); t != "" || r != "" {
-					reconcile(&text, t, "delta", emit)
-					reconcile(&reasoning, r, "reasoning", emit)
+					// Only the part no flush has written yet: the committed entry
+					// carries the whole round, and re-streaming its flushed prefix
+					// would put the same words in two rows.
+					reconcile(&text, unsavedText(t, flushed), "delta", emit)
+					reconcile(&reasoning, unsavedText(r, flushedReasoning), "reasoning", emit)
 				}
 				// A round that called tools carries them on the row, the way the
 				// built-in loop stores res.ToolCalls (agent.go:508).
@@ -1234,6 +1290,7 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge,
 					}
 					att := []agent.Attachment{{Name: "screenshot.png", MIME: mime, Kind: "image", Content: img.Data}}
 					// No caption: the image is the message (see the built-in loop).
+					flushRound()
 					msgID, addErr := s.st.AddInjectedMessage(params.Project.ID, params.SessionID, "", agent.AgentToolJSON, "", agent.MarshalAttachments(att))
 					if addErr != nil {
 						log.Printf("chat: recording a screenshot: %v", addErr)
@@ -1262,6 +1319,7 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge,
 				// transcript, so it is still there after a reload and the reader
 				// can see why the model stopped remembering earlier turns.
 				notice := agent.CompactionNotice(ev.Reason)
+				flushRound()
 				msgID, addErr := s.st.AddMessage(
 					params.Project.ID, params.SessionID, store.RoleNotice,
 					notice, "", "", "", "", "",

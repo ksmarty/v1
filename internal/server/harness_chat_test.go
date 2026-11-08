@@ -244,6 +244,90 @@ func TestConsumeHarnessTurnDoesNotDuplicateStreamedText(t *testing.T) {
 	}
 }
 
+// A steer that lands mid-round is persisted after the text the round had
+// already streamed: the store's ids are the transcript's order, so the user's
+// message must not take an id before the reply text that preceded it. The
+// round's remainder still commits on its own, without repeating the flushed
+// prefix.
+func TestConsumeHarnessTurnPutsASteerBehindTheTextItInterrupted(t *testing.T) {
+	s, p, sessionID := newHarnessTestServer(t)
+	q := harness.NewEventQueue()
+	runner := &harnessToolRunner{results: map[string]harness.ToolResult{}}
+	q.Push([]harness.Event{
+		{Type: "message_update", Changes: []harness.Change{delta("text_delta", "Hel")}},
+	})
+	steers := 0
+	params := agent.ChatParams{
+		Project:   p,
+		SessionID: sessionID,
+		Steer: func() []agent.SteerMessage {
+			steers++
+			if steers != 2 {
+				return nil
+			}
+			// The rest of the round lands after the steer was taken.
+			q.Push([]harness.Event{
+				{Type: "message_update", Changes: []harness.Change{delta("text_delta", "lo")}},
+				{Type: "message_end", Entry: json.RawMessage(`{"id":1,"kind":"assistant","model":[{"role":"assistant",` +
+					`"content":[{"type":"text","text":"Hello"}]}]}`)},
+			})
+			q.Push([]harness.Event{{Type: "run_end"}})
+			return []agent.SteerMessage{{Text: "do it differently"}}
+		},
+	}
+	var injected []agent.ChatEvent
+	turn, err := s.consumeHarnessTurn(context.Background(), nil, "conv-1", q, runner, params, "test-model",
+		func(ev agent.ChatEvent) {
+			if ev.Type == "injected_message" {
+				injected = append(injected, ev)
+			}
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if turn == nil {
+		t.Fatal("no turn result")
+	}
+	if len(injected) != 1 || injected[0].Text != "do it differently" || injected[0].MessageID == 0 {
+		t.Fatalf("injected events = %+v", injected)
+	}
+
+	msgs, err := s.st.ListMessages(p.ID, sessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 3 {
+		t.Fatalf("persisted rows = %+v", msgs)
+	}
+	// Order is id order: the text the model had written, then the steer, then
+	// the rest of the round.
+	if msgs[0].Role != "assistant" || msgs[0].Content != "Hel" {
+		t.Fatalf("row 0 = %+v", msgs[0])
+	}
+	if msgs[1].Role != "user" || msgs[1].Content != "do it differently" || msgs[1].ID != injected[0].MessageID {
+		t.Fatalf("row 1 = %+v (injected id %d)", msgs[1], injected[0].MessageID)
+	}
+	if msgs[2].Role != "assistant" || msgs[2].Content != "lo" {
+		t.Fatalf("row 2 = %+v", msgs[2])
+	}
+}
+
+// A flush only ever covers a prefix of the committed round: a round whose
+// committed text was rewritten (a retry, an abort) still commits in full.
+func TestUnsavedText(t *testing.T) {
+	cases := []struct{ committed, flushed, want string }{
+		{"Hello", "", "Hello"},
+		{"Hello", "Hel", "lo"},
+		{"Hello", "Hello", ""},
+		{"rewritten", "Hel", "rewritten"},
+	}
+	for _, c := range cases {
+		if got := unsavedText(c.committed, c.flushed); got != c.want {
+			t.Fatalf("unsavedText(%q, %q) = %q, want %q", c.committed, c.flushed, got, c.want)
+		}
+	}
+}
+
 // The durable transcript must be rewound to match v1's store, which is the one
 // retry, edit and delete trim. The count is of the user turns the sidecar must
 // keep, so it excludes the turn being submitted: that turn is already in the
