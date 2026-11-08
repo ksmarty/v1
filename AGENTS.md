@@ -187,12 +187,25 @@ or `make dev`), then report: (1) the new stamped build version (`v1 <version>
   `internal/server/turns.go`): a second `POST /chat` while a run is active is
   queued onto the run's `turnQueue` atomically (`beginOrQueue`, 202 reply
   with the entry's id). Runs have no timeout (long generations run to
-  completion; the stop endpoint cancels). `GET /chat/status` reports whether
+  completion; the stop endpoint cancels), but a sidecar that stops answering is
+  not allowed to pin a session: on the harness path the wait for the runtime to
+  accept the conversation is bounded (`harnessEnsureTimeout`, 90s) and a turn
+  that sees no sidecar event for `harnessStallTimeout` (60s, and only while no
+  host tool is executing — a build or install legitimately keeps the sidecar
+  silent) ends with an error and a persisted partial. Without both, a session
+  poisoned by a failed storage commit kept its run "active" forever: the chat
+  sat on "Generation still running", the transcript never updated, and every
+  later message queued behind a turn that would never do anything.
+  `GET /chat/status` reports whether
   a run is active — the client polls it to attach to the run's live event
   hub (`GET /chat/watch`): a client returning to a running chat replays the
   events from now on through the normal stream handler, so the UI behaves
   exactly as if it had never left (streaming composer, live thinking and
-  tool rows), and refreshes the transcript when the run finishes. A mid-response failure (token limit, network drop)
+  tool rows), and refreshes the transcript when the run finishes. A live stream
+  can also be dead while the run is healthy (a buffering proxy, a suspended
+  tab), so the same poll quiet-refetches the transcript while a run is active
+  and this client is attached to nothing (throttled to one refetch per 4s):
+  committed rounds then appear even though none of their events ever arrived. A mid-response failure (token limit, network drop)
   persists the partial reply; retrying then continues from it and, on
   success, folds the partial + continuation into one message and drops the
   error (`ContinueFromID` in ChatParams, `MergeContinuedTurn` in the store). Queued messages can be reordered

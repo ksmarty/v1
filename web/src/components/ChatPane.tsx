@@ -900,7 +900,7 @@ function AgentInjectedRow({
       <div className="w-full rounded-xl border border-sky-300/25 bg-sky-300/5 px-3.5 py-2 text-sm text-subtle">
         {text.trim() !== '' && <div className="whitespace-pre-wrap break-words">{text}</div>}
         {attachments && attachments.length > 0 && (
-          <div className="mt-1.5 flex flex-wrap gap-1.5">
+          <div className="mt-1.5 flex flex-wrap items-start gap-1.5">
             {attachments.map((a, i) =>
               a.kind === 'image' && a.url ? (
                 <button
@@ -908,9 +908,19 @@ function AgentInjectedRow({
                   type="button"
                   onClick={() => onImageClick(a.url as string, a.name)}
                   title={`View ${a.name}`}
-                  className="overflow-hidden rounded-lg border border-sky-300/30 transition-opacity hover:opacity-80"
+                  // The screenshot is the point of this row, so it fills the
+                  // bubble instead of sitting in a 112px square crop, keeps its
+                  // aspect ratio (no forced square, no letterbox), and a shot
+                  // narrower than the bubble makes the border wrap it rather
+                  // than leave slack inside a full-width box.
+                  className="block max-w-full overflow-hidden rounded-lg border border-sky-300/30 transition-opacity hover:opacity-80"
                 >
-                  <img src={a.url} alt={a.name} loading="lazy" className="h-28 w-28 object-cover" />
+                  <img
+                    src={a.url}
+                    alt={a.name}
+                    loading="lazy"
+                    className="block h-auto max-h-[70vh] w-auto max-w-full object-contain"
+                  />
                 </button>
               ) : (
                 <button
@@ -4278,6 +4288,9 @@ export default function ChatPane({
   // this is open: a hub with two live consumers delivers the same events to
   // both, so tool cards and assistant rows appeared twice on screen.
   const mainStreamRef = useRef(false);
+  // When the last quiet refetch landed while a run was live but unattached (see
+  // the status poll's stale-stream fallback).
+  const quietAtRef = useRef(0);
   // Mirrors of streaming/handleEvent for effects that must react to state
   // changes without re-running on them.
   const streamingRef = useRef(false);
@@ -5562,7 +5575,17 @@ export default function ChatPane({
         // that connection is still live would tear the follow-up's rows out
         // from under the events still arriving for it.
         const mainLive = mainStreamRef.current;
-        if (!st.running && !streaming && newer && !watchRef.current && !mainLive) {
+        // A run can be live while no stream of ours delivers it: a proxy that
+        // buffers the response, a tab the OS suspended, a connection that died
+        // without an error. Nothing else refreshes the transcript until the run
+        // ends, so the chat sat on "Generation still running" with the rounds
+        // that had already committed missing. Pick those rows up on every tick
+        // instead — throttled, because the watch effect is usually attaching
+        // right now and would make this a twice-a-second refetch.
+        const attached = !!watchRef.current || !!mainLive || streaming;
+        const staleStream = st.running && !attached && Date.now() - quietAtRef.current > 4000;
+        if (newer && !attached && (!st.running || staleStream)) {
+          quietAtRef.current = Date.now();
           // The server holds rows this transcript does not — a run that
           // finished while the app was away, or a write that landed just after
           // the turn's own reload. Fetch them quietly, so the transcript the

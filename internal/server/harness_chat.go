@@ -371,8 +371,18 @@ type harnessToolRunner struct {
 	// the child conversation id while a delegate is still running.
 	emit func(agent.ChatEvent)
 
-	mu      sync.Mutex
-	results map[string]harness.ToolResult
+	mu       sync.Mutex
+	results  map[string]harness.ToolResult
+	inFlight int
+}
+
+// busy reports whether a tool is executing in this process. The sidecar stays
+// silent while it waits for the result, so the turn's stall watchdog reads this
+// before treating the quiet as a dead run.
+func (r *harnessToolRunner) busy() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.inFlight > 0
 }
 
 // Attached is called when a delegated child conversation is linked to this
@@ -386,6 +396,16 @@ func (r *harnessToolRunner) Attached(childID, _ string) {
 }
 
 func (r *harnessToolRunner) RunTool(ctx context.Context, call harness.ToolCall) (harness.ToolResult, error) {
+	// A tool that runs here is invisible to the turn's event loop, so the stall
+	// watchdog has to know one is in flight (see harnessStallTimeout).
+	r.mu.Lock()
+	r.inFlight++
+	r.mu.Unlock()
+	defer func() {
+		r.mu.Lock()
+		r.inFlight--
+		r.mu.Unlock()
+	}()
 	if r.exec == nil {
 		return harness.ToolResult{Text: "no tool executor is available for this turn", IsError: true}, nil
 	}
@@ -483,8 +503,20 @@ func (s *Server) runHarnessTurn(ctx context.Context, p *store.Project, params ag
 	if stored, err := params.Store.HarnessConversationID(p.ID, params.SessionID); err == nil && stored != "" {
 		req.ConversationID = stored
 	}
-	ens, err := bridge.Ensure(ctx, req)
+	// A poisoned sidecar session (a failed storage commit) answers every later
+	// call with "reopen it", and only a fresh process can reopen it. When the
+	// supervisor cannot get one, Ensure waits forever — and the run then never
+	// ends: the chat sits on "Generation still running", every later message
+	// queues behind a run that will never do anything, and only a server restart
+	// clears it. Bound the wait so the turn fails visibly and the next message
+	// runs instead.
+	ensureCtx, cancelEnsure := context.WithTimeout(ctx, harnessEnsureTimeout)
+	ens, err := bridge.Ensure(ensureCtx, req)
+	cancelEnsure()
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			return nil, fmt.Errorf("the agent runtime stopped answering (%s) — try the message again", harnessEnsureTimeout)
+		}
 		return nil, err
 	}
 	// pi-durable mints the conversation id; the sidecar addresses every later
@@ -873,6 +905,16 @@ func harnessUsageJSON(u *harness.Usage, model string) string {
 
 // consumeHarnessTurn translates the sidecar's agent events into v1's SSE
 // events until the run ends.
+// harnessEnsureTimeout bounds the wait for the sidecar to accept a conversation.
+// Without it a session poisoned by a failed commit, or a supervisor that cannot
+// respawn the sidecar, leaves the turn blocked with no timeout at all.
+const harnessEnsureTimeout = 90 * time.Second
+
+// harnessStallTimeout is how long a turn may run with nothing in flight and no
+// event from the sidecar before it is treated as dead. Only reached when no host
+// tool is executing, so a long build or install is never mistaken for a stall.
+const harnessStallTimeout = 60 * time.Second
+
 func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge, sidecarID string, q *harness.EventQueue, runner *harnessToolRunner, params agent.ChatParams, model string, emit func(agent.ChatEvent)) (*agent.TurnResult, error) {
 	turn := &agent.TurnResult{Model: model}
 	var text, reasoning strings.Builder
@@ -1018,6 +1060,10 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge,
 	// Aborted is set when the turn was cancelled, so a second cancellation is
 	// not mistaken for a new stop request.
 	var aborted bool
+	// When the sidecar last said anything. A run can go quiet for a long time
+	// legitimately — a tool Go is executing, a slow provider — so the gap is only
+	// read as a stall while nothing is in flight (below).
+	lastActivity := time.Now()
 
 	for {
 		// Polled on every batch, not only when the stream idles: a turn that
@@ -1031,6 +1077,9 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge,
 		drainCtx, cancelDrain := context.WithTimeout(ctx, 250*time.Millisecond)
 		events, err := q.Drain(drainCtx)
 		cancelDrain()
+		if len(events) > 0 {
+			lastActivity = time.Now()
+		}
 		if err != nil {
 			if ctx.Err() != nil && !aborted {
 				// The user stopped the turn. Tell the sidecar, or it keeps
@@ -1052,6 +1101,19 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge,
 				return turn, context.Canceled
 			}
 			if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
+				// A sidecar that stopped answering must not pin the session: the run
+				// would stay active forever, so the chat shows "Generation still
+				// running" for a turn that produced nothing and every later message
+				// queues behind it until the container is restarted. A tool running in
+				// Go (a build, an install) legitimately keeps the sidecar silent, so
+				// the clock only counts while nothing is in flight.
+				if runner.busy() {
+					lastActivity = time.Now()
+				}
+				if time.Since(lastActivity) > harnessStallTimeout {
+					_ = persist(partial)
+					return turn, fmt.Errorf("the agent stopped responding (no activity for %s)", harnessStallTimeout)
+				}
 				continue
 			}
 			// The stream ended — the sidecar died, or the aborted turn finished
