@@ -910,11 +910,11 @@ function AgentInjectedRow({
                   onClick={() => onImageClick(a.url as string, a.name)}
                   title={`View ${a.name}`}
                   // The screenshot is the point of this row, so it fills the
-                  // bubble instead of sitting in a 112px square crop, keeps its
-                  // aspect ratio (no forced square, no letterbox), and a shot
-                  // narrower than the bubble makes the border wrap it rather
-                  // than leave slack inside a full-width box.
-                  className="block max-w-full overflow-hidden rounded-lg border border-sky-300/30 transition-opacity hover:opacity-80"
+                  // bubble instead of sitting in a 112px square crop and keeps
+                  // its aspect ratio (no forced square, no letterbox). The
+                  // bubble's own border wraps it — a second border here read as
+                  // a double frame around every shot.
+                  className="block max-w-full overflow-hidden rounded-lg transition-opacity hover:opacity-80"
                 >
                   <img
                     src={a.url}
@@ -3688,7 +3688,7 @@ function ImageLightbox({
       className="v1-safe-top fixed inset-0 z-50 flex items-center justify-center bg-bg/90 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] backdrop-blur-sm"
       onClick={onClose}
     >
-      <Zoomable className="h-full w-full" label="Zoom image">
+      <Zoomable className="h-full w-full" label="Zoom image" fixedControls>
         <img
           src={url}
           alt={name}
@@ -7601,6 +7601,8 @@ export default function ChatPane({
   const startPlusHold = () => {
     plusHeld.current = false;
     cancelPlusHold();
+    // Short enough to feel like a hold rather than a wait; the tap that follows
+    // is still swallowed, so the menu does not open and close in one press.
     plusHold.current = window.setTimeout(() => {
       plusHold.current = null;
       plusHeld.current = true;
@@ -7608,7 +7610,7 @@ export default function ChatPane({
       setThinkingOpen(false);
       setPlusDebug(true);
       setPlusOpen(true);
-    }, 450);
+    }, 250);
   };
   const plusButton = (
     <IconButton
@@ -7634,7 +7636,9 @@ export default function ChatPane({
       onContextMenu={(e) => e.preventDefault()}
       aria-label="More actions"
       title="More actions"
-      className={`relative z-30 h-8! w-8! shrink-0 md:h-9! md:w-9! ${
+      // Holding a button on touch (or with the mouse) otherwise starts text
+      // selection / the iOS callout under the finger instead of the hold.
+      className={`relative z-30 h-8! w-8! shrink-0 touch-none select-none [-webkit-touch-callout:none] md:h-9! md:w-9! ${
         plusOpen ? 'bg-border text-text' : ''
       }`}
     >

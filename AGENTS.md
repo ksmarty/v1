@@ -164,7 +164,11 @@ or `make dev`), then report: (1) the new stamped build version (`v1 <version>
   session. The vision system-prompt note and the tool description make visual
   verification part of done: after a change that affects what the user sees,
   the agent is told to call `screenshot_app` and look at the image before
-  reporting completion.
+  reporting completion. The injected row's bubble already frames the shot, so
+  the image inside carries no border of its own (two frames read as a double
+  border), and the full-screen viewer's zoom controls are `fixed`, not
+  `absolute`: inside a padded, notch-inset overlay an absolute child is laid out
+  against the padding box and sat below the overlay's own close button.
   Node-mode previews are screenshotted via `preview.Manager.DirectURL`
   (the proxy requires a session when auth is on).
 - Attachments have no size limit. Images are scaled once when the turn is

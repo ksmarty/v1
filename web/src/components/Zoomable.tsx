@@ -27,11 +27,22 @@ export default function Zoomable({
   children,
   className = '',
   label,
+  fixedControls = false,
 }: {
   children: ReactNode;
   className?: string;
   /** Accessible name for the controls ("Zoom image", "Zoom diagram"). */
   label?: string;
+  /**
+   * Pin the controls to the viewport instead of this box.
+   *
+   * A full-screen overlay usually pads itself (and ``v1-safe-top`` pads for the
+   * notch), and an absolutely positioned child is laid out against its parent's
+   * padding box — so inside a padded overlay the controls sat ~1rem (or, with
+   * the notch inset, ~2× the inset) below the overlay's own close button.
+   * Fixed controls line up with it on every device.
+   */
+  fixedControls?: boolean;
 }) {
   const boxRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(MIN);
@@ -201,8 +212,8 @@ export default function Zoomable({
       </div>
 
       <div
-        style={{ top: SAFE_TOP, left: '0.75rem' }}
-        className="absolute z-10 flex items-center gap-1 rounded-lg bg-surface/85 px-1 py-1 text-dim backdrop-blur-sm"
+        style={{ position: fixedControls ? 'fixed' : 'absolute', top: SAFE_TOP, left: '0.75rem' }}
+        className="z-10 flex items-center gap-1 rounded-lg bg-surface/85 px-1 py-1 text-dim backdrop-blur-sm"
         onClick={(e) => e.stopPropagation()}
         role="group"
         aria-label={label ?? 'Zoom'}
