@@ -86,7 +86,20 @@ React SPA (Vite + TypeScript), both built into a single binary.
   `limit.output`) as `maxTokens`, so a reasoning model is not capped at the
   sidecar's 8192 fallback and cannot spend its whole window thinking; a turn
   that still ends with no visible text and no tool call errors instead of a
-  silent `done`.
+  silent `done`. INVARIANT: every entry in that spec carries the model's
+  metadata, including the turn's own model — de-duplication is by id and the
+  turn model is registered first, so a bare `{id}` entry shadows the catalog
+  one it was meant to be joined with. pi-ai then treats a reasoning model as
+  one that cannot think (it never asks for reasoning, so no thinking reaches
+  the UI) and gives it the flat 8192 output budget, which such a model spends
+  entirely on thinking before it calls a tool or answers — the chat shows a
+  running turn and then nothing at all, live or after a reload. `v1` fills the
+  metadata from its own catalog (the models.dev one served to the picker) and
+  falls back to pi's (`pi-models.json`, written by the sidecar) for a model
+  models.dev does not know; the sidecar's `modelDescriptor` does the same
+  inheritance for a spec that arrives without `maxTokens`/`reasoning`
+  (`omitempty` drops both), so a third-party spec cannot silently reintroduce
+  the 8192 cap either.
   A hook names its task as a string (e.g. `pi.generation`) because the extension
   file can't import pi-durable's task objects.
 - `internal/store/` — SQLite (settings, sessions, projects, messages).

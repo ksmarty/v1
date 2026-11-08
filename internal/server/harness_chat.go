@@ -148,8 +148,8 @@ func harnessUserContent(text string, atts []agent.Attachment) any {
 // instructions and the tool definitions both come from the functions the
 // built-in loop uses — agent.BuildSystemPrompt and ChatParams.ToolSet — so a
 // turn's prompt and its tool set cannot depend on which harness runs it.
-func harnessEnsureRequest(params agent.ChatParams, model, exposure string) harness.EnsureRequest {
-	provider := harnessProviderSpec(params.Client, model)
+func harnessEnsureRequest(params agent.ChatParams, model, exposure string, meta func(string) (harnessModelMeta, bool)) harness.EnsureRequest {
+	provider := harnessProviderSpec(params.Client, model, meta)
 	req := harness.EnsureRequest{
 		V1SessionID:   harnessConversationID(params.Project.ID, params.SessionID),
 		Cwd:           params.Project.Path,
@@ -188,6 +188,56 @@ func harnessProviderID(baseURL string) string {
 	return u.Hostname()
 }
 
+// harnessModelMeta is what v1 knows about a model beyond its id, in the shape
+// the harness spec needs. A lookup returns false when it knows nothing.
+type harnessModelMeta struct {
+	Name          string
+	ContextWindow int
+	MaxTokens     int
+	Reasoning     bool
+}
+
+// harnessModelMeta reports what v1 knows about a model. The catalog served to
+// the client comes first — it is the one models.dev filled in, which is where
+// reasoning support and the output ceiling live — and pi's own catalog is the
+// tiebreaker for a model models.dev does not know (`deepseek-v4.1-flash`).
+// Without either, pi-ai is told the model cannot think and has no ceiling, and
+// falls back to a flat 8192 output budget a reasoning model can spend entirely
+// on thinking before it calls a tool or answers.
+func (s *Server) harnessModelMeta(model string) (harnessModelMeta, bool) {
+	var meta harnessModelMeta
+	known := false
+	fill := func(name string, contextWindow, maxTokens int, reasoning bool) {
+		known = true
+		if meta.Name == "" {
+			meta.Name = name
+		}
+		if meta.ContextWindow == 0 {
+			meta.ContextWindow = contextWindow
+		}
+		if meta.MaxTokens == 0 {
+			meta.MaxTokens = maxTokens
+		}
+		if reasoning {
+			meta.Reasoning = true
+		}
+	}
+	if cat := s.providerCatalog(); cat != nil {
+		for _, p := range cat.Providers {
+			for _, m := range p.Models {
+				if !modelMatchesID(m.ID, model) && !modelMatchesID(model, m.ID) {
+					continue
+				}
+				fill(m.Name, m.Context, m.Output, m.Reasoning != nil)
+			}
+		}
+	}
+	if info, ok := s.piModel(model); ok {
+		fill(info.Name, info.ContextWindow, info.MaxTokens, info.Reasoning)
+	}
+	return meta, known
+}
+
 // harnessProviderSpec describes v1's configured endpoint in pi-ai's shape.
 //
 // The turn's own model is registered first, and it is not necessarily the
@@ -196,7 +246,10 @@ func harnessProviderID(baseURL string) string {
 // live list, or a custom endpoint's). pi-durable refuses a model missing from
 // the supplied catalog, so omitting it fails the turn before the model is ever
 // called.
-func harnessProviderSpec(c *llm.Client, turnModel string) harness.ProviderSpec {
+//
+// meta supplies the model metadata the endpoint's own catalog does not publish
+// (see harnessModelMeta); nil means "id only".
+func harnessProviderSpec(c *llm.Client, turnModel string, meta func(string) (harnessModelMeta, bool)) harness.ProviderSpec {
 	id := harnessProviderID(c.BaseURL)
 	// v1's own client only ever speaks OpenAI chat completions, so the
 	// sidecar must run the turn on the same protocol.
@@ -209,30 +262,77 @@ func harnessProviderSpec(c *llm.Client, turnModel string) harness.ProviderSpec {
 		seen[m.ID] = true
 		spec.Models = append(spec.Models, m)
 	}
-	add(harness.ModelSpec{ID: turnModel, Name: turnModel, Input: []string{"text", "image"}})
-	add(harness.ModelSpec{ID: c.Model, Name: c.Model, Input: []string{"text", "image"}})
-	for _, m := range llm.ModelsForBaseURL(c.BaseURL) {
-		// Image input is advertised unconditionally, deliberately.
-		//
-		// pi-ai drops image parts for a model whose input list omits "image",
-		// silently: no error, no note, the model just answers about an image it
-		// never saw. v1's catalog cannot be trusted for this — the openrouter
-		// entry for google/gemini-2.5-flash carries no imageInput while every
-		// other provider's entry for the same model does — and the built-in loop
-		// never consulted it anyway: it sends images and only strips them after
-		// the provider rejects them (agent.go:458). Advertising the capability
-		// keeps the two harnesses putting the same thing in front of the model,
-		// and a model that truly cannot take images now fails loudly instead of
-		// answering about an image it was never shown.
-		ms := harness.ModelSpec{
-			ID:            m.ID,
-			Name:          m.Name,
-			ContextWindow: m.Context,
-			MaxTokens:     m.Output,
-			Reasoning:     m.Reasoning != nil,
-			Input:         []string{"text", "image"},
+	catalog := llm.ModelsForBaseURL(c.BaseURL)
+	// catalogModel finds the catalog entry naming a model, accepting the
+	// namespaced and bare spellings in either direction — the turn's model comes
+	// from the picker, which may list "moonshotai/kimi-k3" for a catalog entry
+	// spelled "kimi-k3", or the other way around.
+	catalogModel := func(model string) *llm.ProviderModel {
+		for i := range catalog {
+			if modelMatchesID(catalog[i].ID, model) || modelMatchesID(model, catalog[i].ID) {
+				return &catalog[i]
+			}
+		}
+		return nil
+	}
+	// The turn's own model and the client's configured one are registered first,
+	// because pi-durable refuses a model that is missing from the supplied
+	// catalog — but never as a bare entry. De-duplication is by id, so a bare
+	// entry shadows the catalog one and the turn would run on a model pi-ai
+	// believes cannot think and has no output ceiling: no reasoning request (and
+	// no thinking in the UI) for a reasoning model, and pi-ai's flat 8192-token
+	// fallback, which a reasoning model can spend entirely on thinking before it
+	// calls a tool or answers. That reads as "the agent runs but nothing shows".
+	//
+	// Image input is advertised unconditionally, deliberately.
+	//
+	// pi-ai drops image parts for a model whose input list omits "image",
+	// silently: no error, no note, the model just answers about an image it
+	// never saw. v1's catalog cannot be trusted for this — the openrouter
+	// entry for google/gemini-2.5-flash carries no imageInput while every
+	// other provider's entry for the same model does — and the built-in loop
+	// never consulted it anyway: it sends images and only strips them after
+	// the provider rejects them (agent.go:458). Advertising the capability
+	// keeps the two harnesses putting the same thing in front of the model,
+	// and a model that truly cannot take images now fails loudly instead of
+	// answering about an image it was never shown.
+	addModel := func(modelID string) {
+		if modelID == "" {
+			return
+		}
+		ms := harness.ModelSpec{ID: modelID, Name: modelID, Input: []string{"text", "image"}}
+		if m := catalogModel(modelID); m != nil {
+			if m.Name != "" {
+				ms.Name = m.Name
+			}
+			ms.ContextWindow = m.Context
+			ms.MaxTokens = m.Output
+			ms.Reasoning = m.Reasoning != nil
+		}
+		if meta != nil {
+			if info, ok := meta(modelID); ok {
+				if info.Name != "" {
+					ms.Name = info.Name
+				}
+				if info.ContextWindow > 0 {
+					ms.ContextWindow = info.ContextWindow
+				}
+				if info.MaxTokens > 0 {
+					ms.MaxTokens = info.MaxTokens
+				}
+				if info.Reasoning {
+					ms.Reasoning = true
+				}
+			}
 		}
 		add(ms)
+	}
+	addModel(turnModel)
+	addModel(c.Model)
+	// Every model the endpoint publishes is registered too, so picking another
+	// one mid-conversation does not fail for a model the sidecar never saw.
+	for _, m := range catalog {
+		addModel(m.ID)
 	}
 	return spec
 }
@@ -375,7 +475,7 @@ func (s *Server) runHarnessTurn(ctx context.Context, p *store.Project, params ag
 	}
 
 	convID := harnessConversationID(p.ID, params.SessionID)
-	req := harnessEnsureRequest(params, model, s.toolExposure(p.OwnerID))
+	req := harnessEnsureRequest(params, model, s.toolExposure(p.OwnerID), s.harnessModelMeta)
 	// Rejoin the conversation this session already has, if any. pi-durable mints
 	// the id, so it has to be remembered across turns — and across a sidecar
 	// restart, where the sidecar's own v1SessionId map is gone and a fresh

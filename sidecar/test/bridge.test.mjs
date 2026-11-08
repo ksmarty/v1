@@ -30,7 +30,7 @@ import { fileURLToPath } from "node:url";
 
 import { createPeer } from "../src/rpc.js";
 import { bindToolToConversation, extensionConflicts, hookNames, loadExtensions, settingsSchema, toolNames } from "../src/extensions.js";
-import { endpointHeaders } from "../src/provider.js";
+import { endpointHeaders, modelDescriptor } from "../src/provider.js";
 import { buildHostTools, buildSearchTool, continuationMessage, promoteToolRound, searchTools } from "../src/tools.js";
 import { countToolCalls, firstAssistantText } from "../src/entries.js";
 
@@ -316,6 +316,23 @@ async function main() {
 			headers: STATIC_HEADERS,
 			models: [{ id: MODEL_ID, name: "Scripted test model", contextWindow: 128_000, maxTokens: 8192 }],
 		};
+
+		{
+			console.log("\nmodel descriptor");
+			const config = { baseUrl: fake.url, api: "openai-completions" };
+			// Go omits maxTokens and reasoning for a model its own catalog does not
+			// know, and pi-ai's flat 8192 output budget is one a reasoning model can
+			// spend entirely on thinking before it calls a tool or answers — so an
+			// unset field must fall back to pi's catalog, not to 8192.
+			const inherited = modelDescriptor({ id: MODEL_ID }, PROVIDER_ID, config);
+			check("a model with no ceiling inherits pi's", inherited.maxTokens === 384000, String(inherited.maxTokens));
+			check("a model pi knows can think", inherited.reasoning === true, String(inherited.reasoning));
+			check("a supplied ceiling wins", modelDescriptor({ id: MODEL_ID, maxTokens: 8192 }, PROVIDER_ID, config).maxTokens === 8192);
+			check(
+				"a model nobody knows keeps the 8192 fallback",
+				modelDescriptor({ id: "no-such-model-xyz" }, PROVIDER_ID, config).maxTokens === 8192,
+			);
+		}
 
 		const ensured = await peer.call(
 			"conversation.ensure",

@@ -6,6 +6,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -434,7 +436,7 @@ func TestHarnessInstructionsMatchTheBuiltInPrompt(t *testing.T) {
 		MemoriesPrompt: "MEMORIES-MARKER",
 		ToonEnabled:    true,
 	}
-	got := harnessEnsureRequest(params, "test-model", "all").Instructions
+	got := harnessEnsureRequest(params, "test-model", "all", nil).Instructions
 	want := agent.BuildSystemPrompt(&params)
 	if got != want {
 		t.Fatalf("instructions differ from the built-in prompt:\n got %q\nwant %q", got, want)
@@ -613,7 +615,7 @@ func TestHarnessPersistsToolCallsAndResults(t *testing.T) {
 // model as "Green" on the pi path and "Red" on the Go path.
 func TestHarnessProviderSpecAdvertisesImageInput(t *testing.T) {
 	client := &llm.Client{BaseURL: "https://example.test/v1", APIKey: "k", Model: "test-model"}
-	spec := harnessProviderSpec(client, "test-model")
+	spec := harnessProviderSpec(client, "test-model", nil)
 	if len(spec.Models) == 0 {
 		t.Fatal("no models in the spec")
 	}
@@ -684,7 +686,7 @@ func TestConsumeHarnessTurnReportsFaultedGeneration(t *testing.T) {
 // calls the endpoint, and opencode's client attribution travels with the
 // routing header rather than instead of it.
 func TestHarnessProviderSpecSendsStaticHeaders(t *testing.T) {
-	opencode := harnessProviderSpec(llm.NewClient("https://opencode.ai/zen/go/v1", "k", "m"), "m")
+	opencode := harnessProviderSpec(llm.NewClient("https://opencode.ai/zen/go/v1", "k", "m"), "m", nil)
 	if got := opencode.Headers["x-opencode-client"]; got != "v1" {
 		t.Fatalf("headers = %v, want x-opencode-client: v1", opencode.Headers)
 	}
@@ -692,7 +694,7 @@ func TestHarnessProviderSpecSendsStaticHeaders(t *testing.T) {
 		t.Fatalf("sessionHeader = %q", opencode.SessionHeader)
 	}
 
-	openai := harnessProviderSpec(llm.NewClient("https://api.openai.com/v1", "k", "gpt-x"), "gpt-x")
+	openai := harnessProviderSpec(llm.NewClient("https://api.openai.com/v1", "k", "gpt-x"), "gpt-x", nil)
 	if len(openai.Headers) != 0 {
 		t.Fatalf("an endpoint needing no static headers got %v", openai.Headers)
 	}
@@ -702,12 +704,12 @@ func TestHarnessProviderSpecSendsStaticHeaders(t *testing.T) {
 // actually calls the endpoint, and without this the pi path (the default) sends
 // no header at all and opencode's zen endpoint refuses the turn.
 func TestHarnessProviderSpecSendsSessionHeader(t *testing.T) {
-	opencode := harnessProviderSpec(llm.NewClient("https://opencode.ai/zen/v1", "k", "deepseek-v4-flash"), "deepseek-v4-flash")
+	opencode := harnessProviderSpec(llm.NewClient("https://opencode.ai/zen/v1", "k", "deepseek-v4-flash"), "deepseek-v4-flash", nil)
 	if opencode.SessionHeader != "x-opencode-session" {
 		t.Fatalf("sessionHeader = %q, want x-opencode-session", opencode.SessionHeader)
 	}
 
-	openai := harnessProviderSpec(llm.NewClient("https://api.openai.com/v1", "k", "gpt-x"), "gpt-x")
+	openai := harnessProviderSpec(llm.NewClient("https://api.openai.com/v1", "k", "gpt-x"), "gpt-x", nil)
 	if openai.SessionHeader != "" {
 		t.Fatalf("an endpoint needing no routing header got %q", openai.SessionHeader)
 	}
@@ -720,7 +722,7 @@ func TestHarnessProviderSpecSendsSessionHeader(t *testing.T) {
 // "model ... is not in the supplied catalog" before the model was called.
 func TestHarnessProviderSpecRegistersTurnModel(t *testing.T) {
 	client := llm.NewClient("https://api.example.com/v1/", "sk-secret", "configured-model")
-	spec := harnessProviderSpec(client, "deepseek-v4.1-flash")
+	spec := harnessProviderSpec(client, "deepseek-v4.1-flash", nil)
 	if spec.ID != "api.example.com" {
 		t.Fatalf("provider id = %q", spec.ID)
 	}
@@ -752,7 +754,7 @@ func TestHarnessProviderSpecRegistersTurnModel(t *testing.T) {
 // A turn with no explicit model falls back to the client's, which must not be
 // registered twice.
 func TestHarnessProviderSpecHandlesEmptyTurnModel(t *testing.T) {
-	spec := harnessProviderSpec(llm.NewClient("https://api.example.com/v1/", "sk", "configured-model"), "")
+	spec := harnessProviderSpec(llm.NewClient("https://api.example.com/v1/", "sk", "configured-model"), "", nil)
 	seen := map[string]int{}
 	for _, m := range spec.Models {
 		seen[m.ID]++
@@ -792,6 +794,97 @@ func TestHarnessToolDefsMirrorTheBuiltinSet(t *testing.T) {
 		if d.Description == "" || d.Parameters["type"] != "object" {
 			t.Fatalf("tool %q has an incomplete definition: %+v", name, d)
 		}
+	}
+}
+
+// A model's metadata must survive the de-duplication that registers the turn's
+// own model first. A bare first entry used to shadow the catalog one (dedupe is
+// by id), so the turn ran on a model pi-ai believed could not think and had no
+// output ceiling: a reasoning model was never asked to think (no reasoning
+// reached the UI) and pi-ai fell back to 8192 output tokens, which such a model
+// can spend entirely on thinking before it calls a tool or answers — the chat
+// showed a running turn and then nothing at all.
+func TestHarnessProviderSpecKeepsModelMetadata(t *testing.T) {
+	client := llm.NewClient("https://api.example.com/v1", "k", "thinker")
+	meta := func(model string) (harnessModelMeta, bool) {
+		if model != "thinker" && model != "org/thinker" {
+			return harnessModelMeta{}, false
+		}
+		return harnessModelMeta{Name: "Thinker", ContextWindow: 128000, MaxTokens: 64000, Reasoning: true}, true
+	}
+	spec := harnessProviderSpec(client, "org/thinker", meta)
+	if len(spec.Models) == 0 || spec.Models[0].ID != "org/thinker" {
+		t.Fatalf("models = %+v, want the turn's model first", spec.Models)
+	}
+	turn := spec.Models[0]
+	if !turn.Reasoning {
+		t.Fatal("the turn's model must keep its reasoning support")
+	}
+	if turn.MaxTokens != 64000 || turn.ContextWindow != 128000 {
+		t.Fatalf("model = %+v, want the catalog's ceilings", turn)
+	}
+	if turn.Name != "Thinker" {
+		t.Fatalf("name = %q, want the catalog's", turn.Name)
+	}
+	// The client's own model is the same entry, registered once.
+	seen := map[string]int{}
+	for _, m := range spec.Models {
+		seen[m.ID]++
+	}
+	if seen["org/thinker"] != 1 {
+		t.Fatalf("model registered %d times: %+v", seen["org/thinker"], spec.Models)
+	}
+}
+
+// v1's own catalog is where a model's reasoning support and output ceiling
+// come from, and pi's catalog backs it up for a model models.dev does not know.
+// The harness spec needs both: without them pi-ai is told the model cannot
+// think and gets its flat 8192 output fallback.
+func TestHarnessModelMetaFromCatalogs(t *testing.T) {
+	s, _, _ := newHarnessTestServer(t)
+	cat, err := json.Marshal(llm.Catalog{Providers: []llm.Provider{{
+		ID:      "opencode-go",
+		BaseURL: "https://opencode.ai/zen/go/v1",
+		Models: []llm.ProviderModel{{
+			ID:        "deepseek-v4-flash",
+			Name:      "DeepSeek V4 Flash",
+			Context:   128000,
+			Output:    64000,
+			Reasoning: &llm.ReasoningInfo{Effort: true},
+		}},
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.st.SetSetting(keyProvidersCache, string(cat)); err != nil {
+		t.Fatal(err)
+	}
+
+	meta, ok := s.harnessModelMeta("deepseek-v4-flash")
+	if !ok {
+		t.Fatal("the catalog's model was not found")
+	}
+	if !meta.Reasoning || meta.MaxTokens != 64000 || meta.ContextWindow != 128000 || meta.Name != "DeepSeek V4 Flash" {
+		t.Fatalf("meta = %+v, want the catalog's reasoning support and ceilings", meta)
+	}
+
+	// pi's catalog answers for a model v1's does not know.
+	piCat, err := json.Marshal(piModelCatalog{Models: map[string]piModelInfo{
+		"deepseek-v4.1-flash": {Name: "DeepSeek V4.1 Flash", ContextWindow: 1000000, MaxTokens: 128000, Reasoning: true},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(s.cfg.DataDir, piModelsFile), piCat, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	meta, ok = s.harnessModelMeta("deepseek-v4.1-flash")
+	if !ok || !meta.Reasoning || meta.MaxTokens != 128000 || meta.ContextWindow != 1000000 {
+		t.Fatalf("meta = %+v (ok=%v), want pi's catalog entry", meta, ok)
+	}
+
+	if _, ok := s.harnessModelMeta("nothing-knows-this"); ok {
+		t.Fatal("an unknown model must not report metadata")
 	}
 }
 
@@ -851,7 +944,7 @@ func TestHarnessEnsureRequestDefersMCPToolsInSearchMode(t *testing.T) {
 		Client:     &llm.Client{BaseURL: "https://example.test/v1", APIKey: "k", Model: "test-model"},
 		ExtraTools: []llm.Tool{mcpEchoTool()},
 	}
-	search := harnessEnsureRequest(params, "test-model", "search")
+	search := harnessEnsureRequest(params, "test-model", "search", nil)
 	if search.ToolExposure != "search" {
 		t.Fatalf("ToolExposure = %q, want search", search.ToolExposure)
 	}
@@ -864,7 +957,7 @@ func TestHarnessEnsureRequestDefersMCPToolsInSearchMode(t *testing.T) {
 	if !found {
 		t.Fatalf("DeferredTools = %v, want mcp_echo", search.DeferredTools)
 	}
-	all := harnessEnsureRequest(params, "test-model", "all")
+	all := harnessEnsureRequest(params, "test-model", "all", nil)
 	if all.ToolExposure != "all" || len(all.DeferredTools) != 0 {
 		t.Fatalf("all mode = exposure %q deferred %v, want all/none", all.ToolExposure, all.DeferredTools)
 	}

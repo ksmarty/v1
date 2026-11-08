@@ -50,7 +50,7 @@ function signatureOf(config) {
  * not a default. Cost stays zero: v1's catalog publishes no prices, so the
  * turn reports tokens but no spend.
  */
-function modelDescriptor(model, key, config) {
+export function modelDescriptor(model, key, config) {
 	// A model v1's catalog does not know arrives with no contextWindow at all
 	// (`omitempty` drops the field), so fall back to pi's catalog: telling pi-ai
 	// the window is zero skews its compaction threshold and its max_tokens
@@ -60,6 +60,19 @@ function modelDescriptor(model, key, config) {
 		Number.isFinite(model.contextWindow) && model.contextWindow > 0
 			? model.contextWindow
 			: (known?.contextWindow ?? 0);
+	// Go omits maxTokens and reasoning for a model v1's catalog does not know
+	// (`omitempty` drops both), and pi-ai's flat 8192 fallback is a budget a
+	// reasoning model can spend entirely on thinking before it calls a tool or
+	// answers. pi's catalog knows the ceiling and whether the model thinks, so
+	// fall back to it rather than to 8192.
+	const maxTokens =
+		Number.isFinite(model.maxTokens) && model.maxTokens > 0
+			? model.maxTokens
+			: Number.isFinite(known?.maxTokens) && known.maxTokens > 0
+				? known.maxTokens
+				: contextWindow > 0
+					? Math.min(8192, contextWindow)
+					: 8192;
 	return {
 		...model,
 		id: model.id,
@@ -72,7 +85,7 @@ function modelDescriptor(model, key, config) {
 		// `input.includes("image")` is called on every request, so text-only
 		// models must still carry an explicit list.
 		input: Array.isArray(model.input) && model.input.length > 0 ? model.input : ["text"],
-		reasoning: model.reasoning === true,
+		reasoning: model.reasoning === true || known?.reasoning === true,
 		cost: {
 			input: model.cost?.input ?? 0,
 			output: model.cost?.output ?? 0,
@@ -81,12 +94,7 @@ function modelDescriptor(model, key, config) {
 			...(model.cost?.tiers ? { tiers: model.cost.tiers } : {}),
 		},
 		contextWindow,
-		maxTokens:
-			Number.isFinite(model.maxTokens) && model.maxTokens > 0
-				? model.maxTokens
-				: contextWindow > 0
-					? Math.min(8192, contextWindow)
-					: 8192,
+		maxTokens,
 	};
 }
 

@@ -70,16 +70,31 @@ func (c *piModelCache) last() *piModelCatalog {
 	return c.catalog
 }
 
-// piModelContext is pi's context window for a model, or 0 when pi has none.
-func (s *Server) piModelContext(model string) int {
+// piModel is pi's catalog entry for a model, accepting the namespaced and bare
+// spellings as the same model (the picker lists "moonshotai/kimi-k3" for a
+// catalog entry spelled "kimi-k3" too).
+func (s *Server) piModel(model string) (piModelInfo, bool) {
 	if model == "" || s.piModels == nil {
-		return 0
+		return piModelInfo{}, false
 	}
 	cat := s.piModels.load(filepath.Join(s.cfg.DataDir, piModelsFile))
 	if cat == nil {
-		return 0
+		return piModelInfo{}, false
 	}
-	if m, ok := cat.Models[model]; ok && m.ContextWindow > 0 {
+	if m, ok := cat.Models[model]; ok {
+		return m, true
+	}
+	for id, m := range cat.Models {
+		if modelMatchesID(id, model) || modelMatchesID(model, id) {
+			return m, true
+		}
+	}
+	return piModelInfo{}, false
+}
+
+// piModelContext is pi's context window for a model, or 0 when pi has none.
+func (s *Server) piModelContext(model string) int {
+	if m, ok := s.piModel(model); ok && m.ContextWindow > 0 {
 		return m.ContextWindow
 	}
 	return 0
