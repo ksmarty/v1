@@ -13,6 +13,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import {
   api,
+  BufferedStreamError,
   deleteUploads,
   messageAttachmentUrl,
   retryChat,
@@ -4291,6 +4292,10 @@ export default function ChatPane({
   // When the last quiet refetch landed while a run was live but unattached (see
   // the status poll's stale-stream fallback).
   const quietAtRef = useRef(0);
+  // Set once the transport proves it buffers the response body (see
+  // BufferedStreamError): the chat is then driven by the status poll, and a watch
+  // attach — which would sit silent the same way — is skipped until a turn ends.
+  const bufferedRef = useRef(false);
   // Mirrors of streaming/handleEvent for effects that must react to state
   // changes without re-running on them.
   const streamingRef = useRef(false);
@@ -5563,6 +5568,9 @@ export default function ChatPane({
         const st = await api.chatStatus(projectId, sessionId);
         if (cancelled) return;
         setRunActive(st.running);
+        // A finished run is the moment to try a live stream again: the buffering
+        // may have been this turn's (a proxy timeout, a cold tunnel).
+        if (!st.running) bufferedRef.current = false;
         // A return from the background has to re-check the transcript: the app
         // can be suspended for an entire run, so no tick ever sees it start.
         returnedRef.current = false;
@@ -6553,6 +6561,9 @@ export default function ChatPane({
   // runActive state is still settling) never triggers a spurious watch.
   useEffect(() => {
     if (!sessionId || !runActive || streamingRef.current || mainStreamRef.current || resuming) return;
+    // A transport that buffers the body buffers this stream too; the status poll
+    // drives the chat instead (see bufferedRef).
+    if (bufferedRef.current) return;
     if (watchRef.current) return; // already attached
     let cancelled = false;
     let retry: number | undefined;
@@ -6575,8 +6586,11 @@ export default function ChatPane({
       void (async () => {
         try {
           await watchChat(projectId, sessionId, handleEventRef.current, active.signal);
-        } catch {
-          // Connection drop — handled by the re-check below.
+        } catch (e) {
+          // Connection drop — handled by the re-check below. A buffered transport
+          // (see BufferedStreamError) is not a drop: this stream will never
+          // deliver, so the status poll takes over instead of re-attaching.
+          if (e instanceof BufferedStreamError) bufferedRef.current = true;
         }
         // The stream resolves on a mid-stream drop just as it does on a clean
         // end, so its own outcome cannot say which happened. Ask the server: a
@@ -6597,8 +6611,11 @@ export default function ChatPane({
         if (stillRunning) void load();
         // Nothing else re-runs this effect — its dependencies are unchanged —
         // so a dropped watch reconnects itself. The delay keeps an attach that
-        // keeps failing from spinning.
-        if (stillRunning) retry = window.setTimeout(() => setWatchTick((n) => n + 1), 1500);
+        // keeps failing from spinning. A buffering transport is not retried: the
+        // poll drives the chat until the run ends (see bufferedRef).
+        if (stillRunning && !bufferedRef.current) {
+          retry = window.setTimeout(() => setWatchTick((n) => n + 1), 1500);
+        }
       })();
     });
     // The cleanup has to abort the stream, not just flag cancellation: React
@@ -6693,6 +6710,17 @@ export default function ChatPane({
         finish();
       } catch (e) {
         mainStreamRef.current = false;
+        if (e instanceof BufferedStreamError) {
+          // A proxy is holding the response body until the turn is over, so no
+          // event will reach this client while it runs. The run itself is fine
+          // server-side: fall back to the status poll, which refetches the
+          // transcript as rounds commit — the turn then shows its progress in
+          // steps instead of freezing behind "Generation still running".
+          bufferedRef.current = true;
+          setRunActive(true);
+          finish();
+          return;
+        }
         const aborted = e instanceof DOMException && e.name === 'AbortError';
         if (!aborted && e instanceof TypeError && !ctrl.signal.aborted) {
           // The connection died (backgrounded tab, suspended app). Resync the

@@ -205,7 +205,14 @@ or `make dev`), then report: (1) the new stamped build version (`v1 <version>
   can also be dead while the run is healthy (a buffering proxy, a suspended
   tab), so the same poll quiet-refetches the transcript while a run is active
   and this client is attached to nothing (throttled to one refetch per 4s):
-  committed rounds then appear even though none of their events ever arrived. A mid-response failure (token limit, network drop)
+  committed rounds then appear even though none of their events ever arrived.
+  A transport that never delivers a first event (a proxy buffering the body, a
+  tunnel that withholds it) is detected in `web/src/api.ts`
+  (`STREAM_FIRST_EVENT_MS`, 15s) and raises `BufferedStreamError`: the chat then
+  skips the watch attach for the rest of that turn and runs on the poll alone,
+  instead of sitting on a live-looking stream that will never move. A healthy
+  stream delivers its first event in well under a second, so this only fires on
+  a transport that is actually buffering. A mid-response failure (token limit, network drop)
   persists the partial reply; retrying then continues from it and, on
   success, folds the partial + continuation into one message and drops the
   error (`ContinueFromID` in ChatParams, `MergeContinuedTurn` in the store). Queued messages can be reordered

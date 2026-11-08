@@ -329,6 +329,22 @@ Notes:
 - v1's container healthcheck calls `wget` on `/api/healthz`; you can mirror it with `traefik.http.services.v1.loadbalancer.healthcheck.path=/api/healthz` if you want Traefik to also health-check the backend.
 - If you use Authentik's forward-auth (Traefik middleware) in front of v1, note that v1 has its own login — either let v1 handle auth (skip forward-auth) or gate `/` with forward-auth and leave `/api` to v1. Do not stack both, or you'll get a double login.
 
+### If streaming stops working (a buffering proxy)
+
+The symptom is specific: the agent starts running, no tool calls or thinking
+appear, the composer keeps saying "Generation still running", and the answer
+shows up only once the turn is over. The run itself is healthy — the proxy is
+holding the response body. SSE (`text/event-stream`) must not be buffered or
+compressed; the nginx line is `proxy_buffering off;` (see above), and on
+Cloudflare-hosted tunnels a Cache Rule that bypasses `/api/*` (plus Rocket
+Loader off) is usually what fixes it.
+
+v1 degrades rather than freezing: when a stream delivers no event within 15
+seconds it is treated as buffered, and the chat falls back to polling
+`GET /api/projects/{id}/chat/status` and refetching the transcript, so the
+rounds that have committed appear as they land and the turn completes normally
+in the background. You lose token-by-token output, not the turn.
+
 ## GitHub integration
 
 Two ways to connect GitHub — either one enables **importing existing repos** and **creating + pushing new repos** for generated apps.

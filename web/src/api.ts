@@ -676,6 +676,26 @@ export const api = {
 // socket never errors, so the reader simply waited.
 const STREAM_IDLE_MS = 45_000;
 
+/**
+ * How long the response may stay silent before the turn is handed back to the
+ * status poll. A healthy stream delivers its first event in well under a second;
+ * a proxy that buffers the body delivers none until the turn is over, which from
+ * the client is indistinguishable from a dead connection — so it is detected and
+ * reported instead of waiting out STREAM_IDLE_MS.
+ */
+const STREAM_FIRST_EVENT_MS = 15_000;
+
+/**
+ * The response never started: a proxy is holding the body until the turn ends.
+ * The run is fine server-side; the caller falls back to polling its status.
+ */
+export class BufferedStreamError extends Error {
+  constructor() {
+    super('stream_buffered');
+    this.name = 'BufferedStreamError';
+  }
+}
+
 /** reader.read() with a deadline: resolves to 'idle' when the stream goes quiet. */
 async function readWithIdleDeadline(
   reader: ReadableStreamDefaultReader<Uint8Array>,
@@ -706,13 +726,47 @@ async function streamChatEvents(
   get = false,
   idleMs = STREAM_IDLE_MS,
 ): Promise<void> {
-  const res = await fetch(path, {
-    method: get ? 'GET' : 'POST',
-    credentials: 'same-origin',
-    headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-    signal,
-  });
+  // The caller's signal owns the request, but the stream also has to be able to
+  // end it on its own (see BufferedStreamError), so it aborts through a
+  // controller of its own that follows the caller's.
+  const inner = new AbortController();
+  const onAbort = () => inner.abort();
+  if (signal.aborted) inner.abort();
+  else signal.addEventListener('abort', onAbort, { once: true });
+  try {
+    await streamBody(path, body, onEvent, inner, get, idleMs);
+  } finally {
+    signal.removeEventListener('abort', onAbort);
+  }
+}
+
+async function streamBody(
+  path: string,
+  body: unknown,
+  onEvent: (ev: ChatEvent) => void,
+  inner: AbortController,
+  get: boolean,
+  idleMs: number,
+): Promise<void> {
+  // Headers can be held back too: race the fetch itself so a proxy that withholds
+  // the response until it is complete is detected like a buffered body.
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const res = await Promise.race([
+    fetch(path, {
+      method: get ? 'GET' : 'POST',
+      credentials: 'same-origin',
+      headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+      signal: inner.signal,
+    }),
+    new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        inner.abort();
+        reject(new BufferedStreamError());
+      }, STREAM_FIRST_EVENT_MS);
+    }),
+  ]).finally(() => clearTimeout(timer));
+
 
   if (res.status === 401) {
     redirectToLogin();
@@ -729,6 +783,9 @@ async function streamChatEvents(
   const decoder = new TextDecoder();
   let buf = '';
   let gotDone = false;
+  // Whether any event has reached this client yet: until one has, the stream is
+  // on its first-event deadline rather than the long idle one.
+  let sawEvent = false;
 
   const emit = (raw: string) => {
     const data = raw
@@ -744,17 +801,18 @@ async function streamChatEvents(
       return; // ignore malformed events
     }
     if (ev.type === 'done') gotDone = true;
+    sawEvent = true;
     onEvent(ev);
   };
 
   for (;;) {
     let chunk: ReadableStreamReadResult<Uint8Array> | 'idle';
     try {
-      chunk = await readWithIdleDeadline(reader, idleMs);
+      chunk = await readWithIdleDeadline(reader, sawEvent ? idleMs : STREAM_FIRST_EVENT_MS);
     } catch (e) {
       // A dead/incomplete stream (e.g. the connection dropped mid-run) must
       // not leave a zombie reader that keeps the tab spinning forever.
-      if (signal.aborted) throw e;
+      if (inner.signal.aborted) throw e;
       return;
     }
     if (chunk === 'idle') {
@@ -763,6 +821,11 @@ async function streamChatEvents(
       // the transcript (and re-attaches if the run is still alive) instead of
       // waiting on a reader that will never resolve.
       void reader.cancel().catch(() => {});
+      if (!sawEvent) {
+        // Never a single event: not a dead connection but a buffered response.
+        inner.abort();
+        throw new BufferedStreamError();
+      }
       break;
     }
     const { done, value } = chunk;
