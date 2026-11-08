@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"v1/internal/agent"
 	"v1/internal/config"
@@ -325,6 +326,71 @@ func TestUnsavedText(t *testing.T) {
 		if got := unsavedText(c.committed, c.flushed); got != c.want {
 			t.Fatalf("unsavedText(%q, %q) = %q, want %q", c.committed, c.flushed, got, c.want)
 		}
+	}
+}
+
+// A slow provider is not a dead runtime: silence past the timeout only ends the
+// turn when the runtime cannot answer. A reasoning model on a large context can
+// be quiet for minutes, and some providers stream nothing until the round commits.
+func TestStallWatchWaitsOnALiveRuntime(t *testing.T) {
+	start := time.Unix(1000, 0)
+	w := newStallWatch(start)
+	if w.due(start.Add(harnessStallTimeout - time.Second)) {
+		t.Fatal("probed before the timeout elapsed")
+	}
+	if !w.due(start.Add(harnessStallTimeout)) {
+		t.Fatal("not probed at the timeout")
+	}
+	// The runtime answers: the turn keeps going, and the next probe is a timeout away.
+	probe := start.Add(harnessStallTimeout)
+	if !w.alive(probe) {
+		t.Fatal("a live runtime ended the turn")
+	}
+	if w.due(probe.Add(harnessStallTimeout - time.Second)) {
+		t.Fatal("probed again immediately after a reply")
+	}
+	// A real event resets the quiet stretch, so the ceiling counts from there.
+	w.spoke(probe.Add(time.Minute))
+	if !w.due(probe.Add(2*time.Minute + harnessStallTimeout)) {
+		t.Fatal("an event did not reset the wait")
+	}
+}
+
+// A host tool that keeps the sidecar silent is not silence at all: a build or an
+// install can outlast the ceiling and must never end the turn.
+func TestStallWatchIgnoresToolActivity(t *testing.T) {
+	start := time.Unix(2000, 0)
+	w := newStallWatch(start)
+	now := start
+	for i := 0; i < 100; i++ {
+		now = now.Add(30 * time.Second)
+		w.busy(now)
+		if w.due(now) {
+			t.Fatalf("a tool in flight counted as silence after %s", now.Sub(start))
+		}
+	}
+}
+
+// A runtime that answers but never produces anything must not hold the turn
+// forever: the ceiling ends it, and only a real event restarts the clock.
+func TestStallWatchCeilingEndsAQuietTurn(t *testing.T) {
+	start := time.Unix(3000, 0)
+	w := newStallWatch(start)
+	now := start
+	for {
+		now = now.Add(harnessStallTimeout)
+		if !w.due(now) {
+			t.Fatal("the probe was never due")
+		}
+		if !w.alive(now) {
+			break
+		}
+		if now.Sub(start) > harnessStallCeiling+harnessStallTimeout {
+			t.Fatal("the ceiling never ended a turn that produced nothing")
+		}
+	}
+	if now.Sub(start) < harnessStallCeiling {
+		t.Fatalf("ended after %s, before the ceiling %s", now.Sub(start), harnessStallCeiling)
 	}
 }
 

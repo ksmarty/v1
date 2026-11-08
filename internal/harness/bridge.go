@@ -10,6 +10,7 @@ package harness
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sync"
 )
@@ -268,6 +269,11 @@ func (b *Bridge) Handle(ctx context.Context, method string, params json.RawMessa
 		}
 		runner := b.runner(call.ConversationID)
 		if runner == nil {
+			// The sidecar is still running a turn v1 has no runner for — an
+			// abandoned turn, or one on a conversation that was rewound out from
+			// under it. It is worth a log line: from the model's side it looks like
+			// a tool that mysteriously fails, and every call it makes reads the same.
+			b.logf("harness: tool %s for conversation %s arrived with no active turn", call.Tool, call.ConversationID)
 			return ToolResult{Text: fmt.Sprintf("no active turn for tool %s", call.Tool), IsError: true}, nil
 		}
 		return runner.RunTool(ctx, call)
@@ -366,6 +372,27 @@ func (b *Bridge) Ensure(ctx context.Context, req EnsureRequest) (EnsureResult, e
 	var out EnsureResult
 	err := b.sup.Call(ctx, "conversation.ensure", req, &out)
 	return out, err
+}
+
+// Ping checks that the sidecar is alive and answering. The turn's stall watchdog
+// uses it: a turn that has been quiet for a minute is either wedged or waiting on
+// a provider that has not produced a token yet, and a runtime that still replies
+// to this is the second case.
+func (b *Bridge) Ping(ctx context.Context) error {
+	var out struct {
+		OK bool `json:"ok"`
+	}
+	if err := b.sup.Call(ctx, "ping", map[string]any{}, &out); err != nil {
+		// A runtime that answers "no such method" is alive and talking: it is just
+		// older than this probe. Reading that as death would abandon a healthy
+		// turn, which is the failure the probe exists to prevent.
+		var handlerErr *HandlerError
+		if errors.As(err, &handlerErr) && handlerErr.Code == CodeMethodNotFound {
+			return nil
+		}
+		return err
+	}
+	return nil
 }
 
 // Entries reads a conversation's durable transcript. It is used to show a

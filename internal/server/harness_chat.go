@@ -924,9 +924,64 @@ func harnessUsageJSON(u *harness.Usage, model string) string {
 const harnessEnsureTimeout = 90 * time.Second
 
 // harnessStallTimeout is how long a turn may run with nothing in flight and no
-// event from the sidecar before it is treated as dead. Only reached when no host
-// tool is executing, so a long build or install is never mistaken for a stall.
+// event from the sidecar before the runtime is asked whether it is still there.
+// Only reached when no host tool is executing, so a long build or install is
+// never mistaken for a stall.
 const harnessStallTimeout = 60 * time.Second
+
+// harnessStallCeiling caps how long a runtime that is alive but silent may hold a
+// turn. A quiet turn is usually legitimate — a reasoning model on a large context
+// can think for minutes before its first token, and some providers stream nothing
+// at all until the round is done — but an unbounded wait is what leaves the chat
+// on "Generation still running" forever.
+const harnessStallCeiling = 10 * time.Minute
+
+// harnessPingTimeout bounds the liveness probe: a runtime that cannot answer this
+// quickly is treated as dead, which is the case the stall guard is for.
+const harnessPingTimeout = 5 * time.Second
+
+// stallWatch is a turn's silence watchdog. It cannot treat silence as death on its
+// own: the sidecar says nothing while Go runs a tool, while a slow provider is
+// still thinking, and while a model request is in flight before its first token.
+// Two clocks keep those apart — lastActivity ends the wait as soon as the runtime
+// proves it is alive (a ping), quietSince bounds the whole quiet stretch.
+type stallWatch struct {
+	// lastActivity is the last event, or the last time the runtime answered.
+	lastActivity time.Time
+	// quietSince is when the runtime last said something itself. A liveness probe
+	// never moves it, or a wedged model call could hold a turn forever.
+	quietSince time.Time
+	// announced keeps the "still waiting" log to one line per quiet stretch.
+	announced bool
+}
+
+func newStallWatch(now time.Time) *stallWatch {
+	return &stallWatch{lastActivity: now, quietSince: now}
+}
+
+// spoke records a real event from the runtime.
+func (w *stallWatch) spoke(now time.Time) {
+	w.lastActivity, w.quietSince, w.announced = now, now, false
+}
+
+// busy records that a host tool is executing here, which the sidecar is waiting on.
+func (w *stallWatch) busy(now time.Time) { w.lastActivity = now }
+
+// due reports whether the silence has lasted long enough to ask the runtime.
+func (w *stallWatch) due(now time.Time) bool {
+	return now.Sub(w.lastActivity) >= harnessStallTimeout
+}
+
+// alive records a runtime that answered the probe. It returns false when the wait
+// has already run past the ceiling, so the caller gives up instead of extending it
+// again.
+func (w *stallWatch) alive(now time.Time) bool {
+	w.lastActivity = now
+	if now.Sub(w.quietSince) > harnessStallCeiling {
+		return false
+	}
+	return true
+}
 
 func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge, sidecarID string, q *harness.EventQueue, runner *harnessToolRunner, params agent.ChatParams, model string, emit func(agent.ChatEvent)) (*agent.TurnResult, error) {
 	turn := &agent.TurnResult{Model: model}
@@ -1113,10 +1168,25 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge,
 	// Aborted is set when the turn was cancelled, so a second cancellation is
 	// not mistaken for a new stop request.
 	var aborted bool
-	// When the sidecar last said anything. A run can go quiet for a long time
-	// legitimately — a tool Go is executing, a slow provider — so the gap is only
-	// read as a stall while nothing is in flight (below).
-	lastActivity := time.Now()
+	// The run can go quiet for a long time legitimately — a tool Go is executing,
+	// a slow provider — so silence is probed rather than read as death (below).
+	watch := newStallWatch(time.Now())
+	// giveUp ends a turn that produced nothing more, and takes the generation down
+	// with it. A turn v1 abandons but the sidecar keeps running is worse than the
+	// stall itself: the model's every later tool call reaches a turn that no longer
+	// exists, reads "no active turn for tool", and the chat shows it failing the
+	// same way over and over.
+	giveUp := func(msg string) (*agent.TurnResult, error) {
+		_ = persist(partial)
+		abortCtx, cancelAbort := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer cancelAbort()
+		if bridge != nil {
+			if err := bridge.Abort(abortCtx, sidecarID); err != nil {
+				log.Printf("harness: aborting an abandoned turn failed: %v", err)
+			}
+		}
+		return turn, errors.New(msg)
+	}
 
 	for {
 		// Polled on every batch, not only when the stream idles: a turn that
@@ -1131,7 +1201,7 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge,
 		events, err := q.Drain(drainCtx)
 		cancelDrain()
 		if len(events) > 0 {
-			lastActivity = time.Now()
+			watch.spoke(time.Now())
 		}
 		if err != nil {
 			if ctx.Err() != nil && !aborted {
@@ -1157,15 +1227,28 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge,
 				// A sidecar that stopped answering must not pin the session: the run
 				// would stay active forever, so the chat shows "Generation still
 				// running" for a turn that produced nothing and every later message
-				// queues behind it until the container is restarted. A tool running in
-				// Go (a build, an install) legitimately keeps the sidecar silent, so
-				// the clock only counts while nothing is in flight.
+				// queues behind it until the container is restarted. Silence alone is
+				// not that, though: a tool running in Go (a build, an install) and a
+				// provider that has not produced a token yet both keep the sidecar
+				// quiet for minutes. So past the timeout the runtime is asked.
 				if runner.busy() {
-					lastActivity = time.Now()
-				}
-				if time.Since(lastActivity) > harnessStallTimeout {
-					_ = persist(partial)
-					return turn, fmt.Errorf("the agent stopped responding (no activity for %s)", harnessStallTimeout)
+					watch.busy(time.Now())
+				} else if watch.due(time.Now()) {
+					probeCtx, cancelProbe := context.WithTimeout(ctx, harnessPingTimeout)
+					pingErr := bridge.Ping(probeCtx)
+					cancelProbe()
+					if pingErr != nil {
+						log.Printf("harness: the runtime stopped answering (%v)", pingErr)
+						return giveUp(fmt.Sprintf("the agent stopped responding (no activity for %s)", harnessStallTimeout))
+					}
+					now := time.Now()
+					if !watch.alive(now) {
+						return giveUp(fmt.Sprintf("the agent produced nothing for %s", harnessStallCeiling))
+					}
+					if !watch.announced {
+						watch.announced = true
+						log.Printf("harness: the runtime is alive but has said nothing for %s — still waiting on the model", now.Sub(watch.quietSince).Round(time.Second))
+					}
 				}
 				continue
 			}

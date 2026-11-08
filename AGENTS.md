@@ -190,9 +190,19 @@ or `make dev`), then report: (1) the new stamped build version (`v1 <version>
   completion; the stop endpoint cancels), but a sidecar that stops answering is
   not allowed to pin a session: on the harness path the wait for the runtime to
   accept the conversation is bounded (`harnessEnsureTimeout`, 90s) and a turn
-  that sees no sidecar event for `harnessStallTimeout` (60s, and only while no
-  host tool is executing — a build or install legitimately keeps the sidecar
-  silent) ends with an error and a persisted partial. Without both, a session
+  that goes quiet is watched, not guessed at — silence is not death. Past
+  `harnessStallTimeout` (60s) the runtime is asked (`Bridge.Ping`) whether it is
+  still there; one that answers is waiting on a provider (a reasoning model on a
+  large context, or a provider that streams nothing before the round commits),
+  and the turn keeps running up to `harnessStallCeiling` (10m of the sidecar
+  saying nothing itself). Only an unresponsive runtime ends the turn with an
+  error and a persisted partial; the wait is also skipped entirely while a host
+  tool is executing (a build or install legitimately keeps the sidecar silent).
+  INVARIANT: a turn v1 abandons it must also stop in the sidecar
+  (`giveUp` aborts) — otherwise the model keeps running rounds whose every tool
+  call reaches a turn that no longer exists and reads "no active turn for tool"
+  (`internal/harness/bridge.go` logs that case, since from the model's side it
+  looks like a tool that mysteriously fails). Without the guards, a session
   poisoned by a failed storage commit kept its run "active" forever: the chat
   sat on "Generation still running", the transcript never updated, and every
   later message queued behind a turn that would never do anything.

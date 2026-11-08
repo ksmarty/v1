@@ -418,6 +418,12 @@ async function main() {
 		await peer.call("watch.start", { subscriptionId: "sub-1", conversationId }, { timeoutMs: 30_000 });
 		check("watch.start delivers an initial snapshot", events.some((event) => event.type === "snapshot"));
 
+		// Go's turn watchdog asks this while a turn is quiet: a model request that
+		// has not produced a token yet looks like a wedged runtime from outside, and
+		// only this answers whether it still is.
+		const pong = await peer.call("ping", {}, { timeoutMs: 5_000 });
+		check("ping answers while the bridge is live", pong?.ok === true && typeof pong.uptimeMs === "number", JSON.stringify(pong));
+
 		let unknownCode = null;
 		try {
 			await peer.call("harness.nonsense", {}, { timeoutMs: 10_000 });

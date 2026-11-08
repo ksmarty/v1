@@ -962,6 +962,13 @@ class Sidecar {
 				return await this.shutdown();
 			case "harness.inspect":
 				return await this.inspect();
+			case "ping":
+				// Liveness only. Go's turn watchdog asks while a turn is quiet: a
+				// model request that has not produced a token yet looks exactly like
+				// a wedged runtime from the outside, and only this answers which it
+				// is. Nothing here touches the harness, so it replies even while a
+				// provider call is in flight.
+				return { ok: true, uptimeMs: Math.round(process.uptime() * 1000) };
 			case "conversation.ensure":
 			case "conversation.configure":
 				return await this.ensure(params);
