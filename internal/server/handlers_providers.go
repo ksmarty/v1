@@ -151,7 +151,7 @@ func (s *Server) finalizeProviders(cat *llm.Catalog, r *http.Request) *llm.Catal
 	}
 	keys := map[string]string{}
 	for _, lp := range s.llmProviders(userID) {
-		if lp.BaseURL == "" {
+		if lp.BaseURL == "" || lp.Disabled {
 			continue
 		}
 		nb := normalizeBase(lp.BaseURL)
@@ -173,7 +173,7 @@ func (s *Server) finalizeProviders(cat *llm.Catalog, r *http.Request) *llm.Catal
 	// curated static models.
 	live := map[string]bool{}
 	for _, lp := range s.llmProviders(userID) {
-		if lp.BaseURL != "" {
+		if lp.BaseURL != "" && !lp.Disabled {
 			live[normalizeBase(lp.BaseURL)] = true
 		}
 	}
@@ -231,6 +231,14 @@ func (s *Server) finalizeProviders(cat *llm.Catalog, r *http.Request) *llm.Catal
 			// Endpoint reached: its list wins, enriched with any known static
 			// metadata for matching ids. Unreachable => keep catalog list.
 			p.Models = merge(p.Models, ms)
+		}
+	}
+	// A saved provider whose endpoint published no model list keeps a nil slice,
+	// which serializes as `null` — not the `[]` every client iterates. Normalize
+	// it so one unreachable endpoint cannot make a picker crash.
+	for i := range out.Providers {
+		if out.Providers[i].Models == nil {
+			out.Providers[i].Models = []llm.ProviderModel{}
 		}
 	}
 	return &out

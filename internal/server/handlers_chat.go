@@ -284,6 +284,13 @@ func (s *Server) requireLLMKey(w http.ResponseWriter, userID, providerID string)
 		writeError(w, http.StatusBadRequest, "unknown_provider")
 		return false
 	}
+	// A disabled provider stays saved (its key included) but may not serve a
+	// turn: refuse loudly instead of silently falling back to another endpoint,
+	// which would send the conversation somewhere the user did not pick.
+	if prov.Disabled {
+		writeError(w, http.StatusBadRequest, "The “"+prov.Name+"” provider is disabled — enable it in Settings → LLM & providers.")
+		return false
+	}
 	if prov.APIKey == "" {
 		writeError(w, http.StatusBadRequest, "no_api_key")
 		return false

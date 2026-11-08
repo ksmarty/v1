@@ -202,6 +202,8 @@ export interface SavedProviderInput {
   baseURL: string;
   model: string;
   apiKey?: string;
+  /** Switch the provider off without deleting it (keeps its key). */
+  disabled?: boolean;
 }
 
 export interface SettingsUpdate {

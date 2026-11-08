@@ -202,6 +202,7 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 			"model":      p.Model,
 			"apiKeySet":  p.APIKey != "",
 			"apiKeyHint": apiKeyHint(p.APIKey),
+			"disabled":   p.Disabled,
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -365,6 +366,9 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 			// the effective config.
 			if effBase, _, _ := s.llmConfig(userID); effBase != "" {
 				for _, m := range merged {
+					if m.Disabled {
+						continue
+					}
 					if m.APIKey != "" && sameBaseURL(m.BaseURL, effBase) {
 						if err := s.st.SetUserSetting(userID, keyLLMAPIKey, m.APIKey); err != nil {
 							writeError(w, http.StatusInternalServerError, err.Error())
@@ -380,12 +384,19 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 			// separate "activate" step. There is no active-provider concept —
 			// projects and new chats just default to the first saved provider.
 			if len(merged) > 0 {
+				first := merged[0]
+				for _, m := range merged {
+					if !m.Disabled {
+						first = m
+						break
+					}
+				}
 				if v, ok := s.userSetting(userID, keyLLMBaseURL); !ok || v == "" {
 					for key, v := range map[string]string{
-						keyLLMBaseURL:      merged[0].BaseURL,
-						keyLLMAPIKey:       merged[0].APIKey,
-						keyLLMModel:        merged[0].Model,
-						keyLLMDefaultModel: merged[0].Model,
+						keyLLMBaseURL:      first.BaseURL,
+						keyLLMAPIKey:       first.APIKey,
+						keyLLMModel:        first.Model,
+						keyLLMDefaultModel: first.Model,
 					} {
 						if err := s.st.SetUserSetting(userID, key, v); err != nil {
 							writeError(w, http.StatusInternalServerError, err.Error())

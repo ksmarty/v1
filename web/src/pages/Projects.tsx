@@ -295,8 +295,11 @@ function NewProjectDialog({
       api
         .getSettings()
         .then((s) => {
-          setProviders(s.llm.providers ?? []);
-          setProviderId(s.llm.providers?.[0]?.id ?? '');
+          // Disabled providers are filtered out here (not just hidden in the
+          // picker): the default would otherwise land on one the server refuses.
+          const usable = (s.llm.providers ?? []).filter((p) => !p.disabled);
+          setProviders(usable);
+          setProviderId(usable[0]?.id ?? '');
           // The default model, not the plain one: a new project should start on
           // the model the user chose as their default, and this is the picker
           // whose value rides along as the project's initialModel.

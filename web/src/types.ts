@@ -55,6 +55,11 @@ export interface SavedProvider {
    * to reveal a prefix of safely.
    */
   apiKeyHint?: string;
+  /**
+   * Switched off in Settings. The record (and its key) stays saved, but the
+   * provider is not offered in the pickers and a turn asking for it is refused.
+   */
+  disabled?: boolean;
 }
 
 export interface LLMSettings {

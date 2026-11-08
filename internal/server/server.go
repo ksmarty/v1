@@ -581,6 +581,11 @@ type llmProviderRecord struct {
 	BaseURL string `json:"baseURL"`
 	APIKey  string `json:"apiKey,omitempty"`
 	Model   string `json:"model"`
+	// Disabled keeps a saved provider out of the model pickers and refuses turns
+	// that still ask for it, without touching its stored key: switching an
+	// endpoint off for a while (a lapsed subscription, a rate-limited account)
+	// must not cost the credential, and re-enabling must be one click.
+	Disabled bool `json:"disabled,omitempty"`
 }
 
 // llmProviders loads the user's saved provider list (nil when none saved).

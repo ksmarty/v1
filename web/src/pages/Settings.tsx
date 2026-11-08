@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type FormEvent, type ReactNode } from 'react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { SiVercel } from 'react-icons/si';
-import { api, clearClientCaches, type SettingsUpdate } from '../api';
+import { api, clearClientCaches, type SavedProviderInput, type SettingsUpdate } from '../api';
 import { testNotification } from '../notify';
 import { pushSupported, registerPush } from '../push';
 import type { Settings as SettingsType, UserInfo, Provider, ProviderModel, ToolExposure } from '../types';
@@ -537,6 +537,20 @@ function EphemeralArchiveDaysControl() {
   );
 }
 // → Tool calls). Server-backed so the agent loop reads it too.
+// A saved provider as the settings payload expects it. The PUT replaces the
+// saved list wholesale, so every stored field has to be sent back on any edit:
+// leaving `disabled` out would silently re-enable a switched-off provider the
+// moment another one is edited, deleted or added.
+function providerPayload(p: {
+  id: string;
+  name: string;
+  baseURL: string;
+  model: string;
+  disabled?: boolean;
+}): SavedProviderInput {
+  return { id: p.id, name: p.name, baseURL: p.baseURL, model: p.model, disabled: !!p.disabled };
+}
+
 function ToonControl() {
   const [on, setOn] = useState(true);
   const [loaded, setLoaded] = useState(false);
@@ -1828,6 +1842,9 @@ export default function Settings() {
 
   // Saved providers
   const [providers, setProviders] = useState<SettingsType['llm']['providers']>([]);
+  // Providers a model can actually be picked from: a disabled one stays in the
+  // list below (so it can be switched back on) but is never offered here.
+  const enabledProviders = useMemo(() => providers.filter((p) => !p.disabled), [providers]);
   const [provName, setProvName] = useState('');
   const [provBusyId, setProvBusyId] = useState<string | null>(null);
   const [provError, setProvError] = useState<string | null>(null);
@@ -1925,7 +1942,7 @@ export default function Settings() {
   }, []);
   // Model list for the picked provider, unioned across catalog entries that
   // share its base URL, matching the chat picker.
-  const defSelectedProvider = providers.find((p) => p.id === defProvId) ?? null;
+  const defSelectedProvider = enabledProviders.find((p) => p.id === defProvId) ?? null;
   const defCatalogModels = useMemo((): ProviderModel[] => {
     if (!defSelectedProvider) return [];
     const byId = new Map<string, ProviderModel>();
@@ -1944,11 +1961,11 @@ export default function Settings() {
     return defaultModel;
   }, [defaultModel, catalog]);
   const openDefaultModelPicker = () => {
-    if (providers.length > 0) {
+    if (enabledProviders.length > 0) {
       const hit =
-        providers.find((p) =>
+        enabledProviders.find((p) =>
           catalog.some((c) => c.baseURL === p.baseURL && c.models.some((m) => m.id === defaultModel)),
-        ) ?? providers[0];
+        ) ?? enabledProviders[0];
       setDefProvId(hit.id);
     } else {
       setDefProvId('');
@@ -2121,8 +2138,8 @@ export default function Settings() {
         // Editing one saved provider only.
         const list = providers.map((p) =>
           p.id === editing
-            ? { id: p.id, name, baseURL, model, ...(apiKey ? { apiKey } : {}) }
-            : { id: p.id, name: p.name, baseURL: p.baseURL, model: p.model },
+            ? { ...providerPayload(p), name, baseURL, model, ...(apiKey ? { apiKey } : {}) }
+            : providerPayload(p),
         );
         await api.updateSettings({ llm: { providers: list } });
       } else {
@@ -2132,12 +2149,7 @@ export default function Settings() {
         // model that provider actually serves.
         const firstProvider = providers.length === 0;
         const newId = randomId();
-        const list = providers.map((p) => ({
-          id: p.id,
-          name: p.name,
-          baseURL: p.baseURL,
-          model: p.model,
-        }));
+        const list = providers.map(providerPayload);
         list.push({ id: newId, name, baseURL, model, ...(apiKey ? { apiKey } : {}) });
         await api.updateSettings({ llm: { providers: list } });
         if (firstProvider) await populateDefaultModel(newId);
@@ -2240,14 +2252,32 @@ export default function Settings() {
     setProvBusyId(id);
     setProvError(null);
     try {
-      const rest = providers.filter((p) => p.id !== id);
-      await api.updateSettings({
-        llm: {
-          providers: rest.map((p) => ({ id: p.id, name: p.name, baseURL: p.baseURL, model: p.model })),
-        },
-      });
+      const rest = providers.filter((p) => p.id !== id).map(providerPayload);
+      await api.updateSettings({ llm: { providers: rest } });
       reloadSettings();
     } catch (err) {
+      setProvError(errMsg(err));
+    } finally {
+      setProvBusyId(null);
+    }
+  };
+
+  // Switching a provider off (or back on) saves on its own, like every other
+  // toggle in Settings: the stored key is kept, so re-enabling is one click and
+  // the flag never rides along with an unrelated form save.
+  const toggleProvider = async (id: string, next: boolean) => {
+    const before = providers;
+    const patch = (list: SettingsType['llm']['providers']) =>
+      list.map((p) => (p.id === id ? { ...p, disabled: next } : p));
+    setProvBusyId(id);
+    setProvError(null);
+    setProviders(patch(before));
+    try {
+      const list = patch(before).map(providerPayload);
+      await api.updateSettings({ llm: { providers: list } });
+      reloadSettings();
+    } catch (err) {
+      setProviders(before);
       setProvError(errMsg(err));
     } finally {
       setProvBusyId(null);
@@ -2726,7 +2756,16 @@ export default function Settings() {
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5">
-                        <span className="truncate text-sm text-text">{p.name}</span>
+                        <span
+                          className={`truncate text-sm ${p.disabled ? 'text-dim' : 'text-text'}`}
+                        >
+                          {p.name}
+                        </span>
+                        {p.disabled && (
+                          <span className="shrink-0 rounded border border-border-strong px-1 py-px text-[10px] uppercase tracking-wide text-faint">
+                            disabled
+                          </span>
+                        )}
                       </div>
                       <div className="truncate font-mono text-[11px] text-faint">
                         {p.baseURL || '(no base URL)'}
@@ -2741,6 +2780,25 @@ export default function Settings() {
                       <span className="shrink-0 text-[10px] text-red-400">no key</span>
                     )}
                     <div className="flex shrink-0 items-center gap-1">
+                      <button
+                        type="button"
+                        aria-label={`${p.disabled ? 'Enable' : 'Disable'} provider ${p.name}`}
+                        aria-pressed={!p.disabled}
+                        title={p.disabled ? 'Enable provider' : 'Disable provider'}
+                        disabled={provBusyId === p.id}
+                        onClick={() => void toggleProvider(p.id, !p.disabled)}
+                        className={`inline-flex h-7 w-7 items-center justify-center rounded-md transition-colors hover:bg-border disabled:opacity-40 ${
+                          p.disabled
+                            ? 'text-faint hover:text-emerald-500'
+                            : 'text-dim hover:text-text'
+                        }`}
+                      >
+                        {p.disabled ? (
+                          <IconEyeOff className="h-3.5 w-3.5" />
+                        ) : (
+                          <IconEye className="h-3.5 w-3.5" />
+                        )}
+                      </button>
                       <button
                         type="button"
                         aria-label={`Edit provider ${p.name}`}
@@ -2831,7 +2889,7 @@ export default function Settings() {
         <ModelPicker
           open={defPicking}
           onClose={() => setDefPicking(false)}
-          providers={providers}
+          providers={enabledProviders}
           providerId={defProvId}
           model={defaultModel}
           models={defCatalogModels}

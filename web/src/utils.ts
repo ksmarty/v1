@@ -357,9 +357,12 @@ export function normalizeBaseURL(url: string): string {
 }
 
 // The catalog model behind a configured id, searched across every provider.
+// A provider whose /models list could not be fetched (an unreachable endpoint)
+// carries no models at all — `null` on the wire — so every list read has to
+// default to empty rather than letting one bad catalog entry crash the chat.
 export function findCatalogModel(catalog: Provider[], id: string): ProviderModel | null {
   for (const p of catalog) {
-    const m = p.models.find((x) => modelMatches(x.id, id));
+    const m = (p.models ?? []).find((x) => modelMatches(x.id, id));
     if (m) return m;
   }
   return null;
@@ -377,7 +380,8 @@ export function findProviderForModel(
     if (
       catalog.some(
         (c) =>
-          normalizeBaseURL(c.baseURL) === base && c.models.some((m) => modelMatches(m.id, id)),
+          normalizeBaseURL(c.baseURL) === base &&
+          (c.models ?? []).some((m) => modelMatches(m.id, id)),
       )
     ) {
       return p;

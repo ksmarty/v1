@@ -4560,7 +4560,9 @@ export default function ChatPane({
       .getSettings()
       .then((s) => {
         if (!active) return;
-        const saved = s.llm.providers ?? [];
+        // A disabled provider stays saved for the Settings list but must never be
+        // offered here — the server refuses its turns.
+        const saved = (s.llm.providers ?? []).filter((p) => !p.disabled);
         setProviders(saved);
         setSettingsModels(s.llm.models ?? []);
         setPermissionMode(s.permissionMode ?? 'ask');

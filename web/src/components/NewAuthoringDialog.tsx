@@ -99,7 +99,7 @@ export default function NewAuthoringDialog({
         sessionId,
         config.starter(text),
         settings?.llm.defaultModel ?? settings?.llm.model,
-        settings?.llm.providers?.[0]?.id,
+        settings?.llm.providers?.find((p) => !p.disabled)?.id,
         settings?.defaultThinking || undefined,
       );
       onClose();

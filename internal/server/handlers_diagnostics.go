@@ -93,7 +93,7 @@ func (s *Server) diagnosticsProvider(userID string) map[string]any {
 		p := ps[0]
 		return map[string]any{
 			"id": p.ID, "name": p.Name, "baseURL": p.BaseURL, "model": p.Model,
-			"apiKey": maskKey(p.APIKey),
+			"apiKey": maskKey(p.APIKey), "disabled": p.Disabled,
 		}
 	}
 	baseURL, apiKey, model := s.llmConfig(userID)
