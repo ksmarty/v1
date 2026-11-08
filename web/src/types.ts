@@ -93,6 +93,21 @@ export type PermissionMode = 'ask' | 'auto' | 'yolo';
 /** How the harness advertises tools: every schema up front, or on demand. */
 export type ToolExposure = 'all' | 'search';
 
+/**
+ * The Appearance page, account-scoped: the server is the source of truth, and
+ * the SPA keeps a localStorage mirror so the first paint (the theme) and the
+ * synchronous layout reads do not wait on a fetch.
+ */
+export interface AppearanceSettings {
+  theme: string;
+  chatSide: 'left' | 'right';
+  chatTabs: { order: string[]; hidden: string[] };
+  jsonPretty: boolean;
+  toolCallsCollapsed: boolean;
+  turnFold: boolean;
+  thinkingCollapsed: boolean;
+}
+
 export interface Settings {
   llm: LLMSettings;
   github: GitHubSettings;
@@ -124,6 +139,8 @@ export interface Settings {
   contextThreshold: number;
   /** Days an idle ephemeral chat is kept before it is archived (0 = never). */
   ephemeralArchiveDays: number;
+  /** Account-scoped appearance: theme, chat side, tab bar, chat rendering. */
+  appearance: AppearanceSettings;
   /** System prompt override shown in Settings (empty = the built-in base). */
   systemPrompt: string;
   version: string;
@@ -347,7 +364,8 @@ export type ChatEvent =
   | { type: 'todos'; todos: Todo[] }
   | { type: 'memories'; memories: Memory[] }
   | { type: 'permission_request'; requestId: string; tool: string; detail: string }
-  | { type: 'done'; usage?: ChatUsage }
+  /** "more" means the run continues: a queued message becomes the next turn. */
+  | { type: 'done'; usage?: ChatUsage; more?: boolean }
   | { type: 'context'; usage?: ChatUsage }
   | { type: 'error'; error: string }
   | {

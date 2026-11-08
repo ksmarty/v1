@@ -349,6 +349,15 @@ or `make dev`), then report: (1) the new stamped build version (`v1 <version>
   arguments JSON (not a path/command summary), so a live card — an edit diff
   with its +/- counts, a write's content, a todo/plan preview — renders the
   same as the reloaded one; the summary is only a fallback for empty args. A
+  `done` event carrying `more:true` means the run continues — messages queued (or
+  steered but unconsumed) while the turn ran become follow-up turns on the same
+  stream — so the client skips the "turn finished" notification, its persisted
+  notified marker and `finish()`, keeping the composer live; only the turn that
+  empties the queue notifies. The server's push (`notifyTurnPush`) is gated on
+  the same flag: an alert for a chat that keeps working sends the user to a
+  session that is still running. The transcript refetch in `load()` is gated the
+  same way (`runActiveRef`/`streamingRef`/watch/stream refs): a poll inside a
+  running turn must not report its already-committed rounds as a finished turn. A
   `replace:true` on a `delta`/`reasoning`
   event means the text replaces the live value rather than appending — the
   harness sends it when a round's committed text is not an extension of what
@@ -357,7 +366,19 @@ or `make dev`), then report: (1) the new stamped build version (`v1 <version>
   language (`highlightFile` in `web/src/markdown.ts`).
 - The chat composer is a markdown editor: Enter continues a list marker,
   double-space on a list line indents it one level, and Backspace on an empty
-  indented item (depth 2+) un-indents it.
+  indented item (depth 2+) un-indents it. Holding the composer's `+` button
+  opens the same menu a tap does, with the debug-only items in it (the
+  `Download debug logs` diagnostics dump, otherwise shown only with the Debug HUD
+  on): reporting a chat that ended oddly must not require turning a debug
+  setting on first. The release tap is swallowed, or the menu a hold just opened
+  would close again.
+- The transcript's work groups are per TURN, not per round: everything a turn did
+  between two spoken messages collapses into one `CollapsedToolsGroup`, rendered
+  where the turn's first work row sat (`partWork`/`partWorkAt` in the render pass
+  of `ChatPane.tsx`), with the turn's own comments after it. Per-round grouping
+  left a column of small groups for one turn's work. Turn fold then wraps that
+  single group plus the intermediate comments, leaving the last comment visible
+  (`TurnFold`).
 - The GitHub tab's repo is auto-detected: `GET /api/projects/{id}` fills
   `repoUrl` from the working tree's `origin` remote (`gitops.RemoteURL`) when
   the user hasn't linked one, so `showGitHubTab` can offer the tab on its own;
@@ -394,6 +415,21 @@ or `make dev`), then report: (1) the new stamped build version (`v1 <version>
   a scrolling body — use it for tall dialogs (tools, model picker).
   `fullScreen` dialogs are full-bleed on mobile and size to
   `max(var(--v1-app-height,0px),100dvh)` like the project shell.
+- Appearance settings are account-scoped, not device-scoped: theme, chat side,
+  the project tab bar, pretty-printed tool JSON, tool-call collapse, turn fold and
+  thinking collapse are one JSON object per user (`keyAppearance` in
+  `internal/server/appearance.go`, `user_settings` row, GET/PUT `/api/settings`
+  field `appearance`, patched knob by knob so one control saving never pushes the
+  others back). The SPA keeps a localStorage MIRROR of it (`web/src/appearance.ts`):
+  reads stay synchronous (the theme must paint before the fetch, the chat side and
+  tab bar are read during render, the chat asks how to render on every row), a
+  change writes the mirror and the account, and `hydrateAppearance()` (called from
+  `main.tsx`) applies the owner's values after mount — `Project.tsx` and
+  `ChatPanel.tsx` subscribe (`subscribeAppearance`) because they read those two
+  once at mount. INVARIANT: the account is the source of truth, so a new
+  appearance knob belongs in `appearanceSettings` with its default in
+  `defaultAppearance()` (a resolved GET value, never a zero value) and in the
+  mirror, not in a second localStorage-only flag.
 - `ToolSettings` (chat tools dialog + Settings → Tools & permissions) shows one
   section at a time under a fixed `shrink-0` tab bar with a separate scroll
   container below. The tab bar is NOT `sticky` — it sits in a non-scrolling

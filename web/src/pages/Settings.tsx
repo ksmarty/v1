@@ -3,6 +3,7 @@ import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { SiVercel } from 'react-icons/si';
 import { api, clearClientCaches, type SavedProviderInput, type SettingsUpdate } from '../api';
 import { testNotification } from '../notify';
+import { applyAppearance, saveAppearance } from '../appearance';
 import { pushSupported, registerPush } from '../push';
 import type { Settings as SettingsType, UserInfo, Provider, ProviderModel, ToolExposure } from '../types';
 import {
@@ -24,26 +25,15 @@ import {
   isStandalone,
   randomId,
   setNotifyAsk,
-  setChatSide,
-  setChatTabLayout,
   setDebugHud,
-  setJsonPretty,
   setNotifyEnabled,
   setNotifyOnlyBackground,
   setNotifyTurnDone,
   setNotifyTurnError,
-  setThinkingCollapsed,
-  setToolCallsCollapsed,
-  setTurnFoldEnabled,
   type ChatSide,
   type ChatTab,
 } from '../utils';
-import {
-  applyTheme,
-  getStoredTheme,
-  listThemeOptions,
-  setStoredTheme,
-} from '../themes';
+import { getStoredTheme, listThemeOptions } from '../themes';
 import {
   Button,
   Center,
@@ -135,7 +125,7 @@ const SETTINGS_SEARCH: {
   { id: 'sec-tools-mcp', page: 'tools', label: 'MCP', hint: 'Model Context Protocol servers', keywords: 'mcp servers tools context protocol connect' },
   { id: 'sec-tools-skills', page: 'tools', label: 'Skills', hint: 'Install skills from SkillsMP', keywords: 'skills skillsmp install markdown' },
   { id: 'sec-tools-perms', page: 'tools', label: 'Permissions', hint: 'Approval mode, rewind approval', keywords: 'permission approve ask auto yolo tools rewind approval confirm' },
-  { id: 'sec-theme', page: 'appearance', label: 'Theme', hint: 'Dark, light, custom swatches', keywords: 'theme dark light color appearance swatch applies instantly remembered' },
+  { id: 'sec-theme', page: 'appearance', label: 'Theme', hint: 'Dark, light, custom swatches', keywords: 'theme dark light color appearance swatch applies instantly remembered account synced device' },
   { id: 'sec-chat-side', page: 'appearance', label: 'Chat side', hint: 'Chat pane left or right', keywords: 'chat side left right desktop layout appearance' },
   { id: 'sec-chat-tabs', page: 'appearance', label: 'Chat tabs', hint: 'Reorder and hide project tabs', keywords: 'tabs chat files terminal git memories project order hide drag' },
   { id: 'sec-tool-calls', page: 'appearance', label: 'Tool calls', hint: 'Pretty-print JSON', keywords: 'tool calls json pretty print format result arguments' },
@@ -182,8 +172,9 @@ function ThemePicker() {
 
   const choose = (name: string) => {
     setSelected(name);
-    setStoredTheme(name);
-    applyTheme(name);
+    // Account-scoped: `saveAppearance` writes the device mirror and applies the
+    // theme immediately, then persists the choice to the account.
+    void saveAppearance({ theme: name });
   };
 
   const swatch = (t: { name: string; swatches: string[] }) => (
@@ -240,7 +231,7 @@ function ChatSideControl() {
 
   const choose = (s: ChatSide) => {
     setSide(s);
-    setChatSide(s);
+    void saveAppearance({ chatSide: s });
   };
 
   return (
@@ -268,7 +259,7 @@ function JsonPrettyControl() {
 
   const choose = (v: boolean) => {
     setOn(v);
-    setJsonPretty(v);
+    void saveAppearance({ jsonPretty: v });
   };
 
   return (
@@ -294,7 +285,7 @@ function ToolCallsCollapseControl() {
 
   const choose = (v: boolean) => {
     setOn(v);
-    setToolCallsCollapsed(v);
+    void saveAppearance({ toolCallsCollapsed: v });
   };
 
   return (
@@ -320,7 +311,7 @@ function TurnFoldControl() {
 
   const choose = (v: boolean) => {
     setOn(v);
-    setTurnFoldEnabled(v);
+    void saveAppearance({ turnFold: v });
   };
 
   return (
@@ -346,7 +337,7 @@ function ThinkingCollapsedControl() {
 
   const choose = (v: boolean) => {
     setOn(v);
-    setThinkingCollapsed(v);
+    void saveAppearance({ thinkingCollapsed: v });
   };
 
   return (
@@ -1675,9 +1666,11 @@ function ChatTabsControl() {
 
   const persist = (next: { id: ChatTab; hidden: boolean }[]) => {
     setTabs(next);
-    setChatTabLayout({
-      order: next.filter((t) => !t.hidden).map((t) => t.id),
-      hidden: next.filter((t) => t.hidden).map((t) => t.id),
+    void saveAppearance({
+      chatTabs: {
+        order: next.filter((t) => !t.hidden).map((t) => t.id),
+        hidden: next.filter((t) => t.hidden).map((t) => t.id),
+      },
     });
   };
 
@@ -2071,6 +2064,9 @@ export default function Settings() {
       .getSettings()
       .then((s) => {
         setSettings(s);
+        // Appearance is account-scoped: the page's controls read the device
+        // mirror, so sync it from the account before they are interacted with.
+        if (s.appearance) applyAppearance(s.appearance);
         setBaseURL(s.llm.baseURL);
         setModel(s.llm.model);
         setDefaultModel(s.llm.defaultModel ?? '');
@@ -3351,16 +3347,24 @@ export default function Settings() {
             </div>
 
             <div className={page === 'appearance' ? 'flex flex-col gap-4' : 'hidden'}>
-              <Section id="sec-theme" title="Theme" description="Applies instantly and is remembered.">
+              <Section
+                id="sec-theme"
+                title="Theme"
+                description="Applies instantly and is saved to your account, so it follows you to another device."
+              >
                 <ThemePicker />
               </Section>
-              <Section id="sec-chat-side" title="Chat side" description="Which side of the preview the chat pane sits on (desktop).">
+              <Section
+                id="sec-chat-side"
+                title="Chat side"
+                description="Which side of the preview the chat pane sits on (desktop). Saved to your account."
+              >
                 <ChatSideControl />
               </Section>
         <Section
           id="sec-chat-tabs"
           title="Chat tabs"
-          description="Choose which tabs appear in the project view and their order. Drag to reorder; the eye toggles a tab on or off."
+          description="Choose which tabs appear in the project view and their order. Drag to reorder; the eye toggles a tab on or off. Saved to your account."
         >
           <ChatTabsControl />
         </Section>

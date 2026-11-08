@@ -91,6 +91,10 @@ type ChatEvent struct {
 	// Display, when set, is what the chat renders for a tool result instead of
 	// the model-visible JSON envelope (see Executor.toolDisplay).
 	Display json.RawMessage `json:"display,omitempty"`
+	// More is set on a done event when the run continues past this turn: messages
+	// queued (or steered) while it ran become follow-up turns on the same stream.
+	// The client keeps its run state and stays quiet — the run is not over.
+	More bool `json:"more,omitempty"`
 }
 
 // ChatParams carries everything needed to run one chat turn.

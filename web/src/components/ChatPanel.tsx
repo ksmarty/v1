@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import type { Project as ProjectType } from '../types';
 import { getChatTabLayout, type ChatTab } from '../utils';
+import { subscribeAppearance } from '../appearance';
 import ChatPane from './ChatPane';
 import FilesPane from './FilesPane';
 import TerminalPane from './TerminalPane';
@@ -71,7 +72,10 @@ export default function ChatPanel({
   /** Changes when the bottom-nav Chat button is pressed — resets the subtab. */
   chatResetSignal?: number;
 }) {
-  const [tabLayout] = useState(() => getChatTabLayout());
+  const [tabLayout, setTabLayout] = useState(() => getChatTabLayout());
+  // The tab bar is account-scoped: the mirror answers the first render, then the
+  // owner's arrangement lands from the server and this re-reads it.
+  useEffect(() => subscribeAppearance(() => setTabLayout(getChatTabLayout())), []);
   // The project title opens the session switcher.
   const [sessionsOpen, setSessionsOpen] = useState(false);
   // Active session name, reported up from ChatPane — shown as a subtitle under

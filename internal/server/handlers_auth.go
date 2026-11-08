@@ -251,6 +251,7 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 		"autoPushDefault":      s.autoPushDefault(userID),
 		"contextThreshold":     int(s.contextThreshold(userID) * 100),
 		"ephemeralArchiveDays": s.ephemeralArchiveDays(userID),
+		"appearance":          s.appearance(userID),
 		"systemPrompt":         s.effectiveSystemPrompt(userID),
 		"version":              s.cfg.Version,
 		"commit":               s.cfg.Commit,
@@ -296,6 +297,7 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		AutoPushDefault      *bool                     `json:"autoPushDefault"`
 		ContextThreshold     *float64                  `json:"contextThreshold"`
 		EphemeralArchiveDays *int                      `json:"ephemeralArchiveDays"`
+		Appearance           *appearancePatch          `json:"appearance"`
 		SystemPrompt         *string                   `json:"systemPrompt"`
 	}
 	if !decodeJSON(w, r, &body) {
@@ -683,6 +685,12 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 				writeError(w, http.StatusInternalServerError, err.Error())
 				return
 			}
+		}
+	}
+	if body.Appearance != nil {
+		if err := s.applyAppearancePatch(userID, *body.Appearance); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
 		}
 	}
 	if body.Password != nil && *body.Password != "" {

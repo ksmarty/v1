@@ -172,6 +172,16 @@ func (q *turnQueue) heldCount() int {
 	return n
 }
 
+// remaining reports work the run still owes after this turn: queued messages
+// (including ones being edited) and steers the round did not consume. A turn
+// that leaves any of them does not end the run — they become follow-up turns on
+// the same stream — so a "turn finished" notification for it was premature.
+func (q *turnQueue) remaining() int {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return len(q.pending) + len(q.steers)
+}
+
 // steer moves one pending message onto the steer list: it is injected into
 // the run at the next round boundary instead of waiting for the queue.
 func (q *turnQueue) steer(id string) error {

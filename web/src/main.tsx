@@ -4,12 +4,18 @@ import App from './App';
 import ErrorBoundary from './components/ErrorBoundary';
 import { installDebugLog } from './debuglog';
 import { initTheme } from './themes';
+import { hydrateAppearance } from './appearance';
 import './index.css';
 
 initTheme();
 import { registerPush } from './push';
 
 installDebugLog();
+
+// The Appearance settings (theme, chat side, tab bar, how the chat renders) are
+// account-scoped. The device mirror painted the theme above; the account's own
+// values land here, in the background, and subscribers re-render with them.
+void hydrateAppearance();
 
 // Register the service worker only in production builds so dev never serves
 // stale cached assets. updateViaCache 'none' + an explicit update() on every

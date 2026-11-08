@@ -831,10 +831,18 @@ func (s *Server) streamChatTurn(w http.ResponseWriter, r *http.Request, p *store
 				}
 			}
 		}
+		// Queued messages (a message sent while the turn ran, an unconsumed steer)
+		// become follow-up turns below, so this turn is not the end of the run. The
+		// notification and the client's "done" must both wait for the turn that
+		// really ends it — a "turn finished" alert for a chat that keeps working
+		// sends the user to a session that is still running.
+		more := q.remaining() > 0
 		// Reach the phone even when iOS has suspended the app: the page's own
 		// notification can only fire while its JavaScript is still running.
-		s.notifyTurnPush(userID, p.ID, params.SessionID, p.Name, nil)
-		emit(agent.ChatEvent{Type: "done", Usage: turn.Usage})
+		if !more {
+			s.notifyTurnPush(userID, p.ID, params.SessionID, p.Name, nil)
+		}
+		emit(agent.ChatEvent{Type: "done", Usage: turn.Usage, More: more})
 
 		// Remembering is not something the user should have to ask for: with
 		// capture on, the model reads back its own turn and keeps what will still

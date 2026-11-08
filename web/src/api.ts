@@ -1,4 +1,5 @@
 import type {
+  AppearanceSettings,
   AskQuestionDTO,
   AuthStatus,
   BackgroundJob,
@@ -241,6 +242,8 @@ export interface SettingsUpdate {
   contextThreshold?: number;
   ephemeralArchiveDays?: number;
   systemPrompt?: string;
+  /** Appearance page knobs, merged one at a time — omit a key to leave it alone. */
+  appearance?: Partial<AppearanceSettings>;
 }
 
 export const api = {

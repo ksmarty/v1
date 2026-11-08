@@ -4,6 +4,7 @@ import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import { api } from '../api';
 import type { Project as ProjectType } from '../types';
 import { errMsg, getChatSide, getDebugHud } from '../utils';
+import { subscribeAppearance } from '../appearance';
 import { useMediaQuery } from '../hooks/useMediaQuery';
 import { Button, Center, Spinner } from '../components/ui';
 import { IconChat, IconChevronLeft, IconMonitor } from '../components/icons';
@@ -68,7 +69,10 @@ export default function Project() {
   // return to its chat subtab even if the user was on files/terminal/etc.
   const [chatResetSignal, setChatResetSignal] = useState(0);
   const [previewRefreshKey, setPreviewRefreshKey] = useState(0);
-  const [chatSide] = useState<'left' | 'right'>(() => getChatSide());
+  const [chatSide, setChatSideState] = useState<'left' | 'right'>(() => getChatSide());
+  // The chat side is account-scoped: the mirror answers the first render, then
+  // the owner's value lands from the server and this re-reads it.
+  useEffect(() => subscribeAppearance(() => setChatSideState(getChatSide())), []);
   const [debugHud] = useState(() => getDebugHud());
   const [llmReady, setLlmReady] = useState<boolean | null>(null);
 

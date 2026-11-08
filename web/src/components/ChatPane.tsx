@@ -4303,6 +4303,13 @@ export default function ChatPane({
   useEffect(() => {
     streamingRef.current = streaming;
   }, [streaming]);
+  // A run that is active but not attached (poll mode, a suspended tab, a
+  // buffered stream). The transcript refetch must not turn its committed rounds
+  // into a "turn finished" alert: the run is still going.
+  const runActiveRef = useRef(false);
+  useEffect(() => {
+    runActiveRef.current = runActive;
+  }, [runActive]);
   // The active chat session ('' until the session list loads).
   const [sessionId, setSessionId] = useState('');
   // Latest session id for event handlers (handleEvent is memoized without
@@ -5312,7 +5319,12 @@ export default function ChatPane({
       // already notified live or on a previous load.
       const finished = findLastFinishedAssistant(mapped);
       if (finished) {
-        if (lastNotifiedRef.current === null) {
+        if (runActiveRef.current || streamingRef.current || watchRef.current || mainStreamRef.current) {
+          // A refetch inside a running turn: the run continues (a follow-up turn
+          // from the queue, or this very turn's committed rounds), so it is not
+          // finished. Leaving the marker alone lets the turn that really ends the
+          // run notify, live or on the next load.
+        } else if (lastNotifiedRef.current === null) {
           // First time opening this session — seed the marker without
           // notifying for pre-existing history.
           lastNotifiedRef.current = finished.key;
@@ -6460,19 +6472,29 @@ export default function ChatPane({
               );
             }
           }
-          void notifyTurnDone(projectId, sessionId, projectName, sessionNameRef.current);
-          // The live event notified — mark it so the reconnect load() path
-          // does not notify a second time for the same turn.
-          const doneKey = assistantKeyRef.current;
-          if (doneKey) {
-            lastNotifiedRef.current = doneKey;
-            try { localStorage.setItem(notifiedKey, doneKey); } catch {}
+          // A message queued (or steered but unconsumed) while this turn ran
+          // becomes a follow-up turn on this same stream: the run is not over, so
+          // neither the alert nor the composer's idle state may say it is.
+          const more = ev.more === true;
+          if (!more) {
+            void notifyTurnDone(projectId, sessionId, projectName, sessionNameRef.current);
+            // The live event notified — mark it so the reconnect load() path
+            // does not notify a second time for the same turn.
+            const doneKey = assistantKeyRef.current;
+            if (doneKey) {
+              lastNotifiedRef.current = doneKey;
+              try { localStorage.setItem(notifiedKey, doneKey); } catch {}
+            }
           }
           void loadContext(true); // bypass the cache: usage changed this turn
           setAskPrompt(null); // the turn ended — no question can be pending
           setSteering([]); // the turn ended — nothing is pending injection
           setLocalStatus(null); // drop the transient info notice (e.g. continuation)
           void refreshQueue(); // queued messages drained into follow-up turns
+          if (more) {
+            setRunActive(true);
+            break;
+          }
           // Converge on the persisted transcript, exactly like reopening the
           // chat does. A reply whose last tokens never arrived (a dropped
           // stream, a truncated event) is complete on the server, and without
@@ -7562,14 +7584,54 @@ export default function ChatPane({
 
   // Composer pieces, shared between the normal row layout and the expanded
   // layout (top button row in the corners, text field below at full width).
+  //
+  // Holding + opens the same menu as tapping it, with the debug-only actions in
+  // it: dumping a chat for a bug report should not require turning the Debug HUD
+  // on first. The tap that follows a hold is swallowed, or the menu it just
+  // opened would close again on release.
+  const plusHold = useRef<number | null>(null);
+  const plusHeld = useRef(false);
+  const [plusDebug, setPlusDebug] = useState(false);
+  const cancelPlusHold = () => {
+    if (plusHold.current !== null) {
+      window.clearTimeout(plusHold.current);
+      plusHold.current = null;
+    }
+  };
+  const startPlusHold = () => {
+    plusHeld.current = false;
+    cancelPlusHold();
+    plusHold.current = window.setTimeout(() => {
+      plusHold.current = null;
+      plusHeld.current = true;
+      setTodosOpen(false);
+      setThinkingOpen(false);
+      setPlusDebug(true);
+      setPlusOpen(true);
+    }, 450);
+  };
   const plusButton = (
     <IconButton
       onClick={() => {
+        if (plusHeld.current) {
+          plusHeld.current = false;
+          return;
+        }
         // Reopening the + menu dismisses any sub-menu first.
         setTodosOpen(false);
         setThinkingOpen(false);
-        setPlusOpen((o) => !o);
+        if (plusOpen) {
+          setPlusOpen(false);
+          setPlusDebug(false);
+        } else {
+          setPlusOpen(true);
+        }
       }}
+      onPointerDown={startPlusHold}
+      onPointerUp={cancelPlusHold}
+      onPointerLeave={cancelPlusHold}
+      onPointerCancel={cancelPlusHold}
+      onContextMenu={(e) => e.preventDefault()}
       aria-label="More actions"
       title="More actions"
       className={`relative z-30 h-8! w-8! shrink-0 md:h-9! md:w-9! ${
@@ -8149,6 +8211,13 @@ export default function ChatPane({
               let partNodes: ReactNode[] = [];
               let partKey = '';
               let summaryNode: ReactNode = null;
+              // One work group per turn, not one per round: a multi-round turn
+              // used to render a column of small groups, each holding a single
+              // round's calls. Every work row of the turn now collects here and
+              // is emitted once, where the turn's first work row sat.
+              let partWork: CollapseData[] = [];
+              let partWorkKey = '';
+              let partWorkAt = -1;
               const finishPartTurn = () => {
                 const nodes = partNodes;
                 const foldKey = partKey || 'turn';
@@ -8156,6 +8225,21 @@ export default function ChatPane({
                 partNodes = [];
                 partKey = '';
                 summaryNode = null;
+                if (partWork.length > 0) {
+                  const group = (
+                    <div key={`group-${partWorkKey}`} data-msg-key={partWorkKey}>
+                      <CollapsedToolsGroup
+                        members={partWork}
+                        onAskAnswered={(answer) => void answerAsk(answer)}
+                        onOpenBackground={openBackgroundOutput}
+                      />
+                    </div>
+                  );
+                  nodes.splice(partWorkAt < 0 ? 0 : Math.min(partWorkAt, nodes.length), 0, group);
+                }
+                partWork = [];
+                partWorkKey = '';
+                partWorkAt = -1;
                 if (nodes.length === 0) return;
                 const work = summary != null ? nodes.filter((n) => n !== summary) : nodes;
                 if (getTurnFoldEnabled() && summary != null && work.length > 0) {
@@ -8193,15 +8277,13 @@ export default function ChatPane({
                 );
                 if (hasTools) {
                   const first = turn.find(({ it }) => isWork(collapseData(it)));
-                  partNodes.push(
-                    <div key={`group-${first?.it.key}`} data-msg-key={first?.it.key}>
-                      <CollapsedToolsGroup
-                        members={members}
-                        onAskAnswered={(answer) => void answerAsk(answer)}
-                        onOpenBackground={openBackgroundOutput}
-                      />
-                    </div>,
-                  );
+                  // The turn's single group is spliced in where its first work
+                  // row belongs; later rounds only add members to it.
+                  if (partWorkAt < 0) {
+                    partWorkAt = partNodes.length;
+                    partWorkKey = first?.it.key ?? '';
+                  }
+                  partWork.push(...members);
                   for (const { it, i } of turn) {
                     if (it.background) continue;
                     if (it.content?.trim()) {
@@ -8516,7 +8598,10 @@ export default function ChatPane({
                   type="button"
                   aria-label="Close menu"
                   className="fixed inset-0 z-20 cursor-default"
-                  onClick={() => setPlusOpen(false)}
+                  onClick={() => {
+                    setPlusOpen(false);
+                    setPlusDebug(false);
+                  }}
                 />
                 {/* bottom-full pops above the composer normally, but the
                     expanded column is full-height, which would shoot the menu
@@ -8574,17 +8659,18 @@ export default function ChatPane({
                       Model thinking
                     </button>
                   )}
-                  {debugEnabled && (
+                  {(debugEnabled || plusDebug) && (
                     <button
                       type="button"
                       onClick={() => {
                         setPlusOpen(false);
+                        setPlusDebug(false);
                         void exportDiagnostics();
                       }}
                       className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm text-text transition-colors hover:bg-border"
                     >
                       <IconDownload className="h-4 w-4 shrink-0 text-dim" />
-                      Export diagnostics
+                      Download debug logs
                     </button>
                   )}
                   {!isDesktop && (
