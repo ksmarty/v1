@@ -81,7 +81,24 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git tag "$NEW"
-          git push origin "$NEW"
+          # A tag push can fail on a GitHub-side glitch — "fatal error in
+          # commit_refs_rules", seen with no ruleset in play at all — so retry a
+          # few times instead of failing the release on it.
+          pushed=0
+          for attempt in 1 2 3; do
+            if git push origin "$NEW"; then
+              pushed=1
+              break
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              echo "push of $NEW failed (attempt $attempt) — retrying" >&2
+              sleep $((attempt * 10))
+            fi
+          done
+          if [ "$pushed" != 1 ]; then
+            echo "could not push $NEW after 3 attempts" >&2
+            exit 1
+          fi
           echo "tag=$NEW" >> "$GITHUB_OUTPUT"
 
   release:
