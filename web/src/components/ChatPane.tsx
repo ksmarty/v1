@@ -2579,21 +2579,30 @@ function TurnFold({ children }: { children: ReactNode }) {
 // question.
 function CollapsedToolsGroup({
   members,
+  active = false,
   onAskAnswered,
   onOpenBackground,
 }: {
   members: CollapseData[];
+  /** The run is still going: this turn's work may still be growing. */
+  active?: boolean;
   onAskAnswered: (result: AskResultView) => void;
   onOpenBackground?: (text: string) => void;
 }) {
   const anyPendingAsk = members.some((m) => m.ask != null && m.ask.result === undefined && !m.ask.failed);
-  // A turn that is still working shows its calls: the group collects the whole
-  // turn now, so a collapsed group would hide the running command or edit.
   const anyRunning = members.some((m) => m.calls.length > m.results.length);
-  const [open, setOpen] = useState(anyPendingAsk || anyRunning);
+  // Closed by default: a finished turn's work is one summary line. It opens on
+  // its own only while the run is still adding to it, and closes again once the
+  // run ends unless the reader opened it themselves.
+  // An unanswered question is never hidden behind the toggle; tool calls open it
+  // only while the run is still adding to them.
+  const auto = anyPendingAsk || (active && anyRunning);
+  const [open, setOpen] = useState(false);
+  const [touched, setTouched] = useState(false);
   useEffect(() => {
-    if (anyPendingAsk || anyRunning) setOpen(true);
-  }, [anyPendingAsk, anyRunning]);
+    if (auto) setOpen(true);
+    else if (!active && !touched) setOpen(false);
+  }, [auto, active, touched]);
   const calls = members.flatMap((m) => m.calls);
   const results = members.flatMap((m) => m.results);
   const askCount = members.reduce((a, m) => a + m.askCount, 0);
@@ -2610,7 +2619,10 @@ function CollapsedToolsGroup({
     <div className="text-[10px]">
       <button
         type="button"
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => {
+          setTouched(true);
+          setOpen((o) => !o);
+        }}
         className="flex min-h-[26px] w-full items-center gap-1.5 px-1 py-1 text-left text-dim transition-colors hover:text-text"
       >
         {open ? (
@@ -8297,6 +8309,7 @@ export default function ChatPane({
                     <div key={`group-${partWorkKey}`} data-msg-key={partWorkKey}>
                       <CollapsedToolsGroup
                         members={partWork}
+                        active={live}
                         onAskAnswered={(answer) => void answerAsk(answer)}
                         onOpenBackground={openBackgroundOutput}
                       />

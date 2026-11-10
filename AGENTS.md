@@ -385,8 +385,11 @@ or `make dev`), then report: (1) the new stamped build version (`v1 <version>
   `toolCalls` a reload carries on the assistant message), so it joins the turn
   instead of closing it: pushing it to `rows` while the run streamed was what
   stuck as many round cards as the turn had rounds, next to the single group
-  that appeared once the chat finished. The group auto-opens while a member has
-  a call without a result, so the running command stays visible. Turn fold then
+  that appeared once the chat finished. The group is CLOSED by default and
+  auto-opens only while the run is still adding to it (`active={live}` and a
+  member whose call has no result, or an unanswered ask — a question is never
+  hidden), then closes again when the run ends unless the reader toggled it
+  (`touched`). Turn fold then
   wraps that single group plus the intermediate comments, leaving the last
   comment visible (`TurnFold`) — but only once the turn is DONE (`!live`): while
   a run streams, nothing may fold, or a turn shows its finished rounds behind the
