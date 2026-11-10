@@ -701,6 +701,26 @@ export class BufferedStreamError extends Error {
   }
 }
 
+/**
+ * The send was queued instead of streamed.
+ *
+ * `POST /chat` answers 202 with JSON when the session already has a run: the
+ * message goes onto that run's queue and arrives as a follow-up turn on the
+ * running stream. Reading that JSON as an SSE body produced no events and then a
+ * synthetic `done` — which notified "finished" for a chat that was still
+ * working, put the composer back to idle, and left the message pinned to the
+ * bottom of the transcript (it is persisted later, when the run drains it).
+ */
+export class QueuedError extends Error {
+  /** The queue entry's id, so the caller can match its pending row. */
+  readonly queueId: string;
+  constructor(queueId = '') {
+    super('chat_queued');
+    this.name = 'QueuedError';
+    this.queueId = queueId;
+  }
+}
+
 /** reader.read() with a deadline: resolves to 'idle' when the stream goes quiet. */
 async function readWithIdleDeadline(
   reader: ReadableStreamDefaultReader<Uint8Array>,
@@ -776,6 +796,16 @@ async function streamBody(
   if (res.status === 401) {
     redirectToLogin();
     throw new ApiError('Unauthorized', 401);
+  }
+  if (res.status === 202) {
+    let queueId = '';
+    try {
+      const info = (await res.json()) as { id?: string };
+      queueId = info?.id ?? '';
+    } catch {
+      // A 202 with no readable body is still a queued send.
+    }
+    throw new QueuedError(queueId);
   }
   if (!res.ok) {
     throw new ApiError(await parseError(res), res.status);

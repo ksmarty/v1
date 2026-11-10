@@ -380,9 +380,29 @@ or `make dev`), then report: (1) the new stamped build version (`v1 <version>
   between two spoken messages collapses into one `CollapsedToolsGroup`, rendered
   where the turn's first work row sat (`partWork`/`partWorkAt` in the render pass
   of `ChatPane.tsx`), with the turn's own comments after it. Per-round grouping
-  left a column of small groups for one turn's work. Turn fold then wraps that
-  single group plus the intermediate comments, leaving the last comment visible
-  (`TurnFold`).
+  left a column of small groups for one turn's work. A LIVE `tool`/`ask` row is
+  the turn's work too (`workOf` maps it to the same `CollapseData` shape as the
+  `toolCalls` a reload carries on the assistant message), so it joins the turn
+  instead of closing it: pushing it to `rows` while the run streamed was what
+  stuck as many round cards as the turn had rounds, next to the single group
+  that appeared once the chat finished. The group auto-opens while a member has
+  a call without a result, so the running command stays visible. Turn fold then
+  wraps that single group plus the intermediate comments, leaving the last
+  comment visible (`TurnFold`) — but only once the turn is DONE (`!live`): while
+  a run streams, nothing may fold, or a turn shows its finished rounds behind the
+  toggle and its live round below it.
+- A send during a run is QUEUED, not streamed: `POST /chat` answers 202 with the
+  queue entry's id, and `streamBody` raises `QueuedError` (never reading that
+  JSON as an empty event stream, which produced a synthetic `done`). `run()` then
+  drops the optimistic row and attaches to the live run — the server persists the
+  message when it drains the queue and announces it as `injected_message`, which
+  is where it belongs in the transcript. Keeping the optimistic row pinned it to
+  the bottom under text that kept streaming, and then showed it twice.
+- A replayed watch frame never notifies: `replayLeftRef > 0` marks the prefix a
+  watch connection replays, and a replayed `done`/`error`/`ask` is history (the
+  turn ended before this client attached), so the in-page alert and the pushed
+  notification are skipped for it. Notifying there is what stacked "finished"
+  alerts on a chat that was still working, each naming an already-ended turn.
 - The GitHub tab's repo is auto-detected: `GET /api/projects/{id}` fills
   `repoUrl` from the working tree's `origin` remote (`gitops.RemoteURL`) when
   the user hasn't linked one, so `showGitHubTab` can offer the tab on its own;

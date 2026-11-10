@@ -14,6 +14,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   api,
   BufferedStreamError,
+  QueuedError,
   deleteUploads,
   messageAttachmentUrl,
   retryChat,
@@ -2586,10 +2587,13 @@ function CollapsedToolsGroup({
   onOpenBackground?: (text: string) => void;
 }) {
   const anyPendingAsk = members.some((m) => m.ask != null && m.ask.result === undefined && !m.ask.failed);
-  const [open, setOpen] = useState(anyPendingAsk);
+  // A turn that is still working shows its calls: the group collects the whole
+  // turn now, so a collapsed group would hide the running command or edit.
+  const anyRunning = members.some((m) => m.calls.length > m.results.length);
+  const [open, setOpen] = useState(anyPendingAsk || anyRunning);
   useEffect(() => {
-    if (anyPendingAsk) setOpen(true);
-  }, [anyPendingAsk]);
+    if (anyPendingAsk || anyRunning) setOpen(true);
+  }, [anyPendingAsk, anyRunning]);
   const calls = members.flatMap((m) => m.calls);
   const results = members.flatMap((m) => m.results);
   const askCount = members.reduce((a, m) => a + m.askCount, 0);
@@ -6133,7 +6137,13 @@ export default function ChatPane({
       // included) is either already in the store or now folded in, so this
       // clear instead of duplicate is what a turn watched from the middle
       // shows when it is over — without waiting for its own done event.
-      if (ev.type !== 'replay_count' && replayLeftRef.current > 0) {
+      // Frames of a watch connection that are its replay of the run so far. A
+      // replayed `done` is not news: the turn ended before this client
+      // attached (or it is a turn of a run that is still going), and notifying
+      // for it is what stacked "finished" alerts on a chat that was still
+      // working — every one of them naming a turn that had already ended.
+      const replaying = ev.type !== 'replay_count' && replayLeftRef.current > 0;
+      if (replaying) {
         replayLeftRef.current--;
         if (replayLeftRef.current === 0) void load({ quiet: true });
       }
@@ -6393,12 +6403,14 @@ export default function ChatPane({
           );
           // The turn is blocked until this question is answered, so notify —
           // the user may have walked away while the agent was still working.
-          void notifyAsk(
-            projectId,
-            sessionId,
-            projectName,
-            questions.map((q) => q.question),
-          );
+          if (!replaying) {
+            void notifyAsk(
+              projectId,
+              sessionId,
+              projectName,
+              questions.map((q) => q.question),
+            );
+          }
           break;
         }
         case 'background_started': {
@@ -6477,7 +6489,9 @@ export default function ChatPane({
           // neither the alert nor the composer's idle state may say it is.
           const more = ev.more === true;
           if (!more) {
-            void notifyTurnDone(projectId, sessionId, projectName, sessionNameRef.current);
+            if (!replaying) {
+              void notifyTurnDone(projectId, sessionId, projectName, sessionNameRef.current);
+            }
             // The live event notified — mark it so the reconnect load() path
             // does not notify a second time for the same turn.
             const doneKey = assistantKeyRef.current;
@@ -6508,7 +6522,9 @@ export default function ChatPane({
             ...prev,
             { kind: 'msg', key: `e${++counterRef.current}`, role: 'error', content: ev.error },
           ]);
-          void notifyTurnError(projectId, sessionId, projectName, sessionNameRef.current);
+          if (!replaying) {
+            void notifyTurnError(projectId, sessionId, projectName, sessionNameRef.current);
+          }
           const errorKey = `e${counterRef.current}`;
           lastNotifiedRef.current = errorKey;
           try { localStorage.setItem(notifiedKey, errorKey); } catch {}
@@ -6748,6 +6764,25 @@ export default function ChatPane({
         finish();
       } catch (e) {
         mainStreamRef.current = false;
+        if (e instanceof QueuedError) {
+          // The session already had a run, so this message went onto that run's
+          // queue instead of opening a stream. Drop the optimistic row: the
+          // server persists it when the run drains it and announces it as an
+          // injected message, which is where it belongs in the transcript —
+          // after the round it was sent during. Keeping the row here is what
+          // pinned the message to the bottom, under text that kept streaming,
+          // and then showed it twice.
+          if (sent) {
+            update((prev) =>
+              prev.filter((it) => !(it.kind === 'msg' && it.key === sent.key)),
+            );
+          }
+          // This request is over; the run it joined is not.
+          setRunActive(true);
+          void refreshQueue();
+          finish();
+          return;
+        }
         if (e instanceof BufferedStreamError) {
           // A proxy is holding the response body until the turn is over, so no
           // event will reach this client while it runs. The run itself is fine
@@ -8205,8 +8240,36 @@ export default function ChatPane({
                 d.ask != null ||
                 !!d.reasoning ||
                 !!d.background;
+              // A live tool or ask row is the turn's work too — a reload carries
+              // it on the assistant message, so during a run it used to be the
+              // one thing that could not join the turn's group and drew its own
+              // card instead. Mapping it to the same shape means as many rounds
+              // as the turn takes collapse into ONE group, live or reloaded.
+              const workOf = (it: Item): CollapseData | null => {
+                if (it.kind === 'tool') {
+                  return {
+                    calls: [{ name: it.name, detail: it.call ?? it.detail }],
+                    results:
+                      it.running || isNoiseResult(it.detail)
+                        ? []
+                        : [{ name: it.name, detail: it.detail, display: it.display }],
+                    ask: null,
+                    askCount: 0,
+                  };
+                }
+                if (it.kind === 'ask') {
+                  return {
+                    calls: [],
+                    results: [],
+                    ask: { questions: it.questions, result: it.result, failed: it.failed },
+                    askCount: it.questions.length,
+                  };
+                }
+                const d = collapseData(it);
+                return isWork(d) ? { ...d, content: undefined } : null;
+              };
 
-              let turn: { it: MsgItem; i: number }[] = [];
+              let turn: { it: Item; i: number }[] = [];
               // The turn-fold: each finished round pushes its rows into
               // partNodes, with summaryNode tracking the round's text row.
               // When the turn ends, everything except the last summary goes
@@ -8246,7 +8309,11 @@ export default function ChatPane({
                 partWorkAt = -1;
                 if (nodes.length === 0) return;
                 const work = summary != null ? nodes.filter((n) => n !== summary) : nodes;
-                if (getTurnFoldEnabled() && summary != null && work.length > 0) {
+                // A turn folds only once it is done. While the run is live the
+                // reader must see its work and comments as they happen, and
+                // folding here split a turn in two (finished rounds behind the
+                // toggle, the live round below it).
+                if (!live && getTurnFoldEnabled() && summary != null && work.length > 0) {
                   rows.push(<TurnFold key={`fold-${foldKey}`}>{work}</TurnFold>);
                   rows.push(summary);
                 } else {
@@ -8255,40 +8322,27 @@ export default function ChatPane({
               };
               const flushTurn = () => {
                 if (turn.length === 0) return;
-                // Nothing collapses while the turn is still working. A run the
-                // reader left and came back to used to fold every round that
-                // had already finished, leaving the live rounds outside the
-                // fold — a turn split in two. The whole turn folds at once,
-                // when it is done.
-                if (live || turn.some(({ it }) => it.streaming)) {
-                  // Anything still gathered from earlier finished rounds lines
-                  // up first, then this working stretch renders verbatim.
-                  finishPartTurn();
-                  turn.forEach(({ it, i }) => rows.push(renderMessage(it, i)));
-                  turn = [];
-                  return;
-                }
                 if (!partKey) partKey = turn[0]?.it.key ?? '';
                 let lastText: ReactNode = null;
                 if (getToolCallsCollapsed()) {
                 const members: CollapseData[] = [];
                 for (const { it } of turn) {
-                  const d = collapseData(it);
-                  if (isWork(d)) members.push({ ...d, content: undefined });
+                  const w = workOf(it);
+                  if (w) members.push(w);
                 }
                 const hasTools = members.some(
                   (m) => m.calls.length + m.results.length > 0 || m.ask != null || !!m.background,
                 );
                 if (hasTools) {
-                  const first = turn.find(({ it }) => isWork(collapseData(it)));
                   // The turn's single group is spliced in where its first work
                   // row belongs; later rounds only add members to it.
                   if (partWorkAt < 0) {
                     partWorkAt = partNodes.length;
-                    partWorkKey = first?.it.key ?? '';
+                    partWorkKey = turn.find(({ it }) => workOf(it))?.it.key ?? '';
                   }
                   partWork.push(...members);
                   for (const { it, i } of turn) {
+                    if (it.kind !== 'msg') continue;
                     if (it.background) continue;
                     if (it.content?.trim()) {
                       lastText = renderMessage(it, i, {
@@ -8303,7 +8357,7 @@ export default function ChatPane({
                 } else {
                   turn.forEach(({ it, i }) => {
                     const node = renderMessage(it, i);
-                    if (it.content?.trim()) lastText = node;
+                    if (it.kind === 'msg' && it.content?.trim()) lastText = node;
                     partNodes.push(node);
                   });
                 }
@@ -8312,7 +8366,7 @@ export default function ChatPane({
                   // wrap the verbatim rows; they render exactly as before.
                   turn.forEach(({ it, i }) => {
                     const node = renderMessage(it, i);
-                    if (it.content?.trim()) lastText = node;
+                    if (it.kind === 'msg' && it.content?.trim()) lastText = node;
                     partNodes.push(node);
                   });
                 }
@@ -8320,6 +8374,13 @@ export default function ChatPane({
                 turn = [];
               };
               items.forEach((it, i) => {
+                if (it.kind === 'tool' || it.kind === 'ask') {
+                  // Live work rows join the turn they happened in instead of
+                  // closing it — closing here is what drew one collapse per
+                  // round while the chat ran, and one after it finished.
+                  turn.push({ it, i });
+                  return;
+                }
                 if (
                   it.kind === 'msg' &&
                   (it.role === 'assistant' || (it.role === 'user' && it.background))
