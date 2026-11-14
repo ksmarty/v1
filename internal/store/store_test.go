@@ -2,6 +2,7 @@ package store
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 )
@@ -707,5 +708,95 @@ func TestMarkLegacyAgentRows(t *testing.T) {
 	}
 	if marker[mineID] != "" {
 		t.Fatalf("reader row marker = %q; want untouched", marker[mineID])
+	}
+}
+
+// TestListMessagesPagePagination walks a transcript backwards a page at a
+// time, the way the chat's backfill does: pages must tile exactly (no gap, no
+// overlap), rows come back ascending, and the last page reports hasMore=false.
+// A dropped or duplicated row here is the "missing messages after exit and
+// return" report.
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func TestListMessagesPagePagination(t *testing.T) {
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	p := &Project{ID: NewID(), Name: "p"}
+	if err := s.CreateProject(p); err != nil {
+		t.Fatal(err)
+	}
+	cs, err := s.EnsureDefaultSession(p.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const total = 45
+	for i := 0; i < total; i++ {
+		role := "assistant"
+		if i%2 == 1 {
+			role = "tool"
+		}
+		if _, err := s.AddMessage(p.ID, cs.ID, role, fmt.Sprintf("m%02d", i), "", "", "", "", ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// pages collects each fetched page newest-first (the walk order); seen
+	// reconstructs the transcript by prepending, exactly as the client does.
+	pages := [][]int64{}
+	for before := int64(0); ; {
+		page, hasMore, err := s.ListMessagesPage(p.ID, cs.ID, before, 20)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(page) == 0 {
+			t.Fatalf("empty page before=%d (pages so far: %d)", before, len(pages))
+		}
+		for i := 1; i < len(page); i++ {
+			if page[i].ID <= page[i-1].ID {
+				t.Fatalf("page before=%d not ascending", before)
+			}
+		}
+		ids := []int64{}
+		for _, m := range page {
+			ids = append(ids, m.ID)
+		}
+		pages = append(pages, ids)
+		if !hasMore {
+			break
+		}
+		before = ids[0]
+	}
+	seen := []int64{}
+	for i := len(pages) - 1; i >= 0; i-- {
+		seen = append(seen, pages[i]...)
+	}
+	if len(seen) != total {
+		t.Fatalf("walked %d rows, want %d", len(seen), total)
+	}
+	full, _, err := s.ListMessagesPage(p.ID, cs.ID, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(full) != total {
+		t.Fatalf("full list holds %d rows, want %d", len(full), total)
+	}
+	for i, m := range full {
+		if seen[i] != m.ID {
+			t.Fatalf("walk position %d holds id %d, want %d (the store's own order)", i, seen[i], m.ID)
+		}
+	}
+	// Ascending across the reconstructed transcript: a duplicated or dropped
+	// page shows up as an ordering fault too.
+	for i := 1; i < len(seen); i++ {
+		if seen[i] <= seen[i-1] {
+			t.Fatalf("walked ids not strictly ascending at %d: %v", i, seen[maxInt(0, i-3):i+1])
+		}
 	}
 }
