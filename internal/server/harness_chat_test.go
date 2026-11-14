@@ -252,6 +252,8 @@ func TestConsumeHarnessTurnDoesNotDuplicateStreamedText(t *testing.T) {
 // prefix.
 func TestConsumeHarnessTurnPutsASteerBehindTheTextItInterrupted(t *testing.T) {
 	s, p, sessionID := newHarnessTestServer(t)
+	restore := shortSteerGrace(t)
+	defer restore()
 	q := harness.NewEventQueue()
 	runner := &harnessToolRunner{results: map[string]harness.ToolResult{}}
 	q.Push([]harness.Event{
@@ -314,18 +316,195 @@ func TestConsumeHarnessTurnPutsASteerBehindTheTextItInterrupted(t *testing.T) {
 }
 
 // A flush only ever covers a prefix of the committed round: a round whose
-// committed text was rewritten (a retry, an abort) still commits in full.
+// committed text was rewritten (a retry, an abort) still commits in full. A
+// flushed fragment that sits INSIDE the committed text (a first block that
+// arrived whole after the flush) keeps only what follows it, or the commit
+// would write what the flush rows already hold a second time.
 func TestUnsavedText(t *testing.T) {
 	cases := []struct{ committed, flushed, want string }{
 		{"Hello", "", "Hello"},
 		{"Hello", "Hel", "lo"},
 		{"Hello", "Hello", ""},
 		{"rewritten", "Hel", "rewritten"},
+		{"The lighthouse had stood.", " had stood.", ""},
 	}
 	for _, c := range cases {
 		if got := unsavedText(c.committed, c.flushed); got != c.want {
 			t.Fatalf("unsavedText(%q, %q) = %q, want %q", c.committed, c.flushed, got, c.want)
 		}
+	}
+}
+
+// shortSteerGrace shrinks the post-run wait for injected answers so the tests
+// that never deliver one finish in milliseconds instead of the real grace.
+func shortSteerGrace(t *testing.T) func() {
+	t.Helper()
+	prev := harnessSteerGrace
+	harnessSteerGrace = 50 * time.Millisecond
+	return func() { harnessSteerGrace = prev }
+}
+
+// A run that ends does not always end the turn: a steer delivered mid-round
+// runs as its own generation after it. Ending the turn at the first run_end
+// orphaned the steered answer — it streamed to no consumer and never reached
+// the transcript, so the steered message read as ignored forever (and the
+// client's return view then considered its stale cache authoritative, because
+// the store's last id still matched).
+func TestConsumeHarnessTurnWaitsForASteerAnsweredAfterRunEnd(t *testing.T) {
+	s, p, sessionID := newHarnessTestServer(t)
+	restore := shortSteerGrace(t)
+	defer restore()
+	prevID := steerRequestID
+	steerRequestID = func() string { return "v1-steer-1" }
+	defer func() { steerRequestID = prevID }()
+	q := harness.NewEventQueue()
+	runner := &harnessToolRunner{results: map[string]harness.ToolResult{}}
+	q.Push([]harness.Event{
+		{Type: "message_update", Changes: []harness.Change{delta("text_delta", "story so far")}},
+		{Type: "message_end", Entry: json.RawMessage(`{"id":1,"kind":"assistant","model":[{"role":"assistant",` +
+			`"content":[{"type":"text","text":"story so far"}]}]}`)},
+	})
+	steers := 0
+	params := agent.ChatParams{
+		Project:   p,
+		SessionID: sessionID,
+		Steer: func() []agent.SteerMessage {
+			steers++
+			// Deliver on the second poll, so the first round has already been
+			// consumed — the order the real loop produces.
+			if steers != 2 {
+				return nil
+			}
+			// The order pi-durable produces: the parent run ends first, and the
+			// steered answer only commits after it.
+			q.Push([]harness.Event{{Type: "run_end"}})
+			q.Push([]harness.Event{
+				{Type: "message_update", Changes: []harness.Change{delta("text_delta", "2+2 = 4")}},
+				{Type: "message_end", Entry: json.RawMessage(`{"id":9,"kind":"assistant","model":[{"role":"assistant",` +
+					`"content":[{"type":"text","text":"2+2 = 4"}]}]}`)},
+				{Type: "submission", Record: &harness.Submission{RequestID: "v1-steer-1", Status: "done"}},
+			})
+			return []agent.SteerMessage{{Text: "what is 2+2?"}}
+		},
+	}
+	// The steer's request id is minted through steerRequestID, which the test
+	// pinned, so the submission record above answers the steer this turn
+	// delivered and the wait clears through the real path.
+	turn, err := s.consumeHarnessTurn(context.Background(), nil, "conv-1", q, runner, params, "test-model", func(agent.ChatEvent) {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if turn == nil {
+		t.Fatal("no turn result")
+	}
+	msgs, err := s.st.ListMessages(p.ID, sessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The flushed fragment, the steer, and the steered answer — the answer must
+	// be there even though its run ended after the parent's.
+	if len(msgs) != 3 {
+		t.Fatalf("persisted rows = %+v", msgs)
+	}
+	if msgs[0].Role != "assistant" || msgs[0].Content != "story so far" {
+		t.Fatalf("row 0 = %+v", msgs[0])
+	}
+	if msgs[1].Role != "user" || msgs[1].Content != "what is 2+2?" {
+		t.Fatalf("row 1 = %+v", msgs[1])
+	}
+	if msgs[2].Role != "assistant" || msgs[2].Content != "2+2 = 4" {
+		t.Fatalf("row 2 = %+v", msgs[2])
+	}
+}
+
+// A steer that never gets answered must not hang the turn forever: the grace
+// ends it after the wait, with what the turn produced kept.
+func TestConsumeHarnessTurnEndsOnUnansweredSteerGrace(t *testing.T) {
+	s, p, sessionID := newHarnessTestServer(t)
+	restore := shortSteerGrace(t)
+	defer restore()
+	q := harness.NewEventQueue()
+	runner := &harnessToolRunner{results: map[string]harness.ToolResult{}}
+	q.Push([]harness.Event{
+		{Type: "message_update", Changes: []harness.Change{delta("text_delta", "partial")}},
+		{Type: "message_end", Entry: json.RawMessage(`{"id":1,"kind":"assistant","model":[{"role":"assistant",` +
+			`"content":[{"type":"text","text":"partial"}]}]}`)},
+	})
+	steers := 0
+	params := agent.ChatParams{
+		Project:   p,
+		SessionID: sessionID,
+		Steer: func() []agent.SteerMessage {
+			steers++
+			// Deliver on the second poll, after the first round committed.
+			if steers != 2 {
+				return nil
+			}
+			q.Push([]harness.Event{{Type: "run_end"}})
+			// No submission record ever arrives: the answer never comes.
+			return []agent.SteerMessage{{Text: "ignored question"}}
+		},
+	}
+	start := time.Now()
+	turn, err := s.consumeHarnessTurn(context.Background(), nil, "conv-1", q, runner, params, "test-model", func(agent.ChatEvent) {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if turn == nil {
+		t.Fatal("no turn result")
+	}
+	if time.Since(start) > 10*time.Second {
+		t.Fatalf("the grace did not end the turn (took %v)", time.Since(start))
+	}
+	msgs, err := s.st.ListMessages(p.ID, sessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The steer's user row is there (it was persisted at injection) behind the
+	// round that committed before it; the transcript just never gets an answer
+	// for the steer.
+	if len(msgs) != 2 {
+		t.Fatalf("persisted rows = %+v", msgs)
+	}
+	if msgs[0].Role != "assistant" || msgs[0].Content != "partial" {
+		t.Fatalf("row 0 = %+v", msgs[0])
+	}
+	if msgs[1].Role != "user" || msgs[1].Content != "ignored question" {
+		t.Fatalf("row 1 = %+v", msgs[1])
+	}
+}
+
+// A provider's first chunk can arrive inside the created text block, so no
+// delta ever carries it. Dropping it left the flush rows holding a middle
+// fragment of the answer, and the commit then re-wrote the whole answer — the
+// story appeared twice in the transcript after a reload.
+func TestConsumeHarnessTurnKeepsTheFirstBlockContent(t *testing.T) {
+	s, p, sessionID := newHarnessTestServer(t)
+	q := harness.NewEventQueue()
+	runner := &harnessToolRunner{results: map[string]harness.ToolResult{}}
+	q.Push([]harness.Event{
+		{Type: "message_update", Changes: []harness.Change{
+			{Type: "text_start", ContentIndex: 1, Block: &harness.Block{Type: "text", Text: "The lighthouse"}},
+			delta("text_delta", " had stood"),
+		}},
+		{Type: "message_end", Entry: json.RawMessage(`{"id":1,"kind":"assistant","model":[{"role":"assistant",` +
+			`"content":[{"type":"text","text":"The lighthouse had stood"}]}]}`)},
+	})
+	q.Push([]harness.Event{{Type: "run_end"}})
+	turn, err := s.consumeHarnessTurn(context.Background(), nil, "conv-1", q, runner,
+		agent.ChatParams{Project: p, SessionID: sessionID}, "test-model", func(agent.ChatEvent) {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if turn == nil {
+		t.Fatal("no turn result")
+	}
+	msgs, err := s.st.ListMessages(p.ID, sessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 1 || msgs[0].Content != "The lighthouse had stood" {
+		t.Fatalf("persisted rows = %+v", msgs)
 	}
 }
 

@@ -639,6 +639,14 @@ func unsavedText(committed, flushed string) string {
 	if rest, ok := strings.CutPrefix(committed, flushed); ok {
 		return rest
 	}
+	// A round that was rewritten mid-stream (a continuation re-sent by the
+	// provider, a first block the delta stream skipped) leaves the flush rows
+	// holding a middle fragment of the committed answer. Committing in full
+	// would write what the flush rows already hold a second time — the reader
+	// saw the story twice after a reload — so keep only what follows it.
+	if i := strings.Index(committed, flushed); i >= 0 {
+		return committed[i+len(flushed):]
+	}
 	return committed
 }
 
@@ -983,9 +991,27 @@ func (w *stallWatch) alive(now time.Time) bool {
 	return true
 }
 
+// harnessSteerGrace bounds how long the turn stays open after its run ended
+// while an injected message (a steer, a background result) is still unanswered.
+// Normally the answer streams within seconds; a stuck runtime is cut loose here
+// instead of hanging on the 10-minute silence ceiling.
+var harnessSteerGrace = 90 * time.Second
+
+// steerRequestID mints the sidecar-side request id for one delivered steer. A
+// variable so the tests can pin it and answer through the real wait path.
+var steerRequestID = func() string { return fmt.Sprintf("v1-steer-%d", time.Now().UnixNano()) }
+
 func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge, sidecarID string, q *harness.EventQueue, runner *harnessToolRunner, params agent.ChatParams, model string, emit func(agent.ChatEvent)) (*agent.TurnResult, error) {
 	turn := &agent.TurnResult{Model: model}
 	var text, reasoning strings.Builder
+	// Injected messages (steers, background results) this turn delivered and has
+	// not seen answered yet, keyed by the request id the sidecar knows them by.
+	pendingInjections := map[string]bool{}
+	// A run_end was seen. With no pending injections this ends the turn; with
+	// one pending, the turn stays open for its answer (see the loop bottom).
+	sawRunEnd := false
+	// The last batch that carried events, for the grace check above.
+	var lastEventAt time.Time
 	// The part of the round in flight that a mid-round flush already persisted.
 	// The round's remainder is written when it commits, so this prefix is what
 	// keeps the two rows from covering the same words.
@@ -1087,11 +1113,11 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge,
 		// No bridge means nowhere to deliver the steer, but the transcript still
 		// records it — the same thing the built-in loop does with a nil client.
 		// Production only reaches this path with a live bridge.
-		deliver := func(text string) error {
+		deliver := func(reqID, text string) error {
 			if bridge == nil {
 				return nil
 			}
-			return bridge.Steer(ctx, sidecarID, fmt.Sprintf("v1-steer-%d", time.Now().UnixNano()), text)
+			return bridge.Steer(ctx, sidecarID, reqID, text)
 		}
 		for _, msg := range params.Steer() {
 			if msg.Text == "" && len(msg.Attachments) == 0 {
@@ -1110,7 +1136,8 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge,
 					steerText + "\n\n[attached files: " + strings.Join(names, ", ") + "]",
 				)
 			}
-			if err := deliver(steerText); err != nil {
+			reqID := steerRequestID()
+			if err := deliver(reqID, steerText); err != nil {
 				log.Printf("harness: steer failed: %v", err)
 				// The steer was already drained from the queue, so put it back. A
 				// message the user sent must not vanish because the running turn could
@@ -1120,6 +1147,7 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge,
 				}
 				continue
 			}
+			pendingInjections[reqID] = true
 			// The text the round already streamed is written first: the store's
 			// ids are the transcript's order, so the steer has to land behind it.
 			flushRound()
@@ -1157,10 +1185,12 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge,
 			if r.Text == "" {
 				continue
 			}
-			if err := bridge.Steer(ctx, sidecarID, fmt.Sprintf("v1-background-%d", time.Now().UnixNano()), r.Text); err != nil {
+			reqID := fmt.Sprintf("v1-background-%d", time.Now().UnixNano())
+			if err := bridge.Steer(ctx, sidecarID, reqID, r.Text); err != nil {
 				log.Printf("harness: background result injection failed: %v", err)
 				continue
 			}
+			pendingInjections[reqID] = true
 			emit(agent.ChatEvent{Type: "injected_message", MessageID: r.MessageID, Text: r.Text, Tool: "background", ToolJSON: agent.MarkerName(agent.BackgroundToolJSON)})
 		}
 	}
@@ -1189,6 +1219,20 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge,
 	}
 
 	for {
+		// The run that just ended is not always the turn's last work: a steer
+		// delivered mid-round runs as its own generation after this one, so the
+		// turn must not end while a steered message is still unanswered. Ending
+		// here orphaned the answer — it streamed to no consumer, never reached
+		// the transcript, and the steered message read as ignored forever (the
+		// store's last id then matched the reader's stale cache, which made the
+		// missing answer survive every reload too).
+		if sawRunEnd && len(pendingInjections) == 0 {
+			break
+		}
+		if sawRunEnd && time.Since(lastEventAt) > harnessSteerGrace {
+			log.Printf("harness: ending the turn with %d injected message(s) unanswered", len(pendingInjections))
+			break
+		}
 		// Polled on every batch, not only when the stream idles: a turn that
 		// streams continuously would otherwise never notice a steer. The drain is
 		// only there to guarantee the poll happens when events stop arriving.
@@ -1202,6 +1246,7 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge,
 		cancelDrain()
 		if len(events) > 0 {
 			watch.spoke(time.Now())
+			lastEventAt = time.Now()
 		}
 		if err != nil {
 			if ctx.Err() != nil && !aborted {
@@ -1234,9 +1279,14 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge,
 				if runner.busy() {
 					watch.busy(time.Now())
 				} else if watch.due(time.Now()) {
-					probeCtx, cancelProbe := context.WithTimeout(ctx, harnessPingTimeout)
-					pingErr := bridge.Ping(probeCtx)
-					cancelProbe()
+					pingErr := error(nil)
+					if bridge != nil {
+						probeCtx, cancelProbe := context.WithTimeout(ctx, harnessPingTimeout)
+						pingErr = bridge.Ping(probeCtx)
+						cancelProbe()
+					} else {
+						pingErr = errors.New("no runtime")
+					}
 					if pingErr != nil {
 						log.Printf("harness: the runtime stopped answering (%v)", pingErr)
 						return giveUp(fmt.Sprintf("the agent stopped responding (no activity for %s)", harnessStallTimeout))
@@ -1257,7 +1307,6 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge,
 			_ = persist(partial)
 			return turn, err
 		}
-		done := false
 		for _, ev := range events {
 			if s.cfg.HarnessDebug {
 				log.Printf("harness event: type=%s usage=%v changes=%d", ev.Type, ev.Usage != nil, len(ev.Changes))
@@ -1276,10 +1325,32 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge,
 							reasoning.WriteString(ch.Delta)
 							emit(agent.ChatEvent{Type: "reasoning", Text: ch.Delta})
 						}
+					case "text_start", "thinking_start":
+						// A block that arrives already carrying content: a provider's
+						// first chunk creates the block with its text in one op, so no
+						// delta ever carries it. Dropping it left the streamed round
+						// starting mid-sentence — and the flush rows holding a middle
+						// fragment of the answer, which the commit then re-wrote whole
+						// (the reader saw the story twice after a reload).
+						if initial := ch.Block.InitialText(); initial != "" {
+							b, typ := &text, "delta"
+							if ch.Type == "thinking_start" {
+								b, typ = &reasoning, "reasoning"
+							}
+							b.WriteString(initial)
+							emit(agent.ChatEvent{Type: typ, Text: initial})
+						}
 					}
 				}
 				if ev.Usage != nil {
 					partial = ev.Usage
+				}
+			case "submission":
+				// A steer or background injection's lifecycle. "done" (answered) or
+				// "unanswered" (terminal, can no longer receive an answer) both end
+				// what this turn waits for.
+				if r := ev.Record; r != nil && pendingInjections[r.RequestID] && (r.Status == "done" || r.Status == "unanswered") {
+					delete(pendingInjections, r.RequestID)
 				}
 			case "message_end":
 				// Fires for tool-result entries too. The committed entry is the
@@ -1420,11 +1491,8 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge,
 				_ = persist(partial)
 				return turn, errors.New(ev.ErrorMessage())
 			case "run_end":
-				done = true
+				sawRunEnd = true
 			}
-		}
-		if done {
-			break
 		}
 	}
 	if err := persist(partial); err != nil {

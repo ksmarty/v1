@@ -246,12 +246,29 @@ or `make dev`), then report: (1) the new stamped build version (`v1 <version>
   screenshot, a compaction notice) lands after the text the round had already
   streamed: v1 writes that text as its own assistant row first
   (`flushRound` in `internal/server/harness_chat.go`, and the round's commit
-  writes only the remainder, `unsavedText`). Store ids are the transcript's
-  order, so a row persisted ahead of that text took an id before it and a reload
-  put the user's message above the reply text that preceded it. The client
-  mirrors the same boundary: `injected_message`/`notice` close the open
-  assistant round (`assistantKeyRef`), or the model's next words are appended to
-  the row above the user's message instead of below it.
+  writes only the remainder, `unsavedText` — which, when the flushed fragment
+  sits inside the committed text rather than prefixing it, keeps only what
+  follows the fragment, or the commit re-writes what the flush rows already
+  hold and the reader sees the answer twice after a reload). Store ids are the
+  transcript's order, so a row persisted ahead of that text took an id before
+  it and a reload put the user's message above the reply text that preceded it.
+  The client mirrors the same boundary: `injected_message`/`notice` close the
+  open assistant round (`assistantKeyRef`), or the model's next words are
+  appended to the row above the user's message instead of below it.
+  INVARIANT: a `run_end` does not end the turn while an injected message is
+  still unanswered. A steer delivered mid-round runs as its own pi-durable
+  generation AFTER the parent run ends, so `consumeHarnessTurn` tracks the
+  request ids it injected (`pendingInjections`), clears them on the sidecar's
+  `submission` records (`done`/`unanswered`), and keeps consuming until they
+  are all answered (or `harnessSteerGrace` of silence passes). Ending at the
+  first `run_end` orphaned the steered answer — it streamed to no consumer,
+  never reached the transcript, and the store's last id then matched the
+  reader's stale cache, so the missing answer survived every reload too.
+  INVARIANT: a provider's first chunk can arrive inside the created text
+  block (`text_start`/`thinking_start` carry the block's initial content), so
+  the consume loop must take that content like a delta; dropping it left the
+  streamed round starting mid-sentence and the flush rows holding a middle
+  fragment of the answer.
  `GET /chat/queue` lists
   the queue and the pending steers (`steering` array, one entry per message
   steered but not yet injected — the UI shows them as pending rows with a

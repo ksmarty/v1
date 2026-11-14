@@ -22,6 +22,9 @@ type Event struct {
 	Type string `json:"type"`
 	// Changes carries the streamed deltas on "message_update".
 	Changes []Change `json:"changes,omitempty"`
+	// Record is the submission lifecycle a "submission" event carries: where a
+	// steer or follow-up input landed and whether it has been answered.
+	Record *Submission `json:"record,omitempty"`
 	// Usage is the running token/cost total on "message_update".
 	Usage *Usage `json:"usage,omitempty"`
 	// Tool fields on "tool_execution_start" / "tool_execution_end".
@@ -61,6 +64,38 @@ func (e *Event) ErrorMessage() string {
 type Change struct {
 	Type  string `json:"type"`
 	Delta string `json:"delta,omitempty"`
+	// Block is the block a "text_start"/"thinking_start" change creates, or a
+	// "block" change replaces. A provider's first chunk can arrive inside the
+	// created block, so the initial text never comes as a delta.
+	Block *Block `json:"block,omitempty"`
+	// ContentIndex of the block this change touches.
+	ContentIndex int `json:"contentIndex,omitempty"`
+}
+
+// Block is one content block of the live assistant message (pi-ai's shape).
+type Block struct {
+	Type     string `json:"type"`
+	Text     string `json:"text,omitempty"`
+	Thinking string `json:"thinking,omitempty"`
+}
+
+// InitialText is the content a created block starts with.
+func (b *Block) InitialText() string {
+	if b == nil {
+		return ""
+	}
+	if b.Type == "thinking" {
+		return b.Thinking
+	}
+	return b.Text
+}
+
+// Submission is pi-durable's lifecycle record for one admitted input. A steer
+// v1 delivered mid-turn reaches "done" only when its answer has been committed,
+// which is how the turn knows it must keep consuming past the parent run's end.
+type Submission struct {
+	RequestID string `json:"requestId,omitempty"`
+	Status    string `json:"status,omitempty"`
 }
 
 // Usage is pi-ai's accounting for one model call.
