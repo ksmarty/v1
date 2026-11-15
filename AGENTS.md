@@ -394,23 +394,30 @@ or `make dev`), then report: (1) the new stamped build version (`v1 <version>
   setting on first. The release tap is swallowed, or the menu a hold just opened
   would close again.
 - The transcript's work groups are per TURN, not per round: everything a turn did
-  between two spoken messages collapses into one `CollapsedToolsGroup`, rendered
-  where the turn's first work row sat (`partWork`/`partWorkAt` in the render pass
-  of `ChatPane.tsx`), with the turn's own comments after it. Per-round grouping
-  left a column of small groups for one turn's work. A LIVE `tool`/`ask` row is
-  the turn's work too (`workOf` maps it to the same `CollapseData` shape as the
-  `toolCalls` a reload carries on the assistant message), so it joins the turn
-  instead of closing it: pushing it to `rows` while the run streamed was what
-  stuck as many round cards as the turn had rounds, next to the single group
-  that appeared once the chat finished. The group is CLOSED by default and
-  auto-opens only while the run is still adding to it (`active={live}` and a
-  member whose call has no result, or an unanswered ask — a question is never
-  hidden), then closes again when the run ends unless the reader toggled it
-  (`touched`). Turn fold then
-  wraps that single group plus the intermediate comments, leaving the last
-  comment visible (`TurnFold`) — but only once the turn is DONE (`!live`): while
-  a run streams, nothing may fold, or a turn shows its finished rounds behind the
-  toggle and its live round below it.
+  between two spoken messages folds into one `CollapsedToolsGroup` — tools,
+  reasoning, asks, background rows AND the turn's intermediate comments, in
+  chronological order (`partWork` entries `{it, i, d}` in the render pass of
+  `ChatPane.tsx`). Per-round grouping left a column of small groups for one
+  turn's work, and rendering comments outside the group stacked them at the
+  bottom after the tools. A LIVE `tool`/`ask` row is the turn's work too
+  (`workOf` maps it to the same `CollapseData` shape as the `toolCalls` a reload
+  carries on the assistant message), so it joins the turn instead of closing it:
+  pushing it to `rows` while the run streamed was what stuck as many round cards
+  as the turn had rounds, next to the single group that appeared once the chat
+  finished. The group is CLOSED by default and auto-opens only while the run is
+  still adding to it (`active={live}` and a member whose call has no result, or
+  an unanswered ask — a question is never hidden), then closes again when the
+  run ends unless the reader toggled it (`touched`). The only row rendered
+  OUTSIDE the group is the part's LAST assistant text row — the summary —
+  (`summaryIdx` in `finishPartTurn`; its reasoning/calls still fold into the
+  group), so the transcript reads as a series of summaries. Mid-run the
+  in-progress text is the current last text row, so the model's latest words
+  stay visible below the group until a later round speaks. Turn fold then wraps
+  everything before the summary (`TurnFold`) — but only once the turn is DONE
+  (`!live`): while a run streams, nothing may fold, or a turn shows its finished
+  rounds behind the toggle and its live round below it. User and error rows
+  never enter the pass's `turn` buffer — they close it and render standalone, so
+  an error can never be swallowed by a collapsed group.
 - A send during a run is QUEUED, not streamed: `POST /chat` answers 202 with the
   queue entry's id, and `streamBody` raises `QueuedError` (never reading that
   JSON as an empty event stream, which produced a synthetic `done`). `run()` then
