@@ -10,7 +10,7 @@ import (
 func TestAppearanceDefaultsWhenUnset(t *testing.T) {
 	s, _, _ := newHarnessTestServer(t)
 	a := s.appearance("user-1")
-	if a.ChatSide != "left" || !a.JSONPretty || !a.ToolCallsCollapsed || a.TurnFold || a.ThinkingCollapsed {
+	if a.ChatSide != "left" || !a.JSONPretty || !a.ToolCallsCollapsed || a.ThinkingCollapsed {
 		t.Fatalf("unexpected defaults: %+v", a)
 	}
 	if a.ChatTabs.Order == nil || a.ChatTabs.Hidden == nil {
@@ -25,18 +25,18 @@ func TestAppearancePatchMergesKnobs(t *testing.T) {
 	if err := s.applyAppearancePatch("user-1", appearancePatch{ChatSide: strPtr("right")}); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.applyAppearancePatch("user-1", appearancePatch{TurnFold: boolPtr(true)}); err != nil {
+	if err := s.applyAppearancePatch("user-1", appearancePatch{ThinkingCollapsed: boolPtr(true)}); err != nil {
 		t.Fatal(err)
 	}
 	a := s.appearance("user-1")
 	if a.ChatSide != "right" {
 		t.Fatalf("chat side lost by a later patch: %+v", a)
 	}
-	if !a.TurnFold {
-		t.Fatalf("turn fold not stored: %+v", a)
+	if !a.ThinkingCollapsed {
+		t.Fatalf("thinking collapsed not stored: %+v", a)
 	}
 	// Per user: another account is untouched.
-	if other := s.appearance("user-2"); other.ChatSide != "left" || other.TurnFold {
+	if other := s.appearance("user-2"); other.ChatSide != "left" || other.ThinkingCollapsed {
 		t.Fatalf("leaked to another user: %+v", other)
 	}
 }

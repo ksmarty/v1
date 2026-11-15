@@ -20,14 +20,12 @@ import {
   getJsonPretty,
   getThinkingCollapsed,
   getToolCallsCollapsed,
-  getTurnFoldEnabled,
   setChatSide,
   setChatTabLayout,
   setComposerButtonLayout,
   setJsonPretty,
   setThinkingCollapsed,
   setToolCallsCollapsed,
-  setTurnFoldEnabled,
   type ChatTab,
   type ComposerButton,
 } from './utils';
@@ -55,7 +53,6 @@ export function localAppearance(): AppearanceSettings {
     composerButtons: { order: composer.order, hidden: composer.hidden },
     jsonPretty: getJsonPretty(),
     toolCallsCollapsed: getToolCallsCollapsed(),
-    turnFold: getTurnFoldEnabled(),
     thinkingCollapsed: getThinkingCollapsed(),
   };
 }
@@ -96,7 +93,6 @@ export function applyAppearance(patch: Partial<AppearanceSettings>): AppearanceS
   }
   if (patch.jsonPretty !== undefined) setJsonPretty(patch.jsonPretty);
   if (patch.toolCallsCollapsed !== undefined) setToolCallsCollapsed(patch.toolCallsCollapsed);
-  if (patch.turnFold !== undefined) setTurnFoldEnabled(patch.turnFold);
   if (patch.thinkingCollapsed !== undefined) setThinkingCollapsed(patch.thinkingCollapsed);
   const next = localAppearance();
   for (const fn of listeners) fn(next);
@@ -133,7 +129,6 @@ export function hydrateAppearance(): Promise<void> {
         composerButtons: a.composerButtons,
         jsonPretty: a.jsonPretty,
         toolCallsCollapsed: a.toolCallsCollapsed,
-        turnFold: a.turnFold,
         thinkingCollapsed: a.thinkingCollapsed,
       });
     })

@@ -393,31 +393,32 @@ or `make dev`), then report: (1) the new stamped build version (`v1 <version>
   on): reporting a chat that ended oddly must not require turning a debug
   setting on first. The release tap is swallowed, or the menu a hold just opened
   would close again.
-- The transcript's work groups are per TURN, not per round: everything a turn did
-  between two spoken messages folds into one `CollapsedToolsGroup` — tools,
-  reasoning, asks, background rows AND the turn's intermediate comments, in
-  chronological order (`partWork` entries `{it, i, d}` in the render pass of
-  `ChatPane.tsx`). Per-round grouping left a column of small groups for one
-  turn's work, and rendering comments outside the group stacked them at the
-  bottom after the tools. A LIVE `tool`/`ask` row is the turn's work too
-  (`workOf` maps it to the same `CollapseData` shape as the `toolCalls` a reload
-  carries on the assistant message), so it joins the turn instead of closing it:
-  pushing it to `rows` while the run streamed was what stuck as many round cards
-  as the turn had rounds, next to the single group that appeared once the chat
-  finished. The group is CLOSED by default and auto-opens only while the run is
-  still adding to it (`active={live}` and a member whose call has no result, or
-  an unanswered ask — a question is never hidden), then closes again when the
-  run ends unless the reader toggled it (`touched`). The only row rendered
-  OUTSIDE the group is the part's LAST assistant text row — the summary —
-  (`summaryIdx` in `finishPartTurn`; its reasoning/calls still fold into the
-  group), so the transcript reads as a series of summaries. Mid-run the
-  in-progress text is the current last text row, so the model's latest words
-  stay visible below the group until a later round speaks. Turn fold then wraps
-  everything before the summary (`TurnFold`) — but only once the turn is DONE
-  (`!live`): while a run streams, nothing may fold, or a turn shows its finished
-  rounds behind the toggle and its live round below it. User and error rows
-  never enter the pass's `turn` buffer — they close it and render standalone, so
-  an error can never be swallowed by a collapsed group.
+- The transcript's work groups are per WORK RUN, not per turn: the work between
+  two spoken texts folds into one `CollapsedToolsGroup` — tools, reasoning,
+  asks and background rows in chronological order (`partWork` entries `{it, i,
+  d}` in the render pass of `ChatPane.tsx`), and the text that closes the run —
+  a summary — renders outside it. EVERY summary stays visible, so the
+  transcript reads as a series of summaries with one collapse per run of work;
+  a fold that swallowed intermediate texts hid each turn behind its last
+  message. The run boundary is the assistant text row itself: rows without text
+  (tool-only rounds) keep accumulating into the open run, a text row closes it
+  (`flushTurn` + `finishPartTurn`) and the next run starts after it. A LIVE
+  `tool`/`ask` row is the open run's work too (`workOf` maps it to the same
+  `CollapseData` shape as the `toolCalls` a reload carries on the assistant
+  message), so it joins the run instead of closing it: pushing it to `rows`
+  while the run streamed was what stuck as many round cards as the turn had
+  rounds, next to the single group that appeared once the chat finished. The
+  group is CLOSED by default and auto-opens only while the run is still adding
+  to it (`active={live}` and a member whose call has no result, or an
+  unanswered ask — a question is never hidden), then closes again when the run
+  ends unless the reader toggled it (`touched`). When the group renders, the
+  summary's own reasoning/calls fold into it as a member — but ONLY then: an
+  uncollapsed run (tool collapse off, or a run with no work at all) renders the
+  row verbatim, and a member built anyway duplicated its reasoning in an empty
+  group. Mid-run the in-progress text is the current run's summary, so the
+  model's latest words stay visible below the group until a later round speaks.
+  User and error rows never enter the pass's `turn` buffer — they close it and
+  render standalone, so an error can never be swallowed by a collapsed group.
 - A send during a run is QUEUED, not streamed: `POST /chat` answers 202 with the
   queue entry's id, and `streamBody` raises `QueuedError` (never reading that
   JSON as an empty event stream, which produced a synthetic `done`). `run()` then
@@ -469,7 +470,7 @@ or `make dev`), then report: (1) the new stamped build version (`v1 <version>
   `fullScreen` dialogs are full-bleed on mobile and size to
   `max(var(--v1-app-height,0px),100dvh)` like the project shell.
 - Appearance settings are account-scoped, not device-scoped: theme, chat side,
-  the project tab bar, pretty-printed tool JSON, tool-call collapse, turn fold and
+  the project tab bar, pretty-printed tool JSON, tool-call collapse and
   thinking collapse are one JSON object per user (`keyAppearance` in
   `internal/server/appearance.go`, `user_settings` row, GET/PUT `/api/settings`
   field `appearance`, patched knob by knob so one control saving never pushes the

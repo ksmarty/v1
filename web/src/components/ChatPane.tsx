@@ -52,7 +52,7 @@ import type {
   SavedProvider,
   Todo,
 } from '../types';
-import { errMsg, diffLines, findCatalogModel, findProviderForModel, getComposerButtonLayout, getDebugHud, getJsonPretty, getThinkingCollapsed, getToolCallsCollapsed, getTurnFoldEnabled, humanizeModelId, modelMatches, normalizeBaseURL, visibleComposerButtons, type ComposerButton } from '../utils';
+import { errMsg, diffLines, findCatalogModel, findProviderForModel, getComposerButtonLayout, getDebugHud, getJsonPretty, getThinkingCollapsed, getToolCallsCollapsed, humanizeModelId, modelMatches, normalizeBaseURL, visibleComposerButtons, type ComposerButton } from '../utils';
 import { notifyTurnDone, notifyTurnError, notifyAsk } from '../notify';
 import { pushActive } from '../push';
 import { permissionMeta } from '../permissions';
@@ -2557,28 +2557,6 @@ function CollapsedTools({
           <CollapsedToolBlocks d={d} onAskAnswered={onAskAnswered} />
         </div>
       )}
-    </div>
-  );
-}
-
-// One more collapse level: wraps everything a finished turn did in between —
-// tool groups, thinking, intermediate comments — behind a single toggle so
-// the transcript reads as the summaries a turn produced. Expanding renders
-// the same rows inline, with no extra indentation.
-function TurnFold({ children }: { children: ReactNode }) {
-  const [open, setOpen] = useState(false);
-  if (open) return <>{children}</>;
-  return (
-    <div className="text-[10px]">
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="flex min-h-[26px] w-full items-center gap-1.5 px-1 py-1 text-left text-dim transition-colors hover:text-text"
-      >
-        <IconChevronRight className="h-3 w-3 shrink-0" />
-        <IconWrench className="h-3 w-3 shrink-0 text-faint" />
-        <span className="min-w-0 flex-1 truncate text-faint">Show the steps in between</span>
-      </button>
     </div>
   );
 }
@@ -8392,18 +8370,16 @@ export default function ChatPane({
               };
 
               let turn: { it: Item; i: number }[] = [];
-              // The turn-fold pass: every row a turn produced collects into
-              // partWork, in order, as entries — work (calls/results/ask/
-              // reasoning/background) and text. At the part boundary the
-              // entries fold into ONE group; only the part's LAST text row —
-              // the summary — renders outside it, so the transcript reads as
-              // a series of summaries.
-              let partKey = '';
+              // The fold pass: the work between two spoken texts collects into
+              // partWork, in order, as entries (calls/results/ask/reasoning/
+              // background and text). The part boundary is every assistant
+              // text row: that text — a summary — renders outside its part's
+              // group, and the next part starts after it, so every summary
+              // stays visible and each work run collapses on its own (one
+              // collapse per turn's work, never one for the whole chat).
               let partWork: { it: Item; i: number; d: CollapseData | null }[] = [];
               const finishPartTurn = () => {
-                const foldKey = partKey || 'turn';
                 const entries = partWork;
-                partKey = '';
                 partWork = [];
                 if (entries.length === 0) return;
                 const hasTools = entries.some(
@@ -8445,8 +8421,12 @@ export default function ChatPane({
                         })
                       : renderMessage(it, i);
                     // The summary's text leaves the group, but its reasoning
-                    // and calls still belong there.
+                    // and calls still belong there. Only while collapsed —
+                    // an uncollapsed part renders the row verbatim, and a
+                    // member built anyway would duplicate its reasoning in an
+                    // empty group.
                     if (
+                      collapsed &&
                       d &&
                       (d.calls.length + d.results.length > 0 ||
                         d.ask != null ||
@@ -8479,21 +8459,10 @@ export default function ChatPane({
                   );
                 }
                 if (nodes.length === 0 && summary == null) return;
-                const work = summary != null ? nodes.filter((n) => n !== summary) : nodes;
-                // A turn folds only once it is done. While the run is live the
-                // reader must see its work and comments as they happen, and
-                // folding here split a turn in two (finished rounds behind the
-                // toggle, the live round below it).
-                if (!live && getTurnFoldEnabled() && summary != null && work.length > 0) {
-                  rows.push(<TurnFold key={`fold-${foldKey}`}>{work}</TurnFold>);
-                  rows.push(summary);
-                } else {
-                  rows.push(...nodes);
-                }
+                rows.push(...nodes);
               };
               const flushTurn = () => {
                 if (turn.length === 0) return;
-                if (!partKey) partKey = turn[0]?.it.key ?? '';
                 for (const { it, i } of turn) {
                   if (it.kind !== 'msg') {
                     partWork.push({ it, i, d: workOf(it) });
@@ -8526,14 +8495,15 @@ export default function ChatPane({
                   (it.role === 'assistant' || (it.role === 'user' && it.background))
                 ) {
                   turn.push({ it, i });
-                  // A round that says something ends the current work run: the
-                  // rows before it fold into the turn's one group, and its own
-                  // text stays outside only until a later round speaks — the
-                  // part's LAST text row is the summary that survives outside
-                  // the collapse. Rows without text keep accumulating so they
-                  // stay in the same group.
+                  // A round that says something ENDS the part: the work before
+                  // it — and this row's own reasoning/calls — fold into that
+                  // part's one group, its text stays visible below the group,
+                  // and the next part starts after it. Rows without text keep
+                  // accumulating into the open part so they stay in the same
+                  // group as the tools they belong to.
                   if (it.role === 'assistant' && it.content?.trim()) {
                     flushTurn();
+                    finishPartTurn();
                   }
                 } else {
                   flushTurn();
@@ -8545,10 +8515,10 @@ export default function ChatPane({
               finishPartTurn();
               return rows;
             })()}
-            {!streaming && (resuming || runActive) && (
+            {!streaming && resuming && (
               <div className="flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-xs text-dim">
                 <Spinner className="h-3.5 w-3.5 shrink-0" />
-                {resuming ? 'Resuming the interrupted generation…' : 'Generation still running…'}
+                Resuming the interrupted generation…
               </div>
             )}
           </div>

@@ -105,7 +105,6 @@ export interface AppearanceSettings {
   composerButtons: { order: string[]; hidden: string[] };
   jsonPretty: boolean;
   toolCallsCollapsed: boolean;
-  turnFold: boolean;
   thinkingCollapsed: boolean;
 }
 

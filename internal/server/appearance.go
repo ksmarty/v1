@@ -34,8 +34,6 @@ type appearanceSettings struct {
 	JSONPretty bool `json:"jsonPretty"`
 	// ToolCallsCollapsed folds a message's tool calls into one line.
 	ToolCallsCollapsed bool `json:"toolCallsCollapsed"`
-	// TurnFold folds a finished turn to its last comment.
-	TurnFold bool `json:"turnFold"`
 	// ThinkingCollapsed starts reasoning blocks closed.
 	ThinkingCollapsed bool `json:"thinkingCollapsed"`
 }
@@ -49,7 +47,6 @@ type appearancePatch struct {
 	ComposerButtons    *chatTabsSetting `json:"composerButtons"`
 	JSONPretty         *bool            `json:"jsonPretty"`
 	ToolCallsCollapsed *bool            `json:"toolCallsCollapsed"`
-	TurnFold           *bool            `json:"turnFold"`
 	ThinkingCollapsed  *bool            `json:"thinkingCollapsed"`
 }
 
@@ -125,9 +122,6 @@ func (s *Server) applyAppearancePatch(userID string, patch appearancePatch) erro
 	}
 	if patch.ToolCallsCollapsed != nil {
 		cur.ToolCallsCollapsed = *patch.ToolCallsCollapsed
-	}
-	if patch.TurnFold != nil {
-		cur.TurnFold = *patch.TurnFold
 	}
 	if patch.ThinkingCollapsed != nil {
 		cur.ThinkingCollapsed = *patch.ThinkingCollapsed
