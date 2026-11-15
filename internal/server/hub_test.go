@@ -8,8 +8,11 @@ import (
 )
 
 // TestHubReplayMatchesLive verifies a subscriber attaching mid-run receives
-// the same events a listener present from the start received: deltas,
-// reasoning, tool_start/end, side effects and the final done — in order.
+// every event from the last round boundary onward: the in-flight tool call,
+// the deltas after it, side effects and the final done — in order. The
+// committed rounds before that boundary come from the store (the client
+// converges right after the replay), so replaying them would only duplicate
+// rows a re-attaching client already holds.
 func TestHubReplayMatchesLive(t *testing.T) {
 	h := newRunHub()
 	published := []agent.ChatEvent{
@@ -26,23 +29,72 @@ func TestHubReplayMatchesLive(t *testing.T) {
 		h.publish(ev)
 	}
 
-	ch, release, _ := h.subscribe()
+	ch, release, replayed := h.subscribe()
 	defer release()
 	h.close()
 	var got []agent.ChatEvent
 	for ev := range collect(ch, 5*time.Second) {
 		got = append(got, ev)
 	}
-	if len(got) != len(published) {
-		t.Fatalf("replayed %d events, want %d (%v)", len(got), len(published), got)
+	tail := published[2:] // from the last tool_start onward
+	if len(got) != len(tail) {
+		t.Fatalf("replayed %d events, want %d from the last tool_start (%v)", len(got), len(tail), got)
+	}
+	if replayed != len(tail) {
+		t.Fatalf("replay count = %d, want %d", replayed, len(tail))
 	}
 	for i, ev := range got {
-		if ev.Type != published[i].Type {
-			t.Fatalf("event %d type = %q, want %q (full: %v)", i, ev.Type, published[i].Type, got)
+		if ev.Type != tail[i].Type {
+			t.Fatalf("event %d type = %q, want %q (full: %v)", i, ev.Type, tail[i].Type, got)
 		}
 	}
-	if got[0].Text != "Hello " || got[1].Text != "world" {
-		t.Fatalf("delta text lost in replay: %v", got[:2])
+	if got[0].Detail != "ls" {
+		t.Fatalf("replay must start at the in-flight tool call: %v", got[0])
+	}
+}
+
+// TestHubReplayBeforeFirstToolStart verifies a turn that has not called a
+// tool yet replays whole — there is no boundary to trim at.
+func TestHubReplayBeforeFirstToolStart(t *testing.T) {
+	h := newRunHub()
+	h.publish(agent.ChatEvent{Type: "reasoning", Text: "think"})
+	h.publish(agent.ChatEvent{Type: "delta", Text: "partial"})
+	ch, release, replayed := h.subscribe()
+	defer release()
+	h.close()
+	var got []agent.ChatEvent
+	for ev := range collect(ch, 5*time.Second) {
+		got = append(got, ev)
+	}
+	if replayed != 2 || len(got) != 2 || got[0].Text != "think" || got[1].Text != "partial" {
+		t.Fatalf("replay = %v (count %d), want the full pre-tool turn", got, replayed)
+	}
+}
+
+// TestHubReplayStartsAtLastToolStart verifies several rounds collapse to the
+// newest boundary: an earlier round's tool_start must not widen the replay.
+func TestHubReplayStartsAtLastToolStart(t *testing.T) {
+	h := newRunHub()
+	h.publish(agent.ChatEvent{Type: "tool_start", Name: "read_file", Detail: "a"})
+	h.publish(agent.ChatEvent{Type: "tool_end", Name: "read_file", OK: true})
+	h.publish(agent.ChatEvent{Type: "tool_start", Name: "read_file", Detail: "b"})
+	h.publish(agent.ChatEvent{Type: "tool_end", Name: "read_file", OK: true})
+	h.publish(agent.ChatEvent{Type: "delta", Text: "answer"})
+	ch, release, replayed := h.subscribe()
+	defer release()
+	h.close()
+	var got []agent.ChatEvent
+	for ev := range collect(ch, 5*time.Second) {
+		got = append(got, ev)
+	}
+	if replayed != 3 || len(got) != 3 || got[0].Type != "tool_start" || got[0].Detail != "b" ||
+		got[1].Type != "tool_end" || got[2].Text != "answer" {
+		// The last boundary is the second call's tool_start: the replay carries
+		// that call and everything after it — not the first round.
+		t.Fatalf("replay = %v (count %d), want [tool_start b, tool_end, delta answer]", got, replayed)
+	}
+	if got[0].Type != "tool_start" {
+		t.Fatalf("replay must include the boundary tool_start: %v", got[0])
 	}
 }
 
@@ -87,21 +139,24 @@ func TestHubNoToolStartReset(t *testing.T) {
 }
 
 // TestHubReplayAcrossRingWrap verifies replay stays ordered once the ring
-// wraps (more events than histSize).
+// wraps (more events than histSize), and that subscribe completes even when
+// the caller has not started draining yet (the watch handler reads only
+// after subscribe returns — the buffer must hold the whole replay).
 func TestHubReplayAcrossRingWrap(t *testing.T) {
 	h := newRunHub()
 	for i := 0; i < h.histSize+40; i++ {
 		h.publish(agent.ChatEvent{Type: "delta", Text: "x"})
 	}
-	ch, release, _ := h.subscribe()
+	ch, release, replayed := h.subscribe()
 	defer release()
 	h.close()
 	got := 0
 	for range collect(ch, 5*time.Second) {
 		got++
 	}
-	if got != h.histSize {
-		t.Fatalf("replayed %d events, want the newest %d of the ring", got, h.histSize)
+	want := h.histSize // deltas only: no tool_start to trim at, so the ring replays whole
+	if got != want || replayed != want {
+		t.Fatalf("replayed %d (count %d), want the newest %d of the ring", got, replayed, want)
 	}
 }
 

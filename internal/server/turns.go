@@ -264,7 +264,12 @@ type runHub struct {
 }
 
 func newRunHub() *runHub {
-	return &runHub{subs: map[chan agent.ChatEvent]struct{}{}, histSize: 512}
+	// 512 events wrapped inside a single round once a reasoning model streamed
+	// hundreds of chunks: the replay then began mid-round, the rebuilt row
+	// started with a fragment, and a missed tool_start glued the next round's
+	// comment onto it — the duplicated, concatenated tail under the fold.
+	// 4096 events keeps a whole multi-round turn in the ring.
+	return &runHub{subs: map[chan agent.ChatEvent]struct{}{}, histSize: 4096}
 }
 
 // record accumulates the in-flight reply so the history replay can seed a
@@ -291,25 +296,46 @@ func (h *runHub) record(ev agent.ChatEvent) {
 // store at that point instead of waiting for the run to finish).
 func (h *runHub) subscribe() (chan agent.ChatEvent, func(), int) {
 	// Larger than the ring so the synchronous replay never drops events on a
-	// normal-speed reader; slow consumers still degrade gracefully on live
-	// events (publish uses non-blocking sends).
-	ch := make(chan agent.ChatEvent, 1024)
+	// normal-speed reader — and can never block: the replay (at most the whole
+	// ring) always fits the buffer, so subscribe completes even when the
+	// caller has not started draining yet (the watch handler reads only after
+	// subscribe returns). Slow consumers still degrade gracefully on live
+	// events (publish uses non-blocking sends and evicts).
+	ch := make(chan agent.ChatEvent, h.histSize+64)
 	replayed := 0
 	h.mu.Lock()
 	if h.closed {
 		close(ch)
 	} else {
+		// Register first and replay under the same lock: a live publish (which
+		// also needs the lock) can never interleave ahead of the replay.
+		h.subs[ch] = struct{}{}
 		if len(h.history) > 0 {
 			start := 0
 			if len(h.history) == h.histSize {
 				start = h.histHead
 			}
+			// Replay from the last round boundary, not the ring's start. A round
+			// persists before its first tool starts (harness_chat.go at
+			// message_end, agent.go at AddMessage), so everything before the
+			// newest tool_start is already in the transcript — and the attaching
+			// client converges with the store right after the replay. Replaying
+			// committed rounds is what duplicated them: a client that re-attaches
+			// mid-run (a queued send, a watch that dropped) already holds those
+			// rows, and the replay rebuilt them under the fold as a second copy.
+			from := start
+			count := len(h.history)
 			for i := 0; i < len(h.history); i++ {
-				ch <- h.history[(start+i)%len(h.history)]
+				if h.history[(start+i)%len(h.history)].Type == "tool_start" {
+					from = (start + i) % len(h.history)
+					count = len(h.history) - i
+				}
+			}
+			for i := 0; i < count; i++ {
+				ch <- h.history[(from+i)%len(h.history)]
 				replayed++
 			}
 		}
-		h.subs[ch] = struct{}{}
 	}
 	h.mu.Unlock()
 	return ch, func() {
