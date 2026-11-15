@@ -1,0 +1,270 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:ca33f6b046f59a90e8bd7d14d63b84c331a47b779d85803d7ce692e54dda0284",
+  "claims": [
+    {
+      "id": "claim_dca8a1121e974197833865d6aefc4049",
+      "statement": "Every HTTP request passes through auth.Manager.Middleware, which is wrapped around the ServeMux once in New, so Handler() is the single entry point.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/server.go#L128-L137",
+          "version": "repo-lines-v1:sha256:361f2286d89bbe56466a4d0086386102bd6e170ebe9537f9bf3a98be9c10fce3:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUzN2I5NjhmNTk0ZjdmNTlkNzU3MmUzMTA4ODZmNTE4MDczZTc0NzZkZjRlZDhmMzEzZGI3NTEwYWU1OTYwMDYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk0MGNkOTc3YWIwZjhiMzUzMGQyZjViZTE2NzEzZDEzYThlY2RhYTRkOTg3YTA5N2M4N2RmNjM4MzZiZTRkNGEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNiZTc4NzMzN2JiNGZkMWZlMGE2MTY1MjZlZjhkZTE0ZWMyOTA4YmUyOTY5OTlhNTJjZjVhNTlhODA0ZjkwNzAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ1NDNlMjUyMjVmZTI0YmRmNjgwZTVkYzVlMDIyYTRhNDdjYWQ1Y2ZjMTUyNTk5Mzg4NTQ2MzgxMzVhNTlmMWQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_dafa5a7dc04d40478e6216978c32df93",
+      "statement": "The auth middleware sorts requests into four cases in order: auth disabled (synthetic local admin user), public API (/api/healthz and the /api/auth/ prefix), SPA shell and assets (served, session user attached when present), and everything else (session required or 401 JSON).",
+      "evidence": [
+        {
+          "resource": "repo://internal/auth/auth.go#L222-L254",
+          "version": "repo-lines-v1:sha256:2094cb8ec083fb508300d67c7769e0ecf4637c55b8301a500f527bf1126e5f18:eyJzZWxlY3RlZExpbmVDb3VudCI6MzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNiZjU0MmZjOGY5NTY5OGM2ZjkzZGFiZjlkZjk3NDJiOGZlMjBkZDhiYTAwOTZhZGFiOTRhMjU4NWFjYjg1M2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc3YTliNWU5MDE5YzhkYjg3ODNlYzljM2ZlYmIwYTJjOTg2MmY2MWEwNWMzMDhmZTg5NWU0YTliZWQwM2VkYjMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjAyNjU1ZDIxZWRhYmUwYzdlYmMwN2NlYzAxNDcyZTYyNmQ4MmY5M2QzMTEzNGRiMmNjZTE3ZDc4MDA3ZmViYjciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_35d48522e64640a6b5e770d54adb2f6b",
+      "statement": "An unauthenticated API request is answered with 401, Content-Type application/json and the body {\"error\":\"unauthorized\"}.",
+      "evidence": [
+        {
+          "resource": "repo://internal/auth/auth.go#L243-L249",
+          "version": "repo-lines-v1:sha256:5a8f6fbece2f199ecbc9b8bc9599a8613710fb73776f2b16703807709b795543:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZThkZTAyYWE3MmY2OThiYjlmYzFkYzJjZDgwYmQwOGE2MTQyMTBiMTI0OWM0ZjRmZGViZTljYTQzYTMyZjE1ZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiN2YzOTM4NzQ2NGYyOTA5ZDk3ODY5ZWQ4NDFjOTk1ZjMyNDVkMTM1NGIwMzdhZjk0NWI5YjVlN2IyMzRkMzU2NSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNWFlYzE0ZmFiMDZmZmE1OTU2N2RjOTdjN2VmZjFhZDBhZGQ5Y2VlODk0NmM5MGRlYTllZDRlN2U4NjUzNDNjYSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiY2Q1ZWM4MzRmMmNiMTlkZWEwYTljNDEzNWZkMjNkOTAyOTdhMTI4ZTBmNjgxZmI3NzRhOTY4NTVkOWU3ZTdkNCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_9e94bdc7d7654e588217a0a39dfc5cd5",
+      "statement": "Routes are registered with Go 1.22 method patterns such as GET /api/projects/{id}, PATCH /api/users/{id} and DELETE /api/users/{id}, so handlers never check the method themselves.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/server.go#L169-L215",
+          "version": "repo-lines-v1:sha256:425cbbfa9d730dbbd8753c822b20af69ab456ae3e7396d2a5d91d04ebc94c486:eyJzZWxlY3RlZExpbmVDb3VudCI6NDcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUyYTQ4OGI0OGQwYjQ5ZTM5NzgxOTU5MmFmODU5MDg2ZThjYWNjNmI2NzFlMjBjMDA2ODMxYWVjYTlmMzY4NDciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY5MzRlNzE1ZDVlZDMwYjMwZGZlNGI1MDk4M2NmMjExMWMxZjdjMzcyNTAyYWMxNmJjODUxMmNhNWE5YWJjYWYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImYyOTY0MDc5YzNjNWM4MTUyMGVmMzNhMmI5ZDJlMTVhMWI4NGQ3MjgwZGI4NTkwZGNkNjU3NDdlM2UwMTJhNDAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBiNTk0YjkyODg0OTUwYmQ2MGE5NDAwZjA2MmI1NWM5NjViODkyYjFiZDQwNDQyN2E3YTI0MWJkMzExNThiM2YifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_d101a09120854dfa8f607adf7bcda50d",
+      "statement": "Sessions are opaque tokens in an HttpOnly cookie named v1_session, valid for 30 days, with SameSite=Lax and Secure set from isSecure (TLS or X-Forwarded-Proto https).",
+      "evidence": [
+        {
+          "resource": "repo://internal/auth/auth.go#L134-L156",
+          "version": "repo-lines-v1:sha256:e0a1c6b69bb15bc73796bdd35fc1d28e8eed3b1a1a9dabd5ca8be707d5fdc889:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBjMTJjYTFmOGExODUyZmY2MmJhMWEwM2U5MmQ0YWYzNGJiMjM3YzhkNzc3ZDhmZmE3MjdmMTM1MmMzZmFiZDkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk5NTM2NzZjMWVhZWM4NWI4NGIyOTJjMDNhNGYxOWE5MDQ4M2NlYzdiMWVkNDkyYzFkYjU4NjI3MTUzMzg2ZGYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE5NjQ4OGRmN2NmZGJlNDI0YWM2MWFlMTVhNDFlNDdjYTAyNDZiNWNiZWM3YWM2ZDEwYmI3NGJiOTM4MmU4YTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQwMTQwNGMyNWIzZmNlNjkxNjNmZTg4NTYyOTIzNDIxOGYwNzRmMzRlYzZiNDIyNTcxYTIwYWU5ZjQxZDQyZDUifQ"
+        },
+        {
+          "resource": "repo://internal/auth/auth.go#L18-L20",
+          "version": "repo-lines-v1:sha256:09c2381aceff379f72cd7bc80f737666675611870d323b90a3587bfecdb40035:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNmU3MjA3ZmZiYzY2NDI3YTc1ZTdhMTQyNGZmM2VkY2Q5ZmRlNDBjZDc5ZGM3ZmE2ZDJmMjFmMzU5ZmUzNzM0ZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTViZmNhMzYwZTk1MDljODhiMGQzMDNkNDRjYjU4MDZkNTIyNDZhYTIxZDkzM2ZhNWM3NTJjZjUwYjkwYTk5MSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMGUzZWNmY2U4ZjQ2NTNhZjUxMmRlOTY4ODA5YjIxNGRkOGI1YjYxNDkxY2EyZjBiYmEyYjU2MmNmNjE0NTBmMCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYTJlYmFhYWYwY2RiZGY3MGNkMDU1ZjM5YjdjNzkyOGE1MmNiNjY5YWU4ZjQ5OTcxNjhjNmM3NmU2Mzg3MDRiZiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_bb966af6a7a14e5aaf2d7406ff215a3d",
+      "statement": "BootstrapAdmin creates the admin account from the V1_PASSWORD environment value only when no user exists, then calls ClaimOwnerlessProjects so pre-multi-user projects get an owner.",
+      "evidence": [
+        {
+          "resource": "repo://internal/auth/auth.go#L52-L71",
+          "version": "repo-lines-v1:sha256:4b1ad4b0fde5c05c31d0a507f72ff3e267ee56b7658f9b8b606ba675be0e8b90:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI1NTMyYTQ2YTRjZDdhODg4MDM5NjlmMzllYzMzNDA5ZTIyZmE3ZThiOTAxMGFjMmM4NDAxZWRjYjVlYTEwY2MiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY3Y2RhODJkYTYwNjIzOGUwNWU2MjM5OTU2OWM1ZWUwMzk5MzQxOTY0OGFlNWQ0M2EyYmY4Y2Q2MzQ3ZjgyNjMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBjM2EyMmYwMjUwMGQwMTI3MGZhNjQ0NTU4MWQ5MTA1ZjVlM2JhZmNjODYzYjc1MjkzMzZlNGExYmM1ZTZjYjMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcwNjgyYmVlYzU5MDZhNTc0NGJlMmQ4MTQ2YzU2ODc0MTlmYWNhMTM2ZDVmZjgxNzgzNTFjY2QwMThmMTA5OWEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_20fe898433104368aab774b168031561",
+      "statement": "SetupRequired is false when auth is disabled or OIDC is enabled, and otherwise true only while the user count is zero.",
+      "evidence": [
+        {
+          "resource": "repo://internal/auth/auth.go#L76-L85",
+          "version": "repo-lines-v1:sha256:752e93868e25a58d0d264054647fb333177858972db538e632647cda755da2f9:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRhNDA3MTYwYzgxN2FiMjc1NWYyZjE1MWY3MzNkYjdiOGIxYjRlYTRmZWQxMDJhMDk0M2Q5MWQzODIxOTQ3MjciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk4MDI3MWY1ZTA2N2Q2MWJhNGQ0OTY3ZTQ3NmY3MDQzYWNjZGJkNzJlYjEzZWVlY2YyMjI0MjdmZjM3OWM0ZjMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjllMzYzNTBmMGYzNWMwMGI4NzU5MTg1NGQwZWE2YTM5OWNlZThhZDUwZjYzMzdmMWVhZWEyOTE4YjI1M2RhOGQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_bef1eeb21f804ddf81f61894eb8d795c",
+      "statement": "Signup is refused with 403 'signup is disabled' unless V1_ALLOW_SIGNUP is set, and the same flag is reported to the UI as signupEnabled.",
+      "evidence": [
+        {
+          "resource": "repo://internal/config/config.go#L101-L103",
+          "version": "repo-lines-v1:sha256:96a3f87d4ee86201f7f01982224a9f6cc2f976d08aedc8ccd3cb061fd961dd2f:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNGQ0MWVlNGI0MTAxZjdmZjA4NzFiODBmMjcwNzQ3MzRlMDAyYzY0YTU2ODQyMjA5YzIwZDFkM2ZlNjVkY2FkNCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNjdjZGE4MmRhNjA2MjM4ZTA1ZTYyMzk5NTY5YzVlZTAzOTkzNDE5NjQ4YWU1ZDQzYTJiZjhjZDYzNDdmODI2MyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMzJhYjQ1NjhiNTA0ZTMyNjYwMGQ0ODg2NzhhMzJmNzkxZGZkZTE5YjQwNTQ3ZTNjNGQzOGIwMjM5YjEzNjJiYSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNWUzMDI4ZTE3YjRjMTJlMzJiODMyMjk3MDc4OGIyZTRjMWQ4ZjcxMjVhZDg5ZDBkYWU0MzY1ZDk5NjMxMDU4MCJ9"
+        },
+        {
+          "resource": "repo://internal/server/handlers_auth.go#L110-L116",
+          "version": "repo-lines-v1:sha256:89ca19ef655ce94214a30c1dcb02230745d3908ecf05bf22c4a29983713521dc:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZmNhYWNhODlmNDhlY2Y0NjZlMzdhZDNlZTk5MWNmZTFlMzkxNTlmZjU2ZTFlMjA1ZTkzNDU2NTkxNTM2MDc1YiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYzY2YTM0MjQxZGZkN2RlMjIzODY1NjdkMTVlZTE3ZGVlYjJmZjk0ZjRiMTEzNDAxZWE3NjUzMmQyYTBkOTU3ZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMGFiZDdlNTNlYTU2N2JhMDRlNjFhNzMyZWU4ZDY5MGU1NWE3YzdlMzllNjljM2RlMzBmNWFiM2FkYjU2NDQwZCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMmUzNzIzMjYwN2QzOTdlMmVmMmI1ZGNkODEyNWFhZGVhNmIxMjhhMjYxNjQyYWExZDZhNWUyZDhhMjU4M2UyMSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_c6c01e4faf9948e08ece0a9f1c7a34c9",
+      "statement": "Usernames must match ^[a-zA-Z0-9._-]{3,32}$; anything else is rejected with 'username must be 3–32 characters: letters, digits, . _ -'.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/handlers_auth.go#L19-L23",
+          "version": "repo-lines-v1:sha256:e9afa7cfab8c6878b46ee4604facda927125ab3efaea480e51fe484b9600f261:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZWQzNmQ3YzE0MTlkY2NkZTc1ZDEwNmQ4OGJhNWZiMGU5NjJiYzNjY2Q5ODAxMTdmY2E3ODRjMGJlMDkzZDQ3NiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZjUwM2I4OWMyNmMwYzU3MzM1ZGUwZDk3NmJhYjk2ZTc1MDM4MzQ5MDlkMmZmMjc1OTliZGU5Y2UwOGM5YzQ3OCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYmM2MTE3NDc3MGNhMGFhMTMzNjFlYmZjYTMzZjZlODczOGMwZjA0MWQxMWE1ODk0ZjVlODJkMTgzOTE0ZDY3NyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMmZkODhlZmI2YTllMzNiYWVlNjgxMmE0NjQ0NDg2ZTcyOGI1M2UzZmVhOGM0ZDM3YzY0N2Y5OWNkMmQ3Y2VlZCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_36c2e4a47ef0455c97a66d6fdeb94a4a",
+      "statement": "The /api/users routes and the OIDC settings routes are gated by requireAdmin, which answers 403 'admin required'.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/server.go#L181-L184",
+          "version": "repo-lines-v1:sha256:9ff3c99f0e35666d19e935314b8ea70e2e080f45139677d4f2574d972c52720b:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiODZjMDI0ODIzMjM4NDY2YmExOTg1MGM2MDc0ZGExYjgzMDZhYWRjZWU1ZmI3ZDIxODA4MjVjYTFkZDZjZTYwYyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYjVlNWU2OWVkM2ZkODY1NDI0NDY4NTJmOTExNmM4ZWJiNTdmZjc3NTI3MmViZTQ0YWM4NWNlN2EzZTlkOTE0NSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNzhlYTUwMDJkZmNhNGY3YTg5ZDRlMjliOTI4MWQ0YmVhNTQzZWZkZWEzOTYyZmRlYmY0N2Q1ZjA3ZWM4ZjY1ZCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNTVlNWQ3ZDk1MWExNWYyOTgyNGQ3OWQzODAxYTc0Y2JiMjAyMWFiMmI0YThmY2IyMWY3NzYyMWQzNjgyMjc4OCJ9"
+        },
+        {
+          "resource": "repo://internal/server/server.go#L372-L379",
+          "version": "repo-lines-v1:sha256:5a1a6f371b2e28d80bcdef47a5b7a4b09f6db237882e92fd0a9095306018eb78:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiN2YzMGE2OWJjMWI2NGJhZTA1MTI1OTM4NjgzYWIwY2FkNTNkOGEyNWRjNTE4ZDE0MDJlNWY0MzhmMWE1YWE3YSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDFiYTQ3MTljODBiNmZlOTExYjA5MWE3YzA1MTI0YjY0ZWVlY2U5NjRlMDljMDU4ZWY4Zjk4MDVkYWNhNTQ2YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiN2UwODY4NTFlNTE5YzdjODkwMGZlMzMxODQwYTkyMDdhYmI1NzZjNjY0NmRlNzExMzZlMmY4YjM0NzU1YTg5MyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYjhiMzFmMTA5YTgzMmRmYTYwOTU5OWI2YTViMjZjNjcyOGViY2QzYmNhNWQwZjFjZGMxNGZlZTcxNWJlYjhlZiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_3d5a8ad788cd4f228167f92fc1595b31",
+      "statement": "OIDC configuration merges admin-saved settings over environment variables, and the settings response reports issuerFromEnv/clientIdFromEnv/clientSecretFromEnv/callbackUriFromEnv/allowedEmailsFromEnv so env-defined fields can be rendered read-only.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/handlers_oidc.go#L54-L73",
+          "version": "repo-lines-v1:sha256:4730e1f4d6e0009fe74346ca8bd58dc3bd4fa0cbe46f7dc7b28a99438a1a292a:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMyZDZmNzhmZWMwYzZhZWNkOTAwOTMwZGYxZGMwOTkyZGVlNDEzY2YzN2ViOGI4Yzg5OWE1MjdlOTk4N2JkZWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVjZjg4OWVlMDFkZWY5NzkyOTAzM2VjMGQ3ZTNjMzI4MjI5NTM5ODRmY2Q2MWE2MmUwMjBlYmE5ZTZmMzFhMWMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM4NmEwMzk0ZjdmZGM3ODU0YTM3NjYxZGYyN2M1YjRjNjNiMTJmYjA1ZTgzNjI5YmQ2MDU4YmE5ZTY4YTU1ZGMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjkzYzhjODdlNTc4NGY3YmM2ZDRhNTJkNTQ5YTdkZjQ3MGY5MmExNGNiYTdkNzkxNWI5ZWFjZWM5M2Y2NjUxNzEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_ba907e4c98e0436f91d379bc7bdd05a0",
+      "statement": "Saving OIDC settings writes the five instance-level keys and rebuilds the client; an empty client secret leaves the previously saved secret in place.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/handlers_oidc.go#L80-L105",
+          "version": "repo-lines-v1:sha256:0509eb72b8babc29f5bf3a24f2952c3cfccbc70f1d563e4d81140b0ef677ff58:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE5NGE4NzBlOTgxYzFjMjY1OGIzYTliNDg1MTAxZjExZDI5MTMxNTE5NjlkNDFiNDE3NDlkNzA2ZjY5ZDRhZTEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjExMTBhMmE2N2E5YWQzMWQ4NDAxNzkzZWNlODc0MzM2ZjIyNzNiOGZkYmFhMTc3NmFlZTJmOGI3NTI2YzczYWMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI5ZTgyOWY5ZGZiZTQ3MGM5YmYxYTg5ZDQxZTQ5MThlOTM0N2Y5MzcwZjY5M2FiMmViZTI4ZTYwYWZhN2ZjY2YiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ4ZjI3OTcxNTAyMjMwYTYwZjJhMTBhYTZkNzNmODk4ZTA3OTVjMzFjNzgwYTE2YWYwZjAyNGUxMzY0NGZiYmUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_bf3809abcfa6452da97abb97e937903c",
+      "statement": "The OIDC sign-in flow uses authorisation code plus PKCE and a nonce, stored in memory keyed by a random 32-byte state with a TTL; the callback deletes the state before verifying, so a state can be used once.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/handlers_oidc.go#L124-L172",
+          "version": "repo-lines-v1:sha256:0f1cc36ac970f149466b68195376f4bd46e4891cc08802a6e52edee89e7f0d84:eyJzZWxlY3RlZExpbmVDb3VudCI6NDksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRiZDFkMzI5OGRlYjdjMzJmYzQ4M2ZmYmUwNjllNjM0Yzk3M2Y2YWRkM2I3NGJiNTUxZjM5NDQwMGVkODQyNjIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYyMzNkMjRlYTExNDkyZWJiYWM1M2U4MjE2ODNhYmE1MjMxMWM4MTExMGY0ODkwNzU5NDJjNTIwM2I1MzcwMzMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjMwNjljOTE0ZTFiMWNiZDIxMzAwNDk0YmI5NTk4NDQ5M2ZhZmQ0MDE1ZTJjMGU0ODlmYjRlNjRkYzk4OTIwYzQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjlkNTk0MjNiNWVkNjNkNDNhNjRiZGY3ZDhhOGNhYmJkYzMxMjZjZjlmYzIxYzUzOTI1NjM3MzE2MDM2ZjE0NzcifQ"
+        },
+        {
+          "resource": "repo://internal/server/handlers_oidc.go#L173-L205",
+          "version": "repo-lines-v1:sha256:08d9d942dc54f53d981581d220faae38f86bc28bb1cce269a8a5c78053885b90:eyJzZWxlY3RlZExpbmVDb3VudCI6MzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJjNGI4MTJkOGNhNGMyZjZmZjkwMjUwZjBjM2M5YmM5NmQzYTk0ZTc4MzQxZGE5ZGU5ZmJmNGNmOTVhNTBkNDMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJmNGI5YmEyOTVkYTE2Y2FlMWQwZGI5NzM3Mzk0OGI2NzZjZjY2MDIyMTI2YWZlYTBmOGMwMTliZmRmYzViMmQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjU2NmUzYTM0NWY1ODBkNTQxNmYyYjdhYjU4NDNjM2NjZjdiM2IxZWVhODk3MjE3NzU5MDI3ZDUzOTNiY2YyOTciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM5YzExN2UxYTE3NDE0ZDRkY2RlMTJjMTViY2NiYmI2MTVkMDQ3OTg0MDlmOTVkY2M1NmFiNDU3YzA4MzVkMDcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_c8eed7cb177749709dd9d10d44a9d02c",
+      "statement": "An OIDC email that is not on the allowlist redirects to /login?oidc=denied rather than rendering an error page, and a first-time allowed email is auto-provisioned as a user with OIDC set; emails in V1_OIDC_ADMIN_EMAILS become admins.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/handlers_oidc.go#L173-L230",
+          "version": "repo-lines-v1:sha256:645d29dea0c4aedc4f0fa840b027e939f525c50ef1ba2f586f0bb13812e6d620:eyJzZWxlY3RlZExpbmVDb3VudCI6NTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJjNGI4MTJkOGNhNGMyZjZmZjkwMjUwZjBjM2M5YmM5NmQzYTk0ZTc4MzQxZGE5ZGU5ZmJmNGNmOTVhNTBkNDMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZlMWI0OWRjNzJmNjMyNjNkYzRmODFkZDIxZGYzZWRiZmU2NWU5NjVlN2FmMjhjNDM4OGFmMjc0NThlZTYwY2YiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjU2NmUzYTM0NWY1ODBkNTQxNmYyYjdhYjU4NDNjM2NjZjdiM2IxZWVhODk3MjE3NzU5MDI3ZDUzOTNiY2YyOTciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRlOTE3ZTU5NTg5NTc4OGQ3N2JmNjg1MmE5M2RkYmEyMjE4NTZhOWJiNjFmYWY2ZmVmODJlYjY0MzJjZGE2YmQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_b6d0c9e6772e44baa4585c0835a48f7a",
+      "statement": "userSetting defines the settings layering: the user's own value wins when present and non-empty, otherwise the shared/global value is returned.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/server.go#L536-L547",
+          "version": "repo-lines-v1:sha256:f32e1fccd3b3f76a4e595f938af1bd8f2b659f0c2978df73da9272f076448906:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc5ODEzNGIwZThmZmVkNzUyOWUyOThjNmMzMzkyYTY0ZmYwODY5MjUwZjVkYjk5OWU3Njg1ZTg4NmY0M2I4ODIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFhYzVhOTEzMjE1ZTk3N2E0M2Q3NjI4Zjc1NTZjODJhYzE5OWMzNjhkNzcyMjNjOWU4ZTM4NDMzNWE5NDlmODciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVkZDU2Y2YzOTNmYjIwYjdjZTJkNGRkZTMwYTViZDVmMDRhNjJhZWU2YzdhZTIyZGRjYjJjMzM4OWFjNWEzZGUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_55f516dd2ac24ed0a5536d087a9d11e3",
+      "statement": "handlePutSettings writes user settings with set (where an empty string deletes the row so the value falls back) and instance-level settings with setGlobal, which is used for the GitHub and Vercel OAuth app credentials.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/handlers_auth.go#L261-L320",
+          "version": "repo-lines-v1:sha256:f4c21ef7a8b2600f03004da607f30c646b57b28ab070390f7ba209780e73b81a:eyJzZWxlY3RlZExpbmVDb3VudCI6NjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJlYWRkY2QxNzJlODA2ZDQ4ZjhiZDJhODhmY2ZmZGY0MWY5Yzk5Y2I2NmM3MTJjZDgzM2I5MWI2NTg0M2E2NGUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQyYjExYmY1Mzg4MjQ5ZDlmM2I1YzAzN2Y4OGRlMjc2ZjBhODYyMjFkYWU0MGY1ODlkMTFmYzZhNWY0ZTJlYmEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjkzYzhjODdlNTc4NGY3YmM2ZDRhNTJkNTQ5YTdkZjQ3MGY5MmExNGNiYTdkNzkxNWI5ZWFjZWM5M2Y2NjUxNzEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY1YWVjZTY3ZjU3ZmU1OGNjNzE5YjY5ZDJiOTMyZDY2Y2RhYWQyNTJiNjJiNjQ1YzEzMmQ3YjZlZTg2OWMyMjYifQ"
+        },
+        {
+          "resource": "repo://internal/server/handlers_auth.go#L447-L490",
+          "version": "repo-lines-v1:sha256:b41c694144ac40a9a4bd906532431bcbe0449bf75e67822b26117d09205c9b46:eyJzZWxlY3RlZExpbmVDb3VudCI6NDQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4MWUxZDhkNWIxMzkzNGI4YzQxODZhZTFhMzY2NzZlNGZkZmVjMGY3MGQ4YmQyYThkN2FhYjBlNjE2NDRlMjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUxMzE0NTFkYjBiMWY4ZWUyNDgzNzRjZmI2NTg3Y2Q3ODQ4Mjk2MTA5OTExNzhkY2QwNDBkMzgwZGQ0ZTFlM2UiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjAxMmFmOGU0ZDhjZTE1ZjY1MWI0YzY3MmYyNzk3NWQ5MzFjZDA1YWM3ZWE2ZGU1NjE4MTQ4N2E1ODdmZDVkNDYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI2NmU4MTBmOGRiM2FmZDFlZTMxZDBkN2YyMDkyMjc1ZjRhODc1OTY1ZGNlYzdhNzIxYjAzOGRkNzEyNTc3NGMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_dbd4756a013d43f783d5ec6a2a7d2ad5",
+      "statement": "Provider records saved through PUT /api/settings get a generated id when missing, keep their stored key when the submitted key is empty, invalidate the custom model cache, and keep the effective single-provider keys in step with the record whose base URL matches.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/handlers_auth.go#L320-L425",
+          "version": "repo-lines-v1:sha256:a77d1badc3679cab0f34374bb4b9250c7812e9533722549f61a3a9b9c8563748:eyJzZWxlY3RlZExpbmVDb3VudCI6MTA2LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiI0MmIxMWJmNTM4ODI0OWQ5ZjNiNWMwMzdmODhkZTI3NmYwYTg2MjIxZGFlNDBmNTg5ZDExZmM2YTVmNGUyZWJhIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiJiNjg1NWJkNzNiYzI5NzYyYzY4OTU2M2E3ODJhMzQ0MGFhMGQ0YTM2OTNhYjg0OTc1ODRmMjRiYmQ2YTdjNmQ3IiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI4MWY1ZWU4ODI1MGI4Y2E5ZjAwMmQ2YmEwMGRkZTJjMTA0MmYyODY3OGQ2ZTcyY2I4ZDlkZDMxMTdiNjA2MjA4IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI2OWQxMTlhOWE5ZDBjMTZjNjE1NTQ5ZDQ0MzJhZDM4ZmI2N2FmYzcwZjRmMDI2MzIyMmM1N2ExNjIzMTljNjgwIn0"
+        }
+      ]
+    },
+    {
+      "id": "claim_fb0d6f009b5849b8a185005633218ef6",
+      "statement": "handleGetSettings never returns a stored secret: it returns only apiKeySet and apiKeyHint for the LLM block, tokenSet for GitHub/Vercel and keySet for web search.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/handlers_auth.go#L188-L259",
+          "version": "repo-lines-v1:sha256:5205c1d69ad9ec55895b8235a899f3c9edd2cc1d9b612ba6c5547a0daf09d052:eyJzZWxlY3RlZExpbmVDb3VudCI6NzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjEyMjgzYjAxYTg5Y2Y2NzZmOGUxYzQ1MDNhMGNiYjc1YjhmODczN2YxOTcyNjgxOTVlMjI0OWIyNTM0OTM5MzYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZhZDU0YTQyNmMyZTcxOTE3Y2ZhMDlmN2M5MTAzM2ExZTY3ZmEzYjk5NzZmMTAyYmZkNDUzMmIyNzlmOGU3MjMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImIwOWJkZjQxOTY5ZDJmOTY5MzViNWNkNmYyOTVkYjIxZWQ5OTlhNjcxYWUyNTBhOGQzMmQzNThlOGZmMzM5ODMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_b13e6d7d615449bc9e7e5c8d11b96a7f",
+      "statement": "projectOr404 returns 404 'project not found' when auth is enabled and the project's OwnerID differs from the current user, so ownership failures are indistinguishable from missing projects.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/server.go#L380-L390",
+          "version": "repo-lines-v1:sha256:dbb078147f86040e54619af2e1e348088a795bb1dadd91fee2b5429cc68d0080:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRlYjkxOTZjOTk2NDQwMGEwYjUzMmQzOTRiZDM2NzEwODc0ZWVlZjI4MDJkZGRlNGU5ZWZmZTkzYjYwZmY4NGMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA2MDhkYzYxYjRlMGMyNTY4N2VlNWIwOTVmMDVlZmRkZDdiYzRmZjNmZjJiNWQwM2IyYjdmYjYxY2MxMmMzOGYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZiNjU5NzA4NjNkNTgxM2JmOTcwYjAyZTM0YjU1YTIxMDIyZmY5MWZiYjM3NjAwYmM5ZjZhNzY2NzkwZWVkMjUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQwYjU1MzI1YWQ3MzRjNjIwMjFhMjJmMTYwMmVmMDU5YWMxNDdmOTIxOTBkOTMzZTA3Njk4NzUyZWM5MDYxMjkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_7c4374a524d345aa8546f30ea73bee00",
+      "statement": "handlePreviewProxy re-checks project ownership before serving, and answers 503 'preview is not running' when no preview process is registered for the project.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/server.go#L1071-L1089",
+          "version": "repo-lines-v1:sha256:838a0112cfe1410f0d9d1c451521b0db440088bc4f0a2416ba26cea44f3f31a2:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMzNWNjMjA4ZTc0MzZkYTZkYTAyNTI4MWJmMmI4YmNkMTU3NjhhNWU1ODhiMjNiMmI1MTljODY1OGMzMmE3NmEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM2NmEzNDI0MWRmZDdkZTIyMzg2NTY3ZDE1ZWUxN2RlZWIyZmY5NGY0YjExMzQwMWVhNzY1MzJkMmEwZDk1N2QiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjAzYzdkMzVkMDBjZGM4MWQzNWVjOGY1YjdjNjNmMDIyMjhmMTM2OGJlNjdkYzBlYjcxYjA3ZTFmYTFjNzk2OTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI3MDgyMTdiMGExZTJhNDU4ODliMGIxNzY2YWE5NTBiNjFiNzUyNTgzNTJhMzhlNTgwNTE4ZGViY2VmOWU1OGMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_a3a22e4f60bb4072a22f5e838a0806e7",
+      "statement": "ClaimOwnerlessProjects assigns every project with a NULL or empty owner_id to the given user; it is called after bootstrap and after the first setup account.",
+      "evidence": [
+        {
+          "resource": "repo://internal/store/store.go#L668-L671",
+          "version": "repo-lines-v1:sha256:e7cbd947bf1716ba89922cdc7744748d9482917acdcdf806bfce6e07df873a8b:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMWI2NWQ3YjQyZWY3YjAwZDFmYWY4MmI2ZWZmODM3NTExM2MxOGU0ODIwYTc4ZjlhNmRkY2JlOWUyZGUwYzdjYSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDEyY2EzNDVjY2Y3NWJmOWMwODA2YmNlNjk1YmU4ZGU4MDhiNzk5ODQyNTFhN2E1NGQyMDJjZjYxMDFkZDQ1MSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiODA5YTdhZTY2ZjE5M2E4Y2NmOTI0NTg2OTUwOGRmZGUzYzI3MWI5NDAzMDA4Y2I0OWRiMTA2YmY1Y2I0ZDUxZCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNTMwZmI1MjU5MDZiNDNhMjZjZjU5ZmE3MDMyYTZlMjAzYjJlNWM4YTc4NzA0YzU4Yjk4OWYwMTBjYzE2Y2QwYyJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_1e46d0e56ab04e5d9497b3ac2140fca6",
+      "statement": "writeJSON marshals before calling WriteHeader, so an encoding failure cannot produce a 200 with an empty body; it logs and substitutes a 500 JSON error instead.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/server.go#L335-L350",
+          "version": "repo-lines-v1:sha256:0acb2e8ba7ffce0ac19fa392a1f07b04aee9237c16225d6edc927aee602275a5:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ1ODBhNWQyMjZlNjg4NTZlODc2MzZhMjFiNmVjYzNiN2M3OGYzYzRhMTcxOWM1ZDI2YTkyNzI3ZjEyZDA3ZWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjExN2E5M2VmMTQ3OTdmZTUzYzIxZWE1MGFjMjFhY2E5OWQ3NjcyOTJhZWYwMDVmYjY4YzM5Njk1ZTc2ODljYmUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNlNTUxNGJjYzE4NThmNjRmZTM2YTVkZGIwYTEzMjZlZDFlOWMxMjljMDg4MTlkMTM0ZWIxYmI1MTQ5OGRjZjcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_bd6624219f364d3f9551f5128089d35a",
+      "statement": "The SPA is served from the embedded dist tree: files are sent with Cache-Control: no-cache via http.ServeContent, unknown non-API paths fall back to index.html, and a binary without a frontend answers 'frontend not built' in plain text.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/server.go#L1126-L1169",
+          "version": "repo-lines-v1:sha256:c1a5f3d254e15d87fc02a359997423ff262b6ab42277e1cbd2471edd86fed0cc:eyJzZWxlY3RlZExpbmVDb3VudCI6NDQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVmMjU1NjMzYTFlMjA5ZWNjMjQ3MWFlYzU4ZjUyOTVkNDc3OWM0NDRlOWM5ZDhiYTEzNWUzYmE2MzMzYTg0MDQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFkOTQ5ZTAwOTJjZDBmM2QxMGQ5Y2Q3MzVkZjliZTNhZWEwNjc1M2IzY2JkZjNlYmY2MTVmYmY4ZmJlYmRjZjEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjVkZTdmYTk5ZWQwMGE2MzNlYWRkYThkYjg3NTFlYTU4MjQ2NDIzMzQ0MTBiZjhkOGZhZDYzYzRmZTRhNGExNjgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_b5e8d6833c01481e8e042667446a215b",
+      "statement": "The preview proxy handlers are registered for GET, POST, PUT, PATCH, DELETE and OPTIONS on /preview/{id}/, and the SPA catch-all GET / is registered last because a bare pattern would otherwise conflict with it.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/server.go#L324-L331",
+          "version": "repo-lines-v1:sha256:2291914f6e6a2c1294b89c3bbe4c4945a89e3da39b1395887fb32ae787519a04:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMDEyMGM0NWRiMjE1NGUyZmQ5NTA5YWVkZWE4ZjUzNDUwYzZlNjU1ZjdhYWQ1YTVjZTU0OTI4NTA2NzQyNjgyNCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDEyY2EzNDVjY2Y3NWJmOWMwODA2YmNlNjk1YmU4ZGU4MDhiNzk5ODQyNTFhN2E1NGQyMDJjZjYxMDFkZDQ1MSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNWJhMjRhMTY4Y2EwMjViMTk0MTA5MzI5MDIyZjQwNGY5YWVjMDNjMDM5ODNjZTEzOWQ4NGUzNmRjMDllNmRiYSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMTE3YTkzZWYxNDc5N2ZlNTNjMjFlYTUwYWMyMWFjYTk5ZDc2NzI5MmFlZjAwNWZiNjhjMzk2OTVlNzY4OWNiZSJ9"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.9.0",
+    "at": "2026-11-15T05:31:58.285Z"
+  }
+}

@@ -1,0 +1,382 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:404c3143decdbe07e4ab433ee359b0dc6860713937da07bb68db80a535265bc5",
+  "claims": [
+    {
+      "id": "claim_3d5e9ae70d9e4968a578279da70c59e5",
+      "statement": "The SPA applies the theme before its first render (initTheme() runs before createRoot().render) and starts hydrateAppearance() in the background so the account's appearance lands later.",
+      "evidence": [
+        {
+          "resource": "repo://web/src/main.tsx#L5-L22",
+          "version": "repo-lines-v1:sha256:54e56ef52473cd74bf1c74d21728042521adc03c508e10b31d4c91832100c9e1:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM1YzEzMzNmOTBlOGM2ZTI0MmI5ZWNjOGQ0NWQ0NjUzOWRkMDk4OWY3Y2Q0NjFjOTZiNmUxMDc5OTE5N2UxNzYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE3NWQzNjNlMmE4NDA5ZDBmNTdmNjhlYzEyNmRkMjA0MmM2NjBhOGUwZTQzMWU5OGQzMWFlMGEzMTcwNTczNmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjgzMDNiMWJlY2YzNmQ3MGZjNjUxZmYyMjAwZTFjNmU2MTU1OWQzZTRiYjE5Yzk4ZDMxNDRhYThmMjg4MDA3N2IiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcxZmE3OGYxNTJjZGVkNGEwNDcyOTg5N2Y5Njc2ZWI4MTQ4YTg3ZWFiZjllNTNjZWUyZjRjNWQ1M2E2MDQ3MzcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_0e2823299a8945caa709104b72ed7aef",
+      "statement": "The service worker is registered only in production, uses updateViaCache 'none', is poked with reg.update() at startup and on visibilitychange, and reloads exactly once on controllerchange so a resumed PWA does not keep running an old bundle.",
+      "evidence": [
+        {
+          "resource": "repo://web/src/main.tsx#L23-L50",
+          "version": "repo-lines-v1:sha256:550d958175de72a1019ebc540c1966adadc98f009bd0d40159c7837f54e297ef:eyJzZWxlY3RlZExpbmVDb3VudCI6MjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIwNDA4NmQxNTkyNWU4NjAxOTc4MzE0MGM4YTUyMTJmZTI2YTgxMzI3MTc2NzNiMjcwYTM4MDA2NmYxMGI4NzYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE4MzU1MmFiNTcxNDk0YjM5OWIxODE5OTYyMmRiZTNiMzgyNmViNjFmY2QxZjc0Y2ZiMTJhYmNmODhlNGY3MjYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjAyMDhhYzk2YzA4YThkNzg5NzAzMzcwOTcwNWY4YWQzYmVjMjJmZWZjZjUyZmE3N2Y5YTJiZmVmZWYyZmI0NDEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJiZDEwMjg0M2RlMzI4OGNhNDgzNjJiODJlMTlhMDQ5Y2MwNGQxMzA2ODgwYzI3MjY4OGZjMTNmOWFkMDgwMjYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_c6a326f479554f35864e65d4aa0ae375",
+      "statement": "web/index.html carries a pre-paint inline script that persists the tallest plausible viewport height per orientation under the v1-app-height-v2 keys and writes the --v1-app-height CSS variable.",
+      "evidence": [
+        {
+          "resource": "repo://web/index.html#L20-L40",
+          "version": "repo-lines-v1:sha256:6c15b904db9d5c834f7bd115483959217dc653c668533f418bd96110091f018f:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg2YjhmNGUwMDg0MzkwOTc4MzgxZjVjOGIzMmEzNWEwMzc2N2M1MTE2MzY0YmY4YTJiMzA2ODk5NjYwNGFiNjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQyMzJhMzAzNmJmNTM4ZTNiZWMwM2RmYWQ0Yzg1MGE5MjM3MjNiZWNlZDBkOWU4ZGViZGIzY2RkYmNjZThhZjIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU1MjI3ZTUyZjc4NzdmNzU2YzQ2MDNmMDg4ZGYwN2ZjODljYTU0MDkwZTU3Mjg4OGNhZjU3OGRjNjMyODg0MDAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk3Mjg3NjVhOTVhZDA4MWFhNDhlMTE1ZDU5YWE1ZGZiYmU5ODI0NzUxZGVlMjVhZWNkYTcwYzE5OWY2YjYwYWMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_cdedd4352fc74eea8f2043c8e391fe20",
+      "statement": "Routing is react-router-dom with /login, /setup, / (dashboard), /project/:id, /settings, and a catch-all Navigate to '/' with replace.",
+      "evidence": [
+        {
+          "resource": "repo://web/src/App.tsx#L68-L100",
+          "version": "repo-lines-v1:sha256:3662fe3aa5c9867a7b468f42afdd3205517512b2223cc5f13e50393f8072a4ce:eyJzZWxlY3RlZExpbmVDb3VudCI6MzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE0YWRmNzhkNTNmOGM5Y2YxYmMzOTFkZTFjNWU0YjMzZTcwMWJlNTMwMGJlY2E1MzgwYTc2MGE0NmYxMDk5YTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVkYzc5MGI0NDk2NTJmNzg4OTZjODA4M2IwZmQzYjI3YTVlODkyYmNiNjEyMGU5NTljYTI4M2JhM2M5MTdiNTQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI0OTZhYjY1M2ZmNDBjNmUyNGU2ZjI5NmEwODJhODFkZGY3OGQ0NjNlOGMwNDUyZTUyYzA3NzM2OGMwNDIyOGYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVjMGFjYmE5N2U4Y2U0MTE1ZDlkMzk4NTUwMWZkZTQzZGJjMTcxMWY2ZWJjZGViOTg0YzNkOTA1OGQ4ZTkzYTgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_c26801ec56e649cebff30169305678e1",
+      "statement": "RequireAuth gates every other route: it shows a retryable error box when the auth status cannot be fetched, a spinner while unknown, and redirects to /setup when setup is required or /login when the reader is not authenticated.",
+      "evidence": [
+        {
+          "resource": "repo://web/src/App.tsx#L15-L65",
+          "version": "repo-lines-v1:sha256:a7f0b185a1e99109b185ad62918755774d454a3258d7f75d367ce2c77834c5cf:eyJzZWxlY3RlZExpbmVDb3VudCI6NTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZiZDhlZjE1ZjdjNDEzYWVjMzExYjhhNWU2ZDRkYTVmODQ2YjllYjM3MDU3YjRhMmY3YWFhYzZhNTMwNzdjZDMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI4NTcxMjhiMjU2NzBhMDE1OTY1NDliYzRkNmM2YmI2Y2QyMmNhM2I4Mjk1NjZiMTRlZWJjZmUyMWQwNDY4ZDciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE3MGI0ZmNiYjA3NTkzYjVmYzk1MjgxOWQ3MWNlYzE3NjhiM2ZlNTEwOTMwZDQzYTY3YzI5YjM1YzZhMjA4OTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImZmN2E0NGI2MmY3MDE2Yzc4ZjE5Y2QyZjA3MmYxZDZhYjc0OThkMGMyMjM5NzZiNzJmYzI1ZWVhNDMzYTI3N2IifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_b4da3ac57e234b4d8a6bf94451ba2616",
+      "statement": "ToastHost is rendered outside BrowserRouter so a toast survives navigating away from the page that raised it.",
+      "evidence": [
+        {
+          "resource": "repo://web/src/App.tsx#L101-L105",
+          "version": "repo-lines-v1:sha256:a3c3e57214231c16e873e47584fb15916f82da381ae5dc841ee033626d1b5562:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZDEzYTJmMWEwYjE4YTcxMjhmZDYyZDliZDg2MjU2ZDIxYTJjMWEwMDY2OTk5MjQyNzY0OWQxOTk5ZWE3YzhmMSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDEyY2EzNDVjY2Y3NWJmOWMwODA2YmNlNjk1YmU4ZGU4MDhiNzk5ODQyNTFhN2E1NGQyMDJjZjYxMDFkZDQ1MSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZDMzYzgzYzFmOTQ0NDkwNDEyM2RhYTQ3MjEwOWFmYzU0ZmEyMGU3YzMzMmUwNWYxYTBlYmY0MDIwNTFjYWZiMiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjAsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_b3bf8197ac5348589c71ce8a22899861",
+      "statement": "api.request sends cookies with credentials 'same-origin', redirects to /login and throws ApiError('Unauthorized', 401) on a 401, throws ApiError with the parsed message on any other non-2xx, returns undefined on 204, and parses the body as JSON only when the content type says so.",
+      "evidence": [
+        {
+          "resource": "repo://web/src/api.ts#L150-L183",
+          "version": "repo-lines-v1:sha256:6bcc96ea3b62e2f84329aa86f0b6834a2526535d214915dbe8c2ed59a7790775:eyJzZWxlY3RlZExpbmVDb3VudCI6MzQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJjNjE2MTllYTAyZWQ4M2U3YmU3MDg0MjQ1M2ZmNTQ0NDY2NTY0M2QwYTdmZDg4NmVkM2ZiOTU3NDFjZTMwOTEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjliMGY1NGUyNjM4YTk3YjQzMTZlMTUxOTU3NThhZjQ4OGRjNGUxNTVjYTFjZjFjNmE3MGMxNzUzYWY5ZjU0MDQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA5YjE1MjY5NTg3MjBlMWVmOWI2Y2RmMmQ4ZTMxYWY1NWFmZmU5YjhjY2MyMDk0YTc3MzVjMjMwZTNjM2QxM2MifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_d816a3702fe44009b99ae897609f8982",
+      "statement": "The client keeps three module-scope caches — the provider catalog for 6 hours, context usage for 10 seconds and plan usage for 60 seconds — and clearClientCaches drops them without touching settings or preferences.",
+      "evidence": [
+        {
+          "resource": "repo://web/src/api.ts#L60-L110",
+          "version": "repo-lines-v1:sha256:ff2d2024a7cc19e032dd302532c15f48350d9c4e51a2939eb6344650ab3c3c81:eyJzZWxlY3RlZExpbmVDb3VudCI6NTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJlMzM4YmQyNjJiM2I3Y2RmMDEwYmRkZWZkODEyNTU5OWMwNWJlNWJkMGI4YmNkN2Q4OGQxNWZjNjVhMDQzYzMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA2NTk1ZjRlZTVmZjYzZDUwOTUwNDE5ZGMzNDQxNDUxMzg1MWRjOTczNmZkMTdhNGY3YmZhOTMwYjI2MWI2ZjIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZjYzE2MWZhMTViMTdhMDQyNjMyM2UyOGZiMzRlNTg1ZjRmYTFhZTg5YjhkMWZiMmNkYjc3YzAxOWQyZTlhNDciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg4ZWM4OTllOTc0NjkzNmM3NjQ3MGExNDdmNzQ3M2Q0YTg3NjA1OTA5YzkzNDE3NmM5MDhkNmFlOGJhMTJiZmQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_367d81a592314cd39ff6ba9a9b209236",
+      "statement": "STREAM_IDLE_MS is 45 seconds because the server writes an SSE comment every 15 seconds, so that much silence means a dead connection rather than a slow tool.",
+      "evidence": [
+        {
+          "resource": "repo://web/src/api.ts#L700-L712",
+          "version": "repo-lines-v1:sha256:fdd7e29e029a6d567ca56d64f1f0d9a4c7cc574dbbeb0d5e2b98d17aeab43bb0:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFhMWQxYTYzMzkwMjI5Yzc5ODM0N2U4M2EwNDA1NDQxYzk0MDAwMzUyODRhZDE2OGMxYmY2Y2RmMWQ3MGEzNzAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEwYjI5OGYxMzZiOWRlNzkyZWVlZGEyMjczM2JjYWJlNWVkMjBlOTEwM2ZiYjRkODE0ZWVhMGJmMzkzNjYxZjMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdmYmU2ZjExYjFkNTJkOTAyZWViZDEyMWE4YTIzYjFlYTcyOTI3OTRlMDQzNmNiY2I4ZjAzZjgxZTY5MGY0M2EiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRlZGMzNTdiYzQwYjcwOWY3OTkzNzlhYTA2MDhjYjlhYmUzMWI4M2QxYWYxZWZkZmE4NGI3OWE0MTM1Y2E3ZGIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_63402ad5c9cb4e2896fb07f723996260",
+      "statement": "STREAM_FIRST_EVENT_MS is 15 seconds and races the fetch itself, aborting the request and rejecting BufferedStreamError so a proxy that withholds headers or buffers the body is detected instead of hanging.",
+      "evidence": [
+        {
+          "resource": "repo://web/src/api.ts#L713-L725",
+          "version": "repo-lines-v1:sha256:0c099caa92ac9491d95c95e6047869443470e7be703ee4dcafffc8b927d8eaa3:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRmYWRiYzMzY2Q5MDQ2OTdmMzJiODNkYjZhNjQyN2UwOTZkZGM2NGE3ZWJiZTNiMWQyNzNlMGZlNGNiMzJlNTMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNiNGM5OTI2YWU1Yzg3MTg1ZTRkMTA1NDJkNGQxOTViODZlNjAwMGI0NmRhMTgyM2FkNmE4OWYwNjI2ZjhlMDgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQzNzRmMGQwZDYwYTc2MzE2YjRmODdjN2EwNWE5YjlmNjdlYWQ5MWI5OWQ3ZDE2Zjg3NTRhYTgzZmE4N2I1NDQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImZiNTgwZTk2NGY4M2E0NzNmNDNkNDQzODQ2Mjk0OWQ2OGI1NjAwZmRhNzg3ZjE2Mzc0NWQwMGRlODljYmYzNmEifQ"
+        },
+        {
+          "resource": "repo://web/src/api.ts#L793-L800",
+          "version": "repo-lines-v1:sha256:88edcb6566f8fa2762d3029d9295fcc4ae94ec2b8dbcad3aa88c690e3c29c553:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYmNhODM4MWY3NWYxYTYwZGY2ZjZkNzIyYmI2Y2U3YmU2NjBlYjIxMmFmZmM3N2Y4OGZiODk1NjQ0ZTMwMzk4NyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZTY5NDFlNDY3M2VlMzNmYmVlNTE4YmJhMDljY2ExM2JmNjVjMGRjMmZjMTJkMmM5ODY3NmI2YzYyZDRjMGM5YSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZmI1ODBlOTY0ZjgzYTQ3M2Y0M2Q0NDM4NDYyOTQ5ZDY4YjU2MDBmZGE3ODdmMTYzNzQ1ZDAwZGU4OWNiZjM2YSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNTdlNGQ4NmFhZjU5NjBjZGNmNjZiNTFmMmFkNTQ0NzFjMGQ3MTY3MGYyMjdhMzdlODI4ZWRlYzY2MDAwNDYzMiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_7f83c3c9e66d40998c840500e61aa828",
+      "statement": "A 202 response is a queue acknowledgement: the client parses the queue id and throws QueuedError rather than reading the JSON as an empty event stream.",
+      "evidence": [
+        {
+          "resource": "repo://web/src/api.ts#L726-L746",
+          "version": "repo-lines-v1:sha256:2796419fe9c2d74146d46a1b2d95e1b32df1f63cf7c33bd9452a403e72fa1e24:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI3ZTU3ODhkNWQ5ZDczZDI0YTgxZGJjMGE1YTc0YmZhODJjOWMzYjNhZjk5ZTUyYWY3OTZlOTBiNDY4YThhM2QiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI3ZTU3ODhkNWQ5ZDczZDI0YTgxZGJjMGE1YTc0YmZhODJjOWMzYjNhZjk5ZTUyYWY3OTZlOTBiNDY4YThhM2QiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBiOTNhMzdhOWY1NjA3NmY5M2JkYjczMGFjMTA1YzU4OGNlMTFlNzhmYWQ1NDVhNGYwYTIxM2FlNzJmOWRhNTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImExYWI2Y2Y5NzUzNGVjMmU3OGFkYzdkMGY1NTY0YjI5MWI5ZDQxYzU3MTRjYWYwYjdkYzllMWY4ZWFmNzQ2MmQifQ"
+        },
+        {
+          "resource": "repo://web/src/api.ts#L825-L833",
+          "version": "repo-lines-v1:sha256:d5bd7af6a39f059fdcebed99f4a1860b7d5fbc06773b9740b6c67c899d6c9e0c:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZGJmMDg5NDAzYTRiMThjNzhlOGQwY2U1ZjA1ZmUxNGFlM2I3M2UyODMxOWYxZTUwZWQ5MjVlZWUzMDk0MjFjMCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYmM3YjE5MzJjMjA1NjU0MmM2ZWRkZDI1Nzk3Nzc3ZWExMjY5ZjU0MjEyNDNkYjQ3YTdmNGQ4N2Y0NDI0MmFlNyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYTZmY2M3ZjJiMGQyNjE2YmVmYjNiNGQ1OGRkYTU5M2FkNzMwYThmZGNmY2E0YWMzODkxZmY0ZWNmOTRiMjFkNiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTk2MTZhMTdlOTBmYzY3YTI3OThhZDFlMzgwZGFjNjMyODEwMmMzMWRiOTk5ODQ4OWE3ZDczNGUzNDQ2Nzc1YiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_c0021df202b94bafae7699e15687c6ed",
+      "statement": "streamChatEvents owns an inner AbortController that follows the caller's signal, so the stream can end the request itself while the caller keeps overall control.",
+      "evidence": [
+        {
+          "resource": "repo://web/src/api.ts#L771-L790",
+          "version": "repo-lines-v1:sha256:f15e623dc9f1ed4aa415b3d5fe06421017fe514f128e9cf8b9eac276babed86e:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA4ODc2MWIxMzEwYTg5NGFmMjk1N2YyMmNkMDIzNzBmZWJjZmFkNjQxZjYzODUyMzI3NTRkY2IxNjEyNmIwMWQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI3ZTU3ODhkNWQ5ZDczZDI0YTgxZGJjMGE1YTc0YmZhODJjOWMzYjNhZjk5ZTUyYWY3OTZlOTBiNDY4YThhM2QiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjczOGFhYmE5ODdhNGFkNGNiNjU5MWQwZTM0ZDI4ZjNjMmI3MWMzYjExZDc5YWVlMThiMzYzOTIzNDhiYzg5OWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVkYjU1YTQ4YzEzYmE1OTFiNjM2NjVhNGIzMjM5MDc3MTBmN2Y1MjdmMzgxNDJkMTA0ZTkzNjkwODJlZjg2YmIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_5c2219fb53c04838abf24ed5d2a226d3",
+      "statement": "If the stream ends without a done frame the client emits a synthetic done event, and if no event ever arrived it cancels the reader and throws BufferedStreamError.",
+      "evidence": [
+        {
+          "resource": "repo://web/src/api.ts#L866-L890",
+          "version": "repo-lines-v1:sha256:67193d7e19f7154366bb412d5d68a833c02415e18bf4a3742825c749a005ba15:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQyYTJjYjI1YTEyMmI0NDIyMWE2MjM0ZWM2NjBhN2I1ZmI3ZjliZGU3YjNiOWUyYjNjNTU5YTBkOTZmYWM3MzkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhkNmFmMTNmMmY1OGZiMmJiNzRkOTlkZjNlZGE0ZmRlNjMxMWVlOTcyYTg4NzBkY2RmMjJlMWIyMGFlYmQ4ZjUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBlYTBhZTVkMjIyYzdiZDYxOWE3ZGY2NTk1NWUwY2E2MzkwNTZlYWQwYWVhMWUyNmEzNWIyNmU1NTMyNGUzMmEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_aaa3584ccb07400ebf7c9323e087b622",
+      "statement": "watchChat uses a 20 second idle deadline instead of the 45 second one, so a dead watch socket is recognised after one missed ping.",
+      "evidence": [
+        {
+          "resource": "repo://web/src/api.ts#L1074-L1093",
+          "version": "repo-lines-v1:sha256:5b5a20ee9cddca78658c02977283d4dd07c8aeb2f0fb59c293b4372ea304b115:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE1MjIyN2Y0M2NkODhhY2I0ZTYzZDE1YzM5NDZhM2Q5NDIzYmQyM2E5Njc0OTI1OTQ0Y2YyYzgwZmY3MTRhZmEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU3OTBmNDlhY2EyNTkzNTViNGNmZTBkZTVhYTg5MWIyNDc1Zjc3NmMyYjA0ZGMwYjVhN2I4NDJjOWUyZjcyYTgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjcyYWY0MDQwNzUzZDg1MjRkOTE4Y2Q5OTE3NzNkNDI5MDljMjIwZTU0ZTU0MWFjNzViNTQ3ZmFmZjI4NGFhOGIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjY4M2MzMTg3ZWMxZWU5M2I5M2IzNmVhZDJhMzk4NGJmNzM1Yzk5YTMwMzU0ZDIxM2M0YjA5ZmVkNTEzODExYWQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_8e57b121fe9e487eb5814f59b04b3ab5",
+      "statement": "uploadAttachment is the only XMLHttpRequest in the client, kept for upload progress, because by send time the bytes are already on the server and the turn carries upload ids instead of base64.",
+      "evidence": [
+        {
+          "resource": "repo://web/src/api.ts#L925-L935",
+          "version": "repo-lines-v1:sha256:e0c584fc4f0ad451149ce919e0640fc07a3cdea0835b79076d1b3d24dab1848a:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc0ZWY1MjBhMzdmOWYxMWU0MzdhNDRmYTMxMTU5MTBjMTc0ODgyMTA0ZWQ3MWU0OThjZDU0NTExZDZmNmVlMmYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVhMWY4ZWFkNTdhMmU3ZjdmYzVkMTVmZTZiMzhmMmQ2YWJmMzc0N2NmYjZiMmUwNTljMzI2MzA1ZGMxZWY1ZDQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM3OTI5ZTkxZTBmOTljM2U4MjVkZTY5YjQzNWZiNjQ4NGQxYjBhMWRmMmY0NjU2MWFiZjFhMjlmMDQxODhiODgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUyODFmOTk0YWE2OGExOTE1MGI3NzMzNjJlZWVmMTIwNDgzOTU4OWRiMTg5OTY4MzllOGQzNDFkYjVjZjE3ZmUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_56c6327a3ddf473f92c4f7a03e823d7f",
+      "statement": "ChatPane models the transcript as a union of three item kinds: MsgItem (kind 'msg'), ToolItem (kind 'tool') and AskItem (kind 'ask').",
+      "evidence": [
+        {
+          "resource": "repo://web/src/components/ChatPane.tsx#L530-L592",
+          "version": "repo-lines-v1:sha256:1477abf49cd52602002a814547db9d2673559b6521e3f62165505368b37e415a:eyJzZWxlY3RlZExpbmVDb3VudCI6NjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZjZWRjNDZmZWY3Nzc2YjIyOGU2YmVjYjU0YzM2ZjI5Y2E5ZjI2MzdiOTVkNTBlY2VkNTFjNjgxZjAzMzIwYjciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdiYWY1MDNjZmEzNDM1ZGM4YWVmNjQ0YjdmNmQxMDEyMGM0NjE5ZmIzYjg3Y2Y1OWRlZjJkYTJmY2E1ZjQ2ZDIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU1ODMyZTUzMmM2YTk5YWM4MjNkYmZlYWY1YzZmYzYxMjg3OTFjNjg4NmZhNjJhZDE1NWYzNTVkZWViNmIzZDQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJiZTA0YjEyZjNlZTljZWQyOTI3MjYyMzEzYTU3YmI1NzA1MTUzMTJlMGE1ZDJkZjU3ZWY2MThhMDJmYmZiMjUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_152ac67234f44cc1b9d18600165cd01d",
+      "statement": "Authorship is decided by writtenByUser and USER_WRITTEN_MARKERS = {'', 'steer'}: anything unrecognised is treated as the app's, so a marker added later cannot silently land on the reader's side.",
+      "evidence": [
+        {
+          "resource": "repo://web/src/components/ChatPane.tsx#L492-L518",
+          "version": "repo-lines-v1:sha256:d9515192037ac6b049e7cd9bf0662f11d228fed3a1d768d0f2e4d524d58bcf2d:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVhZjIyY2YwNzMyNTkyYzI0NzE0MWNiZTYxZWZhMTEwMTI2MTJmNWEzMTIyYjlhZjliYmFmNTJmNTcyNGQxOTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNlYjUzNWI5YmM2Nzg2NzBmNjQ2Yzk0ZDRjNGM3MzdlN2RiNmU5MmE0YWM1ZmQ5ZmIxNDQ1MGUxYWRiNTFlN2UiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdjYjcxZmU2OTBmNzcyOTNjZDcyZTZiY2JmNzMyMjRkMDRhYTExOTdiOTgyMjMwMTFkMmY1YjliNzU4NzVmMzgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjUxOGFkYzJjNWMxYWQxMTVkYjE3NTc0NjFjODBkMmVhMTEzMjUzOWNlODNiZGNjMzAxZTUyZjA0OWRjYzAxYWUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_4389b02c2aa445acbd43fee0bd8a4707",
+      "statement": "mapMessages converts stored rows one-to-one: tool rows attach to the previous assistant item or start one, assistant rows compute elapsedMs on turn-final rows and prune repeated set_todos and empty list_files calls, user rows set background/steered/injected and give every attachment a URL, notice rows keep notice true, and unrecognised roles become error items.",
+      "evidence": [
+        {
+          "resource": "repo://web/src/components/ChatPane.tsx#L4916-L5021",
+          "version": "repo-lines-v1:sha256:8fd7301ea2ea3e05326964fe288ed0c0d887052e5bdc76c6ea849888e22aa09a:eyJzZWxlY3RlZExpbmVDb3VudCI6MTA2LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiI3MmM4NjVhNTNlYWNmNGFkMWQ5YzkyZDJjY2M5YzE2YTY2YmM4MTAwZTMxMTk3MWU3NmM5ZTg3MTFmYzUyMTczIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiIwMWJhNDcxOWM4MGI2ZmU5MTFiMDkxYTdjMDUxMjRiNjRlZWVjZTk2NGUwOWMwNThlZjhmOTgwNWRhY2E1NDZiIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI1NTNiYTU3MzdkNjdhNDMyODNjNzJhNWNjMTA1NjdlZmExNmM5NmEwMjZkNWY5NzY5ZjI1YjA1YTYxOWE0ODYyIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiIzNzk5NjBkYTYzNjdmZjY3YWU2ZDc1OGQyYTQwM2ZiN2FmNDc3MzY3YjhkZGM0MTJmZjYyZTZmMDZiNGExMzVmIn0"
+        }
+      ]
+    },
+    {
+      "id": "claim_2a0ee8415c0e48ff89ea01488159f446",
+      "statement": "isNoiseResult treats a tool result as noise only when it is {ok: true} with no error, content, output or results field.",
+      "evidence": [
+        {
+          "resource": "repo://web/src/components/ChatPane.tsx#L1346-L1350",
+          "version": "repo-lines-v1:sha256:9abb71b0e16eeb40c9efd771760d934c5051cb68ee97d2f62990eec74f048410:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZmE5MDQ0Mzk0MTNhZjcxNTY0Mzk5ODg1MGMwMjE0NjA0ZmZkN2VlYzc5YjMwNTg0NDM1NDYxNWZmM2Q1NTIxOSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZGUyOTAwMzhmZGQ2NTRlZDY4ZmM1N2M4MzM5MjM5ZjRhODBlNGJkZGMzZjBlMGU3NjI3YzllNjM2YmNiODBiNiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZmI1ODBlOTY0ZjgzYTQ3M2Y0M2Q0NDM4NDYyOTQ5ZDY4YjU2MDBmZGE3ODdmMTYzNzQ1ZDAwZGU4OWNiZjM2YSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNDBiYzExNjNhNmQ1Yjc0YjJmYTI0NmEwOWExY2NiMmJjMDdiZDQzZjJjNmIyZTI3YWNkNjQwZWI0NzFmYWY2YSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_6e8a8c740d9e4038a0ddcb52a47202a8",
+      "statement": "A live tool card is built in the reloaded row's shape: tool_start stores the arguments as call and a running detail, and tool_end patches the same card with running false, the outcome and the display payload.",
+      "evidence": [
+        {
+          "resource": "repo://web/src/components/ChatPane.tsx#L6298-L6318",
+          "version": "repo-lines-v1:sha256:a6ae26c9d67edc1498e4505cfd181555adc35b8f8c984269fe2e156b90403ffa:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4NWM3MjVkODJiMmVlMDlhNDA2NjlmMGI2MGE1MmFjNGQzZTU4YzIzZjlhY2U2MmE0ZjQ1YjJmNGIwZTEzZDIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU2YjA0NDkxNDY5NzIyZTgzNjNhOTRlNDA0NDUzOGUwMTNhMmEyMTdlMzZiMWU1NjhiYTYwYWNiN2I0YzhmMmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQzZjc1YmJkMTAzOTA4MWJjYzI3ZWJkMzNmNWEwYTNlNDRmMGQ3MWE5MDMyNTA2OGRkNGFmYzZjMjZjNDFjMDAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjYwNjlhNmVlZTRlN2UwOGRmYTU0NGJjMmY4Yjk3ZjkwNmVmYjdhZTZhM2I1MzQzMjVkMjVjNDQ5ZTdmMDc4MGEifQ"
+        },
+        {
+          "resource": "repo://web/src/components/ChatPane.tsx#L6364-L6377",
+          "version": "repo-lines-v1:sha256:7e3e6438bc0001f4e0316d79c245499b6312391b5d0dfcebfadfbf614c277b86:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ0NGI4ZTY2ZjAxYjU4ZWQxMDMzY2ZhMzAxMDQyZTYzMTA0ZTlkOTI4ZTQxNTk5NGRhMTE2YmRkOGY0ODNkNjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAwYmZmYWE5M2E1NjkwNjFlYTc4Yzc5OTZlN2VkMmMwN2E2MWIyODhjZjViOGI4ZDMxZWFhYmJhMjMzMDkzNDIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVkYzM3N2I5YmRkY2M0NTQ1ODZlNGMzYTYzNDA4YzZjZWEzYjgyZjdlYjMyZDhiYTRkMGNjYzVmZDI1ZDAxNWQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU2YTVjZjMzODIyOWY1ZDE2NGYzNWIyZmM0MGY3OTlmN2RkNDdhM2MxMDk5MWFmOTkyZDU5OTQ2NGFmNGY1ZGEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_ddb0c254570146589792fd20be44dadf",
+      "statement": "A tool_end with no matching tool_start still builds the card but inserts it before any trailing tool or ask cluster, so a result never appears below a summary that already rendered.",
+      "evidence": [
+        {
+          "resource": "repo://web/src/components/ChatPane.tsx#L6380-L6399",
+          "version": "repo-lines-v1:sha256:dc755919c65c31ed6ff97a98773992127da2661b9d527b1d038394682ad09047:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkzYmNiOWFmYTE0NDhhNWEyN2U0ZDQwZTBhNTY5M2NkMjM0ZmMyOTIyY2RkZjQ3MjkwYjk4MGM2YWZkMmFiODAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQzODJmMjUyNDAxMTJiNjExNGUzZDMxNTg4ZDU2ODAxNjA1Y2YxMWI2NWFlMDczZjk0OTk0YTNiYzBhOThmMzEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNhNTYxNGMxMWVjYWQxMmM2NDdhYzJkMDA2NmFlYjU1ZTBmYWRkNTNlNmIyMGQ4ZmIzNmNiMjJkMDY4OWI2OGIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImExY2Y2ZmYwNTQyNDY0NmI1M2Y0ZWVmM2Y2MmE5N2Q0NDZiNjkwZTM4ODllOGRjZmE1Y2RiZmM2ZDE2NzNhZDcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_ce3b241ebcd24155a47c92c1c3b05dd0",
+      "statement": "An injected_message row is styled from the marker the server persisted, not from the event's content shape, which is what keeps a live row identical to its reloaded form.",
+      "evidence": [
+        {
+          "resource": "repo://web/src/components/ChatPane.tsx#L6601-L6626",
+          "version": "repo-lines-v1:sha256:0e1d03b7d10a65dcdde6781095f1405d7bf496f2a69f9ed9431ea75598c22099:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFjYTM1NGVkMDNmNDE1OWMzYTgwNzg0OTdlOTJkY2UyMDIzZmU1YWM1ODNkZmMxYjI0NDcyMzk0YjExMWE2Y2MiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYyZmJlZTQ4OTE2YTU5YzU1ZWFkOTI5ZDU2MmZiZmEyZTdmNzZhM2JlNzcwNmUyZjY3MDU4M2E5MDcyNDcyNmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU3ODYxZjg0MDE4YjA4M2M1ZWMyMDYwN2VmM2VmMGMwNGI3NDdhNWI3Y2JlYTBkM2EwMWQ0NjI3Y2VjNzE3MjMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjVlMjZjNzEwMDgyYWIwYjQzNGU4ZjI2MzdiOGZhNGRmNWIzNWM3ODlmNzE2Y2IxN2RjZjRlNTBjZmU5Y2RhMzQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_9611542043984d7ba768c984d92b518d",
+      "statement": "On done the client converges by re-loading the persisted transcript quietly, the same path a reopened chat takes.",
+      "evidence": [
+        {
+          "resource": "repo://web/src/components/ChatPane.tsx#L6572-L6578",
+          "version": "repo-lines-v1:sha256:4c9f214553bcdaae5c26321bc4755383c0fbcbb616d502c01b927c435d35dfbc:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiODYxMDYwNTY5NmEyMTJjYmMyM2NlODBkMWU1ZDVlODMxZDI5ZmM1OGFlZTkzODdjNGYwZjczN2VkMDc2ZmNkYSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMWI5NDMwYjY2NzgxMjNmYWNmM2Q0ODYwY2MyZWJlZGJhOTM2MWJkNzM0MDE1NzQ4N2IwYWU4OGEzYmEwYjQ0OCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZDY3ZmZkZjg3NWViYzMxODlhZjU1YTQwOGQ2NmE3ODY5MzIzOGM1ZDlkMmFiZTlhZjBkZTI1MWQxM2E1NDlmYiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTc4NjFmODQwMThiMDgzYzVlYzIwNjA3ZWYzZWYwYzA0Yjc0N2E1YjdjYmVhMGQzYTAxZDQ2MjdjZWM3MTcyMyJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_e259f9ae7d3c41629910d8c98b97940f",
+      "statement": "The fold pass wraps a turn's work in TurnFold and leaves exactly one row outside it — the turn's final assistant text — and only when the turn is not live.",
+      "evidence": [
+        {
+          "resource": "repo://web/src/components/ChatPane.tsx#L8483-L8492",
+          "version": "repo-lines-v1:sha256:af78d8a4bb49568d1d00ed9c0b82377bc6b7853da2cc21db32745e173022a8ae:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRlMjI2YjdiMWM5ZmNhMjA0OTg5NzFhYjFlNTZkM2UyMGFkMTE5NTU1YTA0MWMyNTM5MDMyOWEyZjJlZWNkNmQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBjNjQ3OWNjMjMwNDQwZmQ0MWU4MjI0MjE4Njc5Njk4NTU5ZDI4OTNiZDY3YjQzODBhZmFiODExYjM4YTU1YWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI1MmY1MDM3YWEzMTZhZmQyYmUzNjc3Y2NjOWRiZDg1ZmVhYzVkMDE0ZjIxMmE2MjMyN2UwYzE4MTc2MDQ3NTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI3NGYxYzdkMjUyZDQ1OTlhMGRkZTFiYTA4NTY4OGIxMmQwNzIzMDVlODc3NGRiZTlmYTgzZWEwNGI0NGJlZDkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_fabec17e4c944727975dcb1905cfed70",
+      "statement": "Folding is layered in three nested collapsers — CollapsedTools per assistant message, CollapsedToolsGroup merging consecutive ones, and TurnFold around the whole turn — each auto-opening while something inside is running or a question is unanswered.",
+      "evidence": [
+        {
+          "resource": "repo://web/src/components/ChatPane.tsx#L2506-L2609",
+          "version": "repo-lines-v1:sha256:04f6bcae88019d48a14ea41ca7658ef49c46fec7381b0f71328e6c6dd4787b5c:eyJzZWxlY3RlZExpbmVDb3VudCI6MTA0LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiJiZjI2M2I1NzYwYjE0ZmNhNzMyZDVlMTZiYmZiNDNhOWU4ODkxYjZhOGM3M2RhMjVlMjM1NDIyMTQwNzRiYWI5IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiJjYTRlY2VhZjM4OWRmOTcwMjg2ZGZhNTZjN2VmYmNlZGZmY2U3OGExZTc5NDMwY2M0NTMwODI3ZjU5ZjgwZTMxIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI0Y2I1MjYwZmZiZTkzZDI3NGJlZTc1ZGIxNWI5OWM1ODg0MzAwNzU4ZWNmNDA3YWI3OTQxY2NjMWQ3ZjUzNzhhIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI5YmU3ZWQ3ODU0YzI3NjM4MmZmN2U3YjIwNmU0N2RlYzc0MDU5NTU1ZTIxZmQ1OTc0MmJjODBiOTUyZjcyM2EwIn0"
+        }
+      ]
+    },
+    {
+      "id": "claim_ba0cff2d76354af4b0948a866053ed88",
+      "statement": "The composer row renders from visibleComposerButtons(composerLayout) so order and visibility come from Settings, a null entry simply drops out, and the model name button flexes to fill the remaining width.",
+      "evidence": [
+        {
+          "resource": "repo://web/src/components/ChatPane.tsx#L8100-L8104",
+          "version": "repo-lines-v1:sha256:b090de685a8e1bc10e28a822aa4bd3f81eb837ac6e15973e0a1e81442e111265:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMDFiYTQ3MTljODBiNmZlOTExYjA5MWE3YzA1MTI0YjY0ZWVlY2U5NjRlMDljMDU4ZWY4Zjk4MDVkYWNhNTQ2YiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiODQ2ZGFhNjVkOTc3ZjY1MDg1NjRlOGUwM2UyMTE2MWM4OGI1MjhlMWZmZGE0ZTlmZGRlNzc5MGFiNmY5OWRhMCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMjY4NzAyMDQ5YjYzMjAzMTBkYWVkMjllOTk0MmFjMzRiM2Q0YTk1YjAxNWQ3NWE0NmM1YjdhOGNhNmU3ZmY1MCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTU4NDI1YmZlOTljMzE0NDU3OTY2ZGRhMWMwN2Y2M2YzNGE0M2MyMWNhYzcxYzYxNzkxNDczNzY1OTU3ZTQ0NyJ9"
+        },
+        {
+          "resource": "repo://web/src/components/ChatPane.tsx#L8213-L8230",
+          "version": "repo-lines-v1:sha256:49b2570bd64d44a1cf37687f6ddbfd9a60f5735caacf7089c2cfc0e2a467e699:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVkMWE3ZTMyNWQ5NWU2MGZkNmZmYWViN2JjZTc3OTE1YzgwM2I0NzVlOTFlM2IwY2RlYjAyNThiNTFlNmNhYzIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcxMzAwNDg0N2UwNGQ4ODQxMmY5NGVhYjZiMDU2NDlkNjJiMDQyM2QwNDliYjRiMzI3YTgxNjMxNmQ2NDQzY2IiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE0YTY2OGMyN2I2NjJlNGQzN2Y5M2VhODBjYzRjODQwZDRkYWM1MTI4MWYxMGVlMzUwNmNlNGE2MmE4ZGVmNTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRkMWQ0YmRiZmFmYzk1Y2IwMjE5NTYwYzZjYjE0MGFjYjI4M2ViOTdjNTdkMWVmZGJmNzNhODYxMjIzZTgzMTQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_58996667e4874225b883cbdac795144d",
+      "statement": "web/src/appearance.ts keeps a synchronous localStorage mirror of the account-scoped appearance: localAppearance reads it during render, applyAppearance writes it and notifies subscribers, hydrateAppearance fetches the server copy once, and saveAppearance applies locally first and then PUTs the change.",
+      "evidence": [
+        {
+          "resource": "repo://web/src/appearance.ts#L1-L10",
+          "version": "repo-lines-v1:sha256:1f09c5944822dd8449c3a3e7c304c3eee0d83703722164938535505e91bc948c:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFjZDk5ZGRlYTgyMjA1NmNiMzZlOWUzYjc0NmQ5YzYzYmFlNTljNDc2ZTAxOGYyMmFlNjFiZjZmN2I5YjE2NWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg5ZGZjNjUzMjEzYjExN2JhZjBhODMwN2JkOTM3MWQzM2YzYTVkYWQxZTAxMGRlZTI2YjkyMWU2NjMzNzhhNzgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjgzYzhlZGFjNTRhMGU2ZmVkN2NjMjNhMGYxOTExZTVkMzQ4ODRlODQyNzRjZjFhOWQ5OGI5ZDNlNDliMWMxOGYifQ"
+        },
+        {
+          "resource": "repo://web/src/appearance.ts#L114-L125",
+          "version": "repo-lines-v1:sha256:df0f35ce87be2e01b281c27fbc6ff9dc357d0da3f25495c3fc1d9d5ee5089aa0:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY4NzEwNTFhNzQ4NjlhMDk1NjU5YjIzYTg4OTNmNDM1NGU4ZWM1Zjg4NjQ0ZDg0MGQwZTQ0OThhN2VkNWQ0NDkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJmYjFkNGZiNjExMTIzYjk4YzUyZDI2NmMzZjIzNzhjNWUzZmQxNjA5NzA3MGI5YTFiMTJkNGEyMjhkN2QwN2MiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjUxZGQ0MjIyN2RmYzk4MjdiYzFiNTRkZDkyYWE4M2EyZmRjYWEzOGQ3NzVkN2IwMDBkYjVlNjQxYjUwOGFmOWQifQ"
+        },
+        {
+          "resource": "repo://web/src/appearance.ts#L149-L158",
+          "version": "repo-lines-v1:sha256:bcb30006e06f3e1dc952e25c04c8c77e29cf035f4ff21dd366ec5a9eaa655fb9:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJlZjQ2YzRkYjUzMTU3MDdkYWI0NzEyMTc3ZmViZDZiNjc5MWVjNDEwYTJmNThhZGNhMmFjMTQ5MzMzYTMxNTMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjUzZjVjY2M2OGJhODg4NzAyNDRhOTI1OWM4OWUwMDNkZTFhNTJiOWFhNjUxMzBmOTM3ZWZlOTlhNWJiOWRjOTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_5dcb5d648b7f40949075b06211d949e6",
+      "statement": "An empty order in an appearance patch means the built-in order: chatTabs.order falls back to CHAT_TABS and composerButtons.order to DEFAULT_COMPOSER_BUTTONS rather than producing an empty bar.",
+      "evidence": [
+        {
+          "resource": "repo://web/src/appearance.ts#L69-L95",
+          "version": "repo-lines-v1:sha256:d1480ea3c78a808bf19293878aacf3f2c7c5387852e2ce579f3718840ca1fc6f:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZlYWM0Y2E2ZmIyMDdkZmEwNWUyNTM4YzhiZjdmZGU3OTE3N2E5NjYzNzZlM2Y3NGFkNzgxNTFiYTUyOTYxNjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg0ZTQyMDhjZDZmZmI4YzRhMzU0N2IyZjU0YWRhMTk5NzhjM2YzNjVlNzhmOTUwMmVmNTE0NWNkZDJhYTg1NDMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY3YThjNDYyY2I3NjhjZDJhNTdlNzhiMzliODY5YmUzM2QzYTU1NWZkZjNlNzNjNDM4MjhhOWMzMGVlMzNlOGIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNiZmEwMTUzMGQzMWE0OTNhMDVhNTljMTNjYzY2ODE1MmMwYzg3MWQwMWIyOGU5YTUwOTM3NTJlN2U0MTEzOGMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_6002df8e17c54b2a9bf54e6aaf654a9c",
+      "statement": "Composer layout lives in web/src/utils.ts: MAX_COMPOSER_BUTTONS is 4, DEFAULT_COMPOSER_BUTTONS ships context, usage, permissions and minimap visible with thinking, tools and tasks hidden, getComposerButtonLayout appends newly added buttons and demotes visible overflow past the cap into hidden, and visibleComposerButtons slices to the cap.",
+      "evidence": [
+        {
+          "resource": "repo://web/src/utils.ts#L297-L375",
+          "version": "repo-lines-v1:sha256:55adaef80bece5684203a6089dc00e55513091529aa5270c9392302948670e83:eyJzZWxlY3RlZExpbmVDb3VudCI6NzksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI1NTViYjgxYjliNGFiMzZmZTVmNWU2NDc0NmE1MDIxZTNjZjYzMjlkYmIwYWEyNDAyNDQ0YjRmMmNlOTg3ODQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI2OWU3YzhlZjI3MjI0ZTk5MWEwM2UwZjM1MDE5ZGZmNTVmM2E2MjVlNjdmMDQ4YmMyY2UzNzRiNWM4ZTAyZTMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjhjNTkzODM5YWVlYzg3ZDQ3ZTY4OTE5MjEwMjMzZTI4MjAwYTlmMGE3N2M0MmQ4NmYwYjMxYzhjNGIyZDQyODMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_841631539c064e20af4dc621f311965c",
+      "statement": "applyTheme writes twelve --v1-* CSS variables onto documentElement, sets colorScheme from the palette's luminance and toggles v1-theme-light on the body, with 'v1 Dark' as the default palette matching the original hardcoded colours.",
+      "evidence": [
+        {
+          "resource": "repo://web/src/themes.ts#L187-L232",
+          "version": "repo-lines-v1:sha256:c21bb71b24c2ed7daba863b2314d4ab5c785dd6e935f693ede817708e6e138b1:eyJzZWxlY3RlZExpbmVDb3VudCI6NDYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNmNDE0Yzg1ZTIzYWU3ZTBjNDBmNGRkYTQ3MzViZDViMzg4OTFlN2U0NzQ1NGNiNmI3Nzk0YWZiYTY3MDVmZjgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhmYTNkNDMwMjcxOGJmYzFjOGExY2Y2YjQxNWM1MTJlNDY4ZDE5YTQ5NjBmMDkwMTAzYzdkYzNhZmU4NjRjN2EiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_c53b84b6ec7347d9b289e7685cdf4416",
+      "statement": "Tailwind tokens are mapped onto the theme CSS variables with @theme inline, so utilities like bg-bg and text-dim follow the active theme instead of hardcoding a colour.",
+      "evidence": [
+        {
+          "resource": "repo://web/src/index.css#L15-L35",
+          "version": "repo-lines-v1:sha256:b1efb0ba730882862a5dcc1e7972396bdd45bff643275e99fb97f044afb0ec3a:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY4NjRkZTJiOTVhYmU4MWRiZDc4YTFmOTBlYmExNmQ5ZjBjN2UyZWI1MDhkNThiZjhmNDBmNjhjNzk2OGMxMzIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM4ZDFiNGE2NmFkNmQzM2U2OWFlMTFmMDRjZDhjM2JiMWU4NjNlZjlhNDliZDdkNzI1Y2NlZDE2MWYxN2IyYWIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImEzMGRjNjI5YjZiZWI2NTE2ZTZhMTZjZGQ0MTk4YzliN2NhYTQ2Mzc1MzU3MzVlYWQ4MmRkZTQxYjk2MjY0NDUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImMxZWI2YjNlMTNiYjk5YmQwOWQxZGRiM2U3YTlhOGU0MTk0YWI1NWVhODlhZjBjYWU2NWM2YzNmZWJiM2E2YTIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_e756b65cf0ad4eb49f8d975a48378ea5",
+      "statement": "The app shell does not bounce (overscroll-behavior none) and .v1-safe-top pads by seven eighths of the safe-area inset, which is a no-op in browsers that report none.",
+      "evidence": [
+        {
+          "resource": "repo://web/src/index.css#L409-L416",
+          "version": "repo-lines-v1:sha256:e3c1f8d59454988e7b6cbb107b7f81681c232d9de2bf8d8d445bc1721ccdb89f:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZTljM2FmOGFiOWNhMzYxOWMzNDZkZWU4MmMzODYxNzc0ZWU4M2I2MzRkMWQ1MmRhN2JkNWFkYTg3NDFmOGNjYSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDEyY2EzNDVjY2Y3NWJmOWMwODA2YmNlNjk1YmU4ZGU4MDhiNzk5ODQyNTFhN2E1NGQyMDJjZjYxMDFkZDQ1MSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMzI0YjJiYWM1ODQwMzIxYWRmN2I1NDU1ODdmNjlhZmUzODNlZmM0ZTVlNWExMGYwODI5NTdiMzEzYjhlYWNiZiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNGU1MzAyYzY2OTBiY2ZhMTg2MmZmYTllZTM4NTI1Yzc2Y2NkMzM2ZWZhYzEwYmFmZjc5MmM5NmU4NTE2NjUyZiJ9"
+        },
+        {
+          "resource": "repo://web/src/index.css#L61-L63",
+          "version": "repo-lines-v1:sha256:de9a7f0f23ee76b98f1856523a4d051831744cc274f027d3682d47e2a02f974a:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYTJjODdkMDRhNWQ4ZDY4MjljMjg5YmI1M2VhMWUwMTlkZTAxMDkxMmIyM2IxYjMyZTllMGM5YWNhOTQ2MTQ1ZSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNGI5NDZlOWJlMzY2MTBhZDNlZjZlM2YxNDgzMTI3Njk2ZWRiODcxMDRjNDgyOGJmZjM0NmRkZTQwMzI2MmM1MSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMTA4YTJiNTZjNmNhYTE0NTFkMDIyYmIxMmI2ZmU5NGE5YjdlYmY3ZGIxYWY5YzlhZTY2MTZlZWEzM2RlZWM1NCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYzdjODM5ODI0M2JlNDQ5YTU5MzQ1YWY5NzcwYzgyOWU1NTVlNjkyMjVlM2M5Y2Y1ZTY1OGE1NTZiZjhmN2U3YyJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_aa492c9540614dd98c2c6166bc21a55f",
+      "statement": "Project and ChatPanel both read their layout from the mirror on the first render and re-read it through subscribeAppearance when the account's copy lands.",
+      "evidence": [
+        {
+          "resource": "repo://web/src/components/ChatPanel.tsx#L75-L78",
+          "version": "repo-lines-v1:sha256:b90f1ed3b7c95b43dcb8371654d13b536f73a8b54e44250831ac8abf2c7388c4:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYWNjNGRjNjAzYWMyMjUzYzUyMzFmOGM4YzJlNWY1ZDc4Mjc3OGZmZjExODI4OTIxNGIzNjFlNjhkODExYjIwNCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMzBlYTgwZWI1NzFjMGU1ZDEyZWJlNTE3ZThkNmUxNTZlY2U4MGJmZTM4NmZiM2RjZTg0MmM5ZDY4NDkwMzkyMyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZWVhOWIxY2EyNzkwMmVkZmMyNjI3ZWUxYjlmOTVhMjA3NTdjYjBlZTI2OTBiYmFlODFlOGU2NThhNzYzMDhkMiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYjM5Zjg2NTZjNjQ0NTczYmIzODZiZjQ1OWQ2NTk4MTg1ZjJjNmVjMDZjZmZhOTc5ZDlhMzAxOWU5NmNkMGNmOCJ9"
+        },
+        {
+          "resource": "repo://web/src/pages/Project.tsx#L72-L78",
+          "version": "repo-lines-v1:sha256:0c6ee126cb6de36783468a57b2af92f0901ef3c8189c0fdb74f93b5769e47f96:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjVmMTlmMWJiZTE3OTY0MGU0YWE2ZWMxODI5ZmQ5OGE3YjBmMzM4NDRlZDlhYzgyMTNlODMyZDgzZWEzZTEwZCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDFiYTQ3MTljODBiNmZlOTExYjA5MWE3YzA1MTI0YjY0ZWVlY2U5NjRlMDljMDU4ZWY4Zjk4MDVkYWNhNTQ2YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYmY5YWNmMDc3OTliZGE4MDRkYmE1Y2EzNzUxYWExZjQzNmQ2ZWIxZjhkYTRkZDBmZDNhMDMwZWU1YTFkN2JhMCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZGE1NmRiMzJkYjIwZGM0NmY2NTI0OWNiNGIzNzcyNzE4YTI3ODZmZDUxMWM4N2U2NWU3OWU5NTAzNzQ3MDU4YiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_12131eb63db4440eb2a1172ed11b5031",
+      "statement": "The GitHub subtab is shown when the project has not loaded yet, when it is explicitly enabled, or when the repo URL looks like GitHub and the tab is not explicitly disabled; tabs are then filtered by hidden and sorted by their index in order.",
+      "evidence": [
+        {
+          "resource": "repo://web/src/components/ChatPanel.tsx#L93-L98",
+          "version": "repo-lines-v1:sha256:533dad36271acc6d60947c8588fb3e780e0db0d5bcbfa0056d5b02de27c9f85b:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZmQ4YzUxZTFkNTBmYjI4NTBmZDZlNjgwZTFiNzI5ZWNlMTIzZGI0ZjlhODVmNjY4NjM4ZDMxOWM4ODE1MzU3YyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYmQ2NWM1ZGI2MzViZjBkNWQ1YTI1YzQ5NWFmYmY1NjM5MTM5N2JhOTY0ZTYwZDBkY2NjMzk1Y2FkOWUxNDk0ZiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYjhmYjU5MjJhN2FmZDQ0OGZkYTEyNGM4NzdlNTZhMjM4ZjY4YmU4Njk1ZTFhMjkxZjdiZjcwODQ3NDRiNzg5ZSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMjQwYmY0NmI1OTYyZDYyMTg2Y2NjOGY1ZTNkMTE4MDhhNjkwNGIyOWRhY2VmZmQ3ZWJlZGNlMzVhYzUzODcwMiJ9"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.9.0",
+    "at": "2026-11-15T05:31:58.285Z"
+  }
+}

@@ -1,0 +1,348 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:4216a005f792376b6d7be1abe82f4a40cbda5299058ee20855a7dcf2d424bd7e",
+  "claims": [
+    {
+      "id": "claim_673b0034d73c47fdbc381c7002a25127",
+      "statement": "`store.Open` creates `<dataDir>/projects`, opens `<dataDir>/v1.db`, sets `SetMaxOpenConns(1)`, applies `PRAGMA journal_mode=WAL` and `PRAGMA busy_timeout=5000`, then calls `migrate`.",
+      "evidence": [
+        {
+          "resource": "repo://internal/store/store.go#L36-L60",
+          "version": "repo-lines-v1:sha256:e407d4888124fd217037fbd9e6cd21375b3c58c68d7c031c6f166c0de0a8abda:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNhYzQ3YTQ4MjZhMGNmNDIzNDkzMDI4MGE1NmMzMjY0MjAwYTkzMTJhNmQ0ZmU2MWVhNDFhMmE2NmMxYmQwNjgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI4YzAzYzk0N2ZkNTE1YjA4OWQ1NzcwNDVmNjM0NDhjZTRmOGU5MWI5YWMwNzE0NWIyMWE4MDZlNjc2M2Y2ZmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI2ZGU5Yjg1ZDg3NTIzNzc2MzYwMzg2MDI2YjlmNTQ0YWE1ZDQ2YjQzYWFmN2MwZWYwODZmYTdlMThhMGE1ZjEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_8a8ddcd856964f61ab01faf801cdc679",
+      "statement": "`migrate` is a single idempotent function with no schema version table: it runs one `CREATE TABLE IF NOT EXISTS` script, per-table `migrateAddColumns` calls, two `rebuildTableForSessions` rebuilds, then `migrateLegacyUsers`, `markLegacyAgentRows` and `scrubStoredMessages`.",
+      "evidence": [
+        {
+          "resource": "repo://internal/store/store.go#L197-L330",
+          "version": "repo-lines-v1:sha256:5a380fafdff58fed91d76009276a65ccb126a4e854d02fc301f9e04282c9eb04:eyJzZWxlY3RlZExpbmVDb3VudCI6MTM0LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiIxMjI3ODY0OTJlOTY5YThkODJhOWQ1NzIzZjVhMWU0YTY4M2YyNDgwNDVjYjkxNDYxMWE4ZGE5MWI2N2FkMzNiIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI5ZGQ4ZTcxN2Q2MTE3OGYxNTUwN2EwNzNmNTA0OTY5Y2Y2NTExZmE4NmVmODBkZWQwNTVhMTM4NmQzNmNiNTBmIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiIyNjNjOGUwOTYwYjYyNzJlYzZhYmZhNjZmOWI5YjgyNGM3NDc5MWRlMTJiNzAwMzg0YTFjMTQ2YjlkNTVmNzczIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI4ZjU5MTlhNDk5M2E1YWJjYzM1MjlkYjgzYjQyYWEzYWE3MWVhNzcyYWIyMzQ2ZGQ1OTEyMjczNjA0ZTc5YmVjIn0"
+        },
+        {
+          "resource": "repo://internal/store/store.go#L62-L70",
+          "version": "repo-lines-v1:sha256:756e1c30e6fba3b8f0a0729805ed7d0a136713acef8b3f8e855633239715c763:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiN2I4ZmFjOWMxYjA4YmMwMzRiMDAyNmNiOTEyM2RlYWE2OGFiY2UzMDU5YzIxZWVlOGUwZjUzOWZjMmMxNDA4ZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOWI5MmRiNzNmMzIzYmQwMDA4MjZjZWRkZDlmYTViZTBlYzdmZGE1NmI2ZDhjYTY5Zjc5NDllMmYwOGVjNTFhMiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMzJlNTc4ZjdlODZiM2Q5MWE4YjUyZTZlZGI3ZGE3MTAzYWQ5MGI5YzQ0NWNlZjg1YzViYTlkNGY3MDM1NDM1YiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNjU3NTZhMzQwZGU2ZjA2MGI3MjY1ZmNlMjRhYjE2YzVkMDQ0OGVlNTY4MWJjM2UyZDIzMTg4Y2M0MzBkNzcyOCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_3bbec11b45c9454390e46e1e66a40df3",
+      "statement": "`messages.role` alone cannot identify the author, so `AddMessage` refuses `role == \"user\"` with `ErrUserRoleNeedsAuthor`; `AddUserMessage` is the only way to store a typed user message and writes an empty `tool_json`; `AddInjectedMessage` requires a non-blank marker and fails with `ErrInjectedMessageNeedsMarker` when it is blank.",
+      "evidence": [
+        {
+          "resource": "repo://internal/store/store.go#L1185-L1236",
+          "version": "repo-lines-v1:sha256:dc269f1ebd5a647f814a3dc6957062a40e2b1b2774bdaa232d392abb0c7071df:eyJzZWxlY3RlZExpbmVDb3VudCI6NTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ5NTI0YTcxZDUxOTNhMzMzNjQwMzc2MWVjZmU1ZDFlOWUzY2E5OWUyYWExMjhiOWMzOWIxMjE1MjcwZDRlYmYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRlNmQ4ZjFiYzc4NDY2Mzk3Yjg2MzU0OTA2NjA3YzZjYWYwNmNiOWEyMGIxYTlmNjMwNzMyYzFhZjI5OTUwYjkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ0MzkxZjkyMmY5YzcyZTZlNGFmZjFlZGZhZWUwNDYyZDNiMzVmZmQwYTFmNGY3MzQxMmZmYThiZmU4MzllNjkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg1YzYxNWNlOWJmMTQwZjg1Nzk3NjA0ZDgzOWYzODE4NGU0MzA2ZjQ1NjVmMTA3MTM1M2Y0YTRiNGJjOThjOTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_3a8f60c0f8d144b2a23a2f1827e41473",
+      "statement": "`internal/agent/markers.go` defines `SteerToolJSON = \"steer\"` and `AgentToolJSON = \"agent\"` as raw JSON string literals, and `MarkerName` decodes a stored marker to the bare name so live events and stored rows reach the client identically.",
+      "evidence": [
+        {
+          "resource": "repo://internal/agent/markers.go#L1-L36",
+          "version": "repo-lines-v1:sha256:39f680254b6e3e06fb1a639c7649ac18c36eada6d2caacac6bd54e0571a38d00:eyJzZWxlY3RlZExpbmVDb3VudCI6MzYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM5NTBiODcwOGFjODk3ODI5NmRhNjQ5MGVmZGI2ZGYzZDQ4MzVhMTkxN2Y0NzIyMWZmZmNkZGFiNzZjNWE4YTciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdhYWJjYzE1YjY1NzZmZWM2NTg2MDU3MjFlNjdmZDdmNTM5MzVkYzQ5M2Y0NDI2MDAxOGQ4NTU2ODViMDY1ZjkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_a47e8e60c2ad492492819c8a176f497e",
+      "statement": "`RoleNotice = \"notice\"` marks a row the app writes to explain the transcript to itself (a compaction); it is shown in the chat but never sent to the model.",
+      "evidence": [
+        {
+          "resource": "repo://internal/store/store.go#L1199-L1206",
+          "version": "repo-lines-v1:sha256:a965e3d70f6a86f75213cd02f875e01b85761ead147e93f027d2a73c93b1ae74:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNzU3MWYwNGUxMzVmYmVkMTI4MjVjMjI1MjYwYmVmNGJkZmM0NDQxNjVmZDFhZGIxYjU2ZGJmODhjMWUwZTA1OCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZjllYWMxMTA1NTM1MTJjNGQ3ZDZiOGQzNTk3MGViNjg2YTdjMzk2MzZiYjQ2MTYxODcxMDM0ZTQ1MDkyMmM0NiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiY2Y2NmQ0MDFjYTdkYzgyODQyODM2NGRjNmE1NGQyMDU5ZjY0MTBmNjkxNzU3OWFlNDlmNGJmMDEzNTZkMTc3YyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYjM5MGNhZWRlMjEzYmU0ZDZhNTI2ODU1ODFhNWZhZTExN2JhNzUxZjlhNzEzMzE3NGRlZTIzNmQ3N2ZlYmU3NiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_6c48455005ea4114bcf2b1e18712a043",
+      "statement": "`markLegacyAgentRows` repairs the screenshot caption row by stamping `tool_json = '\"agent\"'` and clearing content for user rows whose content is exactly the frozen screenshot caption literal, keeping the image.",
+      "evidence": [
+        {
+          "resource": "repo://internal/store/store.go#L332-L355",
+          "version": "repo-lines-v1:sha256:f987a3ffef074a9a282a35a3af6a192e744bd5c4211163dc59edd7fe3bb9c970:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIwODQxOWMzOWU2OGZjYWM4OWMwMTcxMTdkMDJiMzc2YzIwYTYzMDAwNmY4N2I1NGI1Mjg5YWM1NzQwNzE3NDIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzZWU0ZWI5NzZmMDgxNmY5YjQ0MDgxMDU4YTRmNGY2OGU3OGI0MTIxMGQ1NjIwYzY5ZWEyZjIwNGVmYjNkNTMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBmYmI3NzY5Y2QwMDY0MGNiZDBiZDRjOTJlMDdhNTNjZTIxN2FiNWUzYjMxOGQzZmQ4ZDJkNjRmOTg4ODAzMWEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_d6278ff36a0f49f487610da45d95e3b2",
+      "statement": "`scrubStoredMessages` runs `sanitize.Scrub` over every message's content and attachments at startup and updates only the rows that changed, which makes chats stored before the sanitizer recoverable.",
+      "evidence": [
+        {
+          "resource": "repo://internal/store/store.go#L364-L395",
+          "version": "repo-lines-v1:sha256:2961469f908037c5227fcc4145b0d6547dde011ba909044a853f8f4b0c9c279a:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM2MTQ0YTlhOWY0NDA0ZjdkOTYxZjkzN2JlMTYwNmIwNGU5ZTIxOWQzZDA2NzU0MzY1NjE1YWFiNDIzZDQxYzgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFkYTFkNzkxNDgwOWUzNDk5ZDQ1NzNlOGJmZTU4MjZhZTA4MmVhMmUyYTE0ZGI3Y2MxNDE3MjU3N2M2YTczNWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZmZGZmMGU2NThmYjZlZWQ1NjQxN2RmM2E5MDg2OGQ2MzliOTVkY2U4M2EwYTg3NGE3YTJhN2FlYTMyNDUxMTMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQ3NGI3YzlkYzFmN2QyYTgzYmFjODNhNjFkNTJiNmE0Yjc0ZjNhODhjYTQ5ZWM5Y2IzYzE1ZDg4NGE1YTQwYzgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_16336ef2783a4ee3a6b465abf5e88b08",
+      "statement": "`Project` carries `OwnerID`, `AutoPush`, `PreviewDisabled`, `VercelEnabled`, `GitHubTab`, `VercelProject`, `Ephemeral` and `Archived`; `projects.vercel_enabled` defaults to 1 to grandfather pre-toggle projects while new projects insert an explicit 0.",
+      "evidence": [
+        {
+          "resource": "repo://internal/store/store.go#L311-L330",
+          "version": "repo-lines-v1:sha256:0ef68bc224d78b269bf3182c43a1f2605e5085a03f55a7ff74fbfc0c959ffc8f:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNmMmVjOTlmNWRmYjJhNzljODNlNTk3YjZkM2IzODQ2YzgzMjQ0ZmM0ZTdjMTkyYTQ0NzIwZjJjZmQwNWY2M2IiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjlkZDhlNzE3ZDYxMTc4ZjE1NTA3YTA3M2Y1MDQ5NjljZjY1MTFmYTg2ZWY4MGRlZDA1NWExMzg2ZDM2Y2I1MGYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY0ZWUyYjAzZDhhNWU1MTAwZmE0OGUxMGQwNGEyZDgyOWFkMDg1ZTEyZjkwNjNkNjI1MGE0YzQ2NTI5MmQ5MGQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjhmNTkxOWE0OTkzYTVhYmNjMzUyOWRiODNiNDJhYTNhYTcxZWE3NzJhYjIzNDZkZDU5MTIyNzM2MDRlNzliZWMifQ"
+        },
+        {
+          "resource": "repo://internal/store/store.go#L946-L974",
+          "version": "repo-lines-v1:sha256:5a2ad6d3e9aa4155d15c84da0b80419352584fcf3ce4f0b6458c8690a2c352e9:eyJzZWxlY3RlZExpbmVDb3VudCI6MjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjljNGMyNjRkNzBiYmEzZTczNzA2ZWJhYzBhY2VkZDdlZmMzNWYxMmQwNmM2YmYwNjFhMTFiMmU4YjU2ZWM3NWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjAxZjhjYTJhMzVjYzBjYmIzZGMzM2I0ODdkNjY4Njc0NjY4NjQ5ZTAzNTRhYjZlZTIyNjhiNGQ4YWU0MzQ2OTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjAxZWJjN2I4OGM1YWI0NjlmMzFiNjk5ZjEyZGIzYzEwZjM0ZWEwZjA0MjczZWZmODVhM2IwZTY5ODc2YzAxZDcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_b8540baa50f54d848b3995abe0ab24d1",
+      "statement": "`DeleteProject` deletes the project row last, after messages, chat sessions, memories, compaction snapshots and pending asks, so a partial failure leaves the project discoverable rather than orphaning its data.",
+      "evidence": [
+        {
+          "resource": "repo://internal/store/store.go#L1135-L1155",
+          "version": "repo-lines-v1:sha256:90b448912e9cc6de6fc61f99f7fbb6842be58fd9fb8186be792cec9baa85ab4e:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE2YmEzMDFhZTJiZjg1OGM3OTJkY2M5NzE3MmFlMGE1YTc3YjY0MDcxZjMxNDVmNWYzYTgwMTUyNzIwNWFlZDYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ0NzM5YjhlMWE5NmM3ZjE2YjYwMmUwMGUwZGQ3OTExMmEyMzkyZDMyYWJiNmJiMTNjYWJiYjk5YjMzMDFhNTkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjNlMTMzNGY5OTExYzc5NjAwZmU0NmQyNzE3ZWE0NTVkZGI1NTRhZjkzOGRkY2IwN2E1NDg2YzAwMDlmZjY1Y2QiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBkMWU2OTAxNzMxNWI5NjEyYjczOThmODNjZmU0YzdiYjdlYzU5ZGExYTA0YzllZGFkZjEwMTIzNjY3NjI0ZTAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_3178e244e20546cb8f5ff446b55d437d",
+      "statement": "`ArchiveExpiredEphemeralProjects` returns 0 when `days <= 0` and otherwise archives ephemeral, unarchived projects whose newest user/assistant message or `updated_at` (whichever is later) is older than the cutoff; an empty ownerID sweeps every project.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/server.go#L830-L882",
+          "version": "repo-lines-v1:sha256:027ccc1d8482d29dc71da3618f1af95a9557399164011ac671859d3217b30615:eyJzZWxlY3RlZExpbmVDb3VudCI6NTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIxZGRmODQ5YTFjYzI4NDVkMDA0N2U3MjY1N2Q3MTc3NGY1MDllZDZjZjBlZTI0ODllMmUzM2VjZDVlMTZlZGEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhlYTU5MzA0NzhmMGNkZDVmODU0ODA4YTNmYzNkNDM5ZGQxMmVlNmQ3N2QwOTYwM2FkM2I3NmE3YzhmYjc4YjAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQyOGYyMzhhNzQ5ZTFiZGUwNzgyMWRkNDY5NTViZWU4MTY1MmU0ZmIyNjBhNWI5YjhlNmM0ZmUwNjA0NmU0N2MifQ"
+        },
+        {
+          "resource": "repo://internal/store/store.go#L1085-L1112",
+          "version": "repo-lines-v1:sha256:847751a66a9d0711093f41bddf98ab643aede01b11c4033650d06a5fc008affd:eyJzZWxlY3RlZExpbmVDb3VudCI6MjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM2MGMyNDFiODcwZTFkYzgwODc2YTNjMzg4ZmFmYWE1YzQyY2FhYzBmYTBjYzRiZWM4OGMyYWVjOWFiOGI5ZGYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRjOGVmNmFmNjk4MTc1MTgzYTJkYTBiMDk3MGZlMzIxMTA2YTI3MTc5ZTgyY2ZiM2FjMzUxYmFiODJhZWYzMTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE4MWNiYmE3ZDg2MTcxYmFmOTI1YTMzNDc5NGJlZjllOWM2YzcwNTY2MWU0NDkxMmM1OTI5MzMyMWNjY2RiNWMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNmYmVjMTk5NTM0YTM0MmU4ZDY0YzAxNTcwY2IxNzczZDFjYjFjZGI4OTFkNTNiMzAxMWNiNzhiMDNlOTQ5MmQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_d0b8ccd7f26d4ec3b5b674ca09820dd5",
+      "statement": "`CreateChatSession` auto-numbers an empty name from a strictly increasing per-project counter via `UPDATE projects SET session_seq = session_seq + 1 … RETURNING session_seq`, so archiving or deleting a session never makes a new one reuse an old name.",
+      "evidence": [
+        {
+          "resource": "repo://internal/store/store.go#L1482-L1500",
+          "version": "repo-lines-v1:sha256:d0b208d03aa6a4e69c4bc99f121b46e3820da1d8ca6cf4ddd299d41af02dd59e:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU4ODQ1MjJlN2QzYTY3YTVlOWQ2M2ExOTk3ZmJkOTdlOGRkZThjN2FjYjUxNmYwYTdmMmVkYWU3NjRiZDg0YjEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRkYjc5ZWEwMTUxNjYxMWEzMzA4MDk2MzUwZDk3NWY5YzUyOTA0MGY0MTUzNDQxMzdiNjIzZWE3YmJiZmUyZWMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc3NzZiMGVjMWM0YTYyOTdlM2FiNzhmOGFmN2MyOTRiZDE0MDAwOTUyYzZjMjVkNTM0OWY1ODUwMjU2ZmYyN2QiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ5OGUxODg3YzIwMzI2YzQ2ZGE4YjMxNzIyODA4ZmQ0MGQ0YzcxMjgyOGRjZTI2N2FiMzg4Njg5MzQ4NmU2M2QifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_4016ae37a1b1444384ae1658bbf304fa",
+      "statement": "`EnsureDefaultSession` returns the oldest session, or creates `\"Session 1\"` and claims pre-session messages with `UPDATE messages SET session_id = ? WHERE project_id = ? AND session_id IS NULL`; `chatSessionID` falls back to it when the request names no session.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/handlers_chat.go#L64-L73",
+          "version": "repo-lines-v1:sha256:71279b3e5a29c7c0d9f3f46ae4808052c343f3f3408ecf6246f3b73cd7d9c194:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkxYmQ0ODk5ZGZjZWE3YzQ0NzcxYWRmMzI3NDAwYmExMTA2Mzc3NjFhY2ZjZmQyZTU2Njk0MzNmN2M4OGFkOWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQyYTg2NWU5NWZlZDFmYWY0OWMwMmY3MzM3ZDIwMzFiODk1ZjU3NmVlNWYwZTllMGU4MzE2MzQ4ODhjYmYxOWMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJhMjgwNDc2M2QyMjhkOTU1ZGQ4MDk2NjA2N2Q4ZGNlOTljODk1NTU4MDZlZWJjMmE0ODI2NjM5ODg3MTFlZDYifQ"
+        },
+        {
+          "resource": "repo://internal/store/store.go#L1617-L1634",
+          "version": "repo-lines-v1:sha256:dc04a698157d45d9ecb1c859441510dfc12b32db696f84b4a046f0c92bc1de0c:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRlYjhjNzNkMWFlNWM5YTc0MjQyYzQwYjk1Y2U1NDM2ODg2NDg4NzcyN2NhNzkxNTk1YzNkYWJhOGJiOTU4NGIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFiNWFkMjhmZjlkM2M3NTViNTE3NDU3MDIyYmFhNjg1ZDVjYTBjOWVhNGRmYjYzNGVkYjMwNzgxNWNiNDhkMTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjMyZTdlZTk3OGQyZjk3MDVhZjc3OTVkMGJiY2EwNGFmNTJhNGVkNzI5M2Q4M2M1Y2JhNThmYmRiYWU3YjkxMTAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_4ab0fd0a443a49c8b7ea03517e0682df",
+      "statement": "`SetHarnessConversationID` persists which pi-durable conversation backs a chat session because the sidecar's own session map is in memory, so a restarted sidecar would otherwise mint a fresh conversation and silently lose history.",
+      "evidence": [
+        {
+          "resource": "repo://internal/store/store.go#L1568-L1586",
+          "version": "repo-lines-v1:sha256:06512c3553d63b76288141ac5807736f23b29b6e763538c75ad9f3ba685be572:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRhMzRhNWQ2NzY3MjdmOWRjNDNkNzAxY2IxNzVmNWMxY2MyOWRhMjEwYTIzOGQ3ZDFiOTVmMmQ4N2YzMGY4MzQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJhOThkMThiNGM2ZjFlNDFlNDVlYzQ4YjE1NzNiYzFkN2VhNDZlZmYxYTc4NDc4MDI3YjRiODAwZjI3NjE3ZTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc2YWE4YjNiYWI1M2E2OThjNjNiZDc5ZDQyNTEyNTNjNDE3YzMxNjZmMTQyMDI3MDNiZTljYThmOTNiNDJkY2QiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjgxNjA4YjllMzE3M2ZlZDIyYzBmM2Q1OGNjOTJlZTliOWZmMzAyNjdhYWE1NDg0YzEzZmYzYjNkMTFhZGI4MDIifQ"
+        },
+        {
+          "resource": "repo://internal/store/store.go#L285-L293",
+          "version": "repo-lines-v1:sha256:ef993c3f5b6f37a0defef869114dbfb9be3ceafa785f93cddfa4c38d145a475a:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZDc5M2I1MTk5MjBiMjNmMmRkZGQwOTMwOTgwYzIwZjYwYjUzMWMyMzU2YTg5NTIwZDJhOGE4MmZiYjViMjVjZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNjdjZGE4MmRhNjA2MjM4ZTA1ZTYyMzk5NTY5YzVlZTAzOTkzNDE5NjQ4YWU1ZDQzYTJiZjhjZDYzNDdmODI2MyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMTE1N2Q3Y2RmZDYwMzFlZmJiZWUwMzI5NDE4ZjY3OTE5YjJhMTEzMTM1ODU0NTU5MzY0ZDA0ZjIyZjMwZTcxMyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNDk3YTA1N2M5MWFkYzFkNWJiOGY0N2E2YWMxYjE0MDE3YjFjMWZlZWNlYjYyMWMxM2U2MmRhNjNlNGU1NjY5MiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_55a6c4ecfcaf46a0a8dc6e2d4ba2df7a",
+      "statement": "`ListSessions` derives `LastTurnAt` as `COALESCE((SELECT MAX(m.created_at) … role='assistant'), 0)`, so the dashboard can show when a session was last worked in rather than when it was created.",
+      "evidence": [
+        {
+          "resource": "repo://internal/store/store.go#L1455-L1480",
+          "version": "repo-lines-v1:sha256:1b1cc723f023bfdada91a0e88e2d483b39b280f140967874df2e9f6fb3a4db81:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRkMjVhYzk5ZWE4NGFiNGYwNTMyYTQ1MDdlYTc0MzYzYTZiNDNmMzEzMmI4NDI5ZmViNzk2ZjQ3ZmIzZTY0ZGQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU3ZDlmOWMyNGM4Zjc0ZDY0ZDYyYjU2ODViYTUzOTYxYWI5NzNkZDkzNDgyZmJkYjEwYjhkYTM5OTYzZWVjOGMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI2MGYyNzU4MjJlZjllYzQzMTczZjQ0NThjODY0OTEwNmVmNTI5YTAxMTg4MWM3N2Y2MGFhZWFhZDA5MmRmZWQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRlYjJiMmExZWYwYWIzODczYWM0MGU1NTI3MWZhN2RkYzJjMWFhMDU2YTdkNWVlOWE4ZDBlOTM5OWI1MWVhOTYifQ"
+        },
+        {
+          "resource": "repo://internal/store/store.go#L1651-L1663",
+          "version": "repo-lines-v1:sha256:19e6643fc5e0a7f0c110d6dfeb357ca89f810300391aef61787cd91374cdeb6e:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJmM2E4NTMwYjIzZDc4OGNiMzNjZTA1NDdmY2Y4MjFhOWY0Y2U4ODA0YjRhODBkYWMyODYwZGE1Y2Q0N2FlNWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc5MGFiYzRlNDBjYWMyNTZjY2I3YzJlYzBiN2E1ZGQzZDE5M2I0YWRhMTlhMTVjMDg0YTZmNDY1MTdlMmM4NTgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVkOWNmZDY2YTdhMGI3MmZjZDQ3NmQzMDg4ODc5OGI2ZDRkNWNmNmZkNmMwZjVjMTRjOGIzMjJmOGE2MWIyZDkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImMyZTU5ZTVjMGFjZDc5OGE5YTQ4YTFiMTMyZTZjMTAxNzA3MjQxYWMyZDdkNzc0NDg2YmI4NjFhNjU3NzNiNTcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_e40f50e83de64126946c0d4e45477608",
+      "statement": "`ListMessagesPage` fetches `ORDER BY id DESC LIMIT limit+1` so the extra row answers `hasMore` without a second query, then truncates and reverses the page into transcript order; `limit <= 0` with no `before` falls back to the whole transcript.",
+      "evidence": [
+        {
+          "resource": "repo://internal/store/store.go#L2163-L2212",
+          "version": "repo-lines-v1:sha256:e7fb0d7dc90442ad4a19339da8fad6d5f8a12168d43a07ad0ea3214035b8ff5e:eyJzZWxlY3RlZExpbmVDb3VudCI6NTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZjZWI4NTQ3YmRjMDQ3NGViYmVkMDJmZGI0OTlmNGY1ZjIzZjcwZTEwMjkzMzE5YjEwZjk1OGRkZTNkNjBjZGYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVhYTU0NzEyZjY4Zjg3M2VmMGUwNTU0MDUxNWQzNDNhMGRiNDJkYWUyMTFlOWFkZDhlNjQ1N2NmZWU1Mzk0YzAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjMzMTVjNzNmMGEzMWY0MTdjNmFjZmNiYzI5Yjk4ZTYwODEwNjE1NWViODY1Y2U1MGE2OWUwOGYyZGM3N2Q2MmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc4ZjI0NjBhYzVjYjU4MjA2NTliYzE0YmZhM2UxYjNhY2RlMjEzNmFmMmY3MTUyMTY2ZDBlOWM5NDE1NjNlZTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_8ed5ded2e74641c9a652aba83f6980c7",
+      "statement": "`SessionLastMessageID` lets the chat status poll decide whether the transcript needs re-fetching, since a run that ended while the app was away changes it and nothing else does.",
+      "evidence": [
+        {
+          "resource": "repo://internal/store/store.go#L2214-L2226",
+          "version": "repo-lines-v1:sha256:e2415950877bd1ac782bf52efc80cdcd914bcdbf7a7ea7f5d286e7b40dae6429:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMxMTNhMzAzMzU4ZDA5NmQ0N2U4MTU3ZTY5YzdmMWQxYzZhOTFmYTI5NTI2NWE2NGFkNGUyZDhiOGJjNjlkMGQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMDk2MjY0MTNkY2NkN2NmN2U4OWNmMThiM2VhZWE5MmEzMmRiYTJhNDU4YjY3MDU0NjBkODU5ZWYwMTVjM2EiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJkZGQ5OGVjYWU3OGNjOTQ5Mjg3ZjU5NWI0OGJhODY5NWIxMTIyNzk3NzQwYjFjMjY3Y2YyYzJkY2VkMmVmYjEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg3ZmI4NWMyNDRlZjM0NDBiYzU3ZDg2ZmY2ZGMxYWUwYTM3NzRkZjg5MDJlYjk3ZDZjMmQ2OTE0Y2JjOTk1MzgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_6932c5656be64967834b509ca1ec27c2",
+      "statement": "Settings resolve in `(*Server).userSetting`: the user's own value wins when present and non-empty, otherwise the shared/global `settings` value applies, so an empty string on a PUT deletes the user row and means \"inherit the global value\".",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/server.go#L539-L546",
+          "version": "repo-lines-v1:sha256:180594b29ffbfae1ee0600699347cb9fbb1185f261425e1687ec83246a4d4bef:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOTcxM2MwMTJmMDM3ZTdkOGM4NWQ2MTAzYjQwOWYyZmNlNTY4NjQ0ZTE1NzI3ZGRmYTg1MmJiOWFjMzQ0NDJlYyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDFiYTQ3MTljODBiNmZlOTExYjA5MWE3YzA1MTI0YjY0ZWVlY2U5NjRlMDljMDU4ZWY4Zjk4MDVkYWNhNTQ2YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYWJhNjQ3YzQ1YTZkZWEyMTNlY2NlZTAyYzIzYWQ1ZDIyMWQ1MDhlN2Q4ZThmNDk1NWUwMDlmOTg0YzY2MWY0MiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMTM4NzJjZWU0OWQ5MzQzODc1ZDA0MGYxZmY4Njc1NmUxOTRjMTAwMGM5YTc0OTdmODQzNzg0Y2NjNDNlZmYzZiJ9"
+        },
+        {
+          "resource": "repo://internal/store/store.go#L677-L700",
+          "version": "repo-lines-v1:sha256:f739e84d1183f7ba89dd49d4846a340c17f2a1e8fd54bf355df2a0ece9253294:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI4ZjZjNzVkZTQzNGJkNmRhZDg5NzIxMTAzYzRhNTE1Nzk0N2ZjOTExYmQxNTQ4MDhjZTNiOTk3MzNlMDdlMmQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk4MTAwMTdhZjFmODM5MjQ5YjJjOTczM2FlNjcyN2Y5MzdkYWFhYjAwNjg1YWFmNjAzMWNkYWI5NzE0ZTM4ZmQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY4YmQyZmNjZjFhNDllZWIzYThkMWE2NTkxYTFkYTM1MzE1MGMwOWY2NzM4ZjJlY2U2ZWRiY2Q4ZDllZGFkYjYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjEwMTJiZDY2NmJkYjBhODE3NWQ3NGUzMGExMzMwNmU5NDlmMmM4MGE5YzQ2NjgzZjU4MmYwZDc3ZDI2ZjgyNmUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_2d32a2afd45f4f8ca011abf435e15f55",
+      "statement": "`SeedUserSetting` writes a value for every user that has no value for that key yet, which rolls a new global default out to existing accounts without clobbering their own choices.",
+      "evidence": [
+        {
+          "resource": "repo://internal/store/store.go#L696-L710",
+          "version": "repo-lines-v1:sha256:95c63d8b39505009fa5c4e0bc219ff7585ab1ade69fd453a9227fec743d1a82b:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdlYWQ1MDIwNTY3YzRmMjQ2ODI5NTZmOGRlODQyY2JiMDk0ZWIwZDAzMDczODllNWFlNjA4ZDE1ZGFmZWVmMDEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZjMzVjNzU3MWNiNzhlMWZlNGQ5ZDQzOGRhNTYyOGMzMWY2ZDRlMzZiNGIxZTU3ZTUyNDQzZTlhOGNhOGU1MmEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU1N2QzMTBlZTg3NWJiMGM2MDFkM2Y2YThhYjA5NDlkY2UwYTZjODZjMjI4YTMzNDhiNWE5ODhhMGEyYjcwZTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjZlOGI2ZGRiYzIyYTg4ODEwZWQwMTc5ZTIwYjE5MTU4YzM1MzcwMjYzOWY1ZDVlYmU0MTY2NDkwZmRjZTA4MjQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_4ecfcadaabff412a8ba81590b1a5e82a",
+      "statement": "Appearance is one per-user JSON object (`keyAppearance`) rather than a key per knob, resolved in `(*Server).appearance` by decoding the stored row over `defaultAppearance()`, so a newer release that adds a knob reads an older row as that knob's default.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/appearance.go#L9-L84",
+          "version": "repo-lines-v1:sha256:077ba89767b98c6ebcd4a0865361c055850c740adc95a2ca62ec5b9ba6bbe92d:eyJzZWxlY3RlZExpbmVDb3VudCI6NzYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI3NDQxOGNjYmYwNjk4ZDcwODBkMGQ2Y2M0N2I4MzA0NTExZGQ0MmJhNjlmMjNhNDE3NmM2YzQ1Yjc5YzRkNjciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNmMDdkOTExMThmM2FhYjNlMDQyYTdiM2Q0ODQzYTIwN2M1OGQ0NTM5Y2U3MWQwYzViZmU2YzE4YWU3YzcxNGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRkNWRlNjczOTBjZTMyYmZmZWYwZGU5NjRjMWM3MjAwOTk1ZDY4Y2EzZWVjYWRlYjNkZDA5Yjg3MmE1NGViNzciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImU3NjE4ZWUxMTkyY2RmY2Y5YThmODRmMWQxZWYzYTU2Y2NkODAwNjc0YzVkMjNhMmQzMGNhYzNiZDYxMWZlYTgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_ce547c79287841dfbcfb4e4cea1b969a",
+      "statement": "`appearancePatch` uses pointer fields for every knob, and a nil field is left alone, so one control saving cannot push the other knobs back from a stale client copy.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/appearance.go#L109-L138",
+          "version": "repo-lines-v1:sha256:ccd0ba8727bf165053bd22ff37a15e9af11c12f33ffdea6f756eb8102049bf7b:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5NzhjN2MyZTcyNTU2MmI3ODZmMGFkODUxY2VjYzFiMGI0ODA0ZGNjNzEzZmU4MmZiODkwZjAzZTY0MzE2ZjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY3Y2RhODJkYTYwNjIzOGUwNWU2MjM5OTU2OWM1ZWUwMzk5MzQxOTY0OGFlNWQ0M2EyYmY4Y2Q2MzQ3ZjgyNjMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNlMGEwMzgyNGZhZTg2MTRjM2JiNTIyM2E2NTM3Mzc0YzQ2ZWM3MjJiOTEzNDE4NmQ0YjA5OTgwNGIwZDgxMjgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoyLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImYyYjIyOTExOTQyNjQxMTA0YjNhZmEwYTFjMGIyZGU2MDlmOTRlNmU3Y2U3OTg4NDllZDc0Mzk0ZTliNWMzNWEifQ"
+        },
+        {
+          "resource": "repo://internal/server/appearance.go#L45-L56",
+          "version": "repo-lines-v1:sha256:b7489e479e7b574ea89b47ac75d4d598622474e189bef3a8fa669b3a82751de2:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRmYzNlYTZmYmI3OWYzMTMzYzFiYmRiOWNhNzZjNjkwYzAzM2Q3M2RkYWU2YjUzZTRjMzM1NjkwZmZmYjE0M2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk3ZjIzYTNiNzYxZGQzNTg0NDAxYzNlNjAxODA3NGI0YWUyM2FjMmNiYTMxYWM5MGYyYmI1NzcxNTE5OWMwMzgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc1ZTFmYWQ4NjE0Yjg1YWZiNGYzODIwODZlZGZkZThmZmE0MTAyYTMwMmQ3NjA0YjNlMGE4NDk4MTYzNzYzNTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc0MThhNzZiZTc1NzI3NzhlNjUzNzMwN2QyNzY5NDdjMmViZGYyOTAzZTYwZGVmMmZmNzVlNmRhM2U1ZmM3NmQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_fbc44a8899fa403da2a94d92fb3b4050",
+      "statement": "`normalized()` clamps an unknown chat side to `left` and never leaves a nil slice to become `null` in JSON.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/appearance.go#L86-L106",
+          "version": "repo-lines-v1:sha256:ba006f6565fd3b1d117e477faf6c08b27cf541fd55ed3466c5e3c1f44f2a79c9:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYwODVmNTFlMjJlYTkzZGU1YzU0OTA2NjQ2MDI0MDZiMGYyZjIzYjkyYmQ0ZWI2Mjk0ZGU1OGE4ODZhYmIzNzEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY2MzliOGM5YmRlOGMzZjc1NGVmYWY5MmE3MDM2NzBkYjM3N2UzZTNhZTA5MTRhOGFjMDQzZDIwMDQ5NzU1YTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc1OWU5YzIzZGY0NTJjOWYxODkxNDVlODQzMzkzNTVkZGYwMmJhNGVhOTE2MjNiMzQ4NWJkY2IwYzBhOGMwNTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjVjNDM3ZTE4ZjA1MjE5NzUzMjFmMWIxN2I5NjUyNzZhMGRiODEzN2U3MzU1ZjE4MDY3ZmExNGZjNWE2Yjg2NmIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_2af6e8a2cc664d0f9d334d301c5f4ff1",
+      "statement": "`chatTabsSetting{Order, Hidden}` is shared by the project tab bar (`chatTabs`) and the composer button row (`composerButtons`), and an empty order means \"the built-in order\", which keeps an entry added in a later release from being invisible to an existing account.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/appearance.go#L15-L24",
+          "version": "repo-lines-v1:sha256:e5151dfdbe690c709e4dea56b262efd3a172b82d8aa6048112373797be53fbab:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNiN2JjNzA1ZTQxZTc3OGQ4YjY1NmJhYTMyYjEwZTI0NDU1MWUyNjhhY2U3MjVlZGNiZDA0NGUxZjYwNTczNTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUzN2M2OTcwMDlhNjZlZGVkY2M1YTZlZTM2Mzk2OGYwZjgzYWYwZDJlODQ3MDdiMjk0ZTgxYmExMTcwZTNlYWYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImFiYjMzN2NkNzdiZjFhNDhhMzRjZWQ2YmJiZTQ5OTViZDBjMGZhZDE1YWMxMTcwNTRmZTZmMWEwNTM1ODNkMWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc3OTFmY2QwYzZlMjEyMjE0MTQ0NTczMWNlNmYxYWYyMzg1NGFhYWY5ZTgzYmFlMTE3Y2Y5ZDZlZTRjZmE5MWEifQ"
+        },
+        {
+          "resource": "repo://internal/server/appearance.go#L26-L40",
+          "version": "repo-lines-v1:sha256:b1bca96541fe0d5d8cd65f9a18ea9f5ace9629a2e65aa589be0a8070d00c7dff:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ5MjczOTZlNzQ5MzFiYjZjYWI1NzRkZjg0ZDg5ZDUzYzdjN2ZlOTMwNTNlY2ZlNzhkZWZjMjZiM2I0ZjQ5YjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMzZWRhN2JiMGVjMDNkN2Y1ZWQ2ZGI2MzExMWI0NGY4NWU1MTRlMTA5MDVlYTBmYzljOTNiODYxY2YxNjkyNDYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFkMjRlYTlkZDBjYzhkYjY1NWRiN2I1NzIxNGM5MDQ2MzJmZDQyYTdkYmFkNTA2MDFiZThkOWMzN2QwOWZkODgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjYyNjI0N2U5NGIyNWRhNWNiMGNmNWFjZTQ4ODFjYWQwMzNmZmE1NmVjYjUyZmI2ODY5YjVkNmUwNDQxYzgxYmYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_c2ff2b3eb10d4f518bb378ed33156716",
+      "statement": "The appearance object travels on the existing settings endpoint: `GET /api/settings` returns `appearance: s.appearance(userID)`, and a `PUT /api/settings` body with an `appearance` field is applied through `applyAppearancePatch`.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/handlers_auth.go#L254-L254",
+          "version": "repo-lines-v1:sha256:ca1ed317456ab923667a566b7f40355faf29a8cc4f137d9c526649ab36c58e60:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiY2ExZWQzMTc0NTZhYjkyMzY2N2E1NjZiN2Y0MDM1NWZhZjI5YThjYzRmMTM3ZDljNTI2NjQ5YWIzNmM1OGU2MCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiY2ExZWQzMTc0NTZhYjkyMzY2N2E1NjZiN2Y0MDM1NWZhZjI5YThjYzRmMTM3ZDljNTI2NjQ5YWIzNmM1OGU2MCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTg3NzM1Zjg0NjkxODQzZWM0MzYxNzcyZWZlZGE1MmNkZjgzZjdlZGNmYTU3NzgzNmYzMDVjZDAwMTVkOTc5ZiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMDQwOGQ3MDk4YzkwZGY2ZDUwOGZiZTRlYWQxZDA2MWI4YzNjMmIwNzY0ZjY3MjkwNWZmZjRlMTI4OGU4OGFjMyJ9"
+        },
+        {
+          "resource": "repo://internal/server/handlers_auth.go#L300-L300",
+          "version": "repo-lines-v1:sha256:8dec9a71d972ee5a721f5ad0165c1c1ea9c701fa002f1d056f077802bc77f908:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOGRlYzlhNzFkOTcyZWU1YTcyMWY1YWQwMTY1YzFjMWVhOWM3MDFmYTAwMmYxZDA1NmYwNzc4MDJiYzc3ZjkwOCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOGRlYzlhNzFkOTcyZWU1YTcyMWY1YWQwMTY1YzFjMWVhOWM3MDFmYTAwMmYxZDA1NmYwNzc4MDJiYzc3ZjkwOCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYTc2MmY4YTQ0ODQ5NGQ4ZWU0NDRjNDhiYjliNTUxZmUxM2NlMGQzMTk0MWZhYWFjMTBhODM0MTY1YTU2NGM1ZiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYzViNTg2YzZjNDIwM2Y3Y2ExYjZjNTE5ODVhZDNkNDg1NjEyYTQwNTNiYzQ4MzMwMjQ3Y2QwYmYwZTk2ZjU2YiJ9"
+        },
+        {
+          "resource": "repo://internal/server/handlers_auth.go#L690-L692",
+          "version": "repo-lines-v1:sha256:ca593be47c239f54ca7c8a0e18cb8f68579cca93f839295833ab119cde4ac456:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNjk4NDk1Y2NmODRhOTNiMzM5MTM2MGIzZWM2ZWQxMzlmMGEwNWNjZDgyZTczM2ZhNWI1MjBmMzIzYjQyNmJhYiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZmE1NjRiNTBiZGFkNGE0NGI0ZDllMmY0YzRlYzlhYTAwZTJlNmRiMzIwMDkxN2RhODdhYmY0ZjE0MTlhNjhhZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMDEyYWY4ZTRkOGNlMTVmNjUxYjRjNjcyZjI3OTc1ZDkzMWNkMDVhYzdlYTZkZTU2MTgxNDg3YTU4N2ZkNWQ0NiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYTY2MmMwNTg2YjQzZjQ1Nzc5MmJkN2MyZmJhMmIxZDY4ZTNhMjJlZDkyYjgzMmFkM2U2ODdlYzg1MDdkZjJjMCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_b9157db25c9f443f93eb28eaef096e75",
+      "statement": "Memory decay needs no background job: `EffectiveImportance` returns pinned memories (importance >= 2) unchanged and otherwise subtracts 0.1 per day, and `ListMemories` lazily deletes a row whose effective importance falls below 0.2 after 30 days unused.",
+      "evidence": [
+        {
+          "resource": "repo://internal/store/store.go#L1702-L1755",
+          "version": "repo-lines-v1:sha256:5108217efd8000eff05e154b55874b6c645761f7bfa671cba05424761a2a2eda:eyJzZWxlY3RlZExpbmVDb3VudCI6NTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg0YzUwMDA2NGNhMzU1M2U1NDE3MzZjM2YwYzk3Y2I3NzExZTUzOWNkMmJkNDE2M2JmMmViZmYwNGQwMmNhODEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZkNmFlMjEyMmQ4YzU4MDRkM2I5ZjYwZWE4MGZiOTRlZmYzMTcyZjcyMTQ0ZTAxMDVlZjNhY2JmMjNiZTJmNzMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNkYzg1ZDcyZTMyZDM1YzJjZmIxODg5YTMxNDE2ODhjMzUyZWZhZjM1MjA1MTJjNDAwOGI3YmM4NDc5NTRiY2UifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_57a9a8dabb414fe68df01f9f011634a5",
+      "statement": "`pending_asks` is keyed by `(project_id, session_id)` and upserts on conflict, so a second `ask_user` in the same session replaces the first instead of accumulating; `ClearPendingAsk` removes it when answered, timed out or superseded.",
+      "evidence": [
+        {
+          "resource": "repo://internal/store/store.go#L141-L150",
+          "version": "repo-lines-v1:sha256:5e402e27803aac9cf37e2de737cfeb52587ec5f4181f9dfbd7dd1a8949184ef0:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM3NzExYjc2MTEyODY5ZDdhOWY2MjVmOGIxNjE2NzhjNWVmODI2ZmUxYTFjMjhiNGVlODE2NWE1ZGFlNDYyMzYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ5OTY3ZWMxZWQzODM2ZjhlYjE3YWZmMTcyYjViZmVmN2RlNjA0ODVhNDM5YzZjYTExYzU5MWUxNzU1NzM5YWUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM0YjIzZjFhMzU3MTFkYTAyM2JjMzNiMWZkZGY2Nzk2YjIyODdiNTk1MmY0YjJlY2M3NzE4NmVhZTNiNmNmNWEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjhiODg1OTBjYWNlYTI3NWJkZjVhOGMxYzcxNjUzZTVmOGJlMTAyZmMxOWNmYjVjMDZjZjljYzI1YmQ0ZDk1ZTEifQ"
+        },
+        {
+          "resource": "repo://internal/store/store.go#L825-L855",
+          "version": "repo-lines-v1:sha256:deeafbae8babc0ad1f41fd1642da561f6a294eed410b2c6484bed69e4353a3e9:eyJzZWxlY3RlZExpbmVDb3VudCI6MzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM5YzQ1YTNlMGFjNjU3MmNiYjhiOTBmZTM2NjEyYTY2MTFlYWQ5MDJmMzZhZjA1NjVhMTY2YmE4MTIxNDQzN2QiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRjNjNlNTE1NjI1NDk3ZmQwOTJlY2M2NzI3MzUxNzRiNjE0NDkxNTEzMGQxN2E5YTkwOTY1MzFiMjQ5MGRiZDkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJkNjQ2NDI2ZThjNjQ0MmUxOTYxMTQwNTczYWU3NzYwYmJmZTU5OTFlMjViMTAxYzI1N2E1OTM0MWNjZWYzM2MifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_98fde6ab7376405f80e4c62668b7ac8c",
+      "statement": "`plans` is keyed by `project_id` alone, because a plan belongs to the project rather than to a chat session.",
+      "evidence": [
+        {
+          "resource": "repo://internal/store/store.go#L136-L140",
+          "version": "repo-lines-v1:sha256:8859369e84409f803b4117f539fffae2c87d00822931fb1405534da1859fbd08:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOGY4YjU0YjllNWFiMjE0MDYyZjRmZWU2NGQ1ZTIxZDAxOGU5YTRhYzNhMGU5NjEzMzE0MDNkYWM0ZjMwZjlhZCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDk5NjdlYzFlZDM4MzZmOGViMTdhZmYxNzJiNWJmZWY3ZGU2MDQ4NWE0MzljNmNhMTFjNTkxZTE3NTU3MzlhZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYTg0MDIzMzA5N2RmMTRmMjE1MDY0NDVmNzkzZjM5YzM0NDVhM2RmMGE3MGFjYmY4OGU2M2FmZDZiMGU1ZmU3NiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMjRjN2Q4MDA2YjMwYzAwNjUxNTE5OTNmZTZiMmUyN2E5NjVhZTYxZTFkYWMxYjRkNWQzOTIzYjIxMjViMzc3MSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_382df865bbfb41d0935299107df27766",
+      "statement": "Memory vectors are packed little-endian float32 into the `embedding` BLOB, and a row written before an embedding provider existed has a NULL blob that `decodeVector` turns into nil, which the ranker reads as \"not comparable\".",
+      "evidence": [
+        {
+          "resource": "repo://internal/store/store.go#L1656-L1690",
+          "version": "repo-lines-v1:sha256:7d3ac241c1bf95f664850a51f2c9baf0edd54b86f7d2e9c68e7586f30af17c38:eyJzZWxlY3RlZExpbmVDb3VudCI6MzUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU1NjA0ZmY2YWRhNDExMDJlMmE3OTFjNTEzNmI3MzA2MTM3OTBlMWRlYzNhMDFiYWQxMzUxZTU3ODU5YWY0NWMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY3Y2RhODJkYTYwNjIzOGUwNWU2MjM5OTU2OWM1ZWUwMzk5MzQxOTY0OGFlNWQ0M2EyYmY4Y2Q2MzQ3ZjgyNjMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjMyOGQyZWRjZjRlMTE1MjQ5MzlkNjllMDE5NjAxNTZiYzgzOGRiNjY4ODc3MDkzODQ4YWE3MTUzY2EwODhmY2MiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFhYmY5ZGU5OGU1N2I1MDg2YWVkNGZjYTk1NzMyYzBiODg0NGQ2ODMxZTgyNjIzNGVkZDU5ZmI5ZmYzNjdkOGIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_8fcaa7ed507a488b8c7bb7a9a2e54b50",
+      "statement": "`migrateLegacyUsers` drops pre-multi-user login sessions and, when no `users` row exists but a legacy `password_hash` setting does, creates the `admin` account from it and deletes the setting.",
+      "evidence": [
+        {
+          "resource": "repo://internal/store/store.go#L421-L450",
+          "version": "repo-lines-v1:sha256:7209ab4be6a3ea66c24fe7409b8c43fbd7788d0fc66e7386db00008b9dca1c7a:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU3MGQ1OTk5NDIzMzQ0NDRiYjVmOGI3YjE5OGI0MzA2YjIyYTFhYjE5OGI2MGEzNThmMzc2ZjBhOGFkMWFiMDEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJjOTI0OGVlZmYzNTU5Zjg0NzIxZmRiYzY1MDkyNDA1YTU2ZTdlYWFmZWExMmI0MTA5NjcyYmM2MGM0NjkyNTUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJmODFiNjUzM2E0NWQwMGEzZjQ2ZTQ2ZmIxZjI1ZDFmZDQyNmIzOTFhZGZmNWJlMjllOWZhMzE3YzFmNDM0YWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJiYjZmNTRkNDg2YzIyZTBlOWRjZWNlYjcxYzM5OWY5N2Q0ODQyNzc0MzhkNGQzMTQ1ZjM5NmFjZjFhYzkxOWIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_356a90dc6eb14bb88b2af59da4ab6d10",
+      "statement": "`handleListMessages` normalises `tool_json` on read: valid JSON passes through, a legacy bare `background` marker is upgraded to the quoted constant so old rows keep their styling, and any other non-JSON value is dropped with a log line rather than failing the whole list.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/handlers_chat.go#L120-L140",
+          "version": "repo-lines-v1:sha256:f2df6510aceee9cbdc0d2ea4b34821b3333753fd4f075f39a03aee36ad8c4414:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNhMGMwYWVmYTFhNzljM2RkNDM3ODliYzAyMjZlYTg0NDhiZWI3OGI0NGYxNzFlOGRkZWJkYTcwZGE4YmQ2YmEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVlYjY2ZWVhYWZkYTE0NmQ4Zjk1YmY5MDNhOGU2MmNkNTI3YzBlZjBhNDQ0NTMwODMyYjg3NzVjYzM0YjYwZjgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBjOWEwODU3NWVkMTExM2Y4ZWY1YTk1YzE4NzM2MzU5NjliMDNhYjgzZmI2MWE5NTkyZmRkYmNiMjcwZWFiN2MiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI0ZmQ4MDE2NjRjMmQwMTA2ODg5NTY5YmFmM2RmOWEyZGViYWQzNTllMGQxYjlmNmI2NjRhMDQxMTEzNWNlODcifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.9.0",
+    "at": "2026-11-15T05:31:58.285Z"
+  }
+}

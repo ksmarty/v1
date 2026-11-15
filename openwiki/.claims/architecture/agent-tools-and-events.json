@@ -1,0 +1,306 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:a35a831c47a8cf18d44ac3ab8285827ca3d419a696f9cb5c51766a2f9b3d1a4d",
+  "claims": [
+    {
+      "id": "claim_eef04820a9944dd8865831583e22255c",
+      "statement": "The model-facing tool list is assembled by ChatParams.ToolSet in internal/agent/agent.go from hand-written llm.Tool values with JSON-Schema parameters.",
+      "evidence": [
+        {
+          "resource": "repo://internal/agent/agent.go#L133-L143",
+          "version": "repo-lines-v1:sha256:4a0359ae87f64fcfc96eed6079a5c56cab59df3312b9965a14f17d4d7f265ade:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhlNGUwZjliN2VmMzE4YzU4ZWJhODlkMTFjYzIxZTRhOTQ2ZGExNjY0YTlkZjAyMmYyZjU0YTM3ODIwZTk5NTgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY3Y2RhODJkYTYwNjIzOGUwNWU2MjM5OTU2OWM1ZWUwMzk5MzQxOTY0OGFlNWQ0M2EyYmY4Y2Q2MzQ3ZjgyNjMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjlkZDRmZDcwZDE5ZmRlNjI5NGY0NzQyMzBjMGNiZDRjZDNlZWNjODAxZGYxYjliZjcyZmMzMWJkNzVmMWEyZTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM4YThlZTcyZDFkNWViNDdjYWVlYTYxMWQ2MmZhZDVlNGI2ZmI1MDc4ZmQ1YzZmZmViNTdkYmI4NDg3ZTg5MjgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_fb0bbffa0af045aaa2908585089759d1",
+      "statement": "Plan mode filters the tool list through planSafeTools, which drops every tool named in planBlockedTools (writes, command execution, git, containers, preview restarts, todos, renames, memory writes, extension and skill installs).",
+      "evidence": [
+        {
+          "resource": "repo://internal/agent/tools.go#L153-L186",
+          "version": "repo-lines-v1:sha256:3f653c7e1957b18f39e05bc0e7ceafa9fe39546dc599bebf2dda6dc9429c4ef0:eyJzZWxlY3RlZExpbmVDb3VudCI6MzQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjEwNDFmNWZjZWI3MjVkYmZmNGMxZThlMmExMTllNjU2OGRkZTQ5NTgxMGUxMjgwNjQzOTA5NGJkYWYyMzYzZDciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5OGZjYTQ5ZDRiM2M1MDNjZTgyNDY3NmI1MzNjMzNmN2RmZjllZGQ1NTk4Y2FiY2E5Nzk5MTc4NGU5YmQ3YTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc4YmRiYTRiMjZlODAwNTVhM2E0ZmYzNTI0MzEzMjRhZGQ5ZDU5MTAyNjAwM2U4ZDQ2ZjgzY2Q4ZGE1NDBhZTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI5Nzk1NWE5MzQyZTUxNDI1ZmRlMjU4NjJjMDU2OTA4YzlhNzIzOWEwNDhkNWRiMjQ0MjE1MDQxNjE2OGJkOTAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_293e907b9e374fcab83fa8ac3066ffb9",
+      "statement": "Executor.ExecuteWithDisplay is the single entry point for running a tool call and returns the model-visible result string plus an optional display payload.",
+      "evidence": [
+        {
+          "resource": "repo://internal/agent/tools.go#L188-L203",
+          "version": "repo-lines-v1:sha256:f9de746fb4a8e09ad541f3e268f6a068b2c492c20c73a37d0db4f5973ac0ea6b:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBlYjYzZTJiZTQyZjFkZGI2YTAyMDdmMThkMGQ2YzZhYmVmNWI1NjVkM2Q1MDkyNjBhYTA0ZGUwY2M0ZWY1MDUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM2MDBkMjNlMTliY2I2ZjgwNDljOGVlNWJiODdlNjg5NWI3NDIxNzNlNmFjOGU3MjMyODRkNmJiZWZlM2EzZGQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE5ZTJjZTNkMzc4MDczNzNiY2FjNzQ2NGUxMTg1M2JjNmE4NmFkNzRiM2U2Y2E2YzA4YzY2NzRjNTNjYzEwMzAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_b8271cd51bbf483984102a12aa5c8cfc",
+      "statement": "Tool failures are structured as ToolError built by toolFail, carrying recoverability and a suggested next step.",
+      "evidence": [
+        {
+          "resource": "repo://internal/agent/tools.go#L959-L970",
+          "version": "repo-lines-v1:sha256:561036079525e9faf489f164c03d7934567262371413f71c7065e6fa902511b4:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQzN2ZjYzhkODEwYTg3YmVmN2E5Zjc2MTMwMTViNTg3MjE3N2FmMjE1NzQ0ZTZkMjZhODczOWU0NDdlMzJlMmMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIyMmRmZDkxNjRhYjUxODBkYjM0ODNiMjQ4Y2QxNDU3YTVjZmZmYzkwMDE2ZTcxNmVkZTVlZTczYzY0MWQ3NDYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI1OTIwMWJiMzViOTU2ZmFmN2RiMzYxYmJhOTdjMDNmODEyZjE3MDU3ODRiNTlhNjU5NDdmYWQ4MDA0Nzg0MGYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdjYjVlMzU3MzJmMWYyNDQ0OThiYzZlYTNjYzNiYTRiYTQyOTIzYmQyNzVjNDk1MmUzNTc5MTU4Y2MyYjI0MjcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_40c45dbdf2334049b47b78f5ea343e64",
+      "statement": "Tool results are stored as JSON for the UI but re-encoded as TOON for the model, at both the live call and the history replay; encoding only, with no decoder.",
+      "evidence": [
+        {
+          "resource": "repo://internal/agent/agent.go#L453-L455",
+          "version": "repo-lines-v1:sha256:caadc222dafc423e3140876d042758b70467e996e30bd829f2b4e8713bb744f2:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYjM5OGE5ZDg3YzMzZDlmY2Q1MmZhZDcwZWMzNDQxNDBkNWRlZDY4ZjY4YjFlYmM5Y2Q4YTA1NjRlMjc4ZDVjNyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYjMwODhkYzUzNmE3OGFkZjY3YmJkMjhjNTE1YTg1NGJiM2JjN2FkZWQzOWE2M2MxMWFlODU2NDlhOTdjMTQyOCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMmM5MzVlMTE4NzFhYmM5ZmRlOGViNzlhNGFhOGYwYWViNDViOTM3ODFkNWIwNGRlYTFhNTBjMjg2NGVkZmJjZSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiODI2ZGY3ZThkMzBiYTFkNzI5Mzc0OTkxOTliMTliOTVmMjEzM2VhOTk0Yzk0NzJiZjQ0ZjVkMDZjMzE2NTdmNCJ9"
+        },
+        {
+          "resource": "repo://internal/agent/agent.go#L801-L804",
+          "version": "repo-lines-v1:sha256:0cf33441288167e04a262adf22cecb0518b4e8429f28e054a1cd07a9db1337bf:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMDQ3OWIzNmJjMjE1MjlhM2U3ZDEwMTUxYjc5MWIzMzg2NWZkOGYxM2ZkODllZjhjNTE0MDQ0NWNjZDc5OGRhZCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMWI2ZDY3ODk2MzQ0NWJkZjZmMjJhMDU4YzNkNWJjYTg1YTU4ODliMDg3YTI0MTVkNzA2YjFhNzRlMjIwMTZjMCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYzAyNTE4ZmE0MTVhYWNjZGU3NWY5YzRmYjVkMTJiNDJiNTFmNzAyYjMwOGE4NDkxZDgzYzAzZTk3NDllN2Q3YyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNDM0NmU1OWZmNjg4NzllY2QwZGE3MmZhYmQ5NzAzMmZkY2E3ODZhMzYzNzJlODg0MjI0ODc0OTZmYTdiZjFhNiJ9"
+        },
+        {
+          "resource": "repo://internal/agent/toon.go#L1-L12",
+          "version": "repo-lines-v1:sha256:d3d7327a9826ec3f74df34f12fab8b37f813f281760a04565e63e786662f6190:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdiMTg2YjgyYjEyNDZmOWY5MDBlMGZjY2YxOWUwODRjZTVlZDA5ZjZlYTJlZDRlMDY0ZjZhNTZlMGIzNzliNWMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYyMjYwYTY3NDkwZTRhMzU5YzE5ZTQxNTc5ZDQ2YmM2ODNhNzgwZDhlMTEyZmMxZGZlYTkzYzQ1MTUxYWM2MGUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJmMTgxY2RjYTJiN2I0NTZmZjg2MmRkMzUzODYxOTZmN2RjMDUxOGYxZjUyZjU5NmM1OWE5MDk3MDI5ODg5YzUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_3c174125f64842f3bddd6b21559466b6",
+      "statement": "TOON objects decode to an ordered []tField so object key order is preserved in the encoding.",
+      "evidence": [
+        {
+          "resource": "repo://internal/agent/toon.go#L17-L40",
+          "version": "repo-lines-v1:sha256:7a5556297b53d4610882987799a7298f52eb552cfdac49bb9a6b628271a69135:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBkNzAzZmQ1OTI3M2FjYzhiNjQ1MjkzMmYzOTI4YTgyOGY0OWJmMTI1ZTQwOWQ2ZjkzMTE2MzJjMDhmMGQzNjgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNlYjBkMTk4NjA1ZDg2NGZlMzliOTYyOTc0YTQwYzhlYWUyNTRkZGFkNTY5NTBiYzBmM2JjYmM5MWQyNmYxMDkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRkNWRlNjczOTBjZTMyYmZmZWYwZGU5NjRjMWM3MjAwOTk1ZDY4Y2EzZWVjYWRlYjNkZDA5Yjg3MmE1NGViNzciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjZlZjA3ZTEyMTJhZWI5OTcyMGU4NDlkMTVmYzA3ZTI5MDY3MmFiODQ3Y2NlMjZkMDlkZmU3MDk4MjcwYjBmMWMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_a78e5596ea194419a52e70abcea84ddd",
+      "statement": "A replayed tool result larger than maxHistoricalToolResult (256 bytes) is replaced by a one-line pointer noting its size.",
+      "evidence": [
+        {
+          "resource": "repo://internal/agent/agent.go#L246-L252",
+          "version": "repo-lines-v1:sha256:08874d3454dba606e1de088be1180c3eee3ead2ed6b0b37149d30dc902f40dc7:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYzEwZTJkNzg1ZGVjNDU4NTBlMmFjNGZkN2FmYTU5MzAxMGY1MGFjZWI1NzM5OGZjNWEwOTkwMWMxZDdlMzk1ZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYmU3YTUyNjgyMmZlZmZiYzQ3ODVjOGU2YzQzZTMwNTcyZjI4OTM3ODU4Y2JiMzM1OTRjM2YyMGEwZWI0Mjk2OSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYWQ3Mjk3NTVhODM2ZTNiOTc3ODJhNTQ4MzE4NmU2ZmNiNzVlZDk1MzI2ZDE3NDAxY2NjOWMzM2UyZDEyZjkyMCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYjRhNjJmMzE4Nzc5OTRlMjc3ZjNkYmZiMjMwMmQ5YzA2NjkxZmI4YjI4YzU1Njg1MWQ0OWQ1MDFlZTA3NzQyYiJ9"
+        },
+        {
+          "resource": "repo://internal/agent/agent.go#L854-L865",
+          "version": "repo-lines-v1:sha256:3322aed1532ad78f24ea56410121930a24299cf3c95ca11321f94ac8fd0d6b82:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU3NjdlZTM5NDNhODk3ZDg0Mzk0NDg4OTcxZWNmYWE0NTkwY2I5YjQxZjUyNWI4ZGJiZDVkNGM3NGQwYmE2MDMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBjZWZmMjJmZjFmOTMzYjk1MGU4ODJkNjY3M2I3MWIyNWNiOTJkYjAwODM3MDA4ZTIxMjRlNjI5Y2UwNWVhYzYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc3ZDZlZmRjOTljYTQxY2I5NjZmOTAyYmFjY2IyNGJiMmI1NGIyMjAzNTI4Nzk0ZmFmNDM4MTQyM2M3MmIyMjYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJmODQzOTExMjUyNDgwYmIxM2ZkMGJiZTEzN2U2Y2ViNzM4OWI4OTc3MjRlOGQ4ZGEyOWZlYTg3MjdlOWE5ZjAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_8b754bb2bcdb4ca789b746ef5a024315",
+      "statement": "stripBrokenToolCalls discards tool calls whose arguments are not valid JSON and returns their names so the caller can explain why they never ran.",
+      "evidence": [
+        {
+          "resource": "repo://internal/agent/agent.go#L867-L884",
+          "version": "repo-lines-v1:sha256:6042c4e07224bf9c82178a3a2baa2039861fc8e711adb5147793d03f3437e76b:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg2MWRiZWM3YWViNTRiNjJiMDkxYzQwYWNhNzVmOTg0NjI4Zjg1NmRlM2UwM2EyMmUwNWQ1ZWU4YmM4MzIwYWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNjYjI4YzUwNWRlMTlhMTUzZTdmY2M3NzI4YjM2ZjZjOGIyZjRjY2VlNDc5MjUwNWIxZWU3MGU4NTY4MGQ4N2YiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBkNGZlODE2OGFmZTlmM2ZkOWJmNzg0MmE2N2IxZDE0ZTIzNzU2NjEyZjQ4OWYyZDVkMGM3OTQxMzFhZTk1MjMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk4MGE5ODIxNWUwYzNiOGY1M2Y4YTk1NzY2MDBiYTBkYzk2MzBiNGE0YzI4OTg0MmVlMGFjOTVmNmUwNjBiMmUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_f700645bd4064d50976d2db4d5d5547f",
+      "statement": "toolDisplay builds a {kind, ...} display payload for ask_user (answers), list_files (files), fetch_url (page), web_search (results) and create_extension/create_skill (extension or skill), and returns nil for other tools.",
+      "evidence": [
+        {
+          "resource": "repo://internal/agent/tools.go#L208-L310",
+          "version": "repo-lines-v1:sha256:09d5e8530aa64a206425db62289709504915c12c015aa1bcedcbe42a77d5e488:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAzLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiI4MDgwNjZlZTA5Y2U3ODllNzhiYzg4Nzk5MjM2NmRhODQ5MzQ0YTkyOTNjNjg1MzRkM2YyYTM4MzZiNTc2OTY0IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiJlYjU5MjhlMmU3ZDFlMzhiNzY2MzY2YWRhNTg3MTVlOTdiMWRlMTM5NDMyMmUwNGVmMWQ5ODNlYjRkODQ0NjE1IiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiJlYTk1NzRhZmFmMWZjZWI2ZGEwMzA1YjZlOTM2MTJlNTk4N2VhMWM4ZTI3OTBjMjI0YTgyMGQ2NjlmNzc5MzBhIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiIzZTI0YzFiN2Y2NGQ4ZjdkMmM3MTFiYzc2NGIzODUzNzUxZTJiYzdlYzc2NzAzNDQ2MGI4N2FhNjEyMWFjOWVhIn0"
+        }
+      ]
+    },
+    {
+      "id": "claim_92405266d7b84304ad695036d4636ed3",
+      "statement": "The display payload is stored on the tool row and delivered live on tool_end as Display.",
+      "evidence": [
+        {
+          "resource": "repo://internal/agent/agent.go#L795-L802",
+          "version": "repo-lines-v1:sha256:6834044c980d99934cd46441d0d10bfd38acc64646df8fdb864b47b2661c44de:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZTY4MDZmMTU1YzVhYzFhZTI3MjJjYTA2ZjJhYzljYWRjYjg4MWI5MTIzY2I2MjRhM2MxMDQ3NWI0NDQ5ZGMyZSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMjA2OWQzMTA0YWFkNzA1Yzg4OTc1ZDEyYjNiYjgwNjJjMzJkODg0ZmJmMDVkYTAyN2VkMjQ1MWM0ZjFhYzg4NCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZmZjOWQ0ZGU4OTMxNmMzOGRiM2I5ZTQ4OTVlYjMwMjc2NWJhOTNjNTI2NzVhNDdkNGRiZTU1N2VhMTIxMzM4ZiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOTUxZTcxYmM3YmM5OThhODc0NzMwMTI3YmE0NjBiOWU0MmZmODQyZmEyNjY2ODQyZDA5MWJhMDBhZDZmZDMwMiJ9"
+        },
+        {
+          "resource": "repo://internal/server/harness_chat.go#L1431-L1431",
+          "version": "repo-lines-v1:sha256:4596fee15cffcc609ff5aa5656261ec3436b128ed17b054172d2ba278601623c:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNDU5NmZlZTE1Y2ZmY2M2MDlmZjVhYTU2NTYyNjFlYzM0MzZiMTI4ZWQxN2IwNTQxNzJkMmJhMjc4NjAxNjIzYyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDU5NmZlZTE1Y2ZmY2M2MDlmZjVhYTU2NTYyNjFlYzM0MzZiMTI4ZWQxN2IwNTQxNzJkMmJhMjc4NjAxNjIzYyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMThjYmVjOTRiMmU2ZGIwZTA5YjNlNmE3OGRmZThmNDIwYmRmY2U1MGUzNmMwNWJkODIzMTc4NTEwOThmMmJjYSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYzMwZjRjYjc0MjUwMmVmN2FmZmQzN2JjZGNlNTkzYTNlMjQyYjUzMmVjN2YwOTcyMjE4NzJkMTlkYjQxODk4OSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_fa10898a6bbf44b183d9f712d0c6972c",
+      "statement": "Extension tools render a custom chip label from their declared display.summary template, filled from the call's arguments.",
+      "evidence": [
+        {
+          "resource": "repo://web/src/components/ChatPane.tsx#L1370-L1383",
+          "version": "repo-lines-v1:sha256:70720c711210dd01f026111fcd83b4e8c0185243f6d8902316dba911ad38400c:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA2NTk1ZjRlZTVmZjYzZDUwOTUwNDE5ZGMzNDQxNDUxMzg1MWRjOTczNmZkMTdhNGY3YmZhOTMwYjI2MWI2ZjIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ0MmE3YzBmZmZmOGJjZmJiZWJmMTFiMDk5ODc3NmY3MGVjNDExNTcwMmI4M2Y2YTFlOGIyYjIwYjhhNjBmODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQ2YjY0ZWJiYmZlYmY0YzU3YmRiOWIwMWFmMTQzMGE1YTc5MDQ3NTZiZWM3OTQ3NDQ3ZWVhZGUxZWE3YzU0M2EifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_fd64f050b3bf455c8e359b27a941728d",
+      "statement": "ChatEvent carries Type, Name, Detail, OK, Error, Display and ToolJSON, where ToolJSON is the bare marker name rather than the stored JSON string so the client can compare it against plain strings.",
+      "evidence": [
+        {
+          "resource": "repo://internal/agent/agent.go#L65-L87",
+          "version": "repo-lines-v1:sha256:23e12c1673b2b4c34eef441859d5148e9f8cd8554a1096837c8c5ee267c8408c:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNmMTIyZDE5NGVhNWFkN2MzMWFjMmEwNjlkMjhkNjE4MDBkYmZmN2E2OTA2MTcxOTBhNjg1NGUyZjI2MzViODYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZhNGVhZTQ0NGZmNWEyNzRkZjRhZThjYjI2MTE1ZTRmN2IwOGFkYjBjNThhOWFiNTQ1Mjg5MGE0MTNiOTNkNTUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjljNWU4ZTFkZTNjZTAwOGE4YTUwZGM3NjJjMGMzM2FlYTJiMjk2ODNjZGNkYzU1NTVjZjUwNjdiMmJmZmIzNzUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE4NjcxYTM0ZWY2NzhiMGM0MjIzMWM3ODExY2ExZDJlM2IzOWY3YzA5ODMyYjM0ZGQ0ZTY5ZmY0Yzk1MDQ0YjMifQ"
+        },
+        {
+          "resource": "repo://internal/agent/markers.go#L26-L34",
+          "version": "repo-lines-v1:sha256:3af3caf85be164b6429f6ec87d52223a6ee3d54a4f86ab341948d55fdfb90494:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNWFlYTdmMWMwN2ZjNzA3NDU0OWRmMzMyMTM2YjBkMjUzZGNjZjI4YjMzMmFjZDY4Y2M0YTFiOTkwNTg0MDljNiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZjZhYjM1YWE0MzlmODNiYzE4YmMyYmJjYzk1MmUxMjIwOTE4MDM0NzQwOTgyMWFmYTc2MGRkNjBkZTlkNGI2NiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMzdjYzg3MDljNmEyZjBkYWJmNTUxZGYzNTQ3NGNiODQyY2VlMmQyMjE1NzNlYWRiZTk2Y2ZhYmRjYzQ3YjgxMyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNzYxYzE4MjQ0Y2NiMWEzYjRkZGUwZGNjOThmZjBlYTc2MWZlNjY5ZWNhYTUyOGQzMWFlM2UzOGZmM2QxOTg0MCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_7c66e2b4825d41d3a949d153bba65534",
+      "statement": "A tool_start event carries the tool name plus a short detail (path, command or question), and tool_end carries success, the result text and the display payload.",
+      "evidence": [
+        {
+          "resource": "repo://internal/agent/agent.go#L885-L900",
+          "version": "repo-lines-v1:sha256:2ee3afa34af64da2c9e9be14b5a57594e370095a9944c714b898783724a87dd2:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJkY2FhYjdlMmI1ZTk0MTdkYTMzM2Y4MGU4OTQ4M2Y0ODM4M2YwODMyYjA3NzQ0NmUzY2YyZjdmYjc4MjBkNzMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY3Y2RhODJkYTYwNjIzOGUwNWU2MjM5OTU2OWM1ZWUwMzk5MzQxOTY0OGFlNWQ0M2EyYmY4Y2Q2MzQ3ZjgyNjMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc0MGY4ZTJmYmVhZTAyZDkyOThiODU2MzMxYzMxOWQyNTVmZjY5NTBmYmRhODFlMGMzOTJkZjk2ZDMzNGMyN2IiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjUzZmQzZjY3MGI1MTk5NWI3Y2EzZjMyNzE4YjNmZDRiNWZjOTk0OTVjODFhZGUwMWI3NWM1MGRiYjIwNDljNTYifQ"
+        },
+        {
+          "resource": "repo://internal/server/harness_chat.go#L1407-L1407",
+          "version": "repo-lines-v1:sha256:50c4fa744ca71f1803cd1ab488b750c58ce4e068a33a266a573bcb95a264a8a7:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNTBjNGZhNzQ0Y2E3MWYxODAzY2QxYWI0ODhiNzUwYzU4Y2U0ZTA2OGEzM2EyNjZhNTczYmNiOTVhMjY0YThhNyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNTBjNGZhNzQ0Y2E3MWYxODAzY2QxYWI0ODhiNzUwYzU4Y2U0ZTA2OGEzM2EyNjZhNTczYmNiOTVhMjY0YThhNyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNTlhZDNkZTg4NGUwM2Q2Y2FkY2U2ZTQ1NmY0Y2U2ZGZiODkxMGMwODJkMWNmYjJkYmVmYWE0MjMwZmEzYjFhYSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTA1NGQ0MWE0MzhiYmYzNGZmYzc3ZjRjMzM2MjFjNGU5Mjc5NzgxMjQ5NDNmYTIxZjFkM2RiMTIwMWUyMmNjNCJ9"
+        },
+        {
+          "resource": "repo://internal/server/harness_chat.go#L1431-L1431",
+          "version": "repo-lines-v1:sha256:4596fee15cffcc609ff5aa5656261ec3436b128ed17b054172d2ba278601623c:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNDU5NmZlZTE1Y2ZmY2M2MDlmZjVhYTU2NTYyNjFlYzM0MzZiMTI4ZWQxN2IwNTQxNzJkMmJhMjc4NjAxNjIzYyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDU5NmZlZTE1Y2ZmY2M2MDlmZjVhYTU2NTYyNjFlYzM0MzZiMTI4ZWQxN2IwNTQxNzJkMmJhMjc4NjAxNjIzYyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMThjYmVjOTRiMmU2ZGIwZTA5YjNlNmE3OGRmZThmNDIwYmRmY2U1MGUzNmMwNWJkODIzMTc4NTEwOThmMmJjYSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYzMwZjRjYjc0MjUwMmVmN2FmZmQzN2JjZGNlNTkzYTNlMjQyYjUzMmVjN2YwOTcyMjE4NzJkMTlkYjQxODk4OSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_821bfdd1f3e84b54a3f8f69a8a5728b1",
+      "statement": "isNoiseResult treats a bare success acknowledgement (ok:true with no error, content, output or results) as noise, and the same predicate is applied to the live detail, reloaded rows and the fold summary so a live card renders the same after reload.",
+      "evidence": [
+        {
+          "resource": "repo://web/src/components/ChatPane.tsx#L1348-L1365",
+          "version": "repo-lines-v1:sha256:e0f803c5dde22b4014129b5bcec37a0ef93b4a4ded0797a4aa13a48882636c2b:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI1YzU2MWNiZDFkZWEzZDUxZDY5MjdjODUwYWEyMzNlZDk3ODIwYmQ3YmNjYTg3MjA5NTU3OGM3Yzg1NWY1N2UiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZiOTk2YjUxNmI5MjIxZDkwMzhlODI5NmY4YTI1YWVhODc1NzgwZjFlZjY3ZjIyYTdhNDMxNzQxMzE5M2QzN2YiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJhNjhhODRlY2I4MzRlNDM3M2RjNmEwNWM5ODYzMjRhNmYxNjgyMzBjY2EwM2UwNzRmNWI2NjY4N2RhODI2NGEifQ"
+        },
+        {
+          "resource": "repo://web/src/components/ChatPane.tsx#L3853-L3853",
+          "version": "repo-lines-v1:sha256:6378eb3584cc1171b5f73bd8b9f710d608e7d696b0de001cdd6e5c9f93a4f6ac:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNjM3OGViMzU4NGNjMTE3MWI1ZjczYmQ4YjlmNzEwZDYwOGU3ZDY5NmIwZGUwMDFjZGQ2ZTVjOWY5M2E0ZjZhYyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNjM3OGViMzU4NGNjMTE3MWI1ZjczYmQ4YjlmNzEwZDYwOGU3ZDY5NmIwZGUwMDFjZGQ2ZTVjOWY5M2E0ZjZhYyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZWI1OWMwMjFhNTlhODA2MTBkY2E2ZThkNTE4MTNkMzljMjA2ZDUxYmQ0MWY4ZThjNjZlNDYxNTZhYTcwM2ViNSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZWMzYjc1ZjMyODBjNmJlNjEwYWM2MzMxYTc2OTg5YmJlNWRlMDRkZmJjOGY0OWZmYTNhZDE0ZWI1ZTA4MmQ3MCJ9"
+        },
+        {
+          "resource": "repo://web/src/components/ChatPane.tsx#L4926-L4926",
+          "version": "repo-lines-v1:sha256:98c5d67f901302feede3d0fc7cea882ce22b5688d751efd36f6391a5a7139b26:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOThjNWQ2N2Y5MDEzMDJmZWVkZTNkMGZjN2NlYTg4MmNlMjJiNTY4OGQ3NTFlZmQzNmY2MzkxYTVhNzEzOWIyNiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOThjNWQ2N2Y5MDEzMDJmZWVkZTNkMGZjN2NlYTg4MmNlMjJiNTY4OGQ3NTFlZmQzNmY2MzkxYTVhNzEzOWIyNiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZWJjYjRjOTI1NWIxYTkwYWUxYWY4MGMzMzkzZTE2ZTFlMDkwMWM4MTg1NTg1YWViNThhM2YwOGY0Y2NiOGI5YyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMDQ1NzM0ODE3NGE5N2M2MTNjNDk4MmQ5OGRlNWQ4N2MyYzU2YjU3YTgyNzczYWEzMjRkM2Q3MDQ4NjZkNDQyYyJ9"
+        },
+        {
+          "resource": "repo://web/src/components/ChatPane.tsx#L8375-L8375",
+          "version": "repo-lines-v1:sha256:f6ede06733521dc53065f0aaae110c816e4c5922c3e9f5ed8494027fa3e7ec88:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjZlZGUwNjczMzUyMWRjNTMwNjVmMGFhYWUxMTBjODE2ZTRjNTkyMmMzZTlmNWVkODQ5NDAyN2ZhM2U3ZWM4OCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZjZlZGUwNjczMzUyMWRjNTMwNjVmMGFhYWUxMTBjODE2ZTRjNTkyMmMzZTlmNWVkODQ5NDAyN2ZhM2U3ZWM4OCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNTk5MjQ1NTYwZDMzNWVjOTBiMjFlNDliNDFhYWY1YTY3MTAwYmZiMmI2MDE5YmM2YjcxZTgwYTM4MTM5NWZmOCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMzUzYmRhZmZhYjhmOWM4YjMyY2ZjMDIwMDI3ODc3ZGEwOWUzMjNhOTQ3Mjk0ZWEzOGNmNjViYmY4NWE3NzFhNyJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_e411a89ccffd4f1eb665cae94c157046",
+      "statement": "Image attachments are normalised once when a turn is accepted: longest edge capped at 2000px, encoded copy capped at 4.5 MB of base64, and sources above 80 megapixels pass through undecoded; JPEG stays JPEG and everything else is re-encoded as PNG.",
+      "evidence": [
+        {
+          "resource": "repo://internal/agent/image.go#L15-L76",
+          "version": "repo-lines-v1:sha256:c14997ecb025f4bf0f57a67d992877ca9f0fc85c406a5d4735defddf4f6eb42c:eyJzZWxlY3RlZExpbmVDb3VudCI6NjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkyYTg4NDk1N2Q5MTRjZTViYWY5NTdmZTBhNjE5ZTQ5YTcyZDBhZjgzMTMyZjRhMjJiNDNkNDdkNTc0MDU5ZDciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJiNWNhYzBmMTE5MzVlYWI3MmQ3YmU0MDYwOTExODUzOGY1NTA3OTA5YTZjZjg0NGY0ZDdjMWJiMGNhYjc3OTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjIzNDAwOWU0MWE4MzY5OTU5NDg1YjRhMGYzNTMwNmU1ZThmY2MyZjA4MzNmY2U4ODY4OWYzYWY1NTY3ZmU0ZGIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImZjNzYzZGYyYjEzZWU2ZDU0MWZmYTYyNjA5NzQwZDUzMWUzMTI2MGI5MDQyZjU0YzcwYmFjZjQ5YjVhYzJiZDcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_786d05d1150d424e8d40c97d9372afed",
+      "statement": "Text attachments are inlined up to 51200 bytes, and image attachments become image parts of the user message.",
+      "evidence": [
+        {
+          "resource": "repo://internal/agent/attachments.go#L106-L137",
+          "version": "repo-lines-v1:sha256:d28e15e40054d1ef15908f11fd4637ec5289d32fbb356861f036424280ec5d61:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc3YjhiNzg1MmRhYzdiODE3OTg0ZWI2NDE0NTk0YzdhZDI5MjFkOWE4YzkxY2E5ZWVjYjY3YzZmZTJlYzFjM2UiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQxN2VkOTNkY2FiZjRkNTZhYzY1ZTdhOGY1MjBkNTllZmI0MWFiYTI0MWNjMDQ3NGRiOTNhOGU3MDUxYTU4NWYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjUyNzBlNTBhNmRhNDlhYTc2Mjk4NjQ2Y2VmZTY2ZGI0ZjYyMTJhY2E5MTgwMjEyYWJlMTBkNTQ1MWQ3YzQ1M2UifQ"
+        },
+        {
+          "resource": "repo://internal/agent/attachments.go#L15-L19",
+          "version": "repo-lines-v1:sha256:c50a3719221a94ead2d9bc57628028a29bd45a1798d40670ba28602ebb2dd1f1:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjkxZjNmZGQxMGY2ZjhmNWFkZmU1ZWI2ZTQ2ZjJlOWZjNDY3YmVkMzAyYTQ1ZmE0YzRiYjc0Zjg2OTc0MmIxOCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZmM2NWZmZWM3ODQ2ZThkNmZjOWFiNGY4NzIxYTZkZGI4ZWE3NDFkMTJmNzBhYjQ3NzdkMDlkYThhOWU4MTU4OCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMWNiMTczOGJjYjY3NTI0OWU1ZTg4ZWM5NmFkNThkYzBmM2FiM2U3OTUzMmE4NDQ2NDI1MmJmMTMwNTE3NWFmMSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiM2Q3MzZiOTdkZjc5NjQ5ZjAzOTQyN2Q5OGZmZGVhOTc0OGU1MTk5MjMzNWM5M2UwNGZlZTMzOWEyODVjMGZkZiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_7826c4aee0264847b2b3b28124e0e6ed",
+      "statement": "ask_user enforces at most 4 questions and 4 options per question, times out after 30 minutes by default, and treats the reserved 'type something' label as a free-text answer.",
+      "evidence": [
+        {
+          "resource": "repo://internal/agent/tools.go#L1052-L1068",
+          "version": "repo-lines-v1:sha256:5615819c8fef5d6c6fba72b6b7f2283bef48a60c5862e72535c3ba368128204e:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVmYjA5YmNjNmQ1YmNhMzNhMjI3NTU2YWFkNjcxMDQ2ZDMxNzQ1NTMwOGVlZjZiNGJhYzE1MDMwMTQ2ZDBhNmYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkwNDA0ODQxZWI5NjVkZDZkNDhiNTQxOWM0NjNkZDhhMzJjMzg1MjRiMzU4Y2Q1YzkyZjVlZjQ4NmYxN2IzNDMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdhMzgxMWMyNmZjMDYzMDdlNTUwNzYzMDI2MGRhNmJmNDJjZTUwMDY2MWI2MTJhODljNmJiMjBhOWUxMjYxYmYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNhNTNmMjQyMjU4NGU4ZTdlODQwZDA5MDhmNTQ4OWMzMmI5MmIzYTUwZGQ5YTc5MzBlMTUyMjM3MTY5OWFiN2EifQ"
+        },
+        {
+          "resource": "repo://internal/agent/tools.go#L972-L972",
+          "version": "repo-lines-v1:sha256:dccd3b6d68edf666a3e2d6ef469abf38dc9a564fb2183ddace4b7b8210cce7d1:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZGNjZDNiNmQ2OGVkZjY2NmEzZTJkNmVmNDY5YWJmMzhkYzlhNTY0ZmIyMTgzZGRhY2U0YjdiODIxMGNjZTdkMSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZGNjZDNiNmQ2OGVkZjY2NmEzZTJkNmVmNDY5YWJmMzhkYzlhNTY0ZmIyMTgzZGRhY2U0YjdiODIxMGNjZTdkMSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMmIwMjRhNmM5ZWYyYjhiYzAwMmIwMzM3ZTk0ZTY0NDY0ZDJlMzM3N2Y4NTU1YmU4Nzc2ZTI4N2FkOTdiYmM3MSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNmI5MGI1YjUwYjM2YjZmZWIwZTcyZTlkNWQ3ZTVjOGJkZTQ3NDBhNTliNjFhNTFiYmQ1M2JmYWMxZjY5NDE0NCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_6f40f658ed7c4df390917a20a7e4578b",
+      "statement": "Tool calls are gated by a Resolver interface returning allow, deny or ask; an ask decision surfaces as an SSE permission_request answered in the chat UI.",
+      "evidence": [
+        {
+          "resource": "repo://internal/agent/perms.go#L7-L14",
+          "version": "repo-lines-v1:sha256:d6a795f4bd135266fcfcdfd5292059cdcd5fd625a95512ad2baf22a7020abcd1:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNjgxZGQ2N2JmZjU2NjA0YmNiYjZjNzg3Y2YxNTk3MzE1ZDg4MTk0MGYyNDI5MWM4YTlhNmQ5MjgxY2JmMmZiMiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDEyY2EzNDVjY2Y3NWJmOWMwODA2YmNlNjk1YmU4ZGU4MDhiNzk5ODQyNTFhN2E1NGQyMDJjZjYxMDFkZDQ1MSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNjBiOWQ2MzA3M2YwYTlkODA1ZjAzYTJlNmI1MWMwYjc5YTFjMmMyZWFmZTgxNjgyODJkN2Q2Zjk0NzcwMWNlOSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjAsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_d1fe748a75324a0994fadac1f7ddf205",
+      "statement": "run_command_background detaches the command from the turn and persists the finished output as a user row marked with BackgroundToolJSON, which must be valid JSON; IsBackgroundRow accepts both the current JSON string and the legacy bare encoding.",
+      "evidence": [
+        {
+          "resource": "repo://internal/agent/background.go#L15-L38",
+          "version": "repo-lines-v1:sha256:592e36e1e9fd0fff888a0d5ae517b501ce1244582488c9b1ed434cb1a41f4781:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZhZmJhMDUyN2MzOTUzYzRiNmUwZTViNTczOWJhODM2MTJmODA1M2JjZGM5NDY2NzMwMTkzY2QxZDU5MGI0MDgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdlNDBhMDM0MzQ3MzViYjE0NjhiNDcwNGFkMTQ1M2U2MTk3NWMyYzBjODhmYWIxNmUyZDhmMjFhMDI2NzVjODciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk5ZTUzZmFhYWU4ZGFlMWVmOTkyZTI5NGQ2MjQ2ZTAwMmMxZTI1ZGJlMzY2MzE1MjRkOGMyNTc3NmU3Y2NmYTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImU0MTVjZTA2ODk1NDhkMDljNDY3ODZmYWE2NzI3ZDBkZjgxMzgyYmI0NTA1NDQ2NTA0ZTY0ZTRlYzFkNTE1NTAifQ"
+        },
+        {
+          "resource": "repo://internal/agent/tools.go#L1211-L1214",
+          "version": "repo-lines-v1:sha256:6f04894197b7b3cd5448cb195e51f2434a5c1f82f376598bc2b4940988a930a1:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMTNhYjhjZGQwMjJmNjE0MGYyYjQxMzgwNjQyM2NjZjllNzcyNzEzNGI0NDBkZDNlYWU0YWEyZDA2YTA1MzE2ZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZjlhMjc5NWQ3ZjY1NjgyYmQ0Y2Q4ZWM5YjNlYjdlNTY5OWRlYTBlMWUxYTdiYjg3ZjJmNTY4Mjc0OTE0NjY4OCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMTUzNzIwZDhlNzY5NmM2ODNjNWE2NDcwMjkyM2ZkZTEzODY3ZWYwYzE5OGY4YjU5ZjllMGI5NGU3NDViMWZiOSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNTMxNGMyNDZhNTZjYzFkYWNhNjNlMGUyNTljNDM4ZGVhZDdiOTAyM2M2MmY0OTg5YzczNDkxNWMxMGQwMzNmZSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_d4e2b297e70e49cfad5204da67b988e4",
+      "statement": "Background command output is sanitised (ANSI escapes and control characters removed, invalid UTF-8 repaired) because OpenAI-compatible providers reject strings that fail their character pattern.",
+      "evidence": [
+        {
+          "resource": "repo://internal/agent/background.go#L40-L45",
+          "version": "repo-lines-v1:sha256:420cc0b40f161b4601d85666a41bafe2139b9619131644f4234c20be7da19d18:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYjYyOWU1OWM3OTA0YjNhNWI2OGRjZDRlOWJmNjhjZTdiNzQ4YzIyZTExMTg0YjFlNjQ2ODdmNjA3NGE3OGRlOCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDFiYTQ3MTljODBiNmZlOTExYjA5MWE3YzA1MTI0YjY0ZWVlY2U5NjRlMDljMDU4ZWY4Zjk4MDVkYWNhNTQ2YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZmQ1MjdjZjcwMjljNDBkYmU1MjVjYWY1ZWFiMWM5YmNiODA4MzE3NGNjMGE3YjVmNzk2NWZkZTczYWE2YzNmYiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNzhmY2EwYjA0MjQ5ODkyYzNlN2YzNWJmYzQ0Y2IyMzRmZGRlODhhNzA4ZjYwYjE1MGIwNzNiMDMzM2E0ZTgzZiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_be0f73cd8e42472597435082b243eab7",
+      "statement": "File tools resolve paths through resolve(rel), which refuses anything escaping the project workspace, and hide node_modules, .git and dist from listings and searches.",
+      "evidence": [
+        {
+          "resource": "repo://internal/agent/tools.go#L1354-L1396",
+          "version": "repo-lines-v1:sha256:12a73ea31deccd1f09cc005484ddb4a82336f1f3f7888e9c8ce95e478f57f271:eyJzZWxlY3RlZExpbmVDb3VudCI6NDMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM2ZjA0MjVkMDk4M2Q4ZTRhNDFkMDI2MTYzY2EwNjVmNzkyODY1YTJjYWUxY2RjMTFkZDBlYWNlN2Q4Yjc1MjIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg0ODFhYThkNTQ3ZTBhZDgyZDAyNjUwM2RjNDBhODNlZjNmNDhlN2VjNGNiODZhMmU1OWU3MjgyYzI3MTg5ZmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNkMjEzODFiNTIzNzI3NGI4YjYxZjQyODVkY2IwODU5NjNhYTQxNmJiYTJmMjUzM2EwNDQxOWEwNDM2MDUwNjAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjllZDcyNzQ0ODJkMDgwZmRjYzU0ZGY0MTliMzA4MDhiMzVkZjFmMmRjZTAxNmZmY2E1MTg1M2Q0OGE0ZTY3OTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_7e67a6c7cdae4f51979871f3f1585365",
+      "statement": "fetch_url validates its target with validateFetchURL as an SSRF guard, and verify_project caps its output at 32 KiB.",
+      "evidence": [
+        {
+          "resource": "repo://internal/agent/tools.go#L1859-L1862",
+          "version": "repo-lines-v1:sha256:ed73856775f9a5734d655e1d2574d6e31634acfbf99b70cddc9c463525271582:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNThmOWEwNTg3MTU1YjBlMDNkM2RhNDc2YWRhY2MzODNiYmU3OGNkNWQ3OWNkOTI5MjlkNDQ2MzYyZmY4ZTBlOCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMzU1YmE4MTg1ZGNlYmYzODViNjM3M2Q3MmFhODVhZDA4ODM2Nzk4OGJlZmIwNTllNGM0ZGQzMTc3YWZlNTVjYSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMTdlY2E0MzU1YmYzZjQxNTJlNDE4ZGZiZjhjMDY3NzYxYWUxY2M2MzZkYWYzYmZiODFlZGZmOWNlODFmYWYyOCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMjcxNDAyZWU4ZWFmYmJkNTc3ZDUyNmYwZmEzMzhiYTQ2ZGEzNTY3YTY3NWY4NGZlZDhiZGRkYzkxZjI3NjFlMSJ9"
+        },
+        {
+          "resource": "repo://internal/agent/tools.go#L44-L44",
+          "version": "repo-lines-v1:sha256:9ebc89c1e3c858ad3adc186fc3a7499d6c976705e602aa6229fdad71f2caf29c:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOWViYzg5YzFlM2M4NThhZDNhZGMxODZmYzNhNzQ5OWQ2Yzk3NjcwNWU2MDJhYTYyMjlmZGFkNzFmMmNhZjI5YyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOWViYzg5YzFlM2M4NThhZDNhZGMxODZmYzNhNzQ5OWQ2Yzk3NjcwNWU2MDJhYTYyMjlmZGFkNzFmMmNhZjI5YyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMmRhMTIzZGU5YzQ3MmIwZWUwN2FjY2IxZjFmMWY0MWMyZTI1YzY3NWNmN2QyOTgxYzI0MTY0NTIwMjM2ZTkxNyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYTk3NTU1NDYyZWVhNDdjZmJmZWUyY2Y1NjRjNzliNmRmZjRlYzFmNDdjMTQ4NGVlMGNiOGQ1ZWU0ZjkzNGM2MSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_a65500b0190f43739e5a489e0d4ebab6",
+      "statement": "Memory tools are project-scoped and capped at 2000 memories per project.",
+      "evidence": [
+        {
+          "resource": "repo://internal/agent/tools.go#L504-L511",
+          "version": "repo-lines-v1:sha256:d6bcb23c7011dfaa624e66560f72cc56fcdc5507c2a2a2f72e6c3eb7ae4a76fd:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMDEzYTA0N2U1ZGU5MjIzNjc2NGFhYWI5NGY4YjdiNDAzMzlhOGY1YTA4MWNiZGY2ZjIxZmI5NDI3ZmJlN2IxMyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZDRkYTM5YmJkZGU0ODg2ZDM4N2JhNzZhYzcyYWIzY2Y3YjgwZjkwZTg0ZDVkNzg3YThhMzQ0OGI5ZWVjZWJhZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZWMzYzhmNjMyNzlhMmJlMTM4MjBjMmFjZDRlODIwZWQxYzEwN2QzOWNjY2JiMWNjNTczNzVjNGIyMjkzNjE0MyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYTM5MTYxNjllYjg1M2IyY2JhNTY0ZGMzNDZkOWZhNDhkMDMyZjQwZDViMDMzYzUzYjdlZDRmMmIwZDViMWU1YSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_76c0d1cb8c7b4b8c9f8f2b4b21897671",
+      "statement": "An extension or skill whose inline module source exceeds 8192 bytes must be passed by path instead.",
+      "evidence": [
+        {
+          "resource": "repo://internal/agent/tools.go#L800-L802",
+          "version": "repo-lines-v1:sha256:e93bbab9f7398eecc4c31a75f0521453d55a0dd04fd4dfde4854025c48f0e2df:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYzg2YTJmODUxOThkMTUwMDgwODZiOTMzZDVmYWUxMDI1NjZhZWI0ZjhkM2UwOTZkOWJiN2IyYWM4ODM3Yzk5MyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYjRiMGY3YWI2ZGNmNjQ4MDgwNzIxZGJmYTZmNmVhMWQyMTQyNWQ4OTYyZDMwYjQ0MmM3NjliN2MzZmIwNTRiZiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMDg3YTBmODg1NmJmMmE0Y2M5OTM3NmQ4Mjg3NTQzM2NlM2FjZmJiYTIxNGU0ZWE1MmRhMzgxZTBhNDc5YjkyYiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiM2EwN2Q0ZmQ3Zjc1NTY5MzMyMGVlZDU3YTI3YTUwNjcxODI4ZWVlMDQ5NGJmMjk2ZGYxNDMxZmIxZmFkOWYyNSJ9"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.9.0",
+    "at": "2026-11-15T05:31:58.285Z"
+  }
+}

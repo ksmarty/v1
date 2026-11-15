@@ -1,0 +1,96 @@
+{
+  "schemaVersion": 1,
+  "pages": {
+    "/openwiki/architecture/agent-tools-and-events.md": {
+      "pageVersion": "sha256:a35a831c47a8cf18d44ac3ab8285827ca3d419a696f9cb5c51766a2f9b3d1a4d",
+      "completedBy": "v1",
+      "completedRunId": "a7c116e0-2bfe-4b30-8566-cbed2e11147a",
+      "gitHead": "cb41d527a6adc3baf49004e3cf19ba877319fe3a",
+      "sourceFingerprint": "sha256:90bf8fd86292ee3d33e792ef3c77e8141daabe7832838789749bfd61986a9c04"
+    },
+    "/openwiki/architecture/chat-turns-and-queue.md": {
+      "pageVersion": "sha256:db8641d676e14a55b9f4ad9953be893b9a5a73c5f05d67653247c7f503a2eb41",
+      "completedBy": "v1",
+      "completedRunId": "a7c116e0-2bfe-4b30-8566-cbed2e11147a",
+      "gitHead": "cb41d527a6adc3baf49004e3cf19ba877319fe3a",
+      "sourceFingerprint": "sha256:90bf8fd86292ee3d33e792ef3c77e8141daabe7832838789749bfd61986a9c04"
+    },
+    "/openwiki/architecture/extensions-and-skills.md": {
+      "pageVersion": "sha256:ee6f3a39515d9fa6210084dbca4fef216617470e326b6f1c9164bf3a39faef31",
+      "completedBy": "v1",
+      "completedRunId": "a7c116e0-2bfe-4b30-8566-cbed2e11147a",
+      "gitHead": "cb41d527a6adc3baf49004e3cf19ba877319fe3a",
+      "sourceFingerprint": "sha256:90bf8fd86292ee3d33e792ef3c77e8141daabe7832838789749bfd61986a9c04"
+    },
+    "/openwiki/architecture/harness-sidecar.md": {
+      "pageVersion": "sha256:10210fa6b2c590632cfa0db8d5e3e1c009e9c8169f370f7f8f247bdf76e42af0",
+      "completedBy": "v1",
+      "completedRunId": "a7c116e0-2bfe-4b30-8566-cbed2e11147a",
+      "gitHead": "cb41d527a6adc3baf49004e3cf19ba877319fe3a",
+      "sourceFingerprint": "sha256:90bf8fd86292ee3d33e792ef3c77e8141daabe7832838789749bfd61986a9c04"
+    },
+    "/openwiki/architecture/http-api-and-auth.md": {
+      "pageVersion": "sha256:ca33f6b046f59a90e8bd7d14d63b84c331a47b779d85803d7ce692e54dda0284",
+      "completedBy": "v1",
+      "completedRunId": "a7c116e0-2bfe-4b30-8566-cbed2e11147a",
+      "gitHead": "cb41d527a6adc3baf49004e3cf19ba877319fe3a",
+      "sourceFingerprint": "sha256:90bf8fd86292ee3d33e792ef3c77e8141daabe7832838789749bfd61986a9c04"
+    },
+    "/openwiki/architecture/llm-providers-and-models.md": {
+      "pageVersion": "sha256:0d312322ba12130967062c1a1fbd5d3a9738882da1f1dbfa37c4cbd91f3abff2",
+      "completedBy": "v1",
+      "completedRunId": "a7c116e0-2bfe-4b30-8566-cbed2e11147a",
+      "gitHead": "cb41d527a6adc3baf49004e3cf19ba877319fe3a",
+      "sourceFingerprint": "sha256:90bf8fd86292ee3d33e792ef3c77e8141daabe7832838789749bfd61986a9c04"
+    },
+    "/openwiki/architecture/memory-search-and-sanitize.md": {
+      "pageVersion": "sha256:2f22c94a4eebe7d89fbf9777ef68bb48d0e581c753b85db18ae1511c7331aade",
+      "completedBy": "v1",
+      "completedRunId": "a7c116e0-2bfe-4b30-8566-cbed2e11147a",
+      "gitHead": "cb41d527a6adc3baf49004e3cf19ba877319fe3a",
+      "sourceFingerprint": "sha256:90bf8fd86292ee3d33e792ef3c77e8141daabe7832838789749bfd61986a9c04"
+    },
+    "/openwiki/architecture/preview-terminal-git.md": {
+      "pageVersion": "sha256:13b7d30feffbab077ee922bb785f3d9857845a69953d3e3faf651d87220e5d28",
+      "completedBy": "v1",
+      "completedRunId": "a7c116e0-2bfe-4b30-8566-cbed2e11147a",
+      "gitHead": "cb41d527a6adc3baf49004e3cf19ba877319fe3a",
+      "sourceFingerprint": "sha256:90bf8fd86292ee3d33e792ef3c77e8141daabe7832838789749bfd61986a9c04"
+    },
+    "/openwiki/architecture/runtime-and-startup.md": {
+      "pageVersion": "sha256:58045495b2e5773148fd6954ffc7da49df4f7a5ab29b16fe27681d9102922b76",
+      "completedBy": "v1",
+      "completedRunId": "a7c116e0-2bfe-4b30-8566-cbed2e11147a",
+      "gitHead": "cb41d527a6adc3baf49004e3cf19ba877319fe3a",
+      "sourceFingerprint": "sha256:90bf8fd86292ee3d33e792ef3c77e8141daabe7832838789749bfd61986a9c04"
+    },
+    "/openwiki/architecture/store-sessions-and-settings.md": {
+      "pageVersion": "sha256:4216a005f792376b6d7be1abe82f4a40cbda5299058ee20855a7dcf2d424bd7e",
+      "completedBy": "v1",
+      "completedRunId": "a7c116e0-2bfe-4b30-8566-cbed2e11147a",
+      "gitHead": "cb41d527a6adc3baf49004e3cf19ba877319fe3a",
+      "sourceFingerprint": "sha256:90bf8fd86292ee3d33e792ef3c77e8141daabe7832838789749bfd61986a9c04"
+    },
+    "/openwiki/frontend/spa-architecture.md": {
+      "pageVersion": "sha256:404c3143decdbe07e4ab433ee359b0dc6860713937da07bb68db80a535265bc5",
+      "completedBy": "v1",
+      "completedRunId": "a7c116e0-2bfe-4b30-8566-cbed2e11147a",
+      "gitHead": "cb41d527a6adc3baf49004e3cf19ba877319fe3a",
+      "sourceFingerprint": "sha256:90bf8fd86292ee3d33e792ef3c77e8141daabe7832838789749bfd61986a9c04"
+    },
+    "/openwiki/operations/build-test-release.md": {
+      "pageVersion": "sha256:5890b3ca3002fdb7cb60fdaf14032330580c925ce9f1dd48c767116a2b433bd8",
+      "completedBy": "v1",
+      "completedRunId": "a7c116e0-2bfe-4b30-8566-cbed2e11147a",
+      "gitHead": "cb41d527a6adc3baf49004e3cf19ba877319fe3a",
+      "sourceFingerprint": "sha256:90bf8fd86292ee3d33e792ef3c77e8141daabe7832838789749bfd61986a9c04"
+    },
+    "/openwiki/quickstart.md": {
+      "pageVersion": "sha256:1176db87b2f8bfee01b614465e398304ee822512044657bb322903c95a4f5767",
+      "completedBy": "v1",
+      "completedRunId": "a7c116e0-2bfe-4b30-8566-cbed2e11147a",
+      "gitHead": "cb41d527a6adc3baf49004e3cf19ba877319fe3a",
+      "sourceFingerprint": "sha256:90bf8fd86292ee3d33e792ef3c77e8141daabe7832838789749bfd61986a9c04"
+    }
+  }
+}

@@ -1,0 +1,154 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:1176db87b2f8bfee01b614465e398304ee822512044657bb322903c95a4f5767",
+  "claims": [
+    {
+      "id": "claim_ea00bf1160cf4efb82c0e2d059e7f8c0",
+      "statement": "v1 is a self-hosted clone of v0 that builds real web apps from a chat and ships as one self-contained Docker container.",
+      "evidence": [
+        {
+          "resource": "repo://README.md#L3-L8",
+          "version": "repo-lines-v1:sha256:760beea173033ab2cbb0c346d5449c0ee3414849b0543f0a78aa5eee49ddad24:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYzM0NjI0NGFkZGZlNWJlMThjYmRlZTRkZjYyYmUyMDhhYTg0YjA5MzNkOGE3NDFiZWQ4ZmRjOWEwZjE3ODZiNSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMjg3ZDZiNTAwMDdmNGY4YzAzMTNmZjE4MjBmNmE0NTEzNWJlZTVlMTAwM2JiNDAwOWJkODkyMzRlYWMwZTBlYSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjIsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOTk1NGU5N2NhNzI2ZDQxOTNlMjcyNzY0OWE3OTYzMTg0NTAzZTRhZTBmMjE0YWY3MGY2YjZjYjg3N2ViY2E3NiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMGJhZjA2OGI5MjZkODI1MzlmMzc1NmY1ODllMTgwODQwNjhmN2UzZjg5ZTYxNmY3Y2NhMTljMTRmNWIyNjc2YSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_ce05fb2c064345d385b74012d94cc11c",
+      "statement": "The pi-durable sidecar is the default chat harness (V1_HARNESS=pi) and the built-in Go agent loop is still reachable with V1_HARNESS=go.",
+      "evidence": [
+        {
+          "resource": "repo://AGENTS.md#L42-L52",
+          "version": "repo-lines-v1:sha256:017eca1a17cc81434aeecdf0f29f099075e69ac57a2f3f62d3575e4c21400382:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVhNDdjMWZjMzE5MTI0ZDYzN2I5YWU3Y2JjM2UwNmRlOTRmNmYyYTI0NWFlYTQ3MzhlZGZjNWFmODE1MWY4ZjciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZjZWIzYmY3MDdiMjMzNDYyNDMzODg5YjVmYzE4Mzk2ZGMxYmRjZTM5YTY1NjFjYTYwNTUxMGQ5OGFmZDE1ODQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjUwZGUwMTRhYTQzZjFiMjY1ZWVkMmJkNTU1YjBjOGE2NWM2ZmQwOGY2NjJjZDNjZjM1YmFlM2ZjZWEzYjA5MTciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImYzNDgxYmU0OTg3NWM5MjQ0YWY4ZWFkYmY4NjRkODRmYzQ5YTI1ZTk2YWMzOWM2ZWRmY2UxZTFiYTQ4NmUzYjUifQ"
+        },
+        {
+          "resource": "repo://internal/config/config.go#L190-L216",
+          "version": "repo-lines-v1:sha256:0147c7036ec25c88aac926bd23e6259794ab64f4af4cbf090e20f57947ec5774:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY3Y2RhODJkYTYwNjIzOGUwNWU2MjM5OTU2OWM1ZWUwMzk5MzQxOTY0OGFlNWQ0M2EyYmY4Y2Q2MzQ3ZjgyNjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIwYzBjMzNmZDI3MzI5ZTk3ZmI5Y2U4MjViY2JkNDRiM2ExMGVkZmNmOGZhMzA1NzQ0MWJlNGIzMzY2NmI5MTgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJjMjFhYmY4NDI2NGM3OWU5MTM2MzcxM2FkN2M0MjVhZDMxOGYzMGQwMWU4NTYwNmU1Y2Q0NWM4ZGEwZjQ5YjAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_f9bb7b49f9bd402089c738edfb0289cc",
+      "statement": "v1 exits with a fatal message naming make sidecar-deps and V1_HARNESS=go when the sidecar cannot be started, so the sidecar's dependencies are required before v1 runs.",
+      "evidence": [
+        {
+          "resource": "repo://cmd/v1/main.go#L88-L94",
+          "version": "repo-lines-v1:sha256:87ceed862ca3993e41f1929503977b6ff197d4c8d71b221bbb84a71827b3dc4e:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMmJkZTY4N2RlOTQ4ODA4NzgyZmIwZDVhNTE1YzMzOTcxMzIxYzk3ZGY3OWM1OGVmMzJkNmQyMGVmYTVhMDA2YyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNTU0MTJlOTY5ZjE1ZjYxZmZiNjA2ZDljYzg4OWFlZjU0NTY0MDg0ZmM1OGIyYTcwMTk1Y2JhZDQwMzU2N2NjNyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMWY2ZDJkZGVmMzZjMDUwZGE2MzVhYjQ4MTg4YzNmYTI2OTE4NGU0OGIwM2FkM2M0ZTFhMTZlODUwZGJhYWMyNyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNjVjNDk3YWJhMDQzZDc0YWQwMzY1ZjQ5OTBkNWE4YTdlNGEzY2IzNWUxNDI2NjJlNDY3YjlmM2ZkYTZjZGVkMSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_4be902c56e5140048d467c0ddb574f52",
+      "statement": "make sidecar-deps runs npm ci in sidecar/ and it is a prerequisite of dev, dev-backend and build.",
+      "evidence": [
+        {
+          "resource": "repo://Makefile#L21-L24",
+          "version": "repo-lines-v1:sha256:e413aff326c9560e24c84a3b3819ff81d85f20c2675706c34684a2ed402b4d98:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOGI4MjJmMjI3MTFkMzlhYTIyMGRiNTEzY2I4NTdiNjk0MDg1NDc1MTJlZGQ1ZjllZWY3MmUyMmJiNWRmNmNhYiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiM2NhNWViOTVhY2VjODcyZGI2Njc5ZjJkYzRhYTM3YTY0NmNjOGZjMTdkNzdiMzkyZjUyMWJhMWNhM2JiMmE2NSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOGIzYTJiZGI4NjhiYWIxMmU2MTE0OWUzNTYwN2Q0ZGJhZjM3ODQzNGM1MzM4MWY4MWRlOWRhZTBhYjVmMTZiYiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMjUzN2EyYTIwNTE1NGIzZjljZmU5ZTJiZGFmNmNkYWU5YjU3MDBlODA4MDE5NWM2ZGVhODNlMjQyYWRkNTAwYyJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_d8bd8f8f8aae4018add15aa72fa4d0df",
+      "statement": "make dev runs the backend on port 8080 with auth disabled and V1_DATA_DIR=./data alongside the Vite dev server, with dev-backend and dev-frontend splitting the two halves.",
+      "evidence": [
+        {
+          "resource": "repo://Makefile#L10-L18",
+          "version": "repo-lines-v1:sha256:713fd52eb558803c36b541e9ac7d83d398d9ab181fc60e1e6c59e637d6ab12e7:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZmYxNDNjYmY3NGQzMDhmZGRlZGM1ZDhiMjk4NGE3OTRlZTg0ZDhjNmVkYTEwNzRhN2JjYmI2YWZjYWEyNGM1OSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZTA4MTgwY2Q4ZGY0MWY3ZWYwMTgyMTExYzhlOWJlMjdmNGRhNjFhZTA1Y2E4YzJjZDMwNmJlYzQ5OGQyMTllYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMzA2YzQxZDMwNjMxNzdjM2ZlNGIyMGNhOWIxOWQ4YWUxMzE2ZjRhNmJjOWUyMTUwM2FmZjQyNzFiNDE1OWNkMiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOTdlNTI0MWY0MTBmZjg5MjFmMDIyOTU1NmZhYWE3YmMwMDdhZGFkZDY2MjliZTYzMzg1ZjA4Yzg1ZTFhYmI0NCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_dd2dbfb8d1c949c997aac09899c96d36",
+      "statement": "make build builds the SPA, copies it into internal/server/dist and produces bin/v1 with the version ldflags.",
+      "evidence": [
+        {
+          "resource": "repo://Makefile#L31-L37",
+          "version": "repo-lines-v1:sha256:8ab21034ff956a99e67c83523f83159da76e619cf36af4884c66904e3e0e568a:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYWQ2ZGIyZGU0N2JkMDc4NTAyMGZlMjY0ZDRmMzIyN2QyYTJiYmVkMGE3NjU3NThlMjdiZTYwZjg5YzUxMDk3MyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDFiYTQ3MTljODBiNmZlOTExYjA5MWE3YzA1MTI0YjY0ZWVlY2U5NjRlMDljMDU4ZWY4Zjk4MDVkYWNhNTQ2YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNTg2ZjU3ZjQ5ZWMyYzExMzA4OTk5MWMzNDkzMDZiNGM5NzhjYjQzZGQyNWJiOWJhZTY0OTM5NDlkOWNlMGU3NCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOThkYmYwMTk0YzdkYjVmNzlmZWQ1MWFlNmUyMTVhMjdjY2JkNmMzMjUzNDVjYzA3NDM4MTY5YzE0N2RmODdmOCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_2d9d29f21b1b4073ac0e3868db547114",
+      "statement": "The documented run command publishes port 8080, mounts a v1-data volume at /data, runs privileged and passes OPENAI_API_KEY, and the first visit shows a setup screen to create a login.",
+      "evidence": [
+        {
+          "resource": "repo://README.md#L22-L35",
+          "version": "repo-lines-v1:sha256:adf9b142960a06e5ae1a92b9bf231ccfe31ca032513a143578ad3dab555f19da:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImViMmY3ZGRlNTdlZGExMzIzMGY3ODlmNmE1NzRjNWRhZTljYmQ1ZWIyMmZlYzJiZWE3MTU4MTQxMzk3ZTJkZWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjIwNzAyZWE0ZjQxOWMyZjUxOWIyNjA2ODY4NDQxMmZkN2Y2Mzk1YTRhZmY2YWJlNzdmMzNmYjE3ZGVjOGJmY2QiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBmOWM5N2I5YmVkYzgyODg3OTllZTE5ZmQwOWJlMjhiMzZmMDljY2ZjMGU5Y2RkM2U0OTYzYmNhZTU0NDZhOTcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_b920d6acde8847e1a87515f60ffd9370",
+      "statement": "The image bundles rootless podman so the run_container tool can build containers; without nested-container privileges it fails with 'no container runtime found', and the container can instead be granted SYS_ADMIN with seccomp unconfined.",
+      "evidence": [
+        {
+          "resource": "repo://README.md#L62-L80",
+          "version": "repo-lines-v1:sha256:8b2a324cab648eb0a9d8e234049c15a344282ddf75b55103d09c0a5c1f3df678:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMzOWI3ZDhmY2ZiOTRiMDRlMjM2Mzc2MGNlM2NkMmFiZTczZDhlZjk5Y2U1ZjYyYzJkNmQ1NzRkYjNjZGEzMWYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM4YjhjMmUyYTEwMjcxYzk0NGJhNzYyNzFhMjA5MmViYWQxMjYyM2NhYjkyMWExN2Q1OTQ4M2M4OGNmMTkxMDIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjhiMmMwZGNmZjI4YTNhZWZjMmM3MGM0YTMwODM1ZjhiMWRjZGQyYmNlZDJkZGNiNjI3NzcwZGM2MjFkZWE5ZmMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_a0fb0853c8524731b9434af3a9cc96e3",
+      "statement": "docker-compose.yml already sets privileged true, the v1-data volume, port 8080 and a ten-minute stop_grace_period.",
+      "evidence": [
+        {
+          "resource": "repo://docker-compose.yml#L1-L38",
+          "version": "repo-lines-v1:sha256:dd818550b8ce9e0703284a3d58c3fd7beb7b8606b02080e013c888c8f234d156:eyJzZWxlY3RlZExpbmVDb3VudCI6MzgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZlZjMzN2FmZTRkMTU4MGUyOGQwYWM3YThkYWUwMjRhMDE4ZmNjZmNjNTU5YWU0NGM4NDZlMzFjMTYxZWIzMTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVjYjVmOTBhN2Y0ODEwZDlhYmIzMTkyZjY0YzdmZWY2ODZkYzlhZmI0ZDY3MDA1YTllY2Q1MWE1YjM5MjhhMTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_9cca12c1e71b4a0ebe11ecf5abe1cf83",
+      "statement": "Every global toolchain is redirected to the /data volume (npm, pip, pipx, uv, cargo, go, bun) so agent-installed tools survive container recreation.",
+      "evidence": [
+        {
+          "resource": "repo://Dockerfile#L140-L160",
+          "version": "repo-lines-v1:sha256:85956406743f7b65da55318366f4ac8b6548c056e73365ed79ba3af67d57fd4c:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFmMDg5MGM4NDZiNDNkM2NlNGNmYTBkOWM2NDhkYjUxMjM2YTk5NTFiYWQ1M2I3YjMyMWUxODVjNmM2ZmJiN2EiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFiZDI4MWY4ZGNhNjdlMmE2ZWNmZmYxYTQxZGNkYjFmZDA4ZGQzOWI2NDhkZTIwZjRkZDliYTk5MWYzZTU1MWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY0YTM3Yzg3NDU5NjA1ZDRkYjBmMzJiN2I2Mzk2ZDIzNDNhNzZhY2Q2Yjc5ZTdiNzQxNDE4Nzk4NDQzYmJhOTgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_888ec0b31d244c509b410fc5089a4ef1",
+      "statement": "Building from source requires Go 1.26+ and Node 22+.",
+      "evidence": [
+        {
+          "resource": "repo://CONTRIBUTING.md#L9-L16",
+          "version": "repo-lines-v1:sha256:91d8d609b8fa9f7067d96e0f8c389a1f3972da964c5eb2f4aeeea3376065677e:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMDFiYTQ3MTljODBiNmZlOTExYjA5MWE3YzA1MTI0YjY0ZWVlY2U5NjRlMDljMDU4ZWY4Zjk4MDVkYWNhNTQ2YiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDFiYTQ3MTljODBiNmZlOTExYjA5MWE3YzA1MTI0YjY0ZWVlY2U5NjRlMDljMDU4ZWY4Zjk4MDVkYWNhNTQ2YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMTI2NTYwMTBlN2I3N2ZiNWQyNmNlMTdiYzZmNTc4ZjE1ZTk0MTZiYTY3OGUwNTg5NWVkMjZjMmJjZjE2OWUwNSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNTAwYjNmNjc5YjBkNDJmMzk1NjI5ZGQ1OGY4YjcyM2QyMzk1ZjA1NmJiOTU4YzIwNDg5YTE2MGE5ZWM3MWEwOCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_601c76b70f7c40ba9ecef00c1d4d2878",
+      "statement": "The product surface is chat-to-app generation, live preview, a file browser, inline mermaid diagrams, a terminal, GitHub integration, a provider picker for any OpenAI-compatible endpoint, and Switchable themes and layout.",
+      "evidence": [
+        {
+          "resource": "repo://README.md#L9-L20",
+          "version": "repo-lines-v1:sha256:28603a15e7010129b36ef6fd5310c7702f5442885da2108fdd81f4c54812b4d4:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc5OTdiZmQ3YTBlOWU1ZDNkOWQ5NDYzYjc0NGUwN2I0YWYxYTdlNjE5ZDM0ZGI4NGZmMjc4MDU3NWMwODUzYTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY4MTY0MjA2MDAwZTIxYWMwOTIyMDg1MDRhOTRkN2NlZDU0ZWMwMDA3MjE0OGJhM2U5OGI1N2RjMTBiNTExZWIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjUzYTA1NjFhZjJlYTVkYWZhOTIzM2VkYTVjYmFjZWMyNTU4NGI1YzYwNDk0ODY5MDNhNmY0NjhlYTgzNzQzOGMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdiOTczOWNjMDk3ODVhZjJiNjYyMDg4ZjNkYzkxODAyNWRiZGUyZTBhMmU2YTdkMDg4YTBiNzA3YTE0M2RjODUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_93762b6ba0584821bdd29f81d3866e64",
+      "statement": "The layout is cmd/v1 for the entrypoint, internal/config for env config, internal/server for HTTP routes and the embedded dist, and web/ for the React SPA.",
+      "evidence": [
+        {
+          "resource": "repo://AGENTS.md#L11-L20",
+          "version": "repo-lines-v1:sha256:40f5e64d3a612df8d992ffa7647789e6f16390855ff58491c338bb5a33b017d9:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUyYTI3MzhkMjUwNDZiYTdlZTkzMDY1N2MxZmM5MTdkY2I3ZDFkODRhOTVkYTQ1ZmM0NDk5ODM3YzFkZDIxYzgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjEyYjY1NzlhMGVlMDJiNWZlZDliNjZhYjE3Y2EzODNkNjk4NDU3YWJjYzUxNGNkYjU1NTJhZDRiMWI0YmFhZTciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZlMjIyYmI0Nzg5ZjdmMmQ3ZDBmYjg4YzM3NDVmZWExNDFhOWFiMzIwYTcwYzAwNWNiYWU3OWVkYzgwYTAyMmQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjVmMDg1YzkwMGVjMDcxYTk3Y2E5MTFhNGU3YjA1MzZjZGFhMjVmNjU2MDNlNWMxZTgzYzc4ZDU4YWM5ODAyYTQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_a9e0a347457d4846b3d7df822d50acb7",
+      "statement": "AGENTS.md remains the authoritative architecture document for the repository, which the generated wiki pages supplement from the source.",
+      "evidence": [
+        {
+          "resource": "repo://AGENTS.md#L1-L5",
+          "version": "repo-lines-v1:sha256:368dbf1347f12aed552a3dfd6f4621ac6285b71f53582fd6c64d53ec94a3bd19:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYmM3ZjQ0MDhhMmY5Mzg2NTU4ZmY0YmJiM2U0Mzg1NmI1MTZjYjg3M2M5ZGY0YzQwZWVjZDljOGU4ZjdjNGUxYiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiODI1OGM0MDVmM2NkNzBlYTAxOTMxZDBhOTIzNzQ0NDg1Y2E1YmYwOGI5NWI1YjNhMzg2OTk5NWIxYmFhMjk2OCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjAsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZWJmMzg2NGFhMjgxOTI3Mjk5MWE2NGY4MGU0MDE3YzhjMDA2YzA5ODFhZWI1OWVjZDJlMGEwYWIzOGQ0YWY1OCJ9"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.9.0",
+    "at": "2026-11-15T05:31:58.285Z"
+  }
+}

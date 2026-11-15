@@ -1,0 +1,290 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:db8641d676e14a55b9f4ad9953be893b9a5a73c5f05d67653247c7f503a2eb41",
+  "claims": [
+    {
+      "id": "claim_2c85a736a00b49a3a3c3d01a21af5c7d",
+      "statement": "turnManager holds at most one active run per (project, session) pair, keyed by runKey, with each run a runState bundling its turnQueue, runHub and owning userID.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/turns.go#L248-L253",
+          "version": "repo-lines-v1:sha256:25b24a373968b4091fcad5d4287decbd8d2d93941d37838afcaf16fc4f6fb0d6:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOGZlNjk1OTc4ZGE0YzIwMGNkZTE3YTUxMmZkNTM1OGUwNDdhMDdlOTU1YmU2MTI0YWYxZmYwMzQ0ZDk1MWNjYSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMmI4NTA1Yzk0YTg1OTFkMzNjNThmMTQ5ZTljODg2OWIxZjU0MzgzNDJjOWQ0OWYzNWRkMzdmMWM5YTI2ZDQ2NiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYzRkZjM3YmVlN2ZlNGUyNmZhNTllZjMxZjM2ZjA4MDFlZGNmYjQ5YWVjZWQ5YzIxMmQ1MjAxNjlmMDk3OTdlOCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNjNjZDcyYzE1OTQzNTE3MTcyOTg4NDZlOGVhOTRkNzc1MDJmY2NiNDY0ZjkyNmU0YzU5NTA3NjkwMTZmMGYwNCJ9"
+        },
+        {
+          "resource": "repo://internal/server/turns.go#L379-L398",
+          "version": "repo-lines-v1:sha256:41f07925773e227a477349644ba93d9f0daef6b3d298c941c5f3fc64e09d7269:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxY2ExMDA1ZWJhZDU2MDRmMzAzYzVmZjYxYjU5NjdjMGRlYjBhZGNhNWJmMGRiMzYwODhmOWU1ZmE5NDkzOGYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY0ZDZlYTM3NjFiMzgyYjA1NGVjMWZjNTY0MDU0MDU4ZDFmNjdmMTk0OTdmZGQzMWEwMjljYWYyMDY5ODQyNzQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjliZDhhOTQyNDBhMDU5MTQyNmRhMDMwMzJhODQ2MDI2ODMzYTFkNjg1NDEwNDE5YmRkZjdiYmFmNzFkZGUzNjIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM4MThlY2ZmNzkyY2RhMjUyZDc5NDY0NzE0ZjMzMzRiZjIxZTY1NDg3M2VmNGM4OTY0N2UzY2IzZTcwM2RhZTMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_319925f9c50b49af8b82e966d1d77488",
+      "statement": "beginOrQueue registers a message atomically under one lock: either it joins the active run's queue (started=false) or the caller takes ownership of a fresh run (started=true), which closes the window where a message could be appended to a queue nobody drains. A new run is refused with errTooManyRuns once the user has maxRuns active runs, and maxRuns <= 0 disables the cap.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/turns.go#L452-L485",
+          "version": "repo-lines-v1:sha256:caeee124417ae40b9c762c3fbd7db06f81682bce00768f3d5acaf84e55de04a5:eyJzZWxlY3RlZExpbmVDb3VudCI6MzQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJlZDcwNzYzNWYwMTdiNzc0MDU5Nzc0YzQwZGIzZDQzMTYxOTk5ZDE4ZWQyMTRhODViNDllNGFhMGYxMmFlNmEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBjNDgwYTgzZDM4YTY5NmRhMGVjMzNjOThhZDZlYjAwNGU4ZjI2Y2RiM2U0ZTllZDgwZDAzZjY0ZjE2ZGY2NzMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRlNTQyNDRiMTA4MDQ3YjZlOWRlMmUyYTMyYjg2ZmE5ZmYzNTg4YzIzNjcyZjEzMDE4N2NlZGEwZGM1NzNmNmUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNiNTMxZDNjMzU2NWM2NzIyZjA4M2QwNzkxYjExOWUxNzNmZTU3NzQyNTY1OTM4YWFlOTI2NjQ1NDMxZjhiOTcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_9d7562997ab345cdb0997abbf1c6d1f8",
+      "statement": "turnQueue keeps two ordered slices, pending follow-ups and steers consumed at the next round boundary; each queuedMsg carries an id, text, Held flag, timestamp and attachments so a queued or steered follow-up can carry files through a reorder and the drain.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/turns.go#L21-L48",
+          "version": "repo-lines-v1:sha256:b19db8887c8ee28cc5c591c200c8a76be05183c6179c468e53ca3ab83b01cc12:eyJzZWxlY3RlZExpbmVDb3VudCI6MjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM0ZGJkYzE1MTNkOTdjZGRkZjg1NTIxMTgyZTQzMDg0MzY2YWU4NTRhODc0ZGI4YzZhYjc0MmQzOTM2ZmNlYjQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJhNzlhOWNiZmI2MWNiMjYzYzFkNmNhYzEzYjc2ZGZmOGY5NTM5NGY4NjQyOTRhYzQwODc5MDQ4ZTUyOTA5YmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFlNjM3NDEzOTI3ZmFlODRlYTU4OTIzODFiNWNlNjJkNGQ0YWVlMzI1ZTcxYjc5ZDFjNTNjNDM4N2Y4YmVjZmYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE0ZWUyNjQxMDk0MDlkZTRjMmM1Y2IzMTUxZjNiYmE1ODAzYTA3ZDc1NTM2ODg1YmY3MGYzMjJiZGQ3ZTkyZTAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_b0100ca1777c41ba803f379a121c8e08",
+      "statement": "The queue is persisted through to the store after every mutation, and the persist hook is nil for a queue with no store backing, degrading to memory only.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/turns.go#L49-L60",
+          "version": "repo-lines-v1:sha256:b94d8cc928ac6e21b264bcc8db70a8da7b8f2bf4bbdbf9dc4f788bbf57b275c1:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk2ZjlkNGFhNDc4NTU1YTJiZTM2NTQxZDQwMzIyZjViZjk3NDhiZDg3ZDIxZjA4YTJhZGRhNjQ0ZGQzOWI1NTgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk4YjIwMDE2YmJmMTgzM2EzMTFiN2M0ODE3YmNjZDA4NTJmOGI1NzRmZDhiODQ5YzI4M2U2ZGQ0ZjMxMjQzNWQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY4NGExZWI1MjAzOWFhNWRhM2Y3MzA0NmVkMTdhZWFjNjk0NzI5Zjk2NWY1ZDQ2NDI0ZjBhNGJhODAxN2NlZDkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjUwNTEyYmY2MWM5MmFlMTBiYTUzMWE3MTg3MzAzNDhmMjU4NDhhOTJhNDgyNWUwOWIwYjc0MzIyYWFiMzZmZjQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_bed6aa0ec99a47c2bb4f77b31fa8a76a",
+      "statement": "The queue supports add, list, listSteers, remove, reorder, edit, hold, holdCount/remaining, steer, drain and steerDrain, and remaining drives the done event's more flag.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/turns.go#L61-L246",
+          "version": "repo-lines-v1:sha256:1ef141f2e1df045c12e2820ba67d31b6c2865aa870a9d50a9868081f7cf0ef83:eyJzZWxlY3RlZExpbmVDb3VudCI6MTg2LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiJjMTZhOTNlMjg2NmU2NGRiNjhkMzQ2NjBhMmU4NTc4MjFmYTc0Zjg5NGRmNTZhMjc4MGY3MWU1YmNiNzlhZmRiIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI2OGNmZjAyNTY5ZGZkMDAxZDc1OTAzYjU2ZjhiNTY4NGFmYzE1MmM3NjcwYzM4MDA2NTIwNjhjN2NiZTllZmMxIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI1MTg2NDZiZTIwYmEzNTkwZDNiOGNmN2JkMTViZWM5NTE4MjY0ODU1ZTAzMTc2NmI5OTFiZTZkNjU0ZWFjZWI4IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiJiYTBlNWExYWM3ZjI4YmE2ZGU0ZmRhNjQ2YjQzMDA0NzIyZTQ1YzI3ZDQxYjg3Mzk4OWE0OWUzYjM4MWU0M2ZmIn0"
+        }
+      ]
+    },
+    {
+      "id": "claim_797493357b064ca6aca9b6b3b17aeae2",
+      "statement": "The queue is exposed as GET /api/projects/{id}/chat/queue plus POST endpoints for reorder, steer, edit, hold, delete and resume.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/server.go#L230-L245",
+          "version": "repo-lines-v1:sha256:70e37038bf7a1063205add419ff5bfe7bdabd07a3520aa454b2cdec225dd0afa:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRjOTEzODhiNzQ5NTIzOWZmNjg1ZjM5ZWNhNWJlMmU1YjQ1MDA0ZGQyZGY5MjQxNjgzZTYxM2Q0NDVhYzU3ODEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRlZmQxYTJkZDFhNjQ4MjQ5YTNlZTBkMDI0YmM2OGU3OWU3NzJkMjM3NzRiYWIzYzliMmY4YTE5Y2IyNzIwOWIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjNlZmMwMzBkMzg3MjViM2ViMGVjMDdhMzA5MTllMjVmOTk3OWE2NGZiNTM0NjdiYmQ5ZGE1ZTdiMzUxYjk2OTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNiMDFmNGM1OWE5ZWVkNjM3N2JkMmE3OTIyOWRjMGQwNzJiMDI5ZjA1MWVlZWY1N2IzOTk2MGI5YzIwNGM0NDkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_0b099090b9dd468a948d7b6bdb2a52a6",
+      "statement": "queueFor hydrates a detached queue from the store when no run is active, so messages left behind by a failed run can still be listed and edited and those edits persist.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/turns.go#L498-L533",
+          "version": "repo-lines-v1:sha256:b13e35cf6e7278fb912ff6217f7e4fc21c02f7cd7c70c6d5d45373be2ba45e7e:eyJzZWxlY3RlZExpbmVDb3VudCI6MzYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVjNmZmNGViZWIzOGEwNWY5NjdhZmVjMzFkZDgzOWRiNzU0M2QyNThjYzFlNmQ0ZDY4NWFmMTRkMTM0NTI1YTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImFiODJlODc0Nzg4YmVkOGIwOWJiMDEyZjg4M2JjZDNjNjU4MjRjYTk4MDYwOWMzYjI4MmM4NzNlOTI0YTUyYTMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdiYWNlMjZlMjcxZjQyM2VjZTJlOTNmZTA2ZDM0NjZlYzIxOWI4MjRlYTVjNDJiYWU1OGJhY2JjOTI1MTc5ZjgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_b50a633809ed47febd53928c118f7221",
+      "statement": "handleChat decodes the turn request, resolves uploadIds into attachments and accepts a turn with text or an attachment alone; the request body is capped at 256 MiB.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/handlers_chat.go#L301-L340",
+          "version": "repo-lines-v1:sha256:cc70327ce525cf06d921fc525805db55b3667c95c22aa34136a5adee34b67dee:eyJzZWxlY3RlZExpbmVDb3VudCI6NDAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBjMGQwMDhhOWM3MzFkNjRiODlkZjc3ZmRkZmZhOWNlM2YwNDAyNjJkOWMwNWU1ZWVjYjc2ZTQ2N2I1OTM1NzciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNkMDJiZDg5OGQwMzVjMmRiNGQxYzE2N2Q4Zjc4YzIxYWM5ZDUxMmNkMDBmYmQwNTAxZWFmY2Y5OTY3MTY5YzciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjljNWZmMTI0OGM0OTY4Mzc3NjgwODhmODgxOTAyYTc1NDRjMGIzYTliZWNjOTE0MzU1YThlY2QwZWU0YzExYjEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjY4MjUwZWVmMjU0Yjk3M2IyMDM3MDBjMDhiN2QzMWJiYzg3ZGRjN2EyZDUzMDJiYWVkN2RmZTJmOGY5MTVmMjYifQ"
+        },
+        {
+          "resource": "repo://internal/server/handlers_chat.go#L38-L38",
+          "version": "repo-lines-v1:sha256:63726ceefd8c48b27c2aec2db12ae2cc7ed8d17440b694125c0d61a504147452:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNjM3MjZjZWVmZDhjNDhiMjdjMmFlYzJkYjEyYWUyY2M3ZWQ4ZDE3NDQwYjY5NDEyNWMwZDYxYTUwNDE0NzQ1MiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNjM3MjZjZWVmZDhjNDhiMjdjMmFlYzJkYjEyYWUyY2M3ZWQ4ZDE3NDQwYjY5NDEyNWMwZDYxYTUwNDE0NzQ1MiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNzg1NzNlOWNhZjI0NmNiNWE1NDVhZTI1MTY4Njc5MTE5NzEwOWU5YjMxMzEzNWQwNjdlY2RmOWNkOTdlNmQ5YiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZWJjZmQ2YjZiNTdiYzNmNTRlNDQxMzZhZmY3Y2Y0NzM0NWU0OTJjZTFlZGQxYzE0ZWJiZjZhNDE2Y2ZiZWZkMiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_3176a8d83e6f47ac8ed7b80ca4126708",
+      "statement": "streamChatTurn opens the SSE response and deliberately detaches the run from the client connection: navigating away must not kill the run, there is no per-turn timeout, and a failed write only stops further frames for that stream.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/handlers_chat.go#L566-L600",
+          "version": "repo-lines-v1:sha256:1fbb8256a909bf6468486415b94d492ba4be08ab9a9bc1d2b97f2823d5748941:eyJzZWxlY3RlZExpbmVDb3VudCI6MzUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ3YmUxY2U3NGViYjc5NzI3NzhiNjc4NDZhNjFiNWNhYjkyN2I2NWNjNTA5NDU3NzE1NmQyNmM1MTU5ZDQyMmQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRjMTU0Y2RhZWY4MmJhMzM4NjZhZjgzYTBmYjQ2Mjc3MDlmZGUwYWRmNmIzNWVjZTE2MzU1ZjQ1N2Y1NWVkNzQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY1ZmEzYjExOWIyNzE1MGE1MWMzNTk4ZjUwMGFmMjJjNjVjZDY4ODdmMjQwMDAzMDk1NzU2ZmMwZDNlZjUwYzkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFlNWE2OGM0MmIxMjRjYzk5NmM2NmM5Y2Q0NWM4YWUxNzMyMmQwMzZhNjc1ZTMzMDQyNzcwNDFkMDk1OGYxOWYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_c99d6259c16841d9b6e58e335dc04d3b",
+      "statement": "Every SSE frame is written under a 10 second write deadline and a ping comment is sent every 15 seconds so a silent connection is detectable; the first failed write flips a flag that stops further writes while the hub keeps publishing.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/sse.go#L14-L14",
+          "version": "repo-lines-v1:sha256:8676c0f12b74fd26b016bad64979053cd52b8053d1ef8924df429571881212e6:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiODY3NmMwZjEyYjc0ZmQyNmIwMTZiYWQ2NDk3OTA1M2NkNTJiODA1M2QxZWY4OTI0ZGY0Mjk1NzE4ODEyMTJlNiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiODY3NmMwZjEyYjc0ZmQyNmIwMTZiYWQ2NDk3OTA1M2NkNTJiODA1M2QxZWY4OTI0ZGY0Mjk1NzE4ODEyMTJlNiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiY2Q1MzEwMDNhYWQ4YzVmNmM0OTVkOTNmZjlmMTUxZDMzOWNlNGY4NTIwYTZlNjE3MjMwZmYyMzA2ZjRiMDk1MSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMTU2YTYzMTVkNTk4ZTkyZjc5MGVjOWEwMDBjYmI2ODU3ZDRiYjFiYzBiMzM3NGEzYzJkODQ5YzI2OGQyMzUyYyJ9"
+        },
+        {
+          "resource": "repo://internal/server/sse.go#L16-L25",
+          "version": "repo-lines-v1:sha256:0dcfca2a0bd601624b3b5829b7fa4f3fccbfb9fa575fc20c991c42f6d4565c61:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjliMjhhMDkyOGIyNWI0OWU1ZjU1NjJlM2I3NmJlODViYzY0MjJlZGI1ZjJjOGY1MGVmNmRmZjYwN2E5MTFmMDQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg3ZjM3ZGE3MGZlZDdiMWJhOGJmMjA5NDVlZmFjOTI1MzgwMzEwMDNiNGFhYWY0YzkyZTUyMDg5NTM5ODA2ZTIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRmOTE4MDcwNTI2OTY1NTk5OTE3NjgxNDE3NzA0YTMxMTgxODA4NzkwNTRhYWY5OWNkNjdhM2MyYWQwNzczMDMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_cb0e77fc67c548f4a2cea0085b6c69a7",
+      "statement": "The done event carries the turn usage and a more flag computed from the queue's remaining count, telling the client whether follow-up messages are still queued.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/handlers_chat.go#L836-L846",
+          "version": "repo-lines-v1:sha256:389eb64decd54b11bb420e4b9661836c289f0a5b4e413add1baf1e53f31828ef:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdkZmU5MTRhNmVmMDZjOGM1Y2ZkNmI4ZjdhZjBhYTYwYWY0MDJlZGY4ZDhjOWIxNTQ1NTNkZWMyYWJmZDk5NzgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVlZGExMDE0NDc0OThhMzdlZTQ4OGYyZTljZDlkNDIzMjg4YzQ2MjU0ZmEwMWE0YTM0MWE4ZWI5NDQ3MGQ4OGIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzOWE1OTlmMzEzZjU5MjEzMTlhZTg3MmFkNTQ2ZWJiZTU0MWNiZWVlMjMzMjcxZWIzNTBiMGY1YmI4NWJhMTMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_57cfd4a51844479bb47c6b2b35fed37f",
+      "statement": "handleChatWatch subscribes to the run hub, which keeps a 512-event ring buffer plus accumulated text and reasoning; subscribe replays the ring and returns the replay count, and the handler writes a replay_count marker ahead of those frames so a reattaching client converges on the store as soon as the replay ends.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/handlers_chat.go#L898-L935",
+          "version": "repo-lines-v1:sha256:a0e1a2b57b685d4c11ac2c1f51ecbb1d9f7e1baa143be263cf44c15bde981ffc:eyJzZWxlY3RlZExpbmVDb3VudCI6MzgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQwZGVkNDliNTQwNmM5MDE0MWJkMmQ0Y2FjZGQ4ZWUwMWRmZjlkZDk1OWVmNGM2MWI2YWVmMWQyM2VlNGQzNmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUxZTgzYzQ3YTBhMzk4NjJjOTdjOTFkMGJjZTgwNWRhZjIzYzc3MWFhODNjNTA1YWRhN2U5ODk1ZmMxNTJhOTgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFmMjA3M2ZiZmNlMTlkNDczZTUwMjQ4ZTlkNzc2NTM0MDkwNzU3YWNkYTVkMmM2NjczYzdmN2VhMDU2OTZlYmYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImEwNjI2Y2NjOWYyYTFlYTkyMjJiOWY4ODAwOTk5YjdkYjBiZjdjNDVlMzhkNjU1NzBjZGZhOGM0OWYyMDYzMmIifQ"
+        },
+        {
+          "resource": "repo://internal/server/turns.go#L255-L330",
+          "version": "repo-lines-v1:sha256:8d8539172f943fc43f6aba48a9c9bda81fd09acd98b0a4b6b144ebec1635e3ab:eyJzZWxlY3RlZExpbmVDb3VudCI6NzYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjEwNGE5YWRiNDk2YjAyNjQwNmFhMjdjNThjOWViMTA0OTAzZjYyNzQ4ZTMxZjQyMGU0NWY0M2Y4NTA5YjUzNzQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNkZjVmMTVmN2M0MmE1MDgyODUzN2EwMzkwNDBiNTNhZTU3ZWZmNGJkMDRmNTg0NGZkMTM5YjIxM2Q5NWIxNTAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZiMDY5MzI4ZDA2OGQ5MzZmMWJhOTEyZGI5ZjUxOTUyMzdhZjM3NDg5NjMzOTExMjE1NjVlMzhjNjdkZmMxODgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI4ZjBjYTk4NTFmY2U1MzYyMTliOWM0Mjc5ZWZlNGRjNmU2YzI4NTNiZWMxZjdlMzc1YmM4NWVlYjM5YzgzMDQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_86547d039cf842209a2d8f6b9598ee68",
+      "statement": "The hub accumulates text and reasoning across rounds and never clears them on a tool-call round, because the assistant message keeps its pre-tool content.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/turns.go#L274-L290",
+          "version": "repo-lines-v1:sha256:0d50a44c15d24f97e00352834cfacf70afcafa5621238e4abe0c8d1515a68084:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQzMDI0YjFlODcxZWE0MGQzZThjZjFkYTFkOTAwMzgxNjZiMGMwMDA1OTRiNWZjYjg1Y2EzZmY1NDY1NDhlNzEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJlZThhOGM0OGI3NDQwNWRmZDE1YmI2ZTRkNTEyOGY1NWZkYzJjYzYyOTNjYWZkMjQ2MDk1OTU0NmMwNTM3OGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA1OTY5NzVmOWQ3MTViMjgxNzI1MmNhNWZmZGE4OTllYzBlY2VjNWFlNTlkMGU4NmM1ZmQ4MGQyZTA4Mzc2MTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg4ZGViY2YyZjBhODNhMTM0YmY0NTNlNGUzY2UwNDFhODFiMzQ0OTc1MmM3ODA3MTUxNjc2MzgwMjMxYzgzYTEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_29e34bda272c45c593249863d0bb801d",
+      "statement": "A steer is flushed before it is written: the text the round already streamed is persisted first so the injected message lands behind it, since store ids are the transcript's order.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/harness_chat.go#L1138-L1166",
+          "version": "repo-lines-v1:sha256:05df3c0c16a85228c5dfdc6e3122a922c6f3203b12dd5111739d956ea436665d:eyJzZWxlY3RlZExpbmVDb3VudCI6MjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU2ODA2ZjE1NWM1YWMxYWUyNzIyY2EwNmYyYWM5Y2FkY2I4ODFiOTEyM2NiNjI0YTNjMTA0NzViNDQ0OWRjMmUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFhMjk3NDk0MTI0OGY2YjM0YTA3OWMyNWJkOTFhMDA1MTNhMGVhNjgzODg2MGVkZDMxZWViMWI4MzY4MjBlYmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjljYzM1Yjk0NDMwN2JlMTI3NGY1OThiODk3Y2EwYWFiN2RmMzdjNzVlZjRmMTFhYzU1Y2I4NTg5Y2NjMTU4YmQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY2YzE2NGE3YjlkMWFjYzAyOGY1NDEzNzY0Nzk2NTM5YzY5ZDU1MTY5ZjNmNGRlZmUwNDk2MGVjZWU2MmIzZjEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_1874bd1af58d4f50b6a06ac8cf3e1514",
+      "statement": "A steer that cannot be delivered is put back on the queue via Requeue so it runs as a follow-up turn instead of being lost.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/harness_chat.go#L1140-L1150",
+          "version": "repo-lines-v1:sha256:e4489cdc436e68f1aebad00657d10fa65eead13175cc8ba083dff0ea7de80464:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNmMmExM2I0OTg5MGQzZmQyYjc2NmFjNDQwNzgwMTA3ZjVlOGFjM2UzY2NkMGJlYWU5YzEwOGRmMWI2ZDI3MWQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIzOTFjYzUzN2ZkYTI1ODc1MDRiMmYyNjZkMjQ0MDJmZTlmNzM5YmYzMDNjYjhlZTE1MjM1MzI2YTM4Y2NjN2IiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFkM2NjYWIwYjIyNjMzNjdjYTFmY2M1N2MxMzBkYzEzMDA1NTg0NWRjMzVlZjA0MTAwYTUwZjU5NTU2MDJlY2IiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQzZjY1YWRkMjMzZWFkYjNhMTAxYzRhNWNkN2ZiODdmMDUzNmY3ZWI0OTAzOWRkNmUxNGNjZDAwZmY1OGQxYzcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_fc308831387e43d2a8826b2f99df205a",
+      "statement": "The turn loop only ends when run_end was seen and no injected message is still pending; with injections outstanding it waits up to harnessSteerGrace (90 seconds) of silence and then logs how many were unanswered.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/harness_chat.go#L1225-L1235",
+          "version": "repo-lines-v1:sha256:c3ab8156e070767b1fcb8f7d5e22f1e27e4b669ec1bce9b165e8ac0bf3b0362f:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0YWIzZDU1MzE0NTMxNDMwNzkyZDdjY2Q0MjM0ZjQwNThlNzVjOTA4OGU1ODQ3MTA0NDlmMzAxYWViN2ExY2YiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY0ZWZjNDk0MThkMjZkY2YxMjliMjJhNmFhMjExMDhjZWVjMzc2NzdhMzJkMDhlOWQ1ZmVlMzVkZGE2NmJiOWQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdmYzhkNmZhMjRlMDIyN2RkYjcxNzRkMzg1ODE2ZDQzNjI0MWE3N2Y3YjQyZDEzZDUyMjAwMjAxNGE5N2Y4MzQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdjN2MyMjNmNmFjZDM0ZDNiZTA2ZTA5MmJkYTJkYjYzODQzYmZjNzU3MjJiZmM5MTNmOThlNDJhNGNmNWIxZDUifQ"
+        },
+        {
+          "resource": "repo://internal/server/harness_chat.go#L998-L998",
+          "version": "repo-lines-v1:sha256:890257e8051f0687b615bd3bf3ad0f54babbd60f8a777dd34e2188928eb9c6e4:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiODkwMjU3ZTgwNTFmMDY4N2I2MTViZDNiZjNhZDBmNTRiYWJiZDYwZjhhNzc3ZGQzNGUyMTg4OTI4ZWI5YzZlNCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiODkwMjU3ZTgwNTFmMDY4N2I2MTViZDNiZjNhZDBmNTRiYWJiZDYwZjhhNzc3ZGQzNGUyMTg4OTI4ZWI5YzZlNCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZjg2ZmE0MWMzYjI3YWI5MjcyZmFmM2NhMjcyMWFmMzc0Yjg1YjNjZmYwYWM5YmZlMzY1MzZlN2IzNWI1NGI4NyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNGIxOTQyNzdlOWNhMTYwNTI5NmJjNTJjZDc4Nzk1N2YwZTgwZmY1NmY4M2NhYjgwMmY4NTE5YWFiOTZiYTc5NSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_c4a915a86e964a85b7755649b0ea8529",
+      "statement": "giveUp persists the partial and aborts the sidecar generation with a 10 second timeout derived from context.WithoutCancel, because a turn v1 abandons while the sidecar keeps running leaves every later tool call failing against a turn that no longer exists.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/harness_chat.go#L1204-L1220",
+          "version": "repo-lines-v1:sha256:c34137272ebe5527ea62af533f2ec4d5124f51aa8fa7a06e56b998517e7075db:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE1YWMzZmRhYjU0ZWJhOTFhMDIyMGEzMDA3NzY3OGY0OWRmNjE5YjRhNTQ4OTFmZjRjYTBkYjAwMGY4OGQwZDYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk1ZTY5MWU4OTNkN2RhMGUzNmQwZDI0MjI1MDE3ZTg0ODQzYTMyZjZiNzgwZjhlNzJhY2M1NWUzNTQ0YWY5ODEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQwN2UyMmI4MTllOWIxZWYxNDBkN2VlNjk5M2M2ODZlOThiOWVmMjQ4MmM4ZmM1MDVhMGRlY2I0YTA4ZjJmNWIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_72c01a473b1b4f9580abb8bfe437173b",
+      "statement": "A pending injection is retired when the sidecar reports its submission done or unanswered.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/harness_chat.go#L1345-L1355",
+          "version": "repo-lines-v1:sha256:8ace16652c785153637d415fd7245603ad2af8b415c0eccfd77161ea6f1058f2:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc1YWJjOGYzMTkwMWUyYjhmNmEyMjQ4NzQ5N2VhYmUxZDdjODNkYjE5ZTNhYWQxYTRjMmIzYmVlNmYyM2JhM2YiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU0YWMzOGEzODIzN2Y4Y2RiZTI5NzZlOTBhM2ZiOWM5Y2FmZWI2N2E5MjUwNzRhYTVkNTdhZDcwY2MwNjA2MzMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA2ZWQ0MWYyOWRjMTFjZDFlZmM4MDcyM2Q1MTY0ODUwZjYxOGJlOWQyOTk1NWZkZDM1NWIwYWU3MzFmNTIzNTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImEyN2YxM2Y0MDM5YjBiMmQzYWM0MmJlMDZiYzQ4MzY5YmM2NzNjZGY3NzQwZDFmZTlhY2E1MjdmZDRiMjI2MjcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_f47e458c1bed414eb99a8365915cf62c",
+      "statement": "persist writes one assistant row per round with text, tool calls, reasoning and that round's usage, then resets the accumulators, tracking flushed text separately so the message_end reconciliation only writes what no flush has written yet.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/harness_chat.go#L1028-L1064",
+          "version": "repo-lines-v1:sha256:17a7563ed26c6c4a85476d6acf5fcf58d0ab7ebd2cf520b0f835e0a7a3ea2da1:eyJzZWxlY3RlZExpbmVDb3VudCI6MzcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg0MDhiMDI1NWNlYzE2ZTNkOTUyOGVkMDgyMGY5ZmE4Y2RjZjFmYjEwYjJjOTZlYzc0OTM3ZTA5Y2QxNjA5OWQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjczZTk2ZjY1NDk0Y2JiNmRkZjk5NDIwMDVlNTE5MmY4Y2RiNmQ1MzBmNGU4NmExM2JiMDZjMGEwODc3OWMxYTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjExNzM4OGU1NzA4YzIwMWEwNmIyMjJiM2Y0MDgyODZmOWJkMTA2ODljYjZhM2IxODMzNTYxZDVmY2MxYmNhZDgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNiMWE0OGMwZDVmZDM5YWU4NWQ0OWQ1YmI3NTBlZGQzZjg1MWEyMTBjNmE1OGI4NTg2NjkxYzdlYTdiZjhjNTgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_a4fe26471efb48028eedf0d85d664702",
+      "statement": "A turn that produced neither text nor a tool call is treated as an error rather than a silent done, so a reasoning-only round surfaces instead of showing a thinking block and then nothing.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/harness_chat.go#L1503-L1510",
+          "version": "repo-lines-v1:sha256:131a2ac1452b5c36d5cc7ecb14dabe3bf1194d7c4dec4a13d2d44fac37946d45:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNWQwMTA0NmJiMmUyYjQ3YzlmYjkwNzYzMjQyZDMyY2MwYTE3ZDE0ZWNlOWEzN2NjNDU4MGFkYTJkNDk1ZDUwZCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZWFiZWRhNzg5ZGUxYjQxYjRiMGExM2FhNTFlYzIwYzg3MDg0ZjI3NTg3ZDYzNzkzOGE4NmExOWU5MDgwODVlOSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMWU4ZTM2ZGI0ZGZmOWU4ZmUxNDg3NzQyZTY4MWRkNWRiMWFlZTRmZDg3YTRiMjlmODA3YzYwYjU4MTc0N2ZmOSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYzYyNGU5ZTI4YzA4YTc0YTcwNzRhYmQzNzljNjAxZTMyNTIyMDc5YzVjMGU1OWI4ZDQyMjc0NTg3YWE1ZWYxYiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_280ec8dcf84940ba8075126ed7ad60b6",
+      "statement": "continuedPartial finds the assistant row to continue after a failure: the transcript must end in an error row and the row before it must be a non-empty assistant message written after the user's message.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/handlers_chat.go#L533-L549",
+          "version": "repo-lines-v1:sha256:e18e63e91352c0705a924c6093f6ece2aeb18d1ad8b897f70786286c16f53817:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE0ZjVkYzUwNjQ3ZGU5OGNjOTJlNDM1ZGI4NmY0Mzk4ZDQ2NTM0YzI0NTJlYjNmZWY1ZGQ5MDU0NjdhNDBkMWMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ5OWM4YjZkMjFkNTEzMzdkYWUwMmFiYjE0ODZjODkzMzMzMGFkYWVhOGUwYzk2ZDM5YjQxODNlNDJlYTYwNTIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjgyM2I2YWZjOWRhZTVlOTdkNGZmY2JhNDc5ZmM4ZWMyOTI2ZDBmZDNmYWZjZmNjNTE0YTAzMDI5NDNhZmE0MDkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc1N2NlMDVhYThiNDFiNmFjOWFlOWI1NTZlM2Q2YTc2OWE5ZjkyODY2ZjUxYjNjZDc3MjU3YjA5ZDg0Y2U2MzgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_4d3b35bf3b5742e7a251f0edd28d9456",
+      "statement": "The stop endpoint cancels the run and also cancels the detached commands that session started, so a stop leaves no orphaned builds or servers behind.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/handlers_chat.go#L986-L1009",
+          "version": "repo-lines-v1:sha256:a37d92ae626c9ee5c29ee96ffdf8db44ee6be3dd8cd1be35a704592257d28fcf:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkzYmJkMDhjNjgxNzUyMzc4OWQwYmM5NzM1ZWY1NWU1ZTQ1MDFhM2YzMTI5ZWU5MTFkZmI2ZmQxMWQ3MjQ5OGMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ2YjJiMWNjNTczNjA3ZDgzMjY4MmI4ZjA2MWYwOGU2YjIzODNkNDExZTg5MjcyYjhiNzE0NWVhNWM0MWI4YWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM4MjBhNDA2ODAzZWQzNDUyNjFmOWVmYzgzNjg5NmRmODExMmRkZWQwOTkyOWM0YWI5NjBlMjQxYTZlMWRlZWMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQxNWRkNzIyNDE5ZjM3MjYxMzE0M2UxMTY3YTYxY2Y2MzM4MGE2NGU1YTI0ZTBmYWE4MmI4NTYxNzQ4MmM1ZDYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_0f0d01648eda4a81b7560e8a6fe08365",
+      "statement": "The status endpoint reports whether a run is active plus lastMessageId, which lets the client skip a needless transcript reload when nothing was written in the background.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/handlers_chat.go#L967-L984",
+          "version": "repo-lines-v1:sha256:991f98105892a69ddca7fe1ed3b1a2f15af64cc6b215a561a2a769485d39bb18:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA0MWNkZWZkOTI1Y2UzNWI4MGNhMmZiNGMyMDRhNTMxNGQzMGZiYjliZDhlY2VmMmZlNzFmNmUwODBkOWZlNzUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE1MGIxZTY3M2U1NmExZTU0NDAxMGNlNWUyYTkyYTE0MGY4MjdhNTRhMmIwNGM5M2Y3OGFlNGU4YzY0NmVmOWUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNkMTEwZDNlMzgyNjQyMDE3NTMwNTViOTdmMjMzNWU0Y2M2MDgyNDdkNjVlZDVjMTM0Y2IwOTcyN2M5ODFkY2UiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjYwYjJmMjhlNmY1NDNkNTFhZTI2ZTMyZjVjM2NhZGFkZmE4NzNjOTVkZTExOTQ1MzJiMjQ2Zjc1YWM0OWYwYTcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_662573760bb147c7936b591612ef1491",
+      "statement": "Forking copies the transcript into a new session and forks the durable conversation in the sidecar, refusing with run_active while a turn runs; a failed durable fork only logs because the v1 transcript is still a correct fork.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/handlers_sessions.go#L54-L100",
+          "version": "repo-lines-v1:sha256:a7bf10882ac932e28c0ebdb3c3642e462daf42af503b25e6017e14b1b73e4eb2:eyJzZWxlY3RlZExpbmVDb3VudCI6NDcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVhYzIzMjM2ZWE1MjFjZGJmZGIyNWY5MmQxOGMyYjYxYmU5YTBhODlmYjY5Y2MyZWUxOWRiMjRhM2EyOTk1NjQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFkOTJhY2Q0ZGEzMzEyNTFlNDhjNTk5MDBkMmFkMGEzZDUwOTc0ZGIwNzJhNDIwMjJkYWFlYzI0ZmFkYjU4YTMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdkNzliODYzOWIwMTlmZWYzNjhhYWZhYzhjZjgzMWMyMTkxZDdhZTM1ODg2ZDEwNDdlN2MzYmJkNjY4YTE1MWEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_e3d534ace90e4fccbd5e94382c9ffaa1",
+      "statement": "A session can be renamed through handleRenameSession.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/handlers_sessions.go#L103-L110",
+          "version": "repo-lines-v1:sha256:2247fbf0d7f731681cf67378dc75a2d9f0ac8c7fedc3a475d60fa4c83b03a06f:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNGE2ZTAyMmVhYmMzMmFiYWEyMjE5ZDIzYTlmOGI2N2IwZTFjNDg0YjdlNWYxMWVkY2M4N2RmMzAwMTkxZmM1YSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNjdjZGE4MmRhNjA2MjM4ZTA1ZTYyMzk5NTY5YzVlZTAzOTkzNDE5NjQ4YWU1ZDQzYTJiZjhjZDYzNDdmODI2MyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYzI1NWI5ZThhZTRkYjhhMWE0YmQ3NWMzOWI2ODMyZTMwMDQxNzdmMjliNGFhMzIyNGM4OWU0MzQwYzFmNzhmYyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMzllNTliYmMwNDBmM2UyMWM5YWU4OGQ1OTM5YTEzZjlkNTJkZWVjNTUzZTM0ZTQ4MzYzNWJlMDYwMmJkMmY4MCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_70b233384dcb41d4af25308d42924e32",
+      "statement": "The sidecar's message_end event is the authority for a round's committed text and usage, because a fast round may stream no deltas at all.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/harness_chat.go#L1370-L1385",
+          "version": "repo-lines-v1:sha256:92dfcb87cb070c9105f28481cd03df056186a4ddc8ede923572272bff9e368a8:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg1MjI4ODY1ZGE5OTgxZGY0NTM0Yjc5MTc5ZjU2ZjcyOTU5ZmM3ZjJmYjQ2MjY1NzVhYWQwMGRhNmZlM2Q3MGQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZhODI4NjQ4N2QyOWMzZWU1MDllMzg3YmFlZTk0YzBmM2FlZTgyZTFjNDM3OGQzMTI5NzQzODlhYTRhYmMxM2EiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJjM2QxZWRlMzI2ZDM4MjVmMTQ2YzY3MGZjOThmZjM4MjMxZGMzYTU0MjIzNjE0YzhiMDgxNDQzNDJlYWIxOGIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJmN2YzZWI4ZjFiZTk2MzdjYzAxZDNlNTkwZjlkYmFkMjdjYjk2NmM5MWU0ZDBhYzNmNGYxZjZmMWY3NjU0MTIifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.9.0",
+    "at": "2026-11-15T05:31:58.285Z"
+  }
+}

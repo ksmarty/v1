@@ -1,0 +1,320 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:13b7d30feffbab077ee922bb785f3d9857845a69953d3e3faf651d87220e5d28",
+  "claims": [
+    {
+      "id": "claim_0a5ea16b1979458288b1c9fe744f8ad8",
+      "statement": "preview.Manager owns the running previews, a concurrency cap (3 by default) and a 15-minute idle timeout, and starts a background idle sweep.",
+      "evidence": [
+        {
+          "resource": "repo://internal/preview/preview.go#L1-L1",
+          "version": "repo-lines-v1:sha256:5c478032e32a72f058beec6df7db333d95b7de229fd871496f18cf347a9f030d:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNWM0NzgwMzJlMzJhNzJmMDU4YmVlYzZkZjdkYjMzM2Q5NWI3ZGUyMjlmZDg3MTQ5NmYxOGNmMzQ3YTlmMDMwZCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNWM0NzgwMzJlMzJhNzJmMDU4YmVlYzZkZjdkYjMzM2Q5NWI3ZGUyMjlmZDg3MTQ5NmYxOGNmMzQ3YTlmMDMwZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjAsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMTA5NjI4OTA1NGY5NTYyNTg4MjJlNjFhMTg2ZjU1MDNjODkxNmY5YjVlNDM1YjIzM2M4N2RkZTdhODU1YzU0OSJ9"
+        },
+        {
+          "resource": "repo://internal/preview/preview.go#L115-L136",
+          "version": "repo-lines-v1:sha256:aff6fb175112b82d396a485bf45c6327af74ea12afe80358d5565bc2bff7b6a3:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdlN2FmODhhZDdiMWUxNzU2M2UyZTUxODUyMTAwMTU2Nzc1N2MwMzk0OGYzNTdjMTM3ZjIyMDA1YTc5OTgzODciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBkY2YwMWFhNWY1NGUwZmY0NmE4N2M2N2ZmMGUwZmJhNThlMmMxNjgxMWI4NTJkMDYzM2EzMTY5ZjRlYjZlNjciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ4ZTg2ZjY0MzE4MmFiMWE5NzRlY2FhNmEyNzA5Njc1NjRmMGI3M2QwOTQxMGM4NWIwYzBiNjlmOGQ1YjdlYTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcyMmYzZjE3NjlhMTcyYjI5M2UyOGFkOTc3Y2Y2NTE2NDkyOTRmZmExYzkxMWQzMzlhNDIyOTlhMGM1MWRmZmYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_a0e6a49fda0e4434aa3cdb64ae1d0469",
+      "statement": "TouchRevision bumps a per-project file-revision counter so the preview iframe reloads, and DirectURL returns the dev server's loopback URL (with the Vite base path when applicable) or an empty string for a static preview.",
+      "evidence": [
+        {
+          "resource": "repo://internal/preview/preview.go#L161-L192",
+          "version": "repo-lines-v1:sha256:33685f1f7906c032650cf4c65869f28ada4859c11fb3d0fa87977cee6f364e5e:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZkYjQ2ODJlMzIwZGY1YzdhNTg0ZDkxZDI3YzkyNmU1ZmY5NTA5NTg3YWE5YWQyMjVmOTE5MmUwNzUyNmQzOWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM4OTEzODdlN2RkOTQ1YWI3NmM2MzRiNDYzNmM1YzVjMzkzMWJjMzdmYmIxMWJkN2VlZDhmNTRhNjgxNjI0NDUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA4MTA1MDUzNzBkZDg1NTQ4MDI3OWVjMmVhMDc0MWJkMmYyZjI5NjlhZTBiZTc0Y2JmMGE1YzdmODJlMWM4OWMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_80bf9990129548a68afaffedbbe8cddc",
+      "statement": "Start reuses a running preview, starts no subprocess for a static project with no package.json, enforces the cap before heavy work, and takes a port from the 4100-4199 range.",
+      "evidence": [
+        {
+          "resource": "repo://internal/preview/preview.go#L193-L256",
+          "version": "repo-lines-v1:sha256:a78098f9c470a37af233cea40e195658eac222e914994aa7d94a05a21fcf50cf:eyJzZWxlY3RlZExpbmVDb3VudCI6NjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxZGQ3NDNlMmUyOTUwZjVlOTc5MWE4ZTg5MDQ0ZWZjM2NkNzNiZGQyMWU3MjNiYzZiYjEyZjAxM2MxZDJkMjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFmNjIwZDllM2Q5NjE2Y2U0ZWNlNmEzOGZmOTE5NDk5Y2FkMGFiMzgwMjhmMDVhYzJhOTRmYzhjYzkwMDg5YzgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE5MGRiNThmZWEzNTE0NmRmOTRmYTE2MWYzMDE1NDhhMGM2MWY4ZmY1MmQ0MGNlOThlMzE0MWY2OTk3NDQ4MWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNiODEzZDNkYTU5MTlhYjJjYzZhNDE4YWNjNDE4ZDBlY2JhYmFkMzE1M2IwYzQwMjJkYTFlODJmODJkNmMwYzkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_b89bb56302b74222b897196bd17bd81f",
+      "statement": "Dependencies are installed only when node_modules is missing, the dev command differs per framework (--hostname for Next, --base for Vite, -- separator only for npm), and the child is started in its own process group with PORT set.",
+      "evidence": [
+        {
+          "resource": "repo://internal/preview/preview.go#L258-L310",
+          "version": "repo-lines-v1:sha256:aca16f7e5805b15035bd3bd6fc0d7371bd4264ee32de523b30c1c7f771017048:eyJzZWxlY3RlZExpbmVDb3VudCI6NTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU0MGJjNDQ0M2Y2NjQ5ZTkwOWRjODllZDA1ZmJjN2NiZTYxZmYzNmFiMzI2NDYyODkxMzMwY2U3MDU5OWNiNTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImExMjRkMDAzN2RmMmZkZTc0YmMwZGI1ZjExODI5OGZmZjNmMjU3OTJjOGVhODAzODYxOWQyMmM5NDJiZWUyN2YiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjU0ZjRkOTM4NmFkZjBlOWFjYTc2OTFhMWY5OTQwMmVkM2ZhZDI1ZGI3MjNiY2Q5OTU1NjcyNzk3N2NlNTZhOTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc0MjRlNGJkNjRjZWY1ZmI1MTk0ZWNkNzBmZWE4YmIzM2MwMjZmZTE0ZTQyYmNiMTcwMTkyMTYxMWFiZjRjOWIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_941ab9f21a3a4952b29a73dcb405aa64",
+      "statement": "Start waits up to 60 seconds for the dev server port to accept connections and, on failure, returns the tail of the log with the reason.",
+      "evidence": [
+        {
+          "resource": "repo://internal/preview/preview.go#L318-L333",
+          "version": "repo-lines-v1:sha256:6af12e005961751db3537fefc0a06f6725d8689543b6099d0c0aea26232e8d57:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA3ZmRmZjFjYzMxMjU5MWM3Yjc4NTEyNDg5MmM2NWE1NTUxY2IzOTE4ZWViMmUxNDNmNzU2M2UzYjg3Yjg4N2QiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY3Y2RhODJkYTYwNjIzOGUwNWU2MjM5OTU2OWM1ZWUwMzk5MzQxOTY0OGFlNWQ0M2EyYmY4Y2Q2MzQ3ZjgyNjMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZkNWVjMWU3MDY5NTc5NGQzM2Q1MjljNDEwMmRkYmI1ZDQ3YmFmZjQ4OGNmODNkNjJiNzZhMTFmYTkwOWZhMTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM1NzdiYjU1MGQ1ZDIxOGRlZTk5ZTMyZTNmYjVlNTQ3ZTMxMTM0OWFmMDY5ZWVlOTk5NTdiN2JmM2NiYWFkZGIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_a385b54fba154355bbd5e119c0dbb312",
+      "statement": "A preview is killed by signalling its whole process group with SIGKILL, and evictLocked stops the least-recently-used other preview when the cap is reached.",
+      "evidence": [
+        {
+          "resource": "repo://internal/preview/preview.go#L389-L426",
+          "version": "repo-lines-v1:sha256:94b700ac66cae03b2570bd35a1e11f6c52e44611888261e44eb2bd2da0549e8d:eyJzZWxlY3RlZExpbmVDb3VudCI6MzgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZhOTY2YmZiZTgzNzViOTNhNjc5ZjgyZDQxMTE1ZGE4MzVmMmNlYmQ4MTZlMDk4YzE3Y2NlNTRiZjRjOWVmYzUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImYxYjU2ZGZmODljNGRlOGM0NWEyYjE0MmQ3MDQ3ZmY4NDZhOTI5MWExZjQ4MGM4Y2MyNGYxN2ZlZTAwZGM1NDMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc3OTllZWJlY2E2YTMyYjQ2OGU1YWE4MDAzOTczMDJiMDEyZDVkMDE0Mzk0OGQ2NjBhMzU1ODlhNjQxMzI3YTgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_99130d9afad146a392e4cbfa2786a1f5",
+      "statement": "The preview proxy resolves the project, returns 404 for a project the user does not own, returns 503 when the preview is not running, and serves a static preview directly off disk with http.FileServer.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/server.go#L1071-L1099",
+          "version": "repo-lines-v1:sha256:70466e556378e3211498925039a2f70efea96dac9cd76881a8f56386f1e61121:eyJzZWxlY3RlZExpbmVDb3VudCI6MjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMzNWNjMjA4ZTc0MzZkYTZkYTAyNTI4MWJmMmI4YmNkMTU3NjhhNWU1ODhiMjNiMmI1MTljODY1OGMzMmE3NmEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY3Y2RhODJkYTYwNjIzOGUwNWU2MjM5OTU2OWM1ZWUwMzk5MzQxOTY0OGFlNWQ0M2EyYmY4Y2Q2MzQ3ZjgyNjMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjAzYzdkMzVkMDBjZGM4MWQzNWVjOGY1YjdjNjNmMDIyMjhmMTM2OGJlNjdkYzBlYjcxYjA3ZTFmYTFjNzk2OTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJjYjljODI3OTAwMjg4MzVjZGI3MWVjMGQ2MTNhNjdkOWQwYWFmYWUxZTBhMjZhMjE0ZTg0OWU4ODNiYzJlMGQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_a247026a797a4535b5daba09284d0949",
+      "statement": "A node preview is forwarded to the dev server on 127.0.0.1 by reverse proxy, forwarding Vite paths unchanged and stripping the /preview/<id> prefix for everything else, and a dead upstream becomes a 502.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/server.go#L1101-L1121",
+          "version": "repo-lines-v1:sha256:5ffea0721fe709eab956a166df7d55d087c7beed92ac4baeda6842da4ab5e169:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc5OGIxYTY0YjNmNTNmNTkxNzliYjJlYzFlOGRkMjMxNjBjYzdlYzBmZGIxNjg2MzMyZmU2MGY0MGE1YWZiZWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA5MTRjNzNlMzNiYmM3MWVkZGEyMTM3YjI3MDUwYjQ4NWY3ODFjZDhhNDE0ODNhMGU2NWRmY2MzZWVkYWFhZTAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk3OGJlYTllZGZmZDU3NWUzNmI4Y2ZlZWIxMmRjN2M0ZmEwNGViNWU0YWJkZjVmMjIyYjg5MGNlOWQ0MDJmYmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQ5NWZjYmE4ZDkzZjY0YTJmMTI3OWY2NmI3NGRhMWNkZTFlNTEzYzhiZjlhNWYyMTYzYWE3NTAzN2Y2MWQ5MGYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_583f53b484d549959a007426fb4dcea3",
+      "statement": "The preview proxy is registered for six HTTP methods so it does not conflict with the GET / SPA catch-all, and the auth middleware lets the SPA shell through but requires a session for both /api/ and /preview/ paths.",
+      "evidence": [
+        {
+          "resource": "repo://internal/auth/auth.go#L233-L252",
+          "version": "repo-lines-v1:sha256:8c5257541e421340bac1f17fb92b212ee0f34a2f53111f18803ecc7a9ea19642:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVkNjI0NGRlMzI3MTZlMWNmODVlZjc5ZDczYmU1MWRlZDk0YzFkYjE4MjIzYjQxM2JiYTZhZDI3Y2QzOTMzNTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY0ZWZjNDk0MThkMjZkY2YxMjliMjJhNmFhMjExMDhjZWVjMzc2NzdhMzJkMDhlOWQ1ZmVlMzVkZGE2NmJiOWQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY2YzU2OGNkNTY0YzMwMDMzYjFkYmQxZDg3NmRhOTcwNTBhODI4MGI0Njk0ZGFkNGY0NWUwOTVjNjdkYjExZmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM2ZWNkMmUxMzY5MDc0NWVlOWNhMDc3NTQxMWYzOWVjOGE1NDBkMmI5NzM3ZjZlNzE2Y2M5MjgxNGVjNmYwNWEifQ"
+        },
+        {
+          "resource": "repo://internal/server/server.go#L323-L330",
+          "version": "repo-lines-v1:sha256:d5ef6e0bfe314289d108116c9dc2a96366f6f35a0aa9664c1a8cc552da288866:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYzIwMzZhNjg3ZTc1OWY1MmRhMzNkMTNjM2VhZmUyNGYyMzEzZWYzZTllZTg3NTZlOGE3MjZlN2MxZDg5ZjI2MiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDdmN2ZjYWQxOTBiNDYwMWM4YmY3NTU2YzM2YjY0MTc5ZmQ5YjEyMmY4YjNmNzA2YzMyNDJlYTVhOTEyZmU1OCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOTc2OWU4M2VhMjk5YTc2MWI0MWVkYmRhNWI3OTY5ZmUwZmE5MWI5ODJmYTQ2Y2YwNTNmZWI0NGQwZTZmNjEwNSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNTFiOTAwZjYzZmZmMDMwN2Y5YjZhMmFkM2VlYTU3YmRlOWIyNjllOTcwYWI3MTM2NmUyZWJmYzhhMWVhMDBkZSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_b2566ef3f5ac488a9755aa10cbd7392b",
+      "statement": "capturePreview screenshots a node preview through its direct loopback URL because the v1 proxy requires a session when auth is on, falling back to the proxy path (which needs auth disabled) for static previews.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/handlers_chat.go#L1153-L1168",
+          "version": "repo-lines-v1:sha256:85311194e892c6efb965bb1309e30532aab9cfdc0559174e897cb7eb91ee9b45:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI2MDllMzA0NTgyZDdmNjU0ODRlNWM5MTY5MWFiMDE5ODY3ZWY1OTUyNTk1Y2U1MTdiMzFmZmRjZjQwNmRjOGIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjEzYjU1MTNhNmE3NWE0YWI2YjUwYzhkZDE2NWU3MDRiYzUzZTEwZjJjYjdiZjYzZWYxZTgyM2Y4MmRmNmU4YzMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJmMmIzZGJlMjE0ZWJkMjdjYzNmMzI3OGViOTJkMjI4YTU1ZThmYmQzNmJhNzBhNTJhYjQzYzZkMWE1NWRiMWEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNmOTYyMzIyMDM3N2MwOTljNjg5NjFiMGFhMjA1OTdkODI4NmI5Mzk1ZDQ4NDM0N2IxNTNhYTBiOTI1NWM3ODYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_b7701a810ab94f4881d097900f80fd90",
+      "statement": "The screenshot package lazily starts one shared headless Chrome, serializes captures with a mutex, allows V1_CHROME_PATH to override the binary, and captures a 1280x800 viewport after a 1.5s settle under a 30s per-tab timeout.",
+      "evidence": [
+        {
+          "resource": "repo://internal/screenshot/screenshot.go#L16-L70",
+          "version": "repo-lines-v1:sha256:2c1a383fa2c1ba5cb6b2989358c21faab3f048bd0ac1a474abf6d94c0a171a9f:eyJzZWxlY3RlZExpbmVDb3VudCI6NTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUxNDU2ZDM5ZjZmYWExMjhmZGQ5NzU3NWY0ZDEwMjk2MWExZDYyNTY2NjczZGE0ZTNiZTk4MGMwM2E3ZTlkMzEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE3NTJjODE2NGRjMjUxN2MzZDA5OThiY2Y1ZjEwYjJjMTk3NjBiZjhlZTc0M2Q5ZGE1MTVlY2Y2M2I1YTUxMjgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ3Y2Y2NGEwMDkwZDI5NmFlNTA3ODRiM2RmNjY4YTVmMDQ5MDEwNTg3ZmFhZGUxYWUxOWY0ZDVmZTdlOTk4NzciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjhiYTBiMDE4ZjBiYTExN2ZkMGU5ZjVlMzE4NzVlZDRjYzRlMTY3ZGM4YmQ5MTEwMjMxZDhiYTU2MDZkYTZkYzIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_7ba4eeb2d7e84d2fabcf5d34734f36f4",
+      "statement": "RenderText reuses the same shared browser to return rendered HTML for JS-only pages.",
+      "evidence": [
+        {
+          "resource": "repo://internal/screenshot/screenshot.go#L76-L102",
+          "version": "repo-lines-v1:sha256:259d296dbb71756dc0b4637de08099f4b15d920f5d5d988cf0ebfbff4bcbb736:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAyZTk5NGMzYzYyNDE1Mjg2NDM0MmM3NDU0NTM4YWQ3MDBjYmRmNGU2ZDBhNGJjOThlNzc2NDg4NmFmOTk5ZWQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJjMDdhNzkxYjkyZDVjZTExYWZiMDQ3ZDQ1ZTdkYTRjMzJhNDMyNTU2NWFlOTJlODU3ZWY5ZjMyM2IwNmI1ZmYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_b0233d1bd0cf4f6e9bab909421d6da13",
+      "statement": "The screenshot tool is only wired when params.Vision is true, which modelSupportsImages determines from the catalog and which treats an unknown model id as capable rather than text-only.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/handlers_chat.go#L1171-L1200",
+          "version": "repo-lines-v1:sha256:95533fa3b4b8a091fba6f65e35e4086825b47c64e349764bd375264f34909008:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI5MjY2NGRkZTMwYjNjY2MwNmJmNmQ4ZGJiNDc4YjU5NzMwMmY2NWE0ZjQyYjBkYWE5YzNmZTcxYTJlOGU2YzciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY3Y2RhODJkYTYwNjIzOGUwNWU2MjM5OTU2OWM1ZWUwMzk5MzQxOTY0OGFlNWQ0M2EyYmY4Y2Q2MzQ3ZjgyNjMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ1MmE1ZmYwOTVmYTQ5NTY3YmNlYjMzMjY3ZmQ0Yjk4ZjU1NDY4YThhODQ2Mzc2MWFhZGU0MmM1MmEzMTUxMjAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ4YzBhMDhlMGE1ZGIwZTAzNWY5MmQyYzU2MTE3NTljOGJmOTE1YTJhYjFkOWExMGY2NTE2YjZhMDE0ZjEyYmEifQ"
+        },
+        {
+          "resource": "repo://internal/server/handlers_chat.go#L771-L775",
+          "version": "repo-lines-v1:sha256:2f8ed4aa02398462e92a87cf3e75af299ba86e5a711a9718d6c9235d16ad09d7:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNTI4YWQ1MGVjNGQwMDlmODFhNjQxNmQ2MzhmMDVlODlkZmY0MjRkYTBmZDEwNjgwZGEwYjExNmRlNTZjNzAxYiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNjdjZGE4MmRhNjA2MjM4ZTA1ZTYyMzk5NTY5YzVlZTAzOTkzNDE5NjQ4YWU1ZDQzYTJiZjhjZDYzNDdmODI2MyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMWIzYWU2MzIzNDBmNWQyZWMwMTI2YmJkODYxZTZjYmZhOWY3MDU1Y2I2NjdmNjA5ZWRlYWFiMzE0ZGJmYmRkYSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYTMyNGQ4MGJmNGMxY2RiYjM5YjM5NGQ3ZWEwYzQwNzJiZDU5OGEyZGJhNWQ4NTAxNGNlOTY4ZDNhODhiN2MwZCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_b14af30accec4217beea9bab96cdd37a",
+      "statement": "terminal.Manager keeps per-project websocket sessions, and ServeWS upgrades the request and bridges it to a shell PTY rooted at the project directory.",
+      "evidence": [
+        {
+          "resource": "repo://internal/terminal/terminal.go#L18-L49",
+          "version": "repo-lines-v1:sha256:d33d940f91d555638b0804f12980231f1008e68dfbcd502c50bc32e9e9655612:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdlN2FmODhhZDdiMWUxNzU2M2UyZTUxODUyMTAwMTU2Nzc1N2MwMzk0OGYzNTdjMTM3ZjIyMDA1YTc5OTgzODciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJkMWIwYmYyNGJmMDVhMjJhOGQ4ZjhkNjAwMDdjYjgwZmY5YjExM2U4ZDI5NjMyZDU3MDdjOTljMTQ0OTFiMmEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjU1MTQ2N2M3OTA2NmM2M2NjZDhjYTViZGQ0OGViNjQzNjExYjVlYzU1OWFhMjYwMDNhZjIzNGQ3ZmFkNzc3M2MiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdlMTZlMGFiZTFkYWU0NTEwZjJjYjEzNjQwZjIzOTY1NDlkYTFkNTMzNWUwYTc1MzIzODI1ODQxOGU2YzE1ODYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_081dc3684ac8497dbb820a8bec3af5ba",
+      "statement": "The terminal socket pings every 25 seconds with a 60-second read deadline refreshed by pongs, because reverse proxies drop idle WebSockets.",
+      "evidence": [
+        {
+          "resource": "repo://internal/terminal/terminal.go#L52-L78",
+          "version": "repo-lines-v1:sha256:7ed5e3491348c1aeaf510d70c56a66e18171826ff85bfe5a87d859b8cb58aa28:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM2NmEzNDI0MWRmZDdkZTIyMzg2NTY3ZDE1ZWUxN2RlZWIyZmY5NGY0YjExMzQwMWVhNzY1MzJkMmEwZDk1N2QiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRkYzc2MDIwYmFlNzA1NzdlNjRiMzMwZGNhODNmZGYyNGYzZDc1OTNhMDE1NGQ4YWJlYzZkYzYzZjU4OTdmZDkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjllZjA4MGNiYmFjZDYzYTg5ZjFjNmIxZmI4MzA3ZGE1ZDFhNWVkYTEzNDE3OWYyNDhjYTQ2NjViMzc2NjEwNTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImMwODJjNGIwMDljNjE5NTQ1ZjFlMTMwMGI3OTA4YTNlYjgwZTQyMDZhMTUyZjgxMWM4OTE0YjE2ZjlmNDFmM2QifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_a8492e872a8f423b9a0217ffbbd59cfd",
+      "statement": "The shell is bash or sh started at 24x80 with TERM=xterm-256color, a PTY failure closes the socket with an explanatory reason, and closing the socket kills the shell while the process exiting closes the socket.",
+      "evidence": [
+        {
+          "resource": "repo://internal/terminal/terminal.go#L83-L121",
+          "version": "repo-lines-v1:sha256:43b26fab0288277cd0e289b3df499958dc7f495e20d3c1385eaf4abe5f5b28fa:eyJzZWxlY3RlZExpbmVDb3VudCI6MzksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNkNDQzNjg4MzZlOGFiN2Q4ZmI4MzY2MzVhODE3NDBiMjY2ZDFiM2Q5NzMyYmQxOTk0MDM4OWZkM2RlODk4ZmYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM4MzBkNTRhMGJmYjE5ZjFkZTRjYThhOTBiZjFjYmM5YTBhMzMzNDZlM2U0ZjFhMWU5MjYwOWNmZjc4ZGJiZjciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjIzMzZjNWZiYTNlZjNmYmQ0ODRmMGQwODAxNDBjZTgyMjkzMjJmYWQzNDY2Y2E0ZDliOGRiYjA1YmJkYWI0ZjYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjEyMzRiYjBjNzZmMDZiYmVkNzFhNTUzZTliZWY4NTlkNjA2NWJjMDFkOTcyYTI1MTU5Mzc1MjBjNzk2Y2NlYTMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_160a7d216ffc4045b395fa192b643370",
+      "statement": "Sessions are killed once via ptmx.Close plus Process.Kill, with KillProject and KillAll for project deletion and shutdown.",
+      "evidence": [
+        {
+          "resource": "repo://internal/terminal/terminal.go#L161-L192",
+          "version": "repo-lines-v1:sha256:e6e9d951805d6f4434146fc384aa2213be28d800abd5724f5d3e48cdfe7373a2:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVlNjBhMzE4N2VjZjU5MTM4Mzk2MDE5NjBlYmU3NTNhZTI3Mjk4NDg0YmJmYmYzZDFlZjc1ZmYzYmI2OWEyZmYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImYyOTY0MDc5YzNjNWM4MTUyMGVmMzNhMmI5ZDJlMTVhMWI4NGQ3MjgwZGI4NTkwZGNkNjU3NDdlM2UwMTJhNDAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_8ef57d7019684d93baf3e4e2180afdc4",
+      "statement": "The websocket upgrader does not reject on Origin because same-origin access is enforced by cookie auth and the Origin header may not match the Host behind a reverse proxy.",
+      "evidence": [
+        {
+          "resource": "repo://internal/terminal/terminal.go#L34-L38",
+          "version": "repo-lines-v1:sha256:af2b26ddb13fd618011207b7a68e5cd98a9eb060669829b9f122a5e8ebb29cb0:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMTgxOTk5NjgwYmVmZTRmNGEwNmQ5ZmRhNWUxODJkYmY0ZTU1YTFhNTk2YTllYjA4YzM0ODJiMjY0MjM5YjJmYiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDEyY2EzNDVjY2Y3NWJmOWMwODA2YmNlNjk1YmU4ZGU4MDhiNzk5ODQyNTFhN2E1NGQyMDJjZjYxMDFkZDQ1MSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMTgzNjlkYTIzMDE4YzIxYTUzOWQ0MGUxMDdkYzhkOGViZjA0M2QwZDQ2ODhkNmYwZjkwZTNhMzNiOGU1MGUwNSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiN2MxMWI1MzE4NGY4OWI2ZWVjNTVkNTg0MjEyZGM1ZGUwYmYxOTNiYTRmMWU0YmM0ODVjOWY0Njc2OGU4NDdhNSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_cd327c83ee0c4184b6ee0d333113cbd8",
+      "statement": "gitops implements GitHub REST calls and local git operations on top of go-git, so the container needs no git binary, using a 30-second HTTP timeout against https://api.github.com.",
+      "evidence": [
+        {
+          "resource": "repo://internal/gitops/gitops.go#L1-L37",
+          "version": "repo-lines-v1:sha256:09dcb437c3105de370fcfb05a2c5ab6e195ad83905f8f03806cc9d2a25863de3:eyJzZWxlY3RlZExpbmVDb3VudCI6MzcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNhNjE2YmUyNDRkYTU0ZGUyOWY0M2MyNGEwNDc1MTlhMDc1MjZiY2U0MDg3NDUzNmYxYTk3OGVjOTdhMmM2YTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc3NGY2YTYzMmFiMjg0MzViZDZhZmRmOTUzMWZiNTI5M2NjNGM0ZjMyNzNkOGZhNGNjZWNmY2NjNDIzZjVkZTkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_2ceb28d08ce14d74a3b969ea99b359d3",
+      "statement": "GitHub API failures are surfaced as \"GitHub API error (HTTP %d): %s\" with the body truncated to 300 characters, and responses are capped with a 4 MiB LimitReader.",
+      "evidence": [
+        {
+          "resource": "repo://internal/gitops/gitops.go#L39-L81",
+          "version": "repo-lines-v1:sha256:99df699ec01e87fd0b98d4a7eac251a4b62dd56d31ad09ae730a38eb69c45968:eyJzZWxlY3RlZExpbmVDb3VudCI6NDMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJkMTNkOTMzZTQ1YzA4MDdjOWJhNTVmNWEyNmVjOTgxMzQ5YmVmMDk1OWUxYjJhOGVjMjU4ZGU1YTU3YWVjMWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjcyNmQwYzUxZDA0MGRmZjNiOGMxZGM5NjliNTNmYzRjOGJkZmI5ZDBiZjg3MDQzNjdkY2E5ZDFlZDNjZDgxNDEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjAzYjZiNTQ2ODRkNTFkNDdkOTFlZWZhYWFmYzZhY2YxMzBhNmU5Zjc2N2MxODI4ZTI1ZDhhYmIxMmNjODFhOWIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_0f6117b03bed45f7b803fe3f417bf929",
+      "statement": "Git transport auth uses basic auth with username \"git\" and the token as password, returning nil for no token so an anonymous clone stays anonymous.",
+      "evidence": [
+        {
+          "resource": "repo://internal/gitops/gitops.go#L177-L182",
+          "version": "repo-lines-v1:sha256:ecfb324c232d9d7488043d941711d42c05e40f39d6c15c70eeb03ff1c47adf73:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZTliMThhYTQ4NjZlZjU2OWU0M2Q1ZmIxZTdmNTQyOTM1MWEyNTVhNjRiZmM0Zjc1YTJlYmNkODQyYThjOGY0YiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDEyY2EzNDVjY2Y3NWJmOWMwODA2YmNlNjk1YmU4ZGU4MDhiNzk5ODQyNTFhN2E1NGQyMDJjZjYxMDFkZDQ1MSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNTU0NzE0Nzg3ZDI1MDg3YTU3ZTZhOTdlM2JkNzc3NWU1ZWI5ZDllODNhMzBmMGU3ZmZhODk4MDhlMzlkNDZiNiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNDFhZjAzMTM0NWVlMjgyM2EyNjAxMjA0ZGJjYWYyZmY3OGMwZjY3MjQyYzIxNDQzM2VmN2NiMDdhMDZmYTI3YyJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_65aa5d13f08342b48afb60d165b59398",
+      "statement": "LinkRepo clones the remote into a temp directory and moves it into place, so a failed link cannot leave a half-populated project directory.",
+      "evidence": [
+        {
+          "resource": "repo://internal/gitops/gitops.go#L215-L234",
+          "version": "repo-lines-v1:sha256:51012c1c6af56f77f7381a241cb2c7599b716edb3d7262ccfe30eebfd0b22ddb:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYwZWNkN2VkNzU4MTIxZmNhYTE3MDMyMTA5ODI0MWI4NGMxZDBlZjk4YzAxMDU1ZjBjOWZmMGNhZTg0OGE3MTciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFhNWNhM2EwNjUyYjMyNDkyMjA3OTZjYmE2Mzg2NTNiYTNlZjU1YmYzOTViMWM2N2U4ZTI0Y2NkZDY5ZTFjNzIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImYxYjMzN2QwYjk5ODAxY2EyNzllYTdlOWQzYzExZGNkZjljMWY0MDc4NGVhN2I4ODRmYTUxODQ5Yzc0YzYxMmQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_2157e69c3e1d4a72a151a32d648b5d11",
+      "statement": "handleGitHubPush resolves the GitHub client, looks up the user's login for commit attribution, calls gitops.CommitAndPush, and returns committed, pushed and summary.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/handlers_github.go#L91-L110",
+          "version": "repo-lines-v1:sha256:9bba712c24a86b662d277d6972ae745d4b3c98cd88debea3180a8f4a3b2897a1:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg5NTNiYTdkZjRiZWU1ZTA0ZmIxZTg1NWRhMjgzM2RiNzZjMzI2OGMyOTc3ZWFjMTE0MGEyMjJhMzA1OWM1ZTMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY5ZWUzYWUyNTcyNWI2NDQ2MzIxMDFhMDk3NTRhM2I2MmNmYmY0NGNlNDc2MjhjNTNmYmVjZDBmMWQxZjYxYmQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjkzYzhjODdlNTc4NGY3YmM2ZDRhNTJkNTQ5YTdkZjQ3MGY5MmExNGNiYTdkNzkxNWI5ZWFjZWM5M2Y2NjUxNzEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJmYjYwMTExZDE5YTk4YWVkZmYxZmUwMjg2ZDBjYTM2NGEwNDNmZjIyYjIwNGNmNmQ5MWJlYmM3OGZjNDIzMDkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_6b320855effd4712b78059164139c813",
+      "statement": "The Vercel client holds an optional refresh token and performs a single token refresh on a 401 rather than retrying in a loop.",
+      "evidence": [
+        {
+          "resource": "repo://internal/vercel/vercel.go#L112-L131",
+          "version": "repo-lines-v1:sha256:5c9ce41b3d2282d44d6f8acfbd8d2942aff480a87c5a4669c6354fccbbb07318:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMzYmYxYTg2YmI3MTJmMzI4M2QyZDJiODQwYWEyMGZiODk1ZjMxNDYzMzhlNmFiMDU1NDA2OGJlYWMxMjI1NDgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNhNjI2NzBkNzkxZDU2ZWVjNDE2ZGNiZDg5OWYzNDEzNTU0ZDlhOTQ3NDkyYWUwODc0MmM0ZTU1YmUyOTk3NDgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUyZmE0YTA0YWJjNTg3NDI5NmQwZGRjNTg3MzE0MDE2ZTYwMjk0NzI4ZGNhZTFkZDYxYWRkNWE5ZGRhMjMzZGEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM3NzRjNjQ0MTI5ODk1ZTQwZGZjMDExOWVlODBlNjVlMTRkYWFkMzI2YzRiNWI0NzViOTAzZDI4NTk2M2U1ZDgifQ"
+        },
+        {
+          "resource": "repo://internal/vercel/vercel.go#L51-L57",
+          "version": "repo-lines-v1:sha256:da1c1c4b0ef042d1dfd17225abaa62e3af9d094e0736bea1651515e08970761a:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNjA0YzYxODZiNjE2OGE2YTEzZDVmYzI0ZDY2NWNkZGViN2JiY2EzYzllOGMyNDQzODA4YTVlYTMzOTcwYTI5MCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDU0ZjkzMGFlMjRmN2ZhYjE3NzJhNDlhNjUxMzYzYjAxYjUxZjdkZjM2MWQyOGU2YjgzMDI1YmVhOWE3YjA5MCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiODY1ZDdjYzE2MzA3MmYyZTY2NDJhYjg0ZmM5ODRlNWY2ZmUwYTVmZjI3NDM2MDRiY2M0ZGM2MmU0MzhhNjM3ZiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZDRhNTY3ZTljNzM1NDM2NTJhNWVkN2ZjMDZmNDY2YjA1MjlhNzA5MDZjYjlhZTQ5MDAzMDQ0NDlhMjQxNjUwNSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_eb20252eb8584f2786cb29b366058120",
+      "statement": "A Vercel deploy uploads files and returns a deployment id, then polls /v13/deployments every 2 seconds with a 10-minute deadline, returning the last deployment plus an error on timeout.",
+      "evidence": [
+        {
+          "resource": "repo://internal/vercel/vercel.go#L300-L376",
+          "version": "repo-lines-v1:sha256:124e7d4f0d0b4a4dd1f91f6f7806d291c8c8e675cdf5d8e1d47ef638afe6a8bf:eyJzZWxlY3RlZExpbmVDb3VudCI6NzcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdlYTMyNDkzODdkMzNjYWVkNTdkZTAyYzJlZTgyZjA2YzU5NzBjZjA3MzY3MzgwNWIzOGI0M2FlNDExZWEyMTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZiNTRmYzlhMzhjMjk0ZTViZWI0NjYzMTkyYzQwNjM4Yjc2MDUwNTZhNzgxMDg2ODNhMzdhM2I4NTEzNmIxNjEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJlNjA3YzAyZjhhOTQ1YWFmNTk1NDIyNWMwNWEwMDBiYThkM2M5YTNhNTMyNjQ0NDMwYTQ2MjZiZTkxNjkyZGQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_cdaab28aef9f4af3ac6b033154feac92",
+      "statement": "Ephemeral chats are archived after a per-user window (default 1 day, 0 disables it) by an hourly sweeper that applies each user's own window to their own projects.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/server.go#L830-L882",
+          "version": "repo-lines-v1:sha256:027ccc1d8482d29dc71da3618f1af95a9557399164011ac671859d3217b30615:eyJzZWxlY3RlZExpbmVDb3VudCI6NTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIxZGRmODQ5YTFjYzI4NDVkMDA0N2U3MjY1N2Q3MTc3NGY1MDllZDZjZjBlZTI0ODllMmUzM2VjZDVlMTZlZGEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhlYTU5MzA0NzhmMGNkZDVmODU0ODA4YTNmYzNkNDM5ZGQxMmVlNmQ3N2QwOTYwM2FkM2I3NmE3YzhmYjc4YjAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQyOGYyMzhhNzQ5ZTFiZGUwNzgyMWRkNDY5NTViZWU4MTY1MmU0ZmIyNjBhNWI5YjhlNmM0ZmUwNjA0NmU0N2MifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_9c1cdf6849e8471d8c74f82ef4dc8f2f",
+      "statement": "The same ephemeral expiry is applied when a user loads the project list, so the dashboard never shows a chat that should already be archived.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/handlers_projects.go#L150-L150",
+          "version": "repo-lines-v1:sha256:90740f4322ef0fd364ac9c9c0f5bb6106b699784a5aef9d043cdb4dd87cb89df:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOTA3NDBmNDMyMmVmMGZkMzY0YWM5YzljMGY1YmI2MTA2YjY5OTc4NGE1YWVmOWQwNDNjZGI0ZGQ4N2NiODlkZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOTA3NDBmNDMyMmVmMGZkMzY0YWM5YzljMGY1YmI2MTA2YjY5OTc4NGE1YWVmOWQwNDNjZGI0ZGQ4N2NiODlkZiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMGJjMjEzMTU2YTQ3NTE0YTVlNjBmN2UwZTE1MGZjNjVhZWUyMGQxODU0ZGMwMmZkMDFhMTEwNzk1NzdlODc3YiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMzI4NTRhNzA2NTI2MzIwZGRhNGY0ODBmOWM4NTc1YWQwNGU5ODYwMjI2MDU1NDg4YjE2Mzg1NGI0MTQyNTU2NiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_52782477b9084c82b957d0a4503ab790",
+      "statement": "Deleting a project kills its terminal sessions, and server shutdown stops all previews and kills all terminals.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/handlers_projects.go#L314-L314",
+          "version": "repo-lines-v1:sha256:91c5e8421194218f814a718bc185a52f5ac7038488ce8b3c03a99973c84e02dd:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOTFjNWU4NDIxMTk0MjE4ZjgxNGE3MThiYzE4NWE1MmY1YWM3MDM4NDg4Y2U4YjNjMDNhOTk5NzNjODRlMDJkZCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOTFjNWU4NDIxMTk0MjE4ZjgxNGE3MThiYzE4NWE1MmY1YWM3MDM4NDg4Y2U4YjNjMDNhOTk5NzNjODRlMDJkZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZDdiMDNmZWNlNmI2Y2U5Mzc0MDUxN2VhMzNjZWE1MGZmMTI4OTllNzYxMGU0Zjk2M2ZkOTcwMzVjOGIzMTExYyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYjAzMTYwNzY2ZDEzZTg1OWNkMjYzZmU0MGY5NTM1Mzk3NmFkODVjYzQzMGEyODA3NTIwNmFkNDU2MDAyODk5MSJ9"
+        },
+        {
+          "resource": "repo://internal/server/server.go#L139-L140",
+          "version": "repo-lines-v1:sha256:e9d17e4435796d3fddee21517a9fc7e2f2d91bcae1bfb9bcd89374d2b371bf04:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZDIwNmFmZjM0M2IxNzUzZGI3MjFkN2RhY2Q1NjNjZjZlM2IxMWRlMzBlZGU0NmE4OGViOTRlODg4MTc5ZGZmZCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMzQ0MzdmODAzOTQzYzMzYjkzMDJkNTRmODgzZjI4NTJiODI1ZDI5ZWE5OGVmNDBhZDY5NTZiNzQ1OTBjNjY1NCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZjhiZTRlNGU3YmYzZTc3ZmY4NjUzNDU4NTI2NjViMGVmZmJmOTU1OGFhYzI5ZmQ1NWEzNjExOTBiZThhNjhjMiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMzMxM2I5NWU0NzExYTJhNTFkNzk2OTQ0OWM3OGYxNWIxZWY4ZWU4OGM3ZTY2MTJiMjcwNjAwNTY5NjBjZWQ0NSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_53133f1c2c7048f6a0261d00f2940313",
+      "statement": "v1 builds with CGO_ENABLED=0, which is why a pure-Go git client and a pure-Go encoder are used instead of shelling out or linking C libraries.",
+      "evidence": [
+        {
+          "resource": "repo://Dockerfile#L31-L31",
+          "version": "repo-lines-v1:sha256:a06f6367c0c007b7cf0619c88b416da27067aebc1ab667cb9bd80378a79bdf39:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYTA2ZjYzNjdjMGMwMDdiN2NmMDYxOWM4OGI0MTZkYTI3MDY3YWViYzFhYjY2N2NiOWJkODAzNzhhNzliZGYzOSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTA2ZjYzNjdjMGMwMDdiN2NmMDYxOWM4OGI0MTZkYTI3MDY3YWViYzFhYjY2N2NiOWJkODAzNzhhNzliZGYzOSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYzUxY2VlZmRlYWFjNjI3NGJjZDE2ZWQyODE5NDJmODJiMmUyMDUwYjFkOWQzMGVjN2VlZmU5ZDY3OWYwYTZlMCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYzhiNWFhNGM5OGFmYmJhNzljMDQ4YWEzMTQ3NWMwOGVjOTMyZTU3NDU5NmNkN2IzZjgzMjE0ODA1ODg4ZjI3OCJ9"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.9.0",
+    "at": "2026-11-15T05:31:58.285Z"
+  }
+}

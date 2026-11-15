@@ -1,0 +1,210 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:ee6f3a39515d9fa6210084dbca4fef216617470e326b6f1c9164bf3a39faef31",
+  "claims": [
+    {
+      "id": "claim_f66a594880544e6f8a56d5cdd09d8f06",
+      "statement": "Extensions live at <data-dir>/extensions/<id>/index.js and skills at <data-dir>/skills/<id>/SKILL.md, both under the data volume; extension metadata lives in the extensions settings row and is reconciled against the directories on disk, not read from the file.",
+      "evidence": [
+        {
+          "resource": "repo://internal/extensions/extensions.go#L61-L80",
+          "version": "repo-lines-v1:sha256:06fa3abf4e7d4c8329a4571bfd236860c8480ae5cdc59160fbb8900400ed2e45:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUwMGNmMGE4YjZmZjc1YjBlMTZmZmZhNDIyYzAxMmYwOGFkYzc3ZmQ2ZDJiMTU0NGQxYzBmMjQ0NjY4NTg0ZTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhiNWEzMTRlYmJlYjdlZWVjNmZkMTFmZjQzMTFmZDdhNTVjY2Q4OWEyMmRiY2RkNGQ3MDlmZDM5OTcyNzEyNTgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjMwZmIzMWQxMzgzYWVkMzI2OTJlZDc2NWEwZTZkY2NkYzE2YTcxYWVjMTIwZTE2MWYxNDNiOGQ3NmU3MzQxNWQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE4YjM5NjQ4NTUwYjUwZDM4YjFiZTlkZDQ0YjQ1ZGU2ZGJlOGNhMzYyOTU5MGI5OTEzNmMyZGU4MmU5Y2FiZDQifQ"
+        },
+        {
+          "resource": "repo://internal/skills/skills.go#L45-L57",
+          "version": "repo-lines-v1:sha256:999a549250e0740ead95099c499a3278c8dae5c381655116c78bb5ee4180edcc:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc5MDRiMzI2Y2MwNWRlYTE5NTRmNmY0MzMxODViYmE5Mzk4ZDNjM2Q4MzIxNmI0ZjQ2MTI5MGZlMjQ2ZDFmNzciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNjYmI5MGFiM2UxNDMxMzc4ODJjMmNiODExMzMwNTFmMzE4ZWE3YzA1NWVhZDkyMThiY2Y0MzFiMTllMGNmMjEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJiM2JkYzhjODA4NjQ5YWU2NjhiNzYxZmQ0MDU4NzNjOTUwZGU2YTJmNjUyYzc1NjY5NTEyNTg3NWIyZWJhNmYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk4NTZjZjM2YjVkYjk4Y2IxOWViMzUzZmI3NmNkMjY5OWRhNjFlOTI0NjVlNjE5Y2Q5ZmY5ZThmNjQ0MTViMDgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_18e3162226c640258888cd6d818b5856",
+      "statement": "extensionsRoot derives from the configured data directory, and installedExtensions reconciles the persisted metadata with what is actually on disk so a directory added or deleted by hand is reflected.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/handlers_extensions.go#L27-L51",
+          "version": "repo-lines-v1:sha256:856e94b8f01d7e2df86f7e54a8dd4dd389b33a8a3268595c8c1e8cce1b24b8b2:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU0YzQyMDE4ZDE1ZGI0OWMwMmI1ZDY3NDBkMTBmZWY3YWRmM2U1ZjMzMDkyODE3NmM2NDZlNDVjZTAxNzMxMDkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNjNmU3YWY3MWYyYzE0MzgzMGFhMjBjNDM1NDg4MmY5NWI4ODEyN2VkNDAwZTM4OWI0MWM3ZWY4ZmFlNjk0YTIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImMyNjNhNDExMWE3ZDM4YjU2ZGRmNDgwYThmZTJiNjFhZWEwYTc5ZDJlNmE1OGJmZjg4ZTZkZDJiZTI1OTc3YWYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImZiMTI3OTQ3NDBkMGQxMmI2M2Q5MTYwOGI5ZDM3NGYxZWRkMmFiZDI4YTYxM2I3ZmRlZjZkOWY1ZTEzNGJkMzYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_60df5a62e9d24d82b644fe2a804151b3",
+      "statement": "Validate requires an id matching ^[a-z0-9][a-z0-9-]*$ — the only guard between a caller and a path outside the extensions root — a non-empty source of at most 1 MiB, and syntax-checks the source with node --check on a temporary .mjs file under a 20 second timeout, because the sidecar's own parser is the authority.",
+      "evidence": [
+        {
+          "resource": "repo://internal/extensions/extensions.go#L28-L121",
+          "version": "repo-lines-v1:sha256:9025e2df0a6702526e789ca00a0b416bd88c1d43bd4d2e52f19484ecc333c864:eyJzZWxlY3RlZExpbmVDb3VudCI6OTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY0ZjVlZTk5MTNiYWMwNWI4NWZhZDNlMmUxZmFiNjgwYmJjZDAwOGIyNTMyNmUwOTZiY2I4MzE4OTJiMGMxNTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY5ZGMwOWIzMTQ2OTRmZjkyYTNjYzRkOTNlOGI3MGEwOGUxYTMyOTdiNTFkMjQ1MWNlZGU0Zjc1ZDZmOGE0NzUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc5ZWRkNzJiYTZiNDAwODNjZTk1MjY5ZmE1NmZjZjNhYzFiZDk4MjIxYWE2NjIxYTY4M2Y3ZDU2MzJiYjIxZDUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjY1MmMxNzVkMzZhZGE3MGI3ZTk5YzUyYTM4MGQ2ZTJlNDg2ZjM2MzFiYjY2NTlkMzZmNzYwNTg5YWZmMTdkZjcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_5ab7d737d99547529dbef2b5828a306a",
+      "statement": "handleExtensionSave requires a version and a one-line changelog, validates the source before storing it, and refuses an update whose version does not compare greater than the installed one before writing, so a rejected save leaves the installed source untouched.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/handlers_extensions.go#L617-L666",
+          "version": "repo-lines-v1:sha256:d0eea85e280d9144c05d3a92917b2f909040cfc6ad2ce516f83834012b1d18ed:eyJzZWxlY3RlZExpbmVDb3VudCI6NTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjllNjZmOGRmN2FmNjdiYmEwNWI5ODE1MDFkM2EzMjkzOTQwYTkxYjg1NTBkMGViYzU3MTdjMTZhZWE4NWFiNTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI3M2Q5YTE5NTU1MzEzNDJlMDZlMzk0Mjg5NWJmODU1MWY1OGJkYmRkODA4ZDg3ZDBiN2EzNjA5NTg2NmYxNWUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdhOTZlYjA2MWY4ZmQ2Mzg0ZTg2Mjc1ZWFjYzI3NDg5NWE5YmJmZjE1YTIwZDIyMDExYjVjMTE1YTY3YzllOTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk3OGJlYTllZGZmZDU3NWUzNmI4Y2ZlZWIxMmRjN2M0ZmEwNGViNWU0YWJkZjVmMjIyYjg5MGNlOWQ0MDJmYmEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_763061816a6148d292681359f9a51038",
+      "statement": "A newly created extension starts disabled unless the caller explicitly enables it.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/handlers_extensions.go#L666-L690",
+          "version": "repo-lines-v1:sha256:5df9c9b661bf0b073d5179383391464ec40b0bd248db16627d899bb0bf8e8c19:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI3M2Q5YTE5NTU1MzEzNDJlMDZlMzk0Mjg5NWJmODU1MWY1OGJkYmRkODA4ZDg3ZDBiN2EzNjA5NTg2NmYxNWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM2NjZiNjRhOTlhYjJlZTEyNmJjNjdjNTI2YzIxMDdiYWNmMDJlZDFjOGM1YWQxYmY0ZDQ5MzcxYjk2Mjg5OWUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc3OTdkYjllYjc5YWRiZDZiOWI5ODdmNzA2ZTBkYWNkN2MyN2NmYjVmNGI0YjJmMTBmY2RmNWNmNzI3NTFjMDciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNmMWJhZDA5ZDRlMGI2NDJjMmVmM2Q1MTE5ZDJhMDhlMGE2N2ZlNTA3YjVhMGNjMjVmOTFmNWE2NTg3MjgzZWQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_ae6c0e5e37b64c099f53079544c28ea2",
+      "statement": "Writing an extension replaces its file atomically through a temp file and rename so a reader never sees a half-written module.",
+      "evidence": [
+        {
+          "resource": "repo://internal/extensions/extensions.go#L122-L146",
+          "version": "repo-lines-v1:sha256:a80bad03372cdd463a1d7cb088e5e55f2e1a97eba076acd57731c627721f6b90:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEwYTZlZGMwYTNhMjBlNDg3ZTg2MTM1ODM4M2ZmNDNkYjViNWQ3NjViMzAzZGFjMWVkYWRkNTEwYzRkOTJiMzkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU3MzQ2YzZkZDY5NDBkNTY2ZjcwYjNjZjNkZDY5YzY3MGYyZWFiNGFlM2QwZDczNTg5ZTllN2YxYzQ0NjliMGMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM1NGM3NTQwOTFlN2M1NTMzMDJlMDNhZmIyNTdmMzhkYzY0NDQ0YWM4ZjVlNjY3Yjk2MWE2YWM5ZTY2YzIyZjIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM4ZWM0N2QzYjQyYWM0OTNhZTRlNTkwNTA1OTRiYmE5MTUyMGExZmZlMTQxYjIzMmE2NGI3YTVkOTA5MGM5OTcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_3cbe2f9915fe41f99400633bcde2f363",
+      "statement": "extensionConflicts reports a tool name claimed by two extensions, a tool name that shadows a host tool, a section key claimed twice and a display title claimed twice, because the registry is last-write-wins and a duplicate would otherwise win silently.",
+      "evidence": [
+        {
+          "resource": "repo://sidecar/src/extensions.js#L184-L212",
+          "version": "repo-lines-v1:sha256:168d29ce88d92cc63db3649a6ba4079b81aed488b2ddfd058a5e3d2e75c793b2:eyJzZWxlY3RlZExpbmVDb3VudCI6MjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRiMDQzMTM5ZjgzOGI0MGI2M2Q0N2ZlZjk2MDc4NjJiMzE1NGRmNzBkM2M0MzM3NGYwMzhlZTgyOTU0MzdhMDkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE5YjFlYTRlMGE3OGNmMjdjNDc4ZWE2ZDM1Y2I1NzM0NzIzM2Y3OTE2ZWRjOTdiNWIyYmM4M2RiNjEwODNmMzIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFhZDJmMGIwZjFiYzhmYWMxNzJjN2JmNTU2YTFhYWEzN2ZlYmQ2MGU3Yjc2NmE4Mzk5OThmODJmNWJiZWE3NjAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM3OTI5ZTkxZTBmOTljM2U4MjVkZTY5YjQzNWZiNjQ4NGQxYjBhMWRmMmY0NjU2MWFiZjFhMjlmMDQxODhiODgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_b8d9ec4d0eb349c0a39b6915b51c5816",
+      "statement": "loadExtensions skips a disabled extension's import entirely, cache-busts the module URL with the file mtime so an edited file is picked up, forces the registry name to the directory id, passes settings only to the factory form, and collects a load failure in errors instead of throwing.",
+      "evidence": [
+        {
+          "resource": "repo://sidecar/src/extensions.js#L248-L307",
+          "version": "repo-lines-v1:sha256:c9c5a7b8f143fdcd08ced4669cff90c46b3c99afa9809eef8e66dfca2613b7d2:eyJzZWxlY3RlZExpbmVDb3VudCI6NjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjEzN2EzYmIxYjNmYjI4M2FjN2VjZDNlOWEzYTBlZDcxMDM5ZWJjZWVjMWFmODFiYmJkNmI1NzU5ODljNGM2OTEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZjMzEwY2IyN2E4MzY1ODU3MjAxOTU5ZmVlMDY4ZDgwZTQ1Mzg5ZGQ5ZmI4MDk1MmVjZmQxODQ3MjA1MjBiYTAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQwMWM1ODJiNGRiYzA3ZDQ5OGRkN2Q3NzdjZWJjNDZmZWE5NTJlNjNmZmY2NzNiNmRhNzgwM2IzZGVjZDNhYzgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_5f28b2ed7082424dbe724a0f460e2877",
+      "statement": "The tool_exposure setting selects between advertising every tool schema up front and hiding MCP and extension tools behind a search_tools tool that reveals them on demand.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/server.go#L444-L448",
+          "version": "repo-lines-v1:sha256:3d94cc459db605d46a6d03649ecffa7829a2d43514581adc715ebaa753e232af:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYzQ0MDUwNWRhNDZiNDNmNmQ5NDQ1MjBiOWRiMTJmMTA5ZTVlZWQ5YWZjZGViY2Y0NmJjYzg4YzBlZDg3MmJmYiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOTBhYjJhY2U4ZDcxMmE2ZTI4NDE5YTY1OWVhZDUwNTBkZWZjNjE0OGQxNTAxNjZkNWM0M2NiYmI5ZGRlYWFkZiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMWE1ZWUyYTM2YTdiYmY1NTUxODE1NzhmNzA0MWExZjNmMzBkNjYyM2M2Y2Q2M2FkMDE0ZTlmOGI1YWJjNjc1MSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNDMzYTZlZTAwNDUzNjBhNzJkZmY3ZjBmM2E4OGZkYWQ0MDAxMzA0NGI1MTZkN2VjZmMwMGYxNjRjZGUzYzc0NyJ9"
+        },
+        {
+          "resource": "repo://internal/server/server.go#L759-L767",
+          "version": "repo-lines-v1:sha256:ae1879b71dab20c1d77dc85bc92b808a46ed16e07846fde536f6fe9e0e35672c:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYTI4NGQxNWJjYmMyOTlmMWI5NGM4NDFlNTU5YjI3MzdmN2Q0YzAzNjVlNzhjMWE0NjJhOGRhNDQ1MGU2MWQ4NSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDEyY2EzNDVjY2Y3NWJmOWMwODA2YmNlNjk1YmU4ZGU4MDhiNzk5ODQyNTFhN2E1NGQyMDJjZjYxMDFkZDQ1MSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYmZlZGIyYTliYjk5YzkwMWQ3NzY3NjQ5MmIzYWM5NGY3MjZiZDM0Nzk0ZTEyMmI5NWY2OGE0YzkxODNiMjRiNiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZmVjMjVjNjExM2ViNDRmNmJkMzllYTFmYmMyY2ZhNzc4MWE3MjhmNjFlMGU3OGM5MDViMTQ2MWYwOWI2ZDk1ZCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_76c4978a7ec14a98848b78872d7ba168",
+      "statement": "In search mode the deferred catalog is every MCP host def plus every extension tool, minus the tools this conversation has already discovered; a name claimed by a host tool is dropped from the catalog and EAGER_EXTENSION_TOOLS (currently delegate) is never deferred.",
+      "evidence": [
+        {
+          "resource": "repo://sidecar/src/host.js#L543-L576",
+          "version": "repo-lines-v1:sha256:f91a0f5610ccc595c869c3eb360c70fec617795c800d385722a4d0ae6a49c5a9:eyJzZWxlY3RlZExpbmVDb3VudCI6MzQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU0MzIwMmFmZjJkNGRiMWFlZWY2NzkwNzI0NDQ2MTQ4ZWU0OWUzYWQ4ODdiYmQ4MGY0YzUwZDdkZDI4MDFkZDYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY3Y2RhODJkYTYwNjIzOGUwNWU2MjM5OTU2OWM1ZWUwMzk5MzQxOTY0OGFlNWQ0M2EyYmY4Y2Q2MzQ3ZjgyNjMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQwY2Q2NmM0MjdhZjRmNTMyNDc4ZjA5YzEyMzJmMWYyMmM5N2E2M2MzZDQ1ZGZhZmQzOWZiNzYxNzAzZWY1MGQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjUxZDM2MDU5ZTQ3NjI3ZTk1YzYyZjIwMzY3ZjJlNzNlNmY0MjM2M2MyMGIwNTJkNTM5OTAwZDQ5OGYzOWU1YjkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_b8526e3436ee429ba4682964a9c52063",
+      "statement": "Bundled extensions are written into the extensions root at startup so they behave like user extensions; a manifest of shipped-source hashes lets an untouched copy be upgraded while a user-edited copy is left alone, and deleting the file is how the original is restored.",
+      "evidence": [
+        {
+          "resource": "repo://internal/extensions/builtin.go#L5-L30",
+          "version": "repo-lines-v1:sha256:738076e7ce7d95e50ed5c110ea6a09bfd5e0d2b58ca618391c8ca68df7a83918:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMxMmQzNThhZjE1OWFmMTc5YWI4ODJkMGFiOTE4YTZiZmQ2YjU5ZGY2OGQ1ZDI1M2E2YjU1NDI5NmViMGM3ZWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE2OGI3OGM3YjZjNTM2OGI5NDZlNTVmODA2NTg1NzFiNDA4MzRjMjFkYzFlOWY4ZDE3MTBjNDI5NjJjMmExN2UiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjEwMTAxN2ViMjVhM2NmYmYzODZjMTA1ZjQyMzhiNTMwN2E3YWQ4OTdjZWNlODBiNmQ2ZmMzMTUwNGM5ODVjMDYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjAxMTRkY2ZmMDM5YTA0MGIxZWFiMDFjOTAyMjkyNmY4YzZmZjJlY2IxODUzMmI2MzE4ODY4OWI1ZDdmMjNlNDkifQ"
+        },
+        {
+          "resource": "repo://internal/extensions/extensions.go#L240-L288",
+          "version": "repo-lines-v1:sha256:8b07400ae0e0c9574cd58a926f2f4d126bc1bd30894cc7328312189dac0a937a:eyJzZWxlY3RlZExpbmVDb3VudCI6NDksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjlkNzdjZmVkZmZkMmMxYmFmMTBkOGZkNTkwYTBlNGE3MjYwMDk0ZjJlY2U4NTc5YjIzOGQzZjE0YjkzMmM0NTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc1MTYzMzAzYTY0ZTExMDQ3NzA4MGY4Y2FmMjMyNDJlMDBlZDJiOGFmZWUyOWY3MjJmYWNiMTQ2MmU0YjAxMjYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjMzMDY1YzBkOGQwNmNjNTA1ZTVhNDIwNzk2OTk5YzdkYzE0NzI5MjhhYzY0ZGQ2NWM0YmYwYTMwZTU3YTg0YjcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_55778371abe945959d81ac052b392097",
+      "statement": "A bundled copy that predates the manifest has no recorded hash, so it is upgraded once with the old source preserved beside it as index.js.bak.",
+      "evidence": [
+        {
+          "resource": "repo://internal/extensions/extensions.go#L265-L275",
+          "version": "repo-lines-v1:sha256:9fa7aefcea137cc954d34fd8686de345bec5a86bc39e70d63b53dcf58c8cd23f:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVkY2RjMDA4YWVhOTE1NWY3Y2U5OTljZTAxZjE3YWU0YzEwNWEwYTFhNDQ0ZjkzMDEzMzQ5MGFjNmY3MmMzNTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQyYTU3MDgxMDUxZjQ2ODJhN2RiM2U1OTBiNGRkNTQxM2Q1M2RjOWEwMTU1MTI3NmRhY2I1MjFhN2UxZGI5YTUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjEzMjdkNmQzOWQyMTI5ZTFkYTA1MGZlMDdlN2E1Y2JmMTBjNzRiNDE2YWViODk1MTgwNjYyNmM0NDNiMmU3ZTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE1MDYwNTBhNjc1NTkxNmI1YmY2OGVkNDdhNzhiNzM3N2IzZDY4NTlhN2E4ODM1MGU0ZWE4M2E2NmU1OTMyNWQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_042a19af30774279a74c882ec1d126f1",
+      "statement": "skills.Write and skills.Read refuse an id that is not a plain directory name, so a skill cannot be written outside the skills root.",
+      "evidence": [
+        {
+          "resource": "repo://internal/skills/skills.go#L43-L71",
+          "version": "repo-lines-v1:sha256:bfab60f36a4def524c0ff6f27db85d75f27a676d433a7511ec1c5e8bfc9cedf3:eyJzZWxlY3RlZExpbmVDb3VudCI6MjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJhMmJjODc2MzEyNTc4ZDRjNzljY2M5NGJjMjBkZDIxODdmNDFkOWE4ZTZjODJmMDFhZWYxODg1MTIxNzNmZTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjYwNjk4MWJjN2MyYjlhNDQ0OWVjOTJhNjEyYTU4YjVjZDk4NzRkYWVmMGI2OWJjYzMyNDM0ZDgzOWZlNzQ1M2MiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRkNzhkMjhjNzk3MWNlMzkyODY5NWQ0NThhYjkwMjA5MjVmY2E2MjQ0YjAxOTZiN2JmODMwODRlNGY1ZGEyNjAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_63676505c49d434c8e9793fdff00f8af",
+      "statement": "skills.SystemPrompt renders each enabled installed skill's SKILL.md as a Skill heading plus body and returns the block only when at least one skill contributed; nothing in a skill is executed.",
+      "evidence": [
+        {
+          "resource": "repo://internal/skills/skills.go#L385-L411",
+          "version": "repo-lines-v1:sha256:a55a196005faa3a77f3d32a9330ef819ad411cd0755fb127cf8ad5dbe6d063ff:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRmZGE3OGRlZDlmYjBiMDVkMzVkNWJmNjEzZmI2ZmI2MTI2ZDQ4M2VkOTdhODAwOTVjM2VmNjllODViZmU3ODMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA3MDgyNmJkN2MzZWE4MWFlYzQ1ZDYzNTEzOWEzYzA1ZmRlZDI1ODFhYWRiOTc4YWYyODE1MDNjYWU0MjkyMTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRmNGUwMDZhNzQ5NWNmM2ZjOWM5YjNmM2UyNzgzN2E1ZTZiMzJmNTY2ZjkwOTgxMDg0OGNkZmU2MzljNDdhNDcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_cbd5316b7b3140b68a8c27b0addf2d5d",
+      "statement": "The skills marketplace is queried at https://skillsmp.com with the result count clamped to at most 50, and a Skill record carries the marketplace metadata plus local enabled, builtin, version and changelog state.",
+      "evidence": [
+        {
+          "resource": "repo://internal/skills/skills.go#L21-L35",
+          "version": "repo-lines-v1:sha256:4c12b86f28ad9ce306526976dbb1bb29db29c4c271bd07c1961ee0dd38202a61:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImExMjhjYzE5ODczY2MxZWU1ZTEwMzZjMWQ0NThiYTYwN2YwM2E3ODQxYTYzNzhjMzNjOWNhNDMwN2IzZjRhNzkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE3NmE1NGJmNDI4NWVjMTFlNzVjMjc4MTc1YWEyNGY5MmJiYWQzNTczZTY5OGIxZmVjMWZmYTYyNTlkYWFkNjciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRmOGM5Y2ZlNTBmMWQ4NGYwM2QxYWVjNWEzYTkyMjBhNWMxNDgyNDMwODk2YzU5NzllMGY0ZTNlOTFiYTc1MDYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY4ZmJkMTkyZjliZDc0NTFiNjE1OWQ1MWZkY2FkYTYyOTI4NTI2NmNiZmU5OGJmZjM2MGNkMGRhNjFlZjFiY2UifQ"
+        },
+        {
+          "resource": "repo://internal/skills/skills.go#L73-L75",
+          "version": "repo-lines-v1:sha256:6af1de1d7cec4696fea0e6473977d18fa3641ebe75a3acb0d77c22452d5e6a56:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZWFiZWZhMjY0MDE3MGJmYzM4OTEwYjM1M2MwMGVkOWY0MzhmZmVhYTg4MGMwZTFlZTM1NjAyNWMzMzJmOWYwYiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYjNiNjJmM2QyOWJmYWM5NzBiNjZlYzA0NDFjN2ZjNGM3YTY1NDBiNDFkNGU2YWFmMzkyZTU1NjU5M2IzM2FiYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZDI5ODVlZGNmMTMwNzJiOTJmNzcyMDJjOTI4YjI5OTczYzc4N2UxNTIwNDMyNjMxYWQwMmQxY2ZkYzc3ZmI5NyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZmE5MDgxMjVmNjQ2MDEzNDYzY2Q3NTBlZTRkNjA2OTJmM2MzNWQ0YTRjZGM0ZjY1YzQ0MDdkYjFlMDMxNjFkYiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_d805a134043f4161b1b808e2de03dcfa",
+      "statement": "Installing a skill fetches it straight from its GitHub repository through the user's authenticated client, splitting the repo from its subdirectory, and a preview shows which paths would be installed first.",
+      "evidence": [
+        {
+          "resource": "repo://internal/skills/skills.go#L153-L179",
+          "version": "repo-lines-v1:sha256:1ff91e9f747ba74442cf70a9924820a511457259fa8cf22bde0734a764c0b169:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA4Zjk4ZTdkMTAxYjk1MTc3MmIzMWU4YTcyYTI3MTU2NDc1MjAzODg5MmY2ZWE5MzJiNDY4NWIyODc5NWJlOTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgwODg1NzMxOTNlNmFhOTQ2MTZiNjM1Y2U2MGFkNmNiZGQ3MGFlMzlkMGE0MWM4YjNiZmYxYzEwOWQ3MzFlZTUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImIzZWJmYjdmZjYwNjlmZWYxMDAzMTZlN2VkMzBiN2JhMTgyNjMxYTNhZjA3YTNjOWMyOTQxZGM2ZTA2ODNiNjUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjY2Mzk2NjMyNjE0NzBjMDgzMzg1N2VlOTkyMGM0Y2ViODc2NWU1NWNlM2U0ZWE2OWY2NWQyYTFmY2MwODJlNjUifQ"
+        },
+        {
+          "resource": "repo://internal/skills/skills.go#L285-L320",
+          "version": "repo-lines-v1:sha256:1e591f4127a778d348f1deea3ea9b0a28946c513b96848905345b864c0f30c38:eyJzZWxlY3RlZExpbmVDb3VudCI6MzYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZhMzZiMTkwODRjMmZkODgyNmQyMTZiMzI4MWZlMDk0ODkyMTU5ODRjZjM4OGNlMDNmZTkzYTExYjM5N2E4OTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUyYmE5ZDBiYmQzNGRhNTY0NDEyMzRlZWU5ZGYzMjMwNzU2YmQ1MmJmNGEyYTlmNGFmOGM4OGEwNDE2YmFkNjIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjExNDY3MTk1MDJkNTY1ZTQ2YzA2ZWYwN2Q4YjllN2ZkYTRjNjJmMmE4MGU3OTNmM2QxODRiN2Y4MjIzMzE2ZWEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjlkMDA1MDYzN2E1ZTVjYzkwMjk1ZGYzYTE0MWFlYzE2N2UyMzJlNGEwMzllODBiYmYzYzg0NjE3MDQ1Y2JlMmQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_2428a846013f43daacb1177e2eb0ea14",
+      "statement": "Bundled skills are seeded once behind a settings flag so a skill the user removed never returns on restart, and a bundled skill added after that seed ran needs its own one-time flag.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/handlers_skills.go#L48-L100",
+          "version": "repo-lines-v1:sha256:070af0d828affcf2ecd9ec54b3cb9d85c062cbe8627507f87cfc41e216941ec6:eyJzZWxlY3RlZExpbmVDb3VudCI6NTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIwMDNmYTlkNTE5MTkxZTEyNjMwMjllODhiOTc0MzhlZmUxZTUzZDQ5OTkxNjkzYTZhYTU4ZTgyMzYwOWQ1M2YiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImEyMWFlNDdlMDE4MTFhNTEzNTI3ZGI5MDc2N2Y2OTY0NmMxZDk1MjYwNGVjM2MxZTVmMjEzMTZjMTM5OTRmMTMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQ4ZWNhMmYyYWY5ZDExODlkNGNhYzMwYjQwMTRhZjRiZDI2ZDY2OTE4NzJjOWM0N2Q5YzQ2MjI3NTFlMDE2MzkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_ac5d99d790ff4c2cba0e3f249ec81a36",
+      "statement": "Bundled skills are upgraded by the same recorded-hash rule as extension builtins, so an untouched copy receives fixes while a user-modified copy is preserved.",
+      "evidence": [
+        {
+          "resource": "repo://internal/skills/materialize.go#L17-L45",
+          "version": "repo-lines-v1:sha256:fb0e8ad60e7bdcf742ccf6516ecb1991f6dfc92d941333f198034d84feedcf58:eyJzZWxlY3RlZExpbmVDb3VudCI6MjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNiYTMzNTRhOWIxOGNlNmI4M2IyOWJkODU0OTk5ZTYxY2NkM2JiMTQwZjc5NjJjYTQzNjM1MmNkNGRlNjg1NDkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMxYjNiNzUwMjg1NjYzNzQwOTFiZWMyYTFkNTNjZTc5NzI3ZmYxY2Y5MjY2ZDRmNzBmODIwY2M4OTM0NmNkMDMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQwMTk2YjJkMGEyNWQ0ZWZiNmI1ZTQ1OTkzZjVlMDk3M2VlMDMyZDAzOGE2NGYxOWM1MzMzODQyZWEzNjQwYzMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRkODM0ZTJkNGMzOTZkZWU2YWExZjRiZWM2NWI4NDZmYjg0ODA5ZjY4MTA5YzE3OTZhOTdkMzU3NTM5MTIzMTAifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.9.0",
+    "at": "2026-11-15T05:31:58.285Z"
+  }
+}

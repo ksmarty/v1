@@ -1,0 +1,294 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:5890b3ca3002fdb7cb60fdaf14032330580c925ce9f1dd48c767116a2b433bd8",
+  "claims": [
+    {
+      "id": "claim_e73f2dc59ec84db59f2a23fd3d61a2bc",
+      "statement": "Local builds stamp a build id made of the short commit and the time of day (BUILD_ID) and pass it plus the short commit through -ldflags as main.version and main.commit.",
+      "evidence": [
+        {
+          "resource": "repo://Makefile#L1-L2",
+          "version": "repo-lines-v1:sha256:07351c0ec34f2226124300c17f0e199c93fa85359365b500a7c36256975458ad:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjcxNWRiYWMwNGIyZWEyYWZlMzBkZGQ0MzhjMTI2ZmEwYWM1MWY1YWRmOGU2YTk5NGYzNjRhYjE1ZDM1NTFlZCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMjU5N2Y3ZGFiM2Y4YTU4MmQ4ODFiMzYyZmU1ODNiYWU5NThmZmY0ZWUxODgzMTAxMDk2MTZiY2RkNTViNDg4NyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjAsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiY2NhNjk5ZGEzNzY1OTgwMDNmOGJlOWZkYjU5ZDg4NjNjOThkM2Y1ZTEyOWUwNTBmOGYwMjJjMTQyZTJiNWRkOCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_9ebb7d59c3ac40109bfe04d858427d66",
+      "statement": "make dev backgrounds the backend with V1_AUTH_DISABLED=true and V1_DATA_DIR=./data while running the Vite dev server in the foreground; dev-backend and dev-frontend run each half in its own terminal.",
+      "evidence": [
+        {
+          "resource": "repo://Makefile#L10-L18",
+          "version": "repo-lines-v1:sha256:713fd52eb558803c36b541e9ac7d83d398d9ab181fc60e1e6c59e637d6ab12e7:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZmYxNDNjYmY3NGQzMDhmZGRlZGM1ZDhiMjk4NGE3OTRlZTg0ZDhjNmVkYTEwNzRhN2JjYmI2YWZjYWEyNGM1OSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZTA4MTgwY2Q4ZGY0MWY3ZWYwMTgyMTExYzhlOWJlMjdmNGRhNjFhZTA1Y2E4YzJjZDMwNmJlYzQ5OGQyMTllYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMzA2YzQxZDMwNjMxNzdjM2ZlNGIyMGNhOWIxOWQ4YWUxMzE2ZjRhNmJjOWUyMTUwM2FmZjQyNzFiNDE1OWNkMiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOTdlNTI0MWY0MTBmZjg5MjFmMDIyOTU1NmZhYWE3YmMwMDdhZGFkZDY2MjliZTYzMzg1ZjA4Yzg1ZTFhYmI0NCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_43d1760597c3417b941f0f07faa0e57b",
+      "statement": "sidecar-deps runs npm ci in sidecar/ and sidecar-test runs npm run check followed by npm test; dev, dev-backend and build depend on sidecar-deps because v1 does not start without the sidecar's dependencies.",
+      "evidence": [
+        {
+          "resource": "repo://Makefile#L21-L29",
+          "version": "repo-lines-v1:sha256:3ecaf88a1db65eece081ceeedceb19556df34a58b2c93ad1f9e43dc3c05e656c:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOGI4MjJmMjI3MTFkMzlhYTIyMGRiNTEzY2I4NTdiNjk0MDg1NDc1MTJlZGQ1ZjllZWY3MmUyMmJiNWRmNmNhYiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOTE5ZTFiODgzZmQ3MTViNTBjNTU2ODhkZThiNTBlOTQ3MTdiMmM0M2ZmYWE0MDYyYjljNmUyNDA0MGJlMjQ5ZiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOGIzYTJiZGI4NjhiYWIxMmU2MTE0OWUzNTYwN2Q0ZGJhZjM3ODQzNGM1MzM4MWY4MWRlOWRhZTBhYjVmMTZiYiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMjVjYTIxZTg1MTA1YThhYzQ1NzdkNjdkOWI4N2U0YWJjNWZlNzlmMWY3YjBlYjAwNTFjMTNjMjk1ZTlmOTBmZiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_cf521de07b2449e4bb91f10ea3c56894",
+      "statement": "make build builds the web app, copies web/dist into internal/server/dist and then runs go build with the version ldflags; make docker builds a local image with VERSION and COMMIT build args.",
+      "evidence": [
+        {
+          "resource": "repo://Makefile#L31-L40",
+          "version": "repo-lines-v1:sha256:d1c1a3c3b0dbaa22fcd34e6cb38cc502330be5b556b8815dd9b24e604d070e24:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFkNmRiMmRlNDdiZDA3ODUwMjBmZTI2NGQ0ZjMyMjdkMmEyYmJlZDBhNzY1NzU4ZTI3YmU2MGY4OWM1MTA5NzMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZlY2IwYzZlZDJjMWQyMWQ5MDFjYjJhZGI2Y2IyZGNiNWNhYWNmZTE5YWFhZDUxZWU3MTIwNmY3ZTZmOGMyNGYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjU4NmY1N2Y0OWVjMmMxMTMwODk5OTFjMzQ5MzA2YjRjOTc4Y2I0M2RkMjViYjliYWU2NDkzOTQ5ZDljZTBlNzQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_3a01f4d27da946c78b85a81fe44e1424",
+      "statement": "The local checks that mirror CI are go vet ./..., go test ./..., CGO_ENABLED=0 go build ./..., cd web && npm ci && npm run build, and optionally docker build -t v1:local .",
+      "evidence": [
+        {
+          "resource": "repo://CONTRIBUTING.md#L20-L36",
+          "version": "repo-lines-v1:sha256:ee9f94706f6bb2c18a5f50c07412e89530db524d2f52d8a4202f5ee762d94155:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY4NWQxNThmOTUxZTNlYjExNzQ5ZDJlNTE5YTY0ZWJhNGY1N2RjYzkzY2Q1NjJlYWVlMmNjOTQ1N2Y3Mjg0NmUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY0MWI4NDI1M2ZhZmZlOTRkNTBiMWFjZjkyNzFhZDUzNTZkM2QyYmIyNTk5YjQ4ZDBlZDk1OWZhNGM1NDQyOGIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjUwMGIzZjY3OWIwZDQyZjM5NTYyOWRkNThmOGI3MjNkMjM5NWYwNTZiYjk1OGMyMDQ4OWExNjBhOWVjNzFhMDgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVjYzNkNDBhZjhiMDAxMWE1MTc4MGI1Y2YwOGRkYjZlMWQ0MDdlNmE1ZjNjMzEzNTg1MzRjYTU3NmM4MjAwMmMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_84679fedeec443c880fe15d7e0723cfa",
+      "statement": "In a fresh checkout internal/server/dist holds only .gitkeep, which may not satisfy the go:embed pattern, so a placeholder index.html must be dropped in before go vet or go build.",
+      "evidence": [
+        {
+          "resource": "repo://CONTRIBUTING.md#L30-L36",
+          "version": "repo-lines-v1:sha256:0d94798717e4e2a8f1e38f7ff70e4bb183568873c2637a3b3a1fc9804495379b:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNWRlMmY1MzI4ZWU2ZTgwNTBlOGFhZmQ4ZGM4NjlhMDY5Y2Q5NTg0ZWRhYWY1NGZlNTg5ZDczYzNiN2RjZDc5OSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNjQxYjg0MjUzZmFmZmU5NGQ1MGIxYWNmOTI3MWFkNTM1NmQzZDJiYjI1OTliNDhkMGVkOTU5ZmE0YzU0NDI4YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMzU5NjBjODY3YmIzM2Y5NjcyOTc0OTAwZTlmMDE5Njc5OGU3NWMyMTZmMDYxOTA1N2E3ZWU1ZjBmMWJmMzgzNyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZWNjM2Q0MGFmOGIwMDExYTUxNzgwYjVjZjA4ZGRiNmUxZDQwN2U2YTVmM2MzMTM1ODUzNGNhNTc2YzgyMDAyYyJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_caab1408e438418aaa3362ba3a7e0402",
+      "statement": "The web build script is tsc --noEmit && vite build, so a type error fails the frontend job and there is no separate typecheck script.",
+      "evidence": [
+        {
+          "resource": "repo://web/package.json#L6-L10",
+          "version": "repo-lines-v1:sha256:5d8a3fd730dc81ee4c31cb9f55c3d83e3dc3f48087005cdc9b331d343588f3d9:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMzQ4MzNkNTk0OWMwM2E0MGNhOTUyNDkxNjEwYTY2NTk2NDRiM2FhNDY2MzYyZjc5OTAyMGRiZjE5ODE1NDdkYiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNGQ1Y2QyZmI0ZjNkZjg4NDUxNTI1NWIzOTUyM2YyZjhiNTQ3MmJlZWE5ZjU2NmZmY2EyMDRkYjgwMjU2MTA0MSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMDFmYTFmYjNiZmI4MmQ0MGM4ODI3MmI2NjIwNTdlNmEzZDUzODlmMDQ1ZjIyMGY1OTRhNDIyZTdlZGJhNDI0ZSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNWU5ZjdkZGEzMzc3YjIyZTUxZDFlMGI3ZDhiNzM1MDVmZWZlMjQ1MjcwOGE0ODM4YzRjMzM5YTYyMzkwMGNjZSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_8e543ffe6ee043fcac640feade25c75b",
+      "statement": "CI runs on pull requests targeting main with a concurrency group that cancels superseded runs.",
+      "evidence": [
+        {
+          "resource": "repo://.github/workflows/ci.yml#L1-L12",
+          "version": "repo-lines-v1:sha256:2615beafc001392b74856606716ae73b10e2e854e1e153029f566fa8ab081d62:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA2ZTFiMzJmYTA5MDc5YWUyZjAwMDFmZmYwZWNhMjdiNDk4NTk1N2Q0ZWI0ODU3OTI5YjNjZjA1OGZhYWU1NDEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk2OTAxODQxMDA2MTIxZDQwM2Q0ZTRhOTgwOWE3ZGFhODdlNTE2MWIzYzQyNGQwYjE5N2NhMDY0NWJmY2FlNjYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFjNGIyNDFlNGU5ODc2NDFlZGU0ZGUxZjk3M2U1ODE1ZjY1YTY1ZGFhYTUwNzY2ZjVkMTgxZjZhMjFlZGNhMWMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_20c6641d4a1243bdbf6ed58ef37bc398",
+      "statement": "The frontend job runs npm ci and npm run build in web/ on Node 22, and the sidecar job runs npm ci, npm run check and npm test in sidecar/ on Node 22.",
+      "evidence": [
+        {
+          "resource": "repo://.github/workflows/ci.yml#L13-L47",
+          "version": "repo-lines-v1:sha256:efa482dd1d30e3243b4519bc9d30ddc69f181472c014739256198249bbe63d61:eyJzZWxlY3RlZExpbmVDb3VudCI6MzUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc0Mjg5YjQ2NTk5YTc3M2MwYmIyNjQ0ZWU5ZDNjZjE5ZjkyYjgyNGNiYjQyM2YyYzg2NDljZDI3NDhjOGE3Y2YiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhkMTk1MjJlZTZhM2Y3MjRiMDU0ZjU3YzNjMzE1Y2Q5NTU5ODZiMGVhZTg5ZTQzZjJhMGU4YmNmNTFkZWU3YzMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU1ODFmMTY4N2Y4MmZjZGE1MjQ0NGVhYzg5MTg0MDlkNTU0NzQzODA1OWQ1ZWY1MTZiMDVjZDE1OGE4NDRkNGYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjExZTRiMmFhZjdlYWQyNGJkOGM1NzY1YWEwMDc2OTFkMjA5NjVmZTE1OWNkOTQ5ZWU5OTRhOGEyN2EyNzM3MGYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_fda63ffdf6dd40a3b5a06e0d60a1ee1c",
+      "statement": "The go job installs Go 1.26, writes a placeholder embedded frontend, then runs go vet ./..., go test ./... and CGO_ENABLED=0 go build ./... .",
+      "evidence": [
+        {
+          "resource": "repo://.github/workflows/ci.yml#L49-L70",
+          "version": "repo-lines-v1:sha256:a2d1dcaf9451c3f866ad15ead8d94c9693b0208b5d4c7bcf3e08b48bd4260813:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjlkMmIwNGU1N2UxYTgwZWQxZmU3NWJlYjg5MmZiZTQxZjY4OGExMTNmZDkyMmNkOWYyYjE1NzRkNDg3NGVjZWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYwZDlmNzNkNmNhMzRjODdhYzUwMzk5YmU0Y2Q0MmZhYWEwM2UyMmVmZDI2MTgwMDQ0ZGE3Mzg3ODE5MTQwMWQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg1MDBlMmU2NmY0ZjhmNWE1NTI2ZDQwZGNlNmYyZGM1NGJkMTJlZmQ5ZjBhMmYzZDA3Zjc5MDFhNWY1YzU2NWYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc4MTA2MzdjN2YwZGFmZjI3MTBmNDIyZGFmNTU2OTFlNTU3MGE2M2ZiYzAzNzM4MjJlYTczZTQ0MTM2ZjYxYTEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_c05cae02838d431496f2707a3e8f7d4d",
+      "statement": "The docker job builds only linux/amd64 with push false, VERSION=ci and COMMIT set to the commit sha, using the gha layer cache.",
+      "evidence": [
+        {
+          "resource": "repo://.github/workflows/ci.yml#L72-L89",
+          "version": "repo-lines-v1:sha256:39dc2b04898fca90154ef0033ca5f22341839042985e0191e669bc6f4b2a96b1:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk4YzVlYjk0NjY4M2Y3OGQ4MjFkYWUwNDc4OTY3NmIzOGI3N2U1ZTc2ZTBkMWE1MDMyNTBkYmQ3NTkwZjY1ZTMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNkNTJiZTEwNDQyNDU4MjBlOWRkNzg0ZmRiNjk2Yjk2YzZkNDgxYzAwMjY4NGYwNTVhODEyYWUzNzAxMDU0NDkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjUwMzk5MGJlNjAxY2VhMWZhNzdmNTljZjk1MDgwMzY1YTIxNzJlY2YyNTMwMmRkM2FhNmIxMTFjYzM3MWFmNmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_bee34a0e1cdb41bfbce3745a2dc1565e",
+      "statement": "The web stage builds the SPA on node:22-alpine with npm ci and npm run build, caching the npm and BuildKit layers.",
+      "evidence": [
+        {
+          "resource": "repo://Dockerfile#L3-L15",
+          "version": "repo-lines-v1:sha256:e8b975768feade8cf1eea65e0c750f8e996bc10d580868cf123d05de937f4550:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYzMTY1MmM4YTFkYmZkOTgxN2I0MGU1MWQxMDJlZjRhOTk4ZTg1MGVlMmI3MTIzMDZmMTkwZTRhNTRjYjRjZDMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjEzZWFjM2UzZjNiNjY3ZThmMjc1MTFhNTQwYzZjYzM4NDI5ZDBjOTE0ZTFjNDRjOWFiNjQ1MTU2MDM5MjcyYzQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjoyLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA4YjRkNTQzODRlNGE4NGUxYTg0NGM4ZjE2NGQ2Mjg2YTdiYTc5ZmUzM2RkMWRhYmFlMjI5OGRkMTRiNjYyOTMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFjNjdmNmY4YmUzZjdkNzRhZWQwMmY4N2E1NjUyOWJlNWEyYWI2Yjc4MjQzNGVlZDQwNjE5NjcyMGFhMjA1MmYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_5c805f35378f431289fc754539f59c9a",
+      "statement": "The Go stage cross-compiles with CGO_ENABLED=0 and copies the built web assets into internal/server/dist before running go build, because the backend embeds that directory with go:embed.",
+      "evidence": [
+        {
+          "resource": "repo://Dockerfile#L17-L34",
+          "version": "repo-lines-v1:sha256:8c4f90522a5b4e71d2486b0b1d1d9033a03d59d41cdbfba2db7137e4fb154202:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZlMGQwMTdiYTc4NDU3OTUwNzhiMTI5MzA4NDE3ZTZmOTUwOTlmNDk5OTAyMDY0MTIyODI1ZmU1NmE3NzJiNmEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU1ZmU4M2U4NmFhZjg0OTE2NDMzMDQ3YzlmNGYxYTQ4NDQ3MjI5ZjRkOTkxZDM5ZTJkMzZhZjRjMDliZDJlYTciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI0MjBmNjBmNmNkMzllMGI2YjEyOTU0MjkyNjQxZGFiZDFkYmViM2I1ZTZkNGNhZDJhN2E2ZTk3ZDVjYzg2YzUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImMxNWQ3MGM4MThiOGMwOGRiZTcwNzU5MjlmZmIzYmI3NjM3YTkxOTc0ODYyMDIwMGU2MmRiZjgxY2Q4ZmMzYWIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_169192d0752d4d38a78f6f12ac0fd4e9",
+      "statement": "The sidecar stage installs production dependencies and copies the ESM sources, and is deliberately not pinned to the build platform because some dependencies ship platform-specific binaries such as esbuild.",
+      "evidence": [
+        {
+          "resource": "repo://Dockerfile#L36-L45",
+          "version": "repo-lines-v1:sha256:75ab6c5de72035cbda438846cf4906e4e6932f3e5c3c865a36625c8a8e4e14dc:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNkMjdhMTUxMzdkYTNiZTE5NDNkMDVlMDU2YzcxMGRiM2E2OTgzNzQ4MmJhMjA5ODc1NDE2YjJhZjA2ZGQ3MzYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA0ZmNlYmQxZjIwZTU4MWYyZTZiODAyNDVmMzU0Mzc2N2JkOThhOWY1NmEzYmViMDBhNTg3NzllMjhjMDhjZDIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZmMzBlZGFkZmNmNjg3NDlhNDAyYWM0MzE4MjYzZTAyYjVhMDQ4Zjk1MzMyMTg2YmEwMjIxYmRiY2ZkODZkYjciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBjMmZmZDM4ODY3MzMxZjU2MTJkZDZlYTgzYzViMGZjY2Q5ZDNiODI5NTAyNDdkODJlODVhMmI0NzQ3NWM0YTkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_744c4a9e3f154563b384b9e7a35dfb34",
+      "statement": "The runtime stage is Debian-based because semble's prebuilt wheels are glibc-only, and installs git, bash, ripgrep, fd, the GitHub CLI, chromium and rootless podman with slirp4netns, fuse-overlayfs and uidmap.",
+      "evidence": [
+        {
+          "resource": "repo://Dockerfile#L47-L90",
+          "version": "repo-lines-v1:sha256:e6ab84d6a3a93cf72e1aede4f84567cb946c6260f0e8526a6979a35b5ee47518:eyJzZWxlY3RlZExpbmVDb3VudCI6NDQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVhNjIxMTYyZDk4NjU2NjMyNmJlNDVjN2FmZTU0Mjk1ODZhMWI4OGQ0MThmYTk2MDQwYTc2MTYzYjQxOWRjMGMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI4NzM1ZDg4MTY4YTU5MTRmNDZmZDk1MWU0YzM0NjIyNWRjNzE0NTRiNDBmNzYwMDJhNmI0ZTc0ODA2MDAzMGYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJmZDFjNzE5OWMwYTJlN2U0YmYzZWM5Y2IwZTI0NTYwMmI5NDYyNTQ0OGIwZWM0MTgyZTI1MjgwMDlkYzRhNmUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_e7b0bf81ca2c4abf899694599142a024",
+      "statement": "The runtime stage redirects every global toolchain to the persisted /data volume through NPM_CONFIG_PREFIX, PYTHONUSERBASE, PIPX_*, UV_*, CARGO_HOME, GOPATH and BUN_INSTALL, and prepends those bin directories to PATH, because /usr/local is wiped by an image update.",
+      "evidence": [
+        {
+          "resource": "repo://Dockerfile#L140-L160",
+          "version": "repo-lines-v1:sha256:85956406743f7b65da55318366f4ac8b6548c056e73365ed79ba3af67d57fd4c:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFmMDg5MGM4NDZiNDNkM2NlNGNmYTBkOWM2NDhkYjUxMjM2YTk5NTFiYWQ1M2I3YjMyMWUxODVjNmM2ZmJiN2EiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFiZDI4MWY4ZGNhNjdlMmE2ZWNmZmYxYTQxZGNkYjFmZDA4ZGQzOWI2NDhkZTIwZjRkZDliYTk5MWYzZTU1MWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY0YTM3Yzg3NDU5NjA1ZDRkYjBmMzJiN2I2Mzk2ZDIzNDNhNzZhY2Q2Yjc5ZTdiNzQxNDE4Nzk4NDQzYmJhOTgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_e25e9af9f9474da1985a14a02e98576d",
+      "statement": "The final image exposes port 8080, declares /data as a volume, runs as the node user, health-checks /api/healthz with wget and starts /usr/local/bin/v1, with V1_SIDECAR_SCRIPT pointing at the installed sidecar host.",
+      "evidence": [
+        {
+          "resource": "repo://Dockerfile#L160-L172",
+          "version": "repo-lines-v1:sha256:ac30eceb0f4f053e04804d9a352c27bdc4b23c55e1907f1728956ab6dedfc9c4:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFmMDg5MGM4NDZiNDNkM2NlNGNmYTBkOWM2NDhkYjUxMjM2YTk5NTFiYWQ1M2I3YjMyMWUxODVjNmM2ZmJiN2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwOWE5NWMyNDUwNWM5NzQ5YTYxMGVhZDBhNzRhMGM1ODZhZWQ2ZDA2YTRjY2YxYzVlNTc1YjdlYmU3YjRkZDgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjcxNTVhNzMwZGQyMDlmMjE0MjY1MGYxNGVlN2E3ODVjNjJhNWVmMWJiNDlmMWJiNzNjYzU5OGM2YTc2MmQzYTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_f0798f7baabe4cab9c59c4315204730a",
+      "statement": "docker-compose runs ghcr.io/<owner>/v1:latest on port 8080 with the v1-data volume at /data, privileged true so rootless podman can nest containers, and a ten-minute stop_grace_period so a running turn is not cut short on shutdown.",
+      "evidence": [
+        {
+          "resource": "repo://docker-compose.yml#L1-L38",
+          "version": "repo-lines-v1:sha256:dd818550b8ce9e0703284a3d58c3fd7beb7b8606b02080e013c888c8f234d156:eyJzZWxlY3RlZExpbmVDb3VudCI6MzgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZlZjMzN2FmZTRkMTU4MGUyOGQwYWM3YThkYWUwMjRhMDE4ZmNjZmNjNTU5YWU0NGM4NDZlMzFjMTYxZWIzMTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVjYjVmOTBhN2Y0ODEwZDlhYmIzMTkyZjY0YzdmZWY2ODZkYzlhZmI0ZDY3MDA1YTllY2Q1MWE1YjM5MjhhMTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_587be5b11a3c4268a27c12600474497d",
+      "statement": "The release workflow triggers on every push to main and on manual dispatch with a required bump choice of patch, minor or major defaulting to patch, and serialises runs per ref without cancelling.",
+      "evidence": [
+        {
+          "resource": "repo://.github/workflows/release.yml#L3-L21",
+          "version": "repo-lines-v1:sha256:cbd30762045ff769159e63c37891237f2fadcc9e564881c2f0eb38d6cd8d9cdb:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU5NmRjNDgxNDlmNWE4M2QxZWQ2ZGJiMzliYmM3ZTJiOTAyYWEzZDM0ZDZiZDVhZTRiMjkxYjY4ZGYwY2E3OWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY0YTAxZjI4YjZiMDRkNDVjYWQwZmU2Yjg2MmQxYTgwMmQ3YzFiYzVlNzdlYjg4NTgwMGI4ZDkxY2Y3ZjQ0ODEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjoyLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjVmOWNhZTQxNDE4YTVmOGY0YTFhODI5ZmRkZDAyYmY3NzQ4MmUwYjkwMmQzYzBiNGZmYzExYTg3NGZlNGQxZTgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFjOGQ2MWE4NzQ0OTgyMzNmZDg4ODg5MmRiNjVhYjJkMTZlNmQ1MWJmMzA2Njc5MGViMDNmYjEzODAyNjhjYmUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_119880c632ff4e8fbd5bac1534853a91",
+      "statement": "The tag job checks out full history and computes the next semver natively from git describe, emitting no tag when there are no commits since the last one.",
+      "evidence": [
+        {
+          "resource": "repo://.github/workflows/release.yml#L23-L58",
+          "version": "repo-lines-v1:sha256:1936d8cbd9a742aaa12221c4983ff84bcc5494f9686e290657381e51d78ccb7c:eyJzZWxlY3RlZExpbmVDb3VudCI6MzYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU5ZDgwMTU0ZWQ0MmZjNWM3NzliMTMzMTU3OGI1OGI4OWM4MDFlYWNlNzRmMjRjZDQ4ZWI0YTIzNTc5NDBhOTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImFjM2EyY2UzOTgyY2Q0NDhhOTQ3MmM0YmU4ZWIzOTQzMjAzOGYxN2M2MmY5ZDYwNjZmNjgzNjVmYzJlZDQ1MTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQ1OTNhMjRkZTU5MmY3NjcwNTUyMDc4N2NkNDhmOGMxMjZmYmZiYTY4YzRiOTcwMWQ2NmYxMDUwOWQ5N2ZjMDcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_3919401f48924f208db0de52897528df",
+      "statement": "In automatic mode a feat! subject or a BREAKING CHANGE body bumps major, a feat subject bumps minor, and anything else bumps patch; an already existing tag ends the run with no tag output.",
+      "evidence": [
+        {
+          "resource": "repo://.github/workflows/release.yml#L59-L83",
+          "version": "repo-lines-v1:sha256:a676d485d76b306c230de6a5623ec00f8e863d84150faf8a73aa4f1ec527e583:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIxNTY2MjkyYzM2MzliNDNkOWVmNjA2NmI1NzcyODNhNDU5YzEzNjlkNmMxMmYzNTE5NDk4MzM0YzFhNjgwYTMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIzZDBmMDdhMGEwNTRjNzc5MDZmNmQyZjU3ODA4YmVmYjViNjcxOTRhNGFmNDcwZjUxZmY0ZTViMjA3NTViMTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk5OGVjODhmNmVhZWFjMDYwYWUwNDQ3MjY2MGNiYWRkMWE2MmYzZTMwMjE2ZmI2MjViNDdlMjc5YjI4YmQ4MWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRjMWNiYzI5OTVkYjAxNmJmNDBkMDcwNWIwMzljNTQwZjk5Nzc1ZmEwMWE5YzBmYmRmZjQxYmIxM2Y1MDc2ZDEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_5c922f18df404f5794fcc764dc78e417",
+      "statement": "The new tag is pushed as github-actions[bot] with three retries and ten then twenty second backoff, because a GitHub-side failure can reject the tag push, and the job fails if all three attempts fail.",
+      "evidence": [
+        {
+          "resource": "repo://.github/workflows/release.yml#L84-L106",
+          "version": "repo-lines-v1:sha256:3278dbb3d00fd82a070b7c9514e16cf73c3b88175eccf4206023239b5143dab0:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZlYTA1YjhjMjhkNTNkMGQzMGY3N2Q1ODA3NGRiMWQ0ODdjZjJhZjk3YWM5ZDk3ZGRiMmI0OWY0NmMwODQzMDIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE2YzFjOWU2MDdiYmUxYTg0MDg4MzZlZjJkNzBmNWJjNjM5MTA5N2RjYWY1ZWIyOWEyYWUxNjNkYTg5OGFhMDUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjNmMGE3MWJkY2Q3NWIxYmI2MWJhN2ZiZjVmYzY3ODExMWIxMDA2MWExOWQxZTY1MDEwZmRlMzFmNmZjYTgzMjEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImYzYTIyOTIxZGVkYTVlMGRiYWY5ZDNkYmZiZDg0NjlkZWU1Yjk0ZDE3OWQ5MGFiMGRhNzIwNTJhY2RkNTRiNmEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_3e7e529030594c278eca6bca2f1b878e",
+      "statement": "The release job logs in to GHCR with GITHUB_TOKEN, lowercases the repository name, and builds and pushes a linux/amd64 and linux/arm64 image tagged with both the new version and latest.",
+      "evidence": [
+        {
+          "resource": "repo://.github/workflows/release.yml#L119-L156",
+          "version": "repo-lines-v1:sha256:2ebf848e86e1413bbd20d47761ec0354912f8cf455d44fd505b9b0d67da72ac7:eyJzZWxlY3RlZExpbmVDb3VudCI6MzgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNlNzI5OTQ3NDc5ZTE4NTMyMjgwNGE5ZTczNWUwZDRjMTg5ZjMyMmE4MDU5YTdhNWY3OGNhNDQ3Y2Q0NTQ1YTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNkNTJiZTEwNDQyNDU4MjBlOWRkNzg0ZmRiNjk2Yjk2YzZkNDgxYzAwMjY4NGYwNTVhODEyYWUzNzAxMDU0NDkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNlNDhhNTM1ZWIzOTk3NTZkMjM2Y2IzZWNmZGQ4OWI4ZDZiMDlhYjAwMmY5YzI3MWNjYzI2YTU3YWQ0YzRiOTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjgxMzk4NmY0MGUwOGEwZjcwOTM5Mzk2ZWQ1OWJmNDE2MDA5OWIyMTVmNzI5YTkxZTMyN2ViZTk1NDFjZjJlOTgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_2818ccd0a4db4c9787c711f370a1ee7b",
+      "statement": "The release job finishes by creating a GitHub Release for the new tag with generated release notes.",
+      "evidence": [
+        {
+          "resource": "repo://.github/workflows/release.yml#L158-L162",
+          "version": "repo-lines-v1:sha256:cf81cdacf78e4d707874e0a58a8bd137b0fd574e6c4f3fff4b5676cff3888907:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNzRiOTk3ZmVjNmNjYTE0OTRhNzNiYzk3ZDJiMjRiNDU4NmVmYTg3ZmNlY2I0YTQ1MzE1NWYwYmVhNjhhZmRmYyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDg2ODUyZjcyZTUxNDNkMzU5YTU4MzVjNDI2YzQ5NWI3Mzk1NjMzMThlMmM0ZGFkMWViZGJhMjMzMDk1MjAxMiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMzkxOTE5NzQxMjVkZjk4MmQ1MDgzZGRmOGI4MzQ3YzAxNTkyMzE5ZmZmZWFmZTA5MTExMDlmMDI1NGEyMTBlYSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjAsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_29244f1410ff49baa496422e6d4e8336",
+      "statement": "A scheduled OpenWiki workflow runs daily at 08:00 and on demand with full history, installs openwiki 0.9.0 globally and runs an update against an OpenAI provider using an OPENAI_API_KEY secret.",
+      "evidence": [
+        {
+          "resource": "repo://.github/workflows/openwiki-update.yml#L1-L40",
+          "version": "repo-lines-v1:sha256:5461c71a2f70583809c77214ba53ab423c608023014de7d4680d4f48a3bf0de6:eyJzZWxlY3RlZExpbmVDb3VudCI6NDAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA2MDI3ODdhZjZkY2MwODM0ZGUxMjFjYmIxY2I5NWY5NDU5YjcyMWVhYjAzNDlmMTA1MDFiOTk2YzFjNzdmZmYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMyNWU4NDZiOTUzNzg0YTU3MjcxZDEwMmI3M2Q1NzI5N2NjODkyM2RjZTAwM2IwNDFiZjAwNGQ0MzcwNTFiNmEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM1MzM0NjliMjg4MDJlMzM3MzgwZTRkODkyY2QxMjZiMmQ0NDRiZjBkZmFhMjcwMjEyMTUzNGRiZTNiZmJhM2YifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_52b5cbce45bd4d1893d3a61b1670c21d",
+      "statement": "Pull requests branch from main with one concern each, use conventional commit subjects because they drive the automated version bump, must have green CI, and must update AGENTS.md or the README in the same PR when documented conventions change.",
+      "evidence": [
+        {
+          "resource": "repo://CONTRIBUTING.md#L38-L49",
+          "version": "repo-lines-v1:sha256:24426bd531cb476e701fd8fdb37c94f1813a7bcb0366d074d118076940cf143c:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUzZGYwOTU4NmM3MTVlMDU2MGNhMzBkMGZlNWE2YWE3MjI2NDA2YWFiYjMwMDBjM2E4YjVjZTI2YTE1ZTgxZjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMxMzE2N2Q1ZDY0ZDEyM2E2YmE0MzMxODZlZjQwMjBiMjVhNzkxOWEyZTVmMzM5MDc0Zjk2YjQ1ZjBiNGRmNWIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM3ZGQwZjhmNjI0YzIzMjU2Yzk4NzllNWNmNzAwNjYwNGE3MWFiYTk2YzljZTI1NWE0YTZiNGFhZmVkMjQ3NmUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjVkZjU4Y2Q2NDhlODVkMzI2MDlkNmRmNzEwZTczMDAwZGJmNzJmNzc3NDcwMWRmOTFiYTQzMjgyMGIxM2ZkYmQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_da62cd38a2964dc19aa0e2099f1afa69",
+      "statement": "Issue reports include the version and commit from the startup log line and, for chat or agent problems, a diagnostics export that scrubs API keys.",
+      "evidence": [
+        {
+          "resource": "repo://CONTRIBUTING.md#L50-L56",
+          "version": "repo-lines-v1:sha256:7e7b36709b3b44051e9c77898ff111b92e175566d51d73fe85a7c918d032b1da:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMDFiYTQ3MTljODBiNmZlOTExYjA5MWE3YzA1MTI0YjY0ZWVlY2U5NjRlMDljMDU4ZWY4Zjk4MDVkYWNhNTQ2YiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMjhkNGJlYzEzOWU3NWQ2YzI2ODQzMTU3NmQ2YWU3ODRmOGYzN2Y2Y2RlZmNjZjgxOTU2OGFkNjAyNTQwZTBmZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYTVhYTNjOTkyMmIwZjEzNzY2NTkwNDdmNTYzODYwNWExYzRhYWYwNGEwN2Q2ZmU1NDBjNDdmODA5YmFlYzBlNCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjAsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_7cc69be8830940a8b5beee28b3127d58",
+      "statement": "AGENTS.md is the authoritative architecture document, with sections for project overview, layout, key commands, conventions, boundaries and OpenWiki.",
+      "evidence": [
+        {
+          "resource": "repo://AGENTS.md#L1-L11",
+          "version": "repo-lines-v1:sha256:6226c1f9e4bfc8202ea9114ba7d4bc85b81f30ae908a5740a1e14a3d1ccd7d3f:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJjN2Y0NDA4YTJmOTM4NjU1OGZmNGJiYjNlNDM4NTZiNTE2Y2I4NzNjOWRmNGM0MGVlY2Q5YzhlOGY3YzRlMWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUyYTI3MzhkMjUwNDZiYTdlZTkzMDY1N2MxZmM5MTdkY2I3ZDFkODRhOTVkYTQ1ZmM0NDk5ODM3YzFkZDIxYzgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjVhNjViMjZmYjBiZGY1ZDA2YTk2YTgxMWUyYTMyNjcwMWNiMTRlN2Q0OTljNDY5YWRhNzI2NTEyZWI3MmM4NmYifQ"
+        },
+        {
+          "resource": "repo://AGENTS.md#L121-L135",
+          "version": "repo-lines-v1:sha256:c390938c09736dec4c88f7e8a3d7fc448a73c6ce154518ff9224ff8f6afa585c:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI0ZmVhY2Q1ZmRhODBmNGM0Yzg5MDJiZTk0M2YwZGJlMTVhOTI2ODU0YjUwNTQwMzg5Zjg4ZjJiYWQ3ZGJhN2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU2ZTBmOTI2ZjM2ZmIzNGMxY2UwNDAxMjFiYWM5ZjhjMDNjMGQ3YjUxZmEyMjgwYjhlMzlhNjcyMjUzZTEzN2YiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUyZWJmZTE4NTdhYmU5YzJjYTNhM2M2M2Q2NGUxNzYzMDU5ZDhlMzA3ZGQ4ODk3MGU0MzhkMGEzM2VhYzViNGUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjYzMmU4MGVhZGYyMDBiZTJjYWU2ZDU5Yzk1NDg5MTczYjgwYWIxMzMwOWVkZTM5MDEwN2I3MDAxM2VlZTI5YzkifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.9.0",
+    "at": "2026-11-15T05:31:58.285Z"
+  }
+}

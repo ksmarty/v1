@@ -1,0 +1,260 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:0d312322ba12130967062c1a1fbd5d3a9738882da1f1dbfa37c4cbd91f3abff2",
+  "claims": [
+    {
+      "id": "claim_874f2325c71f4beaac89ec0f652048c9",
+      "statement": "The provider catalog is a models.dev-shaped document with source, providers and fetchedAt fields.",
+      "evidence": [
+        {
+          "resource": "repo://internal/llm/providers.go#L65-L77",
+          "version": "repo-lines-v1:sha256:d1d3823f0e284b28505ece57bc50bcefab18385c10bf79c7728d4042fa883036:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc0ZGMyMjliOTg5NWE5NjQyZjM0YTcwYTA3ZDRmMmY0ZWJmZjFjM2YwOThkOWI4YWJjYTczZjU3Y2Q0NmU0ZjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY3ZjMwODkyMzcxNTY5NGIyOGMzNTA5OWExYjM1YmQ2Y2QzMzc5Y2NlODI5MWZmYmJiYTFiYjQwMzI2ZGNlOWQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE0ZDgwN2NhMDY5MzBhNGQ1ZTIwZTNkY2FkYzlkZWU0ZGM4MzBkZDcyNjA3Yjg4ODg0OTQ5YTlhOTU1OTI0NzQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImZjN2RjMTE3OGJhNWNhNmRjZmNjYjUxNzQxMTI2Y2M5YmZiODk5OTdiN2JjMDE1ZjM1MmFjMzczY2I0MWJiYTgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_7eb60b27667142158fdaddf5885f0e61",
+      "statement": "A ProviderModel carries id, name, imageInput, reasoning, context and output, where context and output come from models.dev's limit.context and limit.output.",
+      "evidence": [
+        {
+          "resource": "repo://internal/llm/providers.go#L40-L52",
+          "version": "repo-lines-v1:sha256:83e80d617700272b5952c563e7eade04ff37d2d935b2299a2af549c660d55beb:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUxNjUyYzhlMjhkOTEyMTNiMmIzYWUxM2YyZWZkZGM4M2U5YjQ2MzVkNzExNzlhZmFjZDczMmVhOTEzOGI3NzEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBjNWM3Mzk4MmVhOWQzYzhhY2MyZjk0YjE4MWM3OWNlNDY4NGQ5YmViOGY4ZDlmYjY5MWE1M2Q3NGQyYzNiNGMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk0MzU1ZGQyYTA3MDVhOTgwNDVjMTE4MzVmMDhjOTBhYzEzYzU4ZjhiYzRkN2UzNjI4ZGQ1ZjYyZDJlM2ZlOWQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_37ae4b11dd9f4c00a89db5fe3b4bec23",
+      "statement": "The embedded providers.json snapshot contains 18 providers, including both opencode (OpenCode Zen, https://opencode.ai/zen/v1, 40 models) and opencode-go (OpenCode Go, https://opencode.ai/zen/go/v1, 24 models), both with key hint OPENCODE_API_KEY.",
+      "evidence": [
+        {
+          "resource": "repo://internal/llm/providers.json#L1-L10",
+          "version": "repo-lines-v1:sha256:8b54883ebdeabb63fabb4dbe24e5940769471ae14496ae163f70a8aa6fae9667:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE2ZmIwOGZkYTFhY2I5NTdiNjExNmJkMzc4MTFhMWZlNDFhMDE2MTFjMDYzMWVkYmY3ODZkNjg4OWEyN2E1NWMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA2M2I0MDA0ZTU1NDQ3NjU3ZjhkZjkyNTVmYmE4MWNjZDM2YmY4OTFmZmJjODlmMjM0ODdkNTRmMmFmYWVjOTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk0OGRhYTRiN2Y4NTE5ZDEwN2JiOGI1NWZjNDI5N2QxYjRmY2NkNWY4NDY2MGM2NTBkOWMwYmQ3ZDdmY2JmYmQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_4504c23310444a77b9d6c127b60fe891",
+      "statement": "The provider catalog cache is rebuilt when it is absent, predates a metadata field, has no FetchedAt timestamp, or is older than providerCatalogTTL (24 hours).",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/handlers_providers.go#L43-L59",
+          "version": "repo-lines-v1:sha256:7dd9ff3764d7d02d79a8c16259f1873de51b888b6f61d2ca714cdd593fb8ccd7:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgwNTBmMmU2NGZmYjMwNTAyMThkZjVhNjI3MGJlNTA1MWU2M2NmODFkNzU3OTRjNDg5NTE3NWYwZmI0OGU3MmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQyY2Y4MjUxMTA3NmY0MDkyN2MyNzI2Njg1MmViMTg3NzdjZGJhYzM1N2I3MWY3NjRiMjVlNzFjNjdjOTVjN2QiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUwZjcwZGE0M2E4YTUyMmZjZGMwZDliMjdiOThmNjc2MmM1NjQ4YTQwMDA3MjdjNjFmNWUyYThkNjQ0YmUxNTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE0YzdjMGEwZmUzZmE3YzdmZDZkM2E5ODg3OGU4YjYyOTk5YWVhMWVlNWU1Mzk3MDFhZTNmM2Y0MjU2YTNlMzEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_84a96195a5354fbf9bda7f01e2a303ff",
+      "statement": "handleListProviders serves the settings-cached catalog, refreshes it from models.dev when stale, merges OpenRouter's live directory and appends runtime-added providers before finalising per user.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/handlers_providers.go#L62-L83",
+          "version": "repo-lines-v1:sha256:2cb7d1bb664d584f50c93f248b207ad02a00afcf74950fabc056069d8693ec7c:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRjYjRlZWQ4YmI0MDAzNGM2ZWFiZDFlNjA3NmNjMThhNzU3Yjg4ZGY2YzZjZjQwYTMyYjI5MDAxZjFiOWUzMTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJmNDFkNjA3OTFlZGU3NDIyYTI2NGVlYTI4YzdmZTE4MjI1ZDBlMDNhYThiNzY3ZWU4YzRmYjBkM2Q2ZWZiMDQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc4OGIwNzZhYTQ3MGQ1Njk4ZWI2Zjk1MmFkNWJjNTA5NDIxZjFhOTg3YTNkN2E0YTc2YmMyYjdkZGYyZDg3NGYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI3MTMwYzdhNmZhNTJjMDc5M2FiNWU3NmNhMjgyMmU5NzY5OGRmNTk1YjYxNjk4MDgyMWFmMzM1YjAyYjI3OWEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_d90b42974a254ed5a5b026b1e8672c30",
+      "statement": "The custom provider entry is appended to every served catalog, is not part of the snapshot and is never stored in the cache.",
+      "evidence": [
+        {
+          "resource": "repo://internal/llm/providers.go#L79-L87",
+          "version": "repo-lines-v1:sha256:8c872d60b00beec3c2d43b93e695e224851b283c0b5a946c67b27f61a3bac712:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMGFhODc5NmI5NGE2YzVkYjYzMGViNjgwYTNkNzNkZWUzMjYwZjNhYmU2ZmI1ODliYmU1NWVkZWE4ZDFkMWZhZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDFiYTQ3MTljODBiNmZlOTExYjA5MWE3YzA1MTI0YjY0ZWVlY2U5NjRlMDljMDU4ZWY4Zjk4MDVkYWNhNTQ2YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNDA2ZjAzMzQ3OWMxOGY0NTA0OTVjNjkxMTI0ZGM1MmExMzhhNmIxNTQzNWUxODExNjg5MTQwMzdhMjY5MDJlOCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiY2E4Njc2ZGVlNjk1ZTAxZjU3MmRjMzVlNmUyODJmZTg0ZjM0MjE1NjgzZjQ1Njc4NTM2MDAyOGUxNTY4ODI4MCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_9b9077285cd74fdca63dc9cb4dbc31e0",
+      "statement": "WithAdded inserts runtime-added providers before the trailing custom entry and marks each with Added=true.",
+      "evidence": [
+        {
+          "resource": "repo://internal/llm/providers.go#L109-L118",
+          "version": "repo-lines-v1:sha256:7b0b795c1aefe825965442d357a2b24926d7a3fa1bb8dbbc9af9ae6cd90a8f3d:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg0MGYyOTY0NDBiMzUwZWYxYzBkMjEzZTk3YWY0NzU0NTI5ODg4Zjg4YTQ3NDE0NTVkZGZiZDY1OWUzNzBiZGYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjNhYTExNzJlNDZjN2NkMTFlNGFjZDk5YTI3OTQzNWI4OWQwNDg0Y2MwYjEyNTZiODlmZDE1OTljNTgwYTNiYzgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFjZDg5ZGI5MGRjYzc5MDkzYmFjOGIxNmI4MjU5YzRhOWZiZTdmYzg5OWRmYWQxOGU4OTM2YWQzMTFlNmE2NWUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_d6ae6d803bef4853b8da5b9f68fe657f",
+      "statement": "finalizeProviders adds saved providers the catalog lacks, prefers live /models listings for saved, runtime-added and NVIDIA providers, and re-applies static name/vision/reasoning metadata for matching model ids.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/handlers_providers.go#L138-L240",
+          "version": "repo-lines-v1:sha256:1f88d8bc0926b00dff6ef2b61424f254abc4153dd04a71e22edd2524861df48b:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAzLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiI0NmE1OTY0NTU3NGNhMTRkOGU4ODkwZWJmNzM0ZDhiNTI3NmRiMGI1MjRjZTBhM2M0NzQ5Zjk0OGEwZGU1NzM3IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiJhOThhMzdmNWI4OTBlOTg3MTcwZWYyMGQ5ZWY1MmM5NGMyMDUzZDU2MDRmM2Y4MDFiYTA2MzZjOGViZWJmNjJmIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI5OTY0NWFmNTFhNTM2ZDQxY2ZiODQ5NjQzOWIyNjEzODdlN2Q5MmUyNDAxZDBmNzkyZmMzNmRlOWMzNjVhNWJmIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiJiOTczNTM5NDYyNjgyMDJkYWEyZWFhNmIyMGRjMWY3YjVjNDJiNDQ0MGY1ZTNkMzhmYjRlNzVhZjI5M2U1ZTFlIn0"
+        }
+      ]
+    },
+    {
+      "id": "claim_c2633379b06c4324b6bff79b61e278ef",
+      "statement": "A served provider's models slice is normalised to an empty slice so it never serialises as null.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/handlers_providers.go#L236-L243",
+          "version": "repo-lines-v1:sha256:7a76eeaa75940792544f1d39fd0b69ec78590ddb9360705d3f4b5aea728fa89d:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNWYwMzIxODRjODdmOWNmYjhjNmY2MmZiM2Y5MTBlZTJkM2IzMmRhZDJjNzA5MWUxYTM0ZGVmMWJlNTk2NWVlYiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNjdjZGE4MmRhNjA2MjM4ZTA1ZTYyMzk5NTY5YzVlZTAzOTkzNDE5NjQ4YWU1ZDQzYTJiZjhjZDYzNDdmODI2MyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYWMzODg4OTI0NTExMjBjNjU2YTRhMWIyMzI4YmQ5YzQyNzY3YjAxM2Q0NGMzYTRiOGNhN2YyMDVlZDE3ZWFiYyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNjY0NjM3ZDM5OTE1NzUzMTU5MTRiODcyNmNlZjEyNzYzMTYzY2RjZGNlMGRiZDA1NGEwMDBiNTUxMGNkODY2ZSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_9963711aaeff473f97315cab31c488e4",
+      "statement": "maxModelsPerProvider is 1000 as a guard against a pathological upstream; a lower cap truncated lists alphabetically and stripped vision, reasoning and context metadata from the models past the cut.",
+      "evidence": [
+        {
+          "resource": "repo://internal/llm/providers.go#L120-L132",
+          "version": "repo-lines-v1:sha256:bcda8607a7a9167d11f00749d94dc70083a90e53b73bd714e51bd17ecf5bd278:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI4NDliNDFiNjQ2YWI4NWQ4Y2Y1MTk1YjU3NTgyNjNlMzI1ZGI5ZTBiY2I1YTc5YWIyN2FjNzYyMWY1YjBjOWMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVmMWQ0YTM0MzgxZjgyMGU2ZTg3NTY3OTg5OWJkMTZlZmVhOTEzNjI5NmFmNTllNjQwYjQ4YTZiZjlkNzA5MmQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJmZWRiMmE5YmI5OWM5MDFkNzc2NzY0OTJiM2FjOTRmNzI2YmQzNDc5NGUxMjJiOTVmNjhhNGM5MTgzYjI0YjYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRkMmM5MmEyZDljMmUwMWUzMmNkYWFlNjRkYWVmODRlZGMyYzE2NDM0N2Y1ZDM5MDM0ZmQ1ZDU3ZTVjY2E0ZGIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_483f1fcad35a42f88becbb7293b50a2e",
+      "statement": "ModelsForBaseURL resolves a base URL through the knownBaseURLs pin table first and then the catalog, comparing canonicalised (lower-cased, trailing-slash-trimmed) URLs.",
+      "evidence": [
+        {
+          "resource": "repo://internal/llm/providers.go#L139-L176",
+          "version": "repo-lines-v1:sha256:726fa2ccb2b45fea9739a2d26e607a354fdc0def42ebb124697c0e2ef9f24af1:eyJzZWxlY3RlZExpbmVDb3VudCI6MzgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBhZDU5NGYyMjVkN2RmNzEwODQyMjY0MzM4NWY2MjRiNGQwNmMyZDVhZmY3MWRmY2E1ZDAzNDAzNTIxMTUwZWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjEwYjI3ODNmN2M3MTY3OGE5YWIwZTdkZTRhNTRkODA1ZGMwYzA2Nzc5Y2U2ZDY4ODJiNzczMTQyNjE0OGY5NmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk0YzBiNjVmZTkwMGM0ZDhmYWI5NTYzNGY0Yzc0NzBjNWJhMDhlMGMyMjVlYTkzYjgyYTE1NTA3MTY5ODI5ODIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUxZGMxMmE3YTBmNDEyNzVmZjFiNWRkMzgwZmZhOGRjY2Q4YTc1MmIyYzZhOGIzODMzNTBiOWJlMGE2M2I1YzAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_4bc70e96fe594df2acae4df02bc3442f",
+      "statement": "POST /api/providers/add resolves a provider id from models.dev and stores it as a runtime-added provider, answering existing:true when the id is already present.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/handlers_providers.go#L330-L360",
+          "version": "repo-lines-v1:sha256:909fa69c91da6096287618e1c857a73fd578eaaf4099a7ba72cd0c0bff1d7ac7:eyJzZWxlY3RlZExpbmVDb3VudCI6MzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM1ZjliZTYxNjRiYWEzZmI0ZGY0NDVhZDZlYmYwZjQwMjVhZjhjYzVkODkyMGYwZTcyZGM5YzBmMjExYWFhZjIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRkMGIyMTRlZjUzMWQ3ZjQwNzAyMDIxODRlMzM2OGM3MjFjNDUyZDBiNDdjYmY5OTE1OTQ5ODkwNjUyNDJjZTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI3MGJlMjk1N2FmZmM5ZmRkYjNkMTJjYmM3NWRjZjZhNzYwZThjMDM2MWU2YTZkMTI0YWQzNzJkNDJmNzBiYjcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_1009403bcfbf4b858b14d02d95ef5055",
+      "statement": "llm.NewClient derives the endpoint's session and static headers from the base URL and uses a 15-minute HTTP timeout.",
+      "evidence": [
+        {
+          "resource": "repo://internal/llm/llm.go#L79-L92",
+          "version": "repo-lines-v1:sha256:9f8ce0c1195a1f092e7c1db0ba738f38a4ffa377ee0499a1038e7dc8b9fe6b7c:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM3OGE1NWNhNGFiNTdjYTM5NDU1YmQ4YmRiNGQyNmUzMDU0MmFlYjg0ZjQyYWJlNjNkNzdhNDVkNTk2OTM2ZDAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgyNjE5YjI2NGRiMTdmYTg5ZDRiODA5Njk3MjE4YjhjN2MwOWFhM2ZhZmI3MTJjMmRhZjlhYTNlYzQ5OGFjOGMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdkZTZjNGNmNDUzZGJiZmQ0YjE2MWI5YTdiYzE2ZWM0NGFlZmI5MWM5OTU5ZWQ3NmM2NTI5ZGE4ZjdjOTU2YmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjUxNDNlMjNhNmZkNzZhN2MyMzMxYjUyYjJlMjUzNzJlOGUxMWMwNDljZTYwNjIxOGQ3ZDAzYTZmOGE2ZDEyNWEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_9def900b4d7648369ca1b7775c17b475",
+      "statement": "opencode.ai requires the x-opencode-session routing header and the static x-opencode-client: v1 header, declared by hostname in endpointHeadersByHost.",
+      "evidence": [
+        {
+          "resource": "repo://internal/llm/providers.go#L198-L228",
+          "version": "repo-lines-v1:sha256:dea1bfc9fe5baa8e50341f6efdaf01b46e72cf09c6f8cde290dfe2995552f72c:eyJzZWxlY3RlZExpbmVDb3VudCI6MzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY1N2ZkZjRjN2UwMGY0NGRkNDdkYjYyYWRiNDQ0ZGViMzdmNDRhMTM5NDY4MGM1ZDdlYjIxYzk4NDY4OWRjY2YiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZlNzM5MzY1MWZhMTY1MzE2Y2VlZGY2MzMyNDUyZGQwNzIyOTZhYTk1OWI2NDg5ZGNkMmJiOWZlYmFmNjRhYjgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImZhNjg3MzkwNGQ3NzI0ODEyMjNiMDBlMWJlZjNmZDhjYTFlMTBhOTNjYjVhYWNkZGIyMDhiNmNiMzY1YjQyMGYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_e7e04340908749f3870e618cc459a5d5",
+      "statement": "applyEndpointHeaders applies static headers first and then the session header, defaulting the session value to the client's model, and never overrides a header the caller already set.",
+      "evidence": [
+        {
+          "resource": "repo://internal/llm/llm.go#L94-L115",
+          "version": "repo-lines-v1:sha256:4eb908944cdee02ed1d6d1b0e2d606bce0e16c164676d267e5afa4971de0d617:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA5NGE0ODBkN2I0MzRhNWVmZWEyZTAyNWY0NDAxZWJjNjU3NjU0YjE0MGUxNTQwOWI4MDYzYzNkYTc4Y2U1ZWMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgxYWViNjZiMTRhNGViYTQ0NjBmYjg4OWU4N2ZiMjBjNTQ1MDI2M2JiZjdjMzZhNTU2Nzk2OTEwYjNjYjRjM2MiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdiMjUyZjk1ZWYwMjY2N2MzMjc2MDU4NTkyMWU4M2Y3ZmZmMWQwNjQ4NmVkOGMzMzUzMjk4MWFkNzQ0YzA0NWEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjViZmQ1NjBiYzUzZGQ5OTBmNTlmM2Y4NmM2YThlZjA1NDJjYzM4NzljZTA4MjBjNGI3YWM2YzEzOWRiOGE2MDgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_0b0f1eff63944e1ca25346293b9e7780",
+      "statement": "ProviderThinking caches reasoning-effort discovery for 10 minutes, and ModelContextLength reads context_length, max_context_length or context_window from the provider's /models document cached per baseURL|model.",
+      "evidence": [
+        {
+          "resource": "repo://internal/llm/providers.go#L323-L400",
+          "version": "repo-lines-v1:sha256:7c0ca338257225f6b7bf178e1ae59ca5d6c3efd9d4e089ef3a5be03e8494d464:eyJzZWxlY3RlZExpbmVDb3VudCI6NzgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY5MjJlMjFmYTY5N2VmZmJjNmFlY2Y3OTlkOTQyNmFlYzVlMjA2N2IzMTUwZmYwMGU0ZTI1NDZkZDdjYzgyNzYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY3Y2RhODJkYTYwNjIzOGUwNWU2MjM5OTU2OWM1ZWUwMzk5MzQxOTY0OGFlNWQ0M2EyYmY4Y2Q2MzQ3ZjgyNjMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjUxYjkyMWQ3MWY1N2QxM2Q0ZWRiMTRjMjMxZWFhYTVlMzI2NTVlNGIwMzQ0MGFiODk0MDQ1YWRlYWExOWM4NTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjIzMDFkMTE2OGQxZmFiN2E4MGRjMjI3NDZmMTJkODVhNWFhOWY5NTUwMmI2ZTljNDk4MWI0YWRlOTBjMDg1MWQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_11e8d68ad3724c53b96e806105286827",
+      "statement": "GET /api/providers/usage resolves the base URL and key from the user's config, overrides them from the saved provider record, and prefers the saved record's name over the driver label.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/handlers_usage.go#L74-L95",
+          "version": "repo-lines-v1:sha256:5a44ef5470b5cf3b09cc83721d4e4ec59aff502992eb234892219a9332d2d02f:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI0NTcwMzIxMzQwMDdlYzUxNzg3ZmI0MjY5NGEwNGY2N2VmMmE5ZDg3MDNkZTI2OGY0NTFiMjhhMTg0M2Y1NTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc3N2Y4OThlYWUzNzk5NTZkYWFmZjI0Y2Q1Yzc2YmM3NzE5NGY3ZTM0NDgyNWRiMGQ4OGFjMThjYzk0MWMwYjEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImIyNzk3NzBlMGJkYjU2NDIzYjRjNTU1NWZlMGRkY2E5ZTQ5YmI2MzM2Mjg2M2E3ZWEwZTNkODcyNzM5MjA1ODQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE2NjJjMDU4NmI0M2Y0NTc3OTJiZDdjMmZiYTJiMWQ2OGUzYTIyZWQ5MmI4MzJhZDNlNjg3ZWM4NTA3ZGYyYzAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_9558b904e8a5401fb8c4527ad08c3808",
+      "statement": "A usage response is providerUsageView with supported, providerId, provider, windows, fetchedAt and error fields.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/handlers_usage.go#L17-L24",
+          "version": "repo-lines-v1:sha256:378d95b8f8e440ba25d4371950ee376d57778ef270a4990bf39af15704846168:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOWU3ZGRhOTliMWRmZGNlNGEyNTlkNWI4OGE0ZWQzZjU3MTkxZDY0NzBkZDNiODgxMDE0NWQzOGYwM2YxMTAzOSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDEyY2EzNDVjY2Y3NWJmOWMwODA2YmNlNjk1YmU4ZGU4MDhiNzk5ODQyNTFhN2E1NGQyMDJjZjYxMDFkZDQ1MSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOWMzZGZkY2NjZWRkZjU1NTE4OGFkYmU0ZWI2ODcyNmNkYmM4MzZmMmE4YmI3YjAyOWZjZmQ2MDZjYTFhZjRjNCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNDZmZTZiNjE0N2RmNzNhYzA3YTgwNzA1NGIyMTMxM2IyMTFkYmM3NzQ3MDlkNmUxODRmNDkyZTE0MzQxNWM0MSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_1bb01940e3d9498286d5e5e33eefdd27",
+      "statement": "An unsupported usage endpoint answers HTTP 200 with supported:false and is cached for 10 minutes, while a genuine read failure answers supported:true with an error and is never cached.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/handlers_usage.go#L102-L118",
+          "version": "repo-lines-v1:sha256:279e7127bd854b843034ca40a50dc5deb4123b14a7bd37caaf67de03937e1118:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRmMWZlOGYxMzU3N2M0NGJkZjJlZTlkOTdmYTViZjJiOWNlNmU5MTMwZmQ0MjUxMDA3NWQ5MjNjNTg4OGU4NmYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY3Y2RhODJkYTYwNjIzOGUwNWU2MjM5OTU2OWM1ZWUwMzk5MzQxOTY0OGFlNWQ0M2EyYmY4Y2Q2MzQ3ZjgyNjMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE5ODYyMjcwM2JlMmQ4ZjJhNTNiNDM0OGM2ZGY4OWU3ZDcxM2RhMGFmZDRkOGQyY2FjMTZjYjExMDAxZTRiMDQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjY3ZDZlYmRkN2VmYjc5NGFjMWNhMjI0OTI0YTdmY2QwYTNjYjdkOGFhYjMzN2ExYzNmMDk5ODc3OWY4Y2E5NTMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_3aae0900f4b74ce7b3f4d183ff1afd23",
+      "statement": "Successful usage readings are cached per user and base URL for usageCacheTTL (60 seconds), and force=1 bypasses the cache.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/handlers_usage.go#L26-L45",
+          "version": "repo-lines-v1:sha256:d718b52a52768544bc33294744ef570e493b97bcca39907a945c301bb96a2c4c:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQwZDk4NmIwZGY3ZTljNDdhYTc4MmIwNjYwOTQ2OWJjOGVlY2E0NzYxMmI4MzhjZjgyOWRkYTRiY2RkZDMzMjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJkMmMyODBlNDZiM2I2NWRiMzA1OWQwMjQ2NzgzOWJjODA4NjdkN2RkZWRhNDk4YWUzZjRiMGMzZDg5OTVlODMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc0YjllNzA5NjU2YTVkOGFmOWE2NmQyNGFmOGI2ODIxYjEzYTNkNmRlZWY2ZDIyZWE0OGU3M2QwMTU5OTFlYzUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_4d4f463ed516402180b8dd5313f1d1cc",
+      "statement": "The usage driver registry has one entry, opencode-zen, which matches any opencode.ai host, appends /usage and parses with parseOpenCodeUsage; the registry is the whole extension point for a new provider family.",
+      "evidence": [
+        {
+          "resource": "repo://internal/llm/usage.go#L57-L87",
+          "version": "repo-lines-v1:sha256:3a3afeccaeca42fda18d99fe5d53681b65de27bab241618750b65177415cf969:eyJzZWxlY3RlZExpbmVDb3VudCI6MzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUzMzBlZDY5NDBkYTFkYWMzNTY4MGE5OTBiMGU1OTU3ZjA3MDgzNTFlN2FjZDlhNzBlMzU3Mjk1ZjdjZDMwZDkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNkZGRkOWI4MTExNTlhMzM1YWE0YzRmM2M4NDk5YTFiYWQ3NTI0MzU5NWU5ZWM1YjE1NmU4ZjlmMDY5Y2ExMzAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjU4MmE3ZTM5OWYzZDQwMjc2M2I1MmY2MTBlN2RiNGIwYzMzZWJjYjAzMjllZGVhYmRkNzIzMWY4MmExOTMzNmUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRhZmEwZDZkZjcxOTI3MDMxZWE5MWRmODk5N2Q5NjVmOTRhYmQ5ZjRhNjRhNzc2MTFlODMxZGUwNmY3NDg3OGEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_60d18dddd34e4a3c8bd54bbdb881bcce",
+      "statement": "FetchUsage sends the request through the Client so endpoint headers are applied, maps 404/405 and an unparseable usage document to ErrUsageUnsupported, and wraps other failures with the HTTP status or the parse error.",
+      "evidence": [
+        {
+          "resource": "repo://internal/llm/usage.go#L168-L213",
+          "version": "repo-lines-v1:sha256:40e6a9d6068f6bbe78caaf980edeb5afaedf20011b729885edde7caa9da6341a:eyJzZWxlY3RlZExpbmVDb3VudCI6NDYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY4MjhkZGRlYTdiZWY0MmMxYTQ2Y2Y4OTc5OWExN2E5MzNlODZjMDY0NzU3NTVhNGRkYWEyZWE2YWZhNmNmNzEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY4ZTU3ZjYwNjNmYWE0YjMyMGNmM2U3MzNlNDdiZDc2ZmY3OTQ0Yjc2N2E1ZTQ3MWFiMmQ4MjNkNzRkYmE0YTciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBjODcyNjQzMjViOTA5Mzg3NzgxOTQzOTkwNTE3NTE5OGE4YTljN2Y1ODgzM2FhMWNjN2JlMzVkMTE0ZTBmYmUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_5ca9f24eef7b4d8a9dbb3572e6b6a1f1",
+      "statement": "parseOpenCodeUsage emits rolling as \"5 hour\", weekly as \"Weekly\" and monthly as \"Monthly\" in that fixed widest-last order, skips absent buckets and returns ErrUsageUnsupported when no known bucket is present.",
+      "evidence": [
+        {
+          "resource": "repo://internal/llm/usage.go#L110-L153",
+          "version": "repo-lines-v1:sha256:92952277a49f0a2f223ea47a8a15819631133733da07f1a44e37305470847c77:eyJzZWxlY3RlZExpbmVDb3VudCI6NDQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjEwMWVhZDkzNmEyMjgxZDUzZGNjMDY0YjdlMmEyYWIwZDUzYjkyZWYzZWY3YjM0YjY2ODY3MzAwNzg5NWM4NjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVjZWY3NGE5ZTU4NmUyZGNjYmZkYWJlOTkxYzJiODA3Nzg5NDNlZTJiYTlkNzc1ZjE5MjdiYjllNWM4YWZhOWUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVmZGU0NGNiY2FhN2NjYjQ4NzVmN2Y3MzgwZDBmM2VjZGM1YzBlNTgzOTllOTcwYjY0ZjhkNTc0NjNiM2QxNWQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImMyY2VjNDBmMTI1MWY0ZjRiNDBjYTUwYWRlOWE3MWM4MzU1ZTBlZGQwYTQ3YzZhNmJhMTdhZjc5OWFhYjdhOGMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_8d62f2d5585849b3abad34ac772cdbcc",
+      "statement": "UsageWindow carries key, label, percent, status and resetsAt, with percent clamped to 0..100.",
+      "evidence": [
+        {
+          "resource": "repo://internal/llm/usage.go#L36-L49",
+          "version": "repo-lines-v1:sha256:b0a22b2396edeae9eea53820f908f18d9d5152d6a3f214290d536f69eed98961:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNhM2IzOTIzN2YzMDMwN2RjODlkZDk4MGFlZGVjMjYxNjE2MTY1YWM5YjEzYTFhOTNlZjVkMTJmOGY1MGUwMzAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwOTQ3MmEyYzQ5NmRlMzc0YzI0OTdlNDY3Njg5YmFhZTdkZjYyMjdhNzc0NjIwYjU5MWYwODgwY2YxMDlmN2MiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBmZWU1Nzc2ZDBiYWI5MWM3MWJjMmZlZWRlZjI1MjI4OGNhOTVhOTY5ZGVjNzRlNDk0ODRmMTZjYWQ4NGU0MTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBkODAwNTEyNjVkMzg0YmE4YzhjY2M3OTY0OGRkYzMwOGQwOGQwZTE5YTE3MTdmMmU0OTkwNDE5ZjVjOTUyMWIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_b2ef697de22c4e1ea7ec48dd0233d946",
+      "statement": "GET /api/projects/{id}/context recomputes the session's prompt size, preferring the provider-reported context recorded on the newest assistant message.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/handlers_chat.go#L1011-L1055",
+          "version": "repo-lines-v1:sha256:29ebebdc9b8da7d3c68f9e22094be16fd00fe4dd7393e28780eef867d5fc25dc:eyJzZWxlY3RlZExpbmVDb3VudCI6NDUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJkN2E4NGY4YmM4NTQ4OGVhMjRkODJhNWIzMmU2MDU0MGY3NDIxMmY1ZDU2YTc5NDQxNTcyOTRmYmNhMTI5ZTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRkYzc2MDIwYmFlNzA1NzdlNjRiMzMwZGNhODNmZGYyNGYzZDc1OTNhMDE1NGQ4YWJlYzZkYzYzZjU4OTdmZDkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE4ZjVhYWY3NzhkZWYyOGUwZmI2YzcwNDZhZjIxMTA2ZTNjYjYzMDFlMzAxMGE3ZmQwYmE3ZDQ5ZDk2ZjYxM2IiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVkZWI4NjM0ODQ5ZWU2MDMwNDQzNjM0ZTI0ZTdkMTA5ZTA0YTYwZjU2ODNmYjc1ZTkzNTIxYjE1NDgxMjk1NWEifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.9.0",
+    "at": "2026-11-15T05:31:58.285Z"
+  }
+}

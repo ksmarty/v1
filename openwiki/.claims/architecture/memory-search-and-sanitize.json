@@ -1,0 +1,316 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:2f22c94a4eebe7d89fbf9777ef68bb48d0e581c753b85db18ae1511c7331aade",
+  "claims": [
+    {
+      "id": "claim_ba21594161fc4e2db006fbd52f93bb60",
+      "statement": "Embeddings are optional: the embed package supports native, openai and huggingface providers, and when none is configured the caller ranks memories lexically.",
+      "evidence": [
+        {
+          "resource": "repo://internal/embed/embed.go#L1-L18",
+          "version": "repo-lines-v1:sha256:c65ea49119b272596fcfdb53e438c883cdee477bf3235b51d788e8639c73ab15:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ3MzcwYzEzN2M0M2Y2ZTY0ZmE0YzNiZmI2Y2ExNTc5ODQ0M2M0OGEwZDMxMzhkMjMwOTA4MGUzYzhiMWUwNGUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE1Y2U4YmRhOGZjMTgwNmIyNzExOTlhNDk4MjJiZTMxZmMyOGUyMTBjYTc4Yjc0YjcwY2FkZThlNDZlODU5YmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI1NTgwZTkxNmUyOTc2ZjlkMWFhM2Q4NzUxZmViZDM5ZDBkNzA5MGJkYzliZjkxMTdmZGM0MTQxMTc0Y2JhYTcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_144993953b4a49d780cd847e5a6162b8",
+      "statement": "The memory score is 0.80 relevance, 0.12 importance and 0.08 recency, while relevance itself blends the content vector (0.5), tag match (0.3) and a lexical term (0.2).",
+      "evidence": [
+        {
+          "resource": "repo://internal/memory/rank.go#L55-L58",
+          "version": "repo-lines-v1:sha256:7231b725669a2747c4f9af03f88e8e60830418121ad9b045698849524253ef8d:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZDBkOTg2YjBkZjdlOWM0N2FhNzgyYjA2NjA5NDY5YmM4ZWVjYTQ3NjEyYjgzOGNmODI5ZGRhNGJjZGRkMzMyOSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMGEwZWMyMWNjNzU4MGVhMmYwOGEwMWY0YjkyY2QyMTRiMTljNTM1NzY1N2YwNDNjMjVlY2IwYTFiZTYzN2U4MiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiODExYzZjM2U1NjQ3M2UyNDI1OGM3MGFiZTIzZTU3MDNmZThmYzRkNmU0NWU0OTlkM2Y0MDA0NjQ0N2I4MzllNyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMDcwOWU2MDU3Yjg4NzQ0NTQxMzAzMjFiM2QwOGU2YTcxM2E3ZDZhZTQzYTc1ZjcwYzdjMGY0YjAxZjljYjU0ZiJ9"
+        },
+        {
+          "resource": "repo://internal/memory/rank.go#L64-L67",
+          "version": "repo-lines-v1:sha256:d5fdf61ffa8ac59fd936bc5ed326079debb1cfd3522c7ac07087d7e310e3a7c7:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZDBkOTg2YjBkZjdlOWM0N2FhNzgyYjA2NjA5NDY5YmM4ZWVjYTQ3NjEyYjgzOGNmODI5ZGRhNGJjZGRkMzMyOSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYzYxNTQwZjgyMGJiNTA3OGJhOWYzOGMxNjYwNzBmYTg1NjE3NjcxZTc1OWRhMzcyNzAxODcyYWU3NzFlZGMxYyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOTdmNjlhNWFjMzYxNzQ3NzE2ZDRmMGE1MjRhMTBhNGJhMzdjYjZiNDBlZTc2M2Q0Y2Q2MjMyNjIwNDQ3ZjA5MyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYzQwY2JiZDYwODg1ZDQzYjI1MTE3NzI3NjE4MzRhNTkyMTBmMjNhNjkyMGNhNWIwZmMzZWQ3MGE5YmFkYThiYyJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_c45ba4da44d24732b61629bba056604c",
+      "statement": "MinRelevance (0.25) is the floor below which a memory is not injected, DedupThreshold (0.90) is the cosine above which a new memory is refused as a duplicate, and RecencyHalfLifeDays is 30.",
+      "evidence": [
+        {
+          "resource": "repo://internal/memory/rank.go#L70-L84",
+          "version": "repo-lines-v1:sha256:55fdeae837975c595ccc499452d517e9d3b0594ce7d256eb843041971e0af4d2:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBkZDkxYTYwN2I5NzZmMjI5ZTE0MDJmNmZiZjUyMDZlZDdmMjY2YmY4NDhkNjQ1ZTVlY2IyZTFmZjEyNDI4ODciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjkwOGNjZGZhYmZlMTVmM2I2NzZhNTI0NmUxMGJmMmE2NTVjOGMyODM0YjFlOWQ4MGQzNTFmZDA0MGQyY2EyN2EiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjYyNDRlN2VlZDBkYjBhY2JhNzQ0NmVlYjJjMzRmZmJkOTE1MmJlM2U1NmIyOTM2MGQwN2U0ZDcwNDRlYWVkY2YifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_710f6e4015244770b554fe6f25c186ef",
+      "statement": "Without a query vector the relevance blend collapses to 0.7·keyword + 0.3·tagSim, and memories at importance 2 or above (PinnedThreshold) are exempt from the relevance floor and the limit.",
+      "evidence": [
+        {
+          "resource": "repo://internal/memory/rank.go#L224-L276",
+          "version": "repo-lines-v1:sha256:f52e82682e3c2c36c31e539282b1c966e3e77161a924f6c490e99691edc155b1:eyJzZWxlY3RlZExpbmVDb3VudCI6NTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRiZGQ2N2QwODE3YmE3ZTI1ZGFiY2Y1ZmRmZWYzZjU3ZDQ4ZTQzMzU0MzhhOGMwNzA3MTFhNmNiZTkzZjE2M2YiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImViZjE0MGQwZjkyM2YxY2NmMzE4YjQ5OWJiNTQ2YjM4ZDFkOWE5NmE4MWRjNTM3OTQzMDAzYzAzODg2NTAwNDciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ4MTY4M2E5ODZjZDNkNDIyOWEwMTYyNzJmODBiODkwZTliMzg2MzFmYjcxYzg0YjIxZGY2ZDY1OGQ5Y2FiNzEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBkM2RmNTlkOTdiMjNhMWU1NzRmMzhjYzAzYTNmZDlmODhkMjA2YjFlNzhjOWFkMTM3M2NiYTMyMjllZWRjMjcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_0a6111021c96466c97f4bb5efdca5f25",
+      "statement": "Cosine returns 0 for a zero vector or a length mismatch instead of a wrong similarity, which catches a model swap that would mix vector spaces.",
+      "evidence": [
+        {
+          "resource": "repo://internal/memory/rank.go#L92-L108",
+          "version": "repo-lines-v1:sha256:3888b4c4af2cc1400673eb6edda9c64057b5e3dfdfbdb70a42aaa9d51ac24cf0:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQxNDAwNTBjYWUwOTVkNWZkODk0MjZlYTg2ODEwZDU4ZTNiMWI2MmFkYjA5MTg2YzYwYzk2ODZmM2ZkMTNhOTEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJhODMzMzA2YTc5MzY2ZTJkYjQ1OTMyMGJiZjcwZDJkOWEwMGQyODg1MzQ1MDdiYmQ4Y2IwMGExOTc3ODVlYjYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA4OWNkZDg3NTRjMzRhNTIxNTZhMWMyOWNkMjIzMWEyNGUxNjlkZWQ2MDRkMWQ5YWQ1ZTcyYTViMmFjNTQwOTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjUxNjQ2MTQ3M2Q5MjI0NDZmYzBmZGU1ZGYyYjQ4NTllNDI2OTFmMGQwNGEzMmE2OGM3ZTFlYmNjZWNhN2ZiZTMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_5a8a3a56ce704796b3702b9c9bd5248d",
+      "statement": "The injected memories section is capped at 8 memories (memoryTopK) and 4000 characters (memoryBudgetChars).",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/handlers_memories.go#L19-L30",
+          "version": "repo-lines-v1:sha256:f05b08c40200062230fa8f1c0060ae9728cd34fcc0983babfa95d8ea9971f547:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFhZjRjMjFjNzMyOTQ0ZTYyOGJhOTllOWVmODFkMzFmNmE3OTk2NmJmMzczZTk2ZTVlOTc0NTdjZDA5MzkzYjUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY1MjJiY2M4OTE2MzYxMDljZTFiN2E2MDI5ZjNjZjA1ODQwYjJkYWU1YmNlOWZlODBkZjZkMWZlN2Y0NTZkZGEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRmMjk1OGE4OTE0ZGRjNjQ5NzU3YjU5Yjg0ZDBlYjU4NWMxZTNjNzIzODRhZDI4NjQ5ZmJhMDc1NzM1ZjQyNmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJjOWQyNzUzMjA3ZGZhOTFhYWUwMDM1MGFlOTIzZGQ5Y2ExMTc0ZGJjN2RjYmUzNTY4NzMwNmZlODM0OTEzZjQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_c7ee691967b04f05ab847a5e45d81ffd",
+      "statement": "Injection ranks candidates against the current user message, touches every injected memory, and renders them under a header telling the model that search_memories looks at the rest.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/handlers_memories.go#L141-L166",
+          "version": "repo-lines-v1:sha256:6ff5aa6deea833902133d2f4809e8b1c41da8999ebd5f92e659a304d30229327:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUwYmZjMWQ1MGQ5NjliNzJiZWJiN2VkMjhmZDk1OWI4MGI5YTRlNTk5ZTBiZmU2MjYzNWIyNTNmODU5N2RhN2QiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdlYjg2Y2E3NTU5NWM5MzhmYjMyZWNkMGJjOWZiNWQ2M2VhNDljNTAwMTI2NDFkOGVlMTAxMDM4YTA5MjM5MzIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJmZWRkZTRjYWE4ODU5N2U2ODQ2NjBjYjVhZDdmNzA4ZmQyNTg5MjkyYWQ1NDczNDZlN2YzYzJjZjY3OTc5YWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQ4MWY4OGRmZjIxM2NkZTY2Y2Q3ZmVmNGNhYWEwMjk3NTJhYjg4YmI4YTEyYTU1ZDJjY2JjMmQ3YTI3OTk3MmIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_4402dcb498ab40d28a819c76ed458354",
+      "statement": "The search_memories tool uses a much lower relevance floor (0.05) than automatic injection so an explicit search returns weak matches.",
+      "evidence": [
+        {
+          "resource": "repo://internal/agent/tools.go#L506-L511",
+          "version": "repo-lines-v1:sha256:62ae65b5bd4905edff711a9bf4bdc63d1027a0aa24617d2162bba4988c895911:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiN2FjZGVhOTZlODBkYzMzMDA2ZmJjNDkwYWNjOGEwOWI4YzQ2NWFjMDZjMzBmOTA2ZGU2MzNmZDFiYjNkNGNjOCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZDRkYTM5YmJkZGU0ODg2ZDM4N2JhNzZhYzcyYWIzY2Y3YjgwZjkwZTg0ZDVkNzg3YThhMzQ0OGI5ZWVjZWJhZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMGFlYTllZmIyMmRjNWZlMDQ5ODQ5OTZiY2Y4MzM3NjhjM2RmM2VlOGE5MjA0YTE4YzIxZWQ0ODNmODBhNTEwMCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYTM5MTYxNjllYjg1M2IyY2JhNTY0ZGMzNDZkOWZhNDhkMDMyZjQwZDViMDMzYzUzYjdlZDRmMmIwZDViMWU1YSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_333f68b90db34ce2abe5d81f2ac543bc",
+      "statement": "StripPrivate removes every <private> span and strips an unclosed <private> tag to the end of the text, so a missing closing tag cannot leak the remainder.",
+      "evidence": [
+        {
+          "resource": "repo://internal/memory/private.go#L8-L31",
+          "version": "repo-lines-v1:sha256:1fc902dc10b0da16fccf5d882e229d8bcc028b77f9c8a0f302b89101ba2854a1:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUxNDU2ZDM5ZjZmYWExMjhmZGQ5NzU3NWY0ZDEwMjk2MWExZDYyNTY2NjczZGE0ZTNiZTk4MGMwM2E3ZTlkMzEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRkNWRlNjczOTBjZTMyYmZmZWYwZGU5NjRjMWM3MjAwOTk1ZDY4Y2EzZWVjYWRlYjNkZDA5Yjg3MmE1NGViNzciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_3a51302d744d4546970fd23089a85a71",
+      "statement": "NormalizeTags lowercases, trims, dedupes and caps a tag list at 12 entries.",
+      "evidence": [
+        {
+          "resource": "repo://internal/memory/tags.go#L5-L21",
+          "version": "repo-lines-v1:sha256:d71f69bd73942b7af61ba2035d081f0cd32b5182380113f3a2097ecb89da6b6e:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE3N2I1YTM4M2VjZWNmMTEwMWRmZmYxNTA1Y2Q5ZDYyNWYwNWY5NzU2OTNiNGEzMjgzNzFjNTRiYWU0NWJhNGUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcyMWU4OTQ3Y2NmZTBmODI3YzBjZTk4MDE1Mzk3ZDEwNWU1MDlhYTYzOGZlNTI0OWJiYjM4MDlmZGMxMGQ3Y2YiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc0NWFmNzJkYmE2Yjc0Yjg3YWVjOWFkMGMyYWM0MTAzMGZmNDdkOTM2YjBmYjEyZGViODU4YTA3MDA4MmY2YjIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_5f6692d5b8634e6695407a31ab361d77",
+      "statement": "Automatic memory capture runs after the done event with a 90-second timeout, lists at most 60 known memories to suppress repeats, and writes through a fresh executor rather than the turn's.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/memory_capture.go#L16-L60",
+          "version": "repo-lines-v1:sha256:597d40f1018e6bb8cad03c457a97595683505c7f1cc81dc8e71f1ab48a730b90:eyJzZWxlY3RlZExpbmVDb3VudCI6NDUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAwZTZjZDAyYTlkNTI1ZGI5ZDUyYWUzZDNmZDJhNDUzMmEzMzU4Y2RiYjY2MjAyYzYwNjcxNmY4YzVhMWQ2MTEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY5YTRiZWZiYzFlMDY4MjYyOWZlMjBlMmRmZjlmMDFmMjVjODA5ZWI1MmFhNWQ0ZjQ4MWI3NzRhMmJkYThjNGEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg4M2Y1NDgzNmZkYWQ5MzhmOGIwNGM5ZmUzODc4ZjUzN2Y2NzhmZTE5ZTdjOTlmMWUzZWU0YThjYjk1YmI4ZTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjZhNTBjM2U1ZDQyODIzZGM5MzcxMDJlYzcyMWY1ODBkOTIxZDJlYzJiYTdlY2IwMmU1MDNkZmFmNzNkMjM2ZTQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_717613be2bac462ea9b5b654c6677b94",
+      "statement": "The capture prompt asks for a JSON array of content, category (preference/episodic/fact/plan), tags and importance 1-3, forbids progress reports and restatements, and caps a turn at 5 memories.",
+      "evidence": [
+        {
+          "resource": "repo://internal/memory/capture.go#L1-L52",
+          "version": "repo-lines-v1:sha256:064191e1827aa65d380bd3905e41c63880ba3255ccd05bd5403af032452753e1:eyJzZWxlY3RlZExpbmVDb3VudCI6NTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIwOWIxOThhZWMzODRkMzdjZWY2ZGJiZDk3OTI2ZDNmM2FmZDc1ZTRmOGQ2OGIzMDMxNTk4MjdlY2FlNDY5MDUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRlZmJmMGVmOWNkY2EwMmExNDllZmViNDIzODA5MjU2ODQwY2Y2NDkxZWFiMWQwZThkMjViZTg1YTAwZWYyNTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_a60edd2337e242c3b5b481dc0903cb3d",
+      "statement": "ParseCaptured returns nothing when the reply cannot be parsed rather than keeping a partial guess.",
+      "evidence": [
+        {
+          "resource": "repo://internal/memory/capture.go#L56-L96",
+          "version": "repo-lines-v1:sha256:a5f1188339593edb337c3235adae2f760687f22795c30254dd939ca25210816d:eyJzZWxlY3RlZExpbmVDb3VudCI6NDEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY3MTkwMTRkNTM1ODJlZjIyYzYxNDdlMjc1YTNjNzgwMTg5ZDlmM2VkZDQ3OTdlOTQ0N2I2YzkxN2U2YjE2YTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZhNjAwN2QxZGQxOWQxNzEzNTRiYmUzZDg0ZTMwYTM5MjhiMmE1NGYyNjEwOWYxMThjZDFlYjYxZjg0MDEzOTkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRlZmJmMGVmOWNkY2EwMmExNDllZmViNDIzODA5MjU2ODQwY2Y2NDkxZWFiMWQwZThkMjViZTg1YTAwZWYyNTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg5OGI1ODI3ZDdkNjBlZmY4OGU0NWRiYjk1Mjc4OWViZWNkNzFjMGNiMWFlNzA5OGExMTk3OWMzNjc1MmNiZTQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_1b749b6c865843e38ff33fbe1552c791",
+      "statement": "TurnExchange renders only the user's messages and the assistant's final reply, excluding the transcript and tool output so the model cannot re-derive its own earlier memories.",
+      "evidence": [
+        {
+          "resource": "repo://internal/memory/capture.go#L133-L160",
+          "version": "repo-lines-v1:sha256:18f3fd6a14c1bccfd49550e695c6d4ada3a9e256a3090baff107679abdd38213:eyJzZWxlY3RlZExpbmVDb3VudCI6MjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRkMDI1NzkxMmI0MTU3ODliMDBiNDJlYjA5YzIzMjMyMzZmNThhMjRjYzRjMWJhMjFmYjYzYzIzNTgwMDZlNzIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImExNjc4YzM5OWZkYmVkNTk4YzdhMWM1NjY0ZTQ3YjgwNTIwMzkxZmU1NzBkM2Q4NDViOTgyMjYwMmFkMDVmNjQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjMyNTVmODg4ZWRjZDk2ZWMyZTQ0Njk1Zjk1ZWVjMjEwMzkzN2E3M2M1MDM1NTIwYTU2NDQzOGU5NTAyOTc4NzIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjEzMGRiMzMxYzhhYTNkMzJkZWUwNDY0NDYxY2YyNzM3OGU1N2I5NjRlNTlhYTk0NTY3ZWUzMTFjMGYzZTZhZmQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_6712fe8e9c6c45d88b3865f2eae89c77",
+      "statement": "The native encoder is pure Go because v1 builds with CGO_ENABLED=0, which rules out an ONNX runtime.",
+      "evidence": [
+        {
+          "resource": "repo://Dockerfile#L31-L31",
+          "version": "repo-lines-v1:sha256:a06f6367c0c007b7cf0619c88b416da27067aebc1ab667cb9bd80378a79bdf39:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYTA2ZjYzNjdjMGMwMDdiN2NmMDYxOWM4OGI0MTZkYTI3MDY3YWViYzFhYjY2N2NiOWJkODAzNzhhNzliZGYzOSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTA2ZjYzNjdjMGMwMDdiN2NmMDYxOWM4OGI0MTZkYTI3MDY3YWViYzFhYjY2N2NiOWJkODAzNzhhNzliZGYzOSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYzUxY2VlZmRlYWFjNjI3NGJjZDE2ZWQyODE5NDJmODJiMmUyMDUwYjFkOWQzMGVjN2VlZmU5ZDY3OWYwYTZlMCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYzhiNWFhNGM5OGFmYmJhNzljMDQ4YWEzMTQ3NWMwOGVjOTMyZTU3NDU5NmNkN2IzZjgzMjE0ODA1ODg4ZjI3OCJ9"
+        },
+        {
+          "resource": "repo://internal/embed/embed.go#L12-L14",
+          "version": "repo-lines-v1:sha256:631e7cbeeb128ee7657fbe4b8fd49912f757c5bac24f690083dd31fa44424132:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYzNmOGZhMGY3ZWZiMzViMzM2NTYxNzgzZjc3OGRhZDU3NDU2NzI5MmJlYTFkMzE3NjExMDFiZjhhZjVkMjRmMiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYmU0ZmM3NTY1Y2Y5Y2Q2ZTJiMGQxMTAyNWRmNWViYTNiNTM5YTFhZDI3NjdmYTQ0MTZlMDIzNzQyNjNlNjM2NyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNjhiOTA1N2Y2ZjQ5ZWE3NTY4MTI1MzliYzhlNGViZGQ4MGUwNWUyYjUzMWE5YzFhYzBjMjg3ZjZjNWJkOTI1YyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiM2UxZjFjZTQxZmI0YjZmNTY3NDcxOTA1ODFlNmI2YzQyZTFiNWQwNGI3OTMwYTJiNmNiN2EzMjFlYTY0NzBlYSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_fb2b880001054336945f8985ccb35560",
+      "statement": "The pure-Go forward pass accepts only the plain BERT encoder family (supportedModels contains just bert) and refuses other architectures at load rather than producing wrong vectors.",
+      "evidence": [
+        {
+          "resource": "repo://internal/embed/bert.go#L1-L52",
+          "version": "repo-lines-v1:sha256:7009625d6d313ad906ba4f9d0d7748d52f791c9f81e4addfee2456144cc844ea:eyJzZWxlY3RlZExpbmVDb3VudCI6NTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIxMTg2YzBlM2M2MTM0M2VlZTg4NTg3MmE0ODAxOGI3MDc3YTFiYTAyYWRjNTU0M2Q0Nzc5NTgxNWY1YjI2YmQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFmZmJmYWRkNzkxZTk3NGI4MjUyMzMzMzM5ODkwZTA5ZDkxNDM3MDk0Y2Y5YzAwMzZjYzdiMmZjM2Q4ZTIzOTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_92fe54b5e3664d10831f36cbc1947aae",
+      "statement": "Pooling is detected as either mean or cls, and position_embedding_type must be absolute because learned-offset and rotary variants need a different embedding step.",
+      "evidence": [
+        {
+          "resource": "repo://internal/embed/bert.go#L20-L49",
+          "version": "repo-lines-v1:sha256:f7aa5438f652516839e3f931df55c0a6d0226be35a1ca4ad5637d4b9fd548b14:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM2YmYwNWFmMTcxN2JjOWI1ODVjMDI5NTNhYzYxYjU1NzYxMzRjNTZkY2IxOTdkMjVkNWYxNDExODJhZDRiMzQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM3MDdiN2ZjNmVkOTRkYmVlZDNhODljYjM5NThjYWQ2NzcwNDk4OTJhZmZlYjhjMGY1YzViYmM1YjczOGViOWQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM0NzlhZWQxYWQ3NmNmNjU5NTY3NWY2NWY3MWFiMDRhYTUwMzc1YjIwZDY4YWU1ODZlMTA1NjZjZDVjNDRjMjMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjYwZTdjNDVkNjA2Yzc3YTg2NDdkMjBiYWFjZDc4NDkzNjAxNDg2MTg2ZTBlYmVkMjg5YzhjMzRiMTBhZjBiMjIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_4f2b543f539441cbac102e04c77a1f35",
+      "statement": "A table of known model ids pins each vector width so a model swap cannot silently mix vector spaces, and DimsFor reports 0 for an undownloaded native model instead of guessing.",
+      "evidence": [
+        {
+          "resource": "repo://internal/embed/embed.go#L76-L131",
+          "version": "repo-lines-v1:sha256:5a884fe251b9bc8ec9528aa688afdf7fb8afd0af9f81035b5e7bb75f53102e2d:eyJzZWxlY3RlZExpbmVDb3VudCI6NTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRlNGI4MzllZjk4YjhhOTU1NDAyMzM5ZmVkMzBhYzRmZDQ4OWRiYWIyZDM5MzdjM2ViZjg5YTRmZGM1ZjgxZWMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMwY2FkMjI5YTBmYzUxMjA2Y2RhYzBkYjJjYmRmYzU0ZDg1MjFmMTA5ZDhlYTUwNWIzZGZjNWUyODlhNmJmMDAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImYyOTY0MDc5YzNjNWM4MTUyMGVmMzNhMmI5ZDJlMTVhMWI4NGQ3MjgwZGI4NTkwZGNkNjU3NDdlM2UwMTJhNDAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJhNTBkZmE0OGZiMzI1ZTI4Nzc2ZjAxM2Y3NDFlMWYwOTdlMDBlODlkYzMwZDY0ZDMxOTkyMDY4ZGIwNGRjZmEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_ed34110917744546b8e6c1eeb9ed9336",
+      "statement": "usesTaskPrefixes adds retrieval instruction prefixes for Nomic models, so EmbedQuery and EmbedDocument differ on purpose.",
+      "evidence": [
+        {
+          "resource": "repo://internal/embed/embed.go#L182-L196",
+          "version": "repo-lines-v1:sha256:94b165ade75719c528112db91e14e9ce172cf346216c5b50fc0a211fbb12d7b5:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQwNWIwMzQxNjA5MGM2Zjc3NjZjNTkzY2ZiYWJiMWVhYjBiMTViYzZjMjk5YTBmMmQ2ZmQ3MjM0N2ZjMWI4NTciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjlhNjRiNDdkODkxZTBjMTE0MDdjYTg3ODY0OTBkZjdhYWU0ZmZiZDgxZjY0NzMxZDUwZmI2MDY0OWYxNDgxYjkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImFiYjliY2M4NDAxNzhhMDA5ZjQxOGQ1NmMwNzEzZGEwYmY1YmM3YjUxZmNmNTUwMDFlOGJhMWM3N2E5NDI4NzYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcwN2Q0YjNkODFkYTE3YmMwZGY4ZGI3NjA4NGI4YjVmYzMzMjhkYzZhOWU1OGU3YjNhNDU0YmIwYTlhMzA5MjkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_1ec9481fb3094305a0bc32f53c3f4efd",
+      "statement": "The default native model is sentence-transformers/all-MiniLM-L6-v2, its files are cached under V1_MODEL_CACHE or $V1_DATA_DIR/models flattened per repo, and downloads use a 20-minute per-file timeout.",
+      "evidence": [
+        {
+          "resource": "repo://internal/embed/native.go#L30-L35",
+          "version": "repo-lines-v1:sha256:497bf206b5403a5fe2f56287d8e789f793a5321b8c2b664918650d3ddd3047c9:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMTE2MDhiOTFiNjZkZDRhMGRmYjQ0NzJhZTMzZmJkZTkzZDY4ZjAxMzA2MDVhMmMwMTMwYjljOThmNTNhMmQ0NCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNzM4MzViMWQ5OWFkYmQwYTA2YzI1ZmIyYWQ4ODYxM2FhNjE3Y2QxYmI2MzdkZWUwMzExNjliNjQ5ZjEwNWYzMyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYmZkYTU1NjM3ZjMwMjZmMzNiZjlhYWNlMjJhZDMwMmRiYmJlZTA4Nzk1NTkyZTAwNGYxYjUyYjNjZWFhNThkZiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTI0YzcyMjYzYjBjOTAwZGRkNTA0ZTM1NDYzOGJkMmJlNDkyYzdlNjAwZjJhYzNlMDM1YWJiMDlhMGJjZWM2MSJ9"
+        },
+        {
+          "resource": "repo://internal/embed/native.go#L93-L111",
+          "version": "repo-lines-v1:sha256:9e11175fa12c3731e0a2b0ca1672f7e4fe5e03768f6fbcf22f8e27b63f77f41d:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkzNWNlOWM5YmM0NzJjODVhMTUwOGQ2NDZkZWU5YmI2MjRhYTdmMWQ2NjI5MmNhY2M0ZDNmNjljODBhZTQwZjEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImIyNWE5OGZkMzA2OGM4YWY2Mjg0OTcyY2I4NDVmY2MyMmM1NTlhNjg2MWQ3Njg3NjhiZmFjODIxZThiZDI5MjgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjMxNTkzMjRiMjgyZTdjNDgwOGE1MjJhNTJmYTJjYjE4Y2RiNzAyZDQyYTdjYjg4NWU4N2I4MTY5M2UwZGEyNmQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_60b61f1a735143fcba43083cd8a7cf3b",
+      "statement": "Enabled() requires a model name, and per provider: nothing more for native, a base URL for openai, and an API key for huggingface.",
+      "evidence": [
+        {
+          "resource": "repo://internal/embed/embed.go#L46-L74",
+          "version": "repo-lines-v1:sha256:d8f91add4f0cfd54a5d49bec966a44e01a178b0805b090c01fb9dee06eb7f400:eyJzZWxlY3RlZExpbmVDb3VudCI6MjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMxNjY4MTQ2Mzk0YmY2NjQ0ZDJjYWExYzdkYWQ5ZGU1MWUzY2RiZWFhYjY1ZGFiNWYwYTE1ZWU4OGRkOTRmNDEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA5NDg4ZWNhOGNjYTUzYjU5ZTZkZjkzOGM3N2Y4NzkwOWMzOWY3MzcxNjAzZDBkY2JlZTdiZTYzM2U4ZWRlNWEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjVmNjBiY2I1YzY2YTk1MjlkYjA0ZDE4Nzg0OTEwZGFlZmI3ZDJmMDk4ZmU0YTVkNjc5N2U5M2Y3MTc5MGFjNzIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_9893275119df49b1acf13c85e6d3c3f1",
+      "statement": "Web search calls the LangSearch endpoint, uses a per-user key, and the tool is not offered to the model at all until a key is configured.",
+      "evidence": [
+        {
+          "resource": "repo://internal/websearch/websearch.go#L1-L39",
+          "version": "repo-lines-v1:sha256:1703838d8505580cbb0d4795db61d50d0411f9f1489726116dff80c51dbf8173:eyJzZWxlY3RlZExpbmVDb3VudCI6MzksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY2NTFlNWRjYTdjY2FkYjRjY2Q2YjIyN2QxOTk3Yjg3MmY3NjUyN2ZkNWMwZWQ1Y2Q0NjFhMzNhMWMxMjRhZWQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1M2RlMmRmOTE1MmQxNWJmM2M2YWFhYzVjZTg0NDUyYjdmZmZhMzMxN2FiZGE0ZmFiMjJjMzY4ZWM2MWQ5ZTkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImEzYzFmN2Y5ZTAyMDVjNGZhYWRmZmYzZmU0NDM0NDgzNzQwNzZlZTA5NGE3MmEzMzNhMzI4MzEwMTI0OTIyZTkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_25bf26f01346459899d93512603eb440",
+      "statement": "validateFetchURL accepts only http/https and refuses a host that resolves to loopback, link-local, multicast or unspecified addresses with a BLOCKED_HOST error.",
+      "evidence": [
+        {
+          "resource": "repo://internal/agent/tools.go#L1859-L1895",
+          "version": "repo-lines-v1:sha256:ba35aa1d1a6e8137520ce17750c45bc7feec4fbf6e1f8e81fe077818efa6f05d:eyJzZWxlY3RlZExpbmVDb3VudCI6MzcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU4ZjlhMDU4NzE1NWIwZTAzZDNkYTQ3NmFkYWNjMzgzYmJlNzhjZDVkNzljZDkyOTI5ZDQ0NjM2MmZmOGUwZTgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVmNWNiYTM4MmE1Zjc0NzIzMDE5YzJkMGY4YTI2NWYzOGMzNWE1YjBjNDU2YWQ2YzY5OTMyZGNiMTRmY2M5MjUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE3ZWNhNDM1NWJmM2Y0MTUyZTQxOGRmYmY4YzA2Nzc2MWFlMWNjNjM2ZGFmM2JmYjgxZWRmZjljZTgxZmFmMjgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjlkZWM5MzAwMjZkYzMzNDNlYTk0Y2UyNTM0MmU3NDlmNmE3NjlkYWEyMzdmMjc3YWQxMGFmNzBjMTg5MzBjODUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_8881f4a84710477dbd256cb34761c0a8",
+      "statement": "The fetch_url content-type allow-list passes text/* and text-ish application types and refuses PDFs, images, archives and binaries, allowing a missing header because the body is then sniffed.",
+      "evidence": [
+        {
+          "resource": "repo://internal/agent/tools.go#L1896-L1915",
+          "version": "repo-lines-v1:sha256:92444ec2fe99ebbc133a30624de87919851fa88d9dee055a82c02319af57fdbf:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFiMzM4YjY3ZDRiYWI2MmQ5MGU0N2YwYTIwODJhNmEyNDU0ZmRhODA1MjZlYTkxZGU3ZDg0M2RjYjI4OWZhMzUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIyMDM3MGEwYzE3NDkwYjMxYzkzY2EzMGEyZDFmOGIwYWJlMTlmYzhiMzVjNzg0Yzk2NTg4OTE1NTczYjk4NWQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZjZjBhZmUxYTdmMmEwZDllZTRhY2ExOTk2YzU1MDVkZTY2NTMxZWRmNjE4MGZkYWU5M2E0MjU0OGRjNjUwNDkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImU0NWUxNmNmNDhkMjIyMjdkYTRlNmMwZDMxOTFhOGY2ZDVjNzg1YmIzMTYyMWE1YmYzYjM4NTFiMGQ3ZTc0NmEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_ece8203a8a5a4f98b2836fc4b30fce83",
+      "statement": "internal/sanitize is a leaf package imported by agent, llm and store, so every path into a provider passes through the same cleaning rules.",
+      "evidence": [
+        {
+          "resource": "repo://internal/sanitize/sanitize.go#L1-L4",
+          "version": "repo-lines-v1:sha256:1fcd55b5c75ec167a2adbf9914eda10074e569b42b8cd29eabd6ac9447cd2610:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYzQ4MDI1ZWU0ZTI5NGU5OTQ4MTZiNjRiNGJkYzM2YTY1ZGZmNjBiZmU2ZDg3NzhiOWY1Y2IzNzRmODQ5NTQ1ZSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMWRiYzJjM2FlMGYwNzBlMGQyZmVmMDZiZWQ2YzYyZGY3ZjY5NGZlNmMzODJmYTMwNGE4YTRiZjQxOTE2OWMwMyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjAsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZGUwZTNlOWRkZmMwMThlZDE4NTFiMTFkYjRmNGI1YzA1Y2IxMDNiZTgzM2M3OGY0NDQxYTFiMDc3MzY1Y2U2MCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_b1202b63c3694e9eac6cde38262df449",
+      "statement": "Text strips ANSI OSC/CSI sequences, replaces invalid UTF-8, drops control characters except newline/tab/CRLF, and redacts credentials last so redaction sees the final text.",
+      "evidence": [
+        {
+          "resource": "repo://internal/sanitize/sanitize.go#L114-L161",
+          "version": "repo-lines-v1:sha256:35bdad264bd03db1a09316a1891d564c35b053e73a7ef1eb621fabab51a986d1:eyJzZWxlY3RlZExpbmVDb3VudCI6NDgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIzZmM3OTYzZjE0ZWRjNmMzODdkNGQ1ZTk0MDMwNzM1ZTJmYmZjYTljZWJiOGFkY2IxZTk3YTA5MDEyODQwYmEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJhZTdhMjRhMGI3ZDg0YzliN2VlZjU5ZjRmNjlmYjExZWRkOGJhN2M4MmJiZjYxNjZlNDA4NjM3NDQ5YmVjYzQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_0fd6cd3997164c5d81c97040dcae9d85",
+      "statement": "Literal secret values registered via SetSecrets and AddSecret are the only reliable defence, since pattern matching cannot catch an arbitrary secret that an agent may read from a project file; values shorter than 8 characters are ignored.",
+      "evidence": [
+        {
+          "resource": "repo://internal/sanitize/sanitize.go#L62-L112",
+          "version": "repo-lines-v1:sha256:5236f5d0d9e13ea188a0f3ec618a72aa85cf93e6ac61397d6d164cf37d2d1a30:eyJzZWxlY3RlZExpbmVDb3VudCI6NTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUxNDU2ZDM5ZjZmYWExMjhmZGQ5NzU3NWY0ZDEwMjk2MWExZDYyNTY2NjczZGE0ZTNiZTk4MGMwM2E3ZTlkMzEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFhNmUyNjcyZmRkNmMzOWQ2YTEwYzc5YjI1NzFhMWE1ZWNhNzVkN2U4ZDNlNDRkNTJhNjBkMGU4ZjhkY2ZjYjAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBmZDZhYjg0MDAwMDg0ZjIxNTNjNmRhZTM4NjE2YzBkYjJmN2ZlOTYwNDZmNjQ2MGFjZGNkZWRlN2FkMDA2YmYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1MWRiYjYyZjIwNjlhYjBlYjgxYmQyZDIyODZiMzg1OGQ5NDU5MWU0OWM2Zjc0ODc3ZjNkYzAxMDY3OTFjYmUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_42b264ff5cce4574974f294a9f760132",
+      "statement": "One shared credential pattern list serves both redaction and the source secret scan, and a whole PEM block is replaced before the header-only pattern.",
+      "evidence": [
+        {
+          "resource": "repo://internal/sanitize/sanitize.go#L28-L56",
+          "version": "repo-lines-v1:sha256:c217e51a071a7ae8d92a24cbba1aa872cb04348d0b7b5d3b3d3d14266f1713c5:eyJzZWxlY3RlZExpbmVDb3VudCI6MjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZiZDU2ZDNjMDBhMjAwNTEzNmRkNWYyZGUzYjM0NTdiYzQ5OTY1ZjFiYmJhYmRjNDRlNWY0ZWY0YzkyZGRjNWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcwMDNiZDg0OGY1NWRiN2Q0ZjU0NTNiNDM0ODVhZmY2OGFmYjFkNTg1MDc4N2YxY2ZhYzhlODlhODAxNTZmYzQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjMGYyMDJlNzIyNmFjZmVjMTFkZmRhN2VmOGVjYTkxYmE5OTJkNjQyZWNhOTliMGJhNzcwYjEwOTA2MDNiMjEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM0ZjNlYTQ0NDM5ZTMyNThhNWI4YjM2MGYzZjliZmRlMWQ5YzUxM2ExNTI3NTVmNjA2NmU5ZDk1NWU5ZmVmZWMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_a7aa06a7fd2e475fbaabbb492f89431f",
+      "statement": "Outbound message content, reasoning, tool names and tool ids are scrubbed, and stored content and attachments are scrubbed on read so history written before the scrubber existed is cleaned.",
+      "evidence": [
+        {
+          "resource": "repo://internal/llm/llm.go#L217-L219",
+          "version": "repo-lines-v1:sha256:89feefac861c2bdf2514e87ad0264cca068019ae3201985556dd50ebef2952da:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYjlkMDNmNjA5NjZiMzc1MjRmZjg1ZjA4MWExNzEzNDFhZWEzN2EwOTUzNzhhOGI4NzkyNzliODljZjYwNDg2NSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiN2VjN2Y3Yjk2MjMyZDYwMGQyNDA2MGMwODZmOWUyOGYzMjg2Yzg3ZmM1OWUxMGIwZDBlOWRmNGU1MjZhNDIyOCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNDI4ZWM4NDE2YjMxNzdmNjhmY2E0MDQ1MWI0YjUzNGI2MTIzZWM4ZjNiYjg2ODQ4M2IyNDRlYjgzNjQ2ODc5YiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNmJhZTI1MmE2ZDllY2RhNDQ2MTk4YmExMDY3MzIwNmRkYzM0OTc1YmJiNWVjZTYwYTNjNGNiOWMzYjllMjQyZCJ9"
+        },
+        {
+          "resource": "repo://internal/store/store.go#L383-L384",
+          "version": "repo-lines-v1:sha256:9447fd98fb5ad54835b4bbc43195e808755e9d665595c85eaf6c4b45148183d5:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNjIyNWI1MTVlN2E0MmM0NGE3MmExOGRlODJmNTIyNmFhMTAxMTQzNGViNmViZjkxY2YzOGM2MTA3ODVmZTJiMyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZmUzZDRmYmVkYjhhYjNjOTg0NDIyZjJkMjA2Yzg2YmJkYWNmY2E0MjIzM2Y5OTg4MjE0OThkZjZkZjYzZTQ1MiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYTEyY2YxZjc1OTc3ODk4ODAyMjU0OTk1ZmE0NWMwZWZkZjEzNjM2MjM3ZjdmMmY4NmJiZTkxYzE2Zjg3NDYwZiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMmVmZWM5MDkxMGM4MTg1ODUxMTc3NzIyZDU1OWVhZWFjNTA3ZDgwOTU5MWUzYjVlZjMzNTIzN2VhNDcyMWZmZSJ9"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.9.0",
+    "at": "2026-11-15T05:31:58.285Z"
+  }
+}

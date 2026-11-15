@@ -1,0 +1,200 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:10210fa6b2c590632cfa0db8d5e3e1c009e9c8169f370f7f8f247bdf76e42af0",
+  "claims": [
+    {
+      "id": "claim_7fd2ec84462e4f79bbb2e92f90abde76",
+      "statement": "Go stays the owner of the HTTP API, auth, the store and the tools; it spawns the sidecar, keeps it alive, and answers the sidecar's tool and approval calls, which run the model and the durable transcript.",
+      "evidence": [
+        {
+          "resource": "repo://internal/harness/rpc.go#L1-L31",
+          "version": "repo-lines-v1:sha256:ff35ce4dbddbdc139f1e79d216a950c5f4b3e2977615f936dd8b48849e6cefea:eyJzZWxlY3RlZExpbmVDb3VudCI6MzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFjOGRmOWFjYzFjOWU1NjgxODFiNjA1NjBkNmRhOWE3ZDhhZDJhODllMmI1Y2VhNzIwZWRlZjBlMmRmYzc1YjIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIxN2FmY2FiMWMyNTEwMmUzZWJmZTkyMWRjY2M5YjE1NWM2NGMzMTk4YmZkZTE3ZDNjZjEwYTc4NTVmMzJlZGEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM1MzNmN2ViZDJjZWU2NDI1OGI2NzhlNDA2YjRjYTI2MWJjNzVkYzJkMmQyNTQ2OWFiMDNiYzI4ODJhYzUwMjgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_1941701afe71473a95222548d464f69c",
+      "statement": "The bridge speaks newline-delimited JSON-RPC 2.0 over a Unix socket, one object per line, capped at 32 MiB; both sides report protocol version 1 in the handshake and a mismatch is a startup failure because they ship in the same image.",
+      "evidence": [
+        {
+          "resource": "repo://internal/harness/rpc.go#L20-L31",
+          "version": "repo-lines-v1:sha256:4c7f4993f9633be97cab804b5b833afbc8e06a8985cfdf50c68cb0d5587f5cec:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIxN2FmY2FiMWMyNTEwMmUzZWJmZTkyMWRjY2M5YjE1NWM2NGMzMTk4YmZkZTE3ZDNjZjEwYTc4NTVmMzJlZGEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjYzYTNjM2YxYjk0YTk4NTcxMmJhYWEwY2UyNDc0YmE5ZDlmMWZhZmM5ZmEzNzFjZWE1ZWMwNWJkOTkxYjM3OTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM1MzNmN2ViZDJjZWU2NDI1OGI2NzhlNDA2YjRjYTI2MWJjNzVkYzJkMmQyNTQ2OWFiMDNiYzI4ODJhYzUwMjgifQ"
+        },
+        {
+          "resource": "repo://internal/harness/rpc.go#L65-L73",
+          "version": "repo-lines-v1:sha256:383ebfc760ce41b6199d248663822f653e1c772e5f70ead316852b5247d5040e:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOGIyNWFjMTUwNzU4YjEyMmJkMjVmMTdjZTcxMWRkNmNkYWNjMDE4YWNjMDY4NmFiYzUxNDkxM2RmMTAyMjlmMSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiODM5YzU0ZThmY2NjZjQ2MjA3OGQ2ZGM2NmY0YTgzZTExMTk3OWRmMTI1NDdiMWQxYjYxYWNhNTJmYjYwNjUyMyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZGM4ZGQ3ZDM2YWVjNWRiNjUwMDE1MzI1YjhmZGRhNTgwOWExZWJhZTE1NWJjMGY3NzMxYzRjNTYyOTMyOWU2OSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOGRkYTYwNmFhYTVmNDY5NDVhZDhiNDBlYTIzYjM0NTI2OWY4MzU1NmFlZmE3YmFkZmJmMGJmYzI0YWQ3ODE3MiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_d8e8463e995644fa9296e1478eb24918",
+      "statement": "Requests such as host.call and approval prompts may block on the user, but event notifications are delivered in order on the single read loop, so a slow notification handler stalls every later message.",
+      "evidence": [
+        {
+          "resource": "repo://internal/harness/rpc.go#L65-L80",
+          "version": "repo-lines-v1:sha256:7ac307a479d88a4ac50fdcaf1d4960c576c257fa96024e1f228e469d129dd3f8:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhiMjVhYzE1MDc1OGIxMjJiZDI1ZjE3Y2U3MTFkZDZjZGFjYzAxOGFjYzA2ODZhYmM1MTQ5MTNkZjEwMjI5ZjEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRjOGRkN2QzNmFlYzVkYjY1MDAxNTMyNWI4ZmRkYTU4MDlhMWViYWUxNTViYzBmNzczMWM0YzU2MjkzMjllNjkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImIzMDU0Y2NmNzI4ZGVlOTk5MGVhYzUzNjYzMjhiMDg4YzQxM2FhZTY2ZmNmY2YxOTM5ODM0ZTc0NmQzNTQwMTQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_f9384d4e677742b8ac196155fe4e5c8a",
+      "statement": "Bridge.Handle answers event batches by pushing them into the subscription's queue, tool.call by routing to the runner registered for that conversation, tool.authorize by returning a block reason, and delegate.attach by recording a child-to-parent alias.",
+      "evidence": [
+        {
+          "resource": "repo://internal/harness/bridge.go#L246-L340",
+          "version": "repo-lines-v1:sha256:2169a159a160c335169ede27fccf2dc1c8396517c80aa5c473bfc90b59e87c7c:eyJzZWxlY3RlZExpbmVDb3VudCI6OTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ5Y2E1NmFmMGIwNTU3NTE2M2VlMjYwOWFlYTE4NWQ4MWIxYmE1ZWMzMjhkN2JiZTFmYTI1Y2QzYjc1NWRiODEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNkMmQ2ZWJjNGI0NjY2NWZkYzc5M2Q2ZDIwYzExNmUwYmU5YmI0MmNjOTNkZDQ5NGUxMTBmMTQ2NGU4NzNjYjEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRkYmY4ZjY5MTI2MDQ3NWQ4MGI1MGI3YWFlM2IwMDM1YzVjMzQ0ZmI4YmYxNGVkNWZlNTkxZjM5NDgyMzYyNzUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImYwODQ5MmExZDk1YTg0MGMzMTQ5N2IwMjUzYzJiYzJhZDk5ZjRjMjc5MTE4ZmRkYTMyZmU4ZmEyZTM2YjI3NTYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_f7b9a580e90549d1afffc039f26839c8",
+      "statement": "A tool call with no active runner is answered with an error ToolResult reading 'no active turn for tool <name>' plus a log line, because from the model's side an abandoned turn looks like a tool that mysteriously fails.",
+      "evidence": [
+        {
+          "resource": "repo://internal/harness/bridge.go#L322-L380",
+          "version": "repo-lines-v1:sha256:a0d9c254be142df6e0375b3deee4d4b46ae4405e95eab69a727453b25711dfae:eyJzZWxlY3RlZExpbmVDb3VudCI6NTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQyNGE1MTNkNGRjNGMxZDE1YjFlNjkxYjY4NTdjZTliMTFhMTFkMmU3YmJmMDQ4MDA1NWFhMzM5MmUyNDkzNjgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY3Y2RhODJkYTYwNjIzOGUwNWU2MjM5OTU2OWM1ZWUwMzk5MzQxOTY0OGFlNWQ0M2EyYmY4Y2Q2MzQ3ZjgyNjMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjVkNjg1NmYxYzIyZjlkOGIxMTRkODMyOTkzYzczNjA5YmQ4Y2IxNGMzNzA2OWIzNjY5MDJlYjRkMjhlM2Y1MjMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA4NDU2MDM2N2EyZGI0OGNkZGJmMDA0OGNlODE0OWZhZDFjNWJjZTU5NzFlYzA3MzI0OTUwY2E4MzU4M2UxZjUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_d2bf817b0f8e44b0b6655f3b9934e3a8",
+      "statement": "Aliases recorded for a delegated child are dropped when the parent turn's registration cleanup runs, since an alias only means anything while that turn is running.",
+      "evidence": [
+        {
+          "resource": "repo://internal/harness/bridge.go#L386-L400",
+          "version": "repo-lines-v1:sha256:bfd83f4afea7bbdcd4d21d5bba200cb953334c34e68f2c3e810a78769fde95d9:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM2NDJjMTdmNjk5NTQyM2Y2MmE0NWQ1Yjk5ZWVhZGE0NmE2MmQ0ZmJkMzg5ZTU5YjQ1ZTc0MmYzMTYzYmE2YjQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY0ZWZjNDk0MThkMjZkY2YxMjliMjJhNmFhMjExMDhjZWVjMzc2NzdhMzJkMDhlOWQ1ZmVlMzVkZGE2NmJiOWQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjVkZWRlZDE4NzdiNGVlNmViYWFkOWIwZTliMTA1MzFmZGI5M2E3ZmZlNDI4MDNlNDg5OGJjOGZkNzllZGQ5MWYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQzN2RlN2NmOTY5YjMwZDc1YzY0ZDhjZjQ3YjI0MmE5ZWFlMmM5YjE0OTYxNTdiMWNmNTIyNTI1MGFhN2E1OTcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_7ba7c8d07f9444198457064ee38569f2",
+      "statement": "The sidecar starts before the server accepts traffic and a start, handshake or protocol failure is fatal with a message naming make sidecar-deps and the V1_HARNESS=go escape hatch, because silently falling back to the Go loop would hide that the requested harness is not running.",
+      "evidence": [
+        {
+          "resource": "repo://cmd/v1/main.go#L146-L168",
+          "version": "repo-lines-v1:sha256:a42624b59c730a7e4e1d953b6d22a60bf92f52baa98cbbf74215c69ccd9eefb2:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE4YTM2Mjk4ZmExMDBmZTc1OTkyNjc2OTdhMGZlMGU0NWViMWMyM2FmYzZlNGIxNmY2YWNkZDBiNTBmMzU3ZmMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE2MTY1MjU4YzdiNWZiY2Q0NzdlMTI3ODlmMGE5ODljMDdjZjNhMGQ5Mjk5YWM0Mjc2ODUzNTFjNzE0MTZkNDAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY3YjJmZGNiMTFkZjFhZTk1ODZmNjVhZWYwMDgxMjVmYzNjNDY5NGQzMTE0ZWE2MDViZTM5YzQ0ZWVlNWE3ZjQifQ"
+        },
+        {
+          "resource": "repo://cmd/v1/main.go#L88-L103",
+          "version": "repo-lines-v1:sha256:d4b9bc5805676b6e6148657b8bb2d65735d06584ee2b274adf62cdb91022cf4a:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJiZGU2ODdkZTk0ODgwODc4MmZiMGQ1YTUxNWMzMzk3MTMyMWM5N2RmNzljNThlZjMyZDZkMjBlZmE1YTAwNmMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY3Y2RhODJkYTYwNjIzOGUwNWU2MjM5OTU2OWM1ZWUwMzk5MzQxOTY0OGFlNWQ0M2EyYmY4Y2Q2MzQ3ZjgyNjMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFmNmQyZGRlZjM2YzA1MGRhNjM1YWI0ODE4OGMzZmEyNjkxODRlNDhiMDNhZDNjNGUxYTE2ZTg1MGRiYWFjMjciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI3YjQyZmZlODI4NzAyMzk2ZTIzMjcyNGFmZTVhOGQxYmMxZjQxMDk5M2JiYmY0MGJkMjUzNmU2ZWQ2NDY5NGMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_26d5a74becd64682b433b255ec079cc4",
+      "statement": "Only one process may own the durable store, so a second sidecar answering on the socket is refused with ErrAlreadyRunning; a short probe window tells an orphan still shutting down apart from another server that owns the socket.",
+      "evidence": [
+        {
+          "resource": "repo://internal/harness/supervisor.go#L14-L20",
+          "version": "repo-lines-v1:sha256:f732d17e27e8986cbb66b79806b396804699fbcc8cca72fef034df9d4c0f8aef:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZmFmYmEwNTI3YzM5NTNjNGI2ZTBlNWI1NzM5YmE4MzYxMmY4MDUzYmNkYzk0NjY3MzAxOTNjZDFkNTkwYjQwOCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDFiYTQ3MTljODBiNmZlOTExYjA5MWE3YzA1MTI0YjY0ZWVlY2U5NjRlMDljMDU4ZWY4Zjk4MDVkYWNhNTQ2YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOTlhOWViYjZmMDNhNGYwYTFlYjg0ZWViYjk5OWZlNmNmNGQxZjg4YTI0ZTIwODY1OTJkNzU0OTdhMjI4MmRiNCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNzRhMmFkYjNlOTA2ZGExMDUzOTAyNWM4NTk3MTZjODM3MmZjZGM3YzNlOGE0NmY0YzEyY2NhZDg5NzcxZjljOCJ9"
+        },
+        {
+          "resource": "repo://internal/harness/supervisor.go#L167-L192",
+          "version": "repo-lines-v1:sha256:432b9c7822c6fd851910ad9d9616fa8cbe8b5806d913b6d8715db49077606420:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI1NTE5NGI1NjE3OGQ0MDJmYjkzOGU3MGFkZDEzMTUyZTQ2ZTIxMjU1NzFiNTVlNjJlMTcyMjY4YmQzNDhiNTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk4OWI4YTFkOTMxOThhMWQ3ZWY2Nzc1NjM1N2IyZGFjYTljNmU3ZjdkZGM0MjkxOTJlY2ZkYTE5NmQ0NDczNjgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImIzNThmMTM3MjA0MDM2NjUzMmUwMDAwYjgyZDk1ZjYzZDM3NmZlNjY2ODcxZDdlYWY1NGYzZDg5OTAwNWIzZWIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_2b711e5974fa426a8af6adb319375ba0",
+      "statement": "spawn builds the child environment in a fresh slice rather than appending to the caller's, and opens a stdin pipe it never writes to: the child exits when that pipe closes, so the sidecar cannot linger with the store open after v1 dies.",
+      "evidence": [
+        {
+          "resource": "repo://internal/harness/supervisor.go#L194-L240",
+          "version": "repo-lines-v1:sha256:9eb13f39ff05bf9ade6cb36d156e57f7214e43da67e55cabf612f9ec3bd7af9b:eyJzZWxlY3RlZExpbmVDb3VudCI6NDcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUzMDhmZTgwMWRiMmJlZjYzNDEwYTc2ODdmMjg0NGMyZDU1MWEyZTdkMzk0NDNiZWM1YmFkYTA0NTZlYjk5ODEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJmMWI0M2FiN2U2YTRiOTAwMjhiM2NhYjVmMTFhMWMwOWRiYjk1NGZjMjZmMGJkZGE2NTM0MmY5NjM5MThiM2EiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ3MWQ2NmM5MGFhMjYzM2FmOTk1MDNkNTI4YjgzYTBjMmNkNmJiMzU5OTIwN2RkMTFiZTFjYmNiNWI1ZTM4MjciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImYyMjNmZjJlY2Y0ZDUzNjJjMDhjZmY4OWMwMjFkMjgxZWViNmYwMDBiM2NjYTRhZTE4Yzc3MTZjNTk4ZmM4NWIifQ"
+        },
+        {
+          "resource": "repo://sidecar/src/host.js#L1155-L1163",
+          "version": "repo-lines-v1:sha256:f81d1ad03bc879b56cfb01c6034adb51acf3ff6265e9dca73d1acd53a6da3764:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMGE3MzQ5MmQ4OTQ2YjFkMGY5ZDljMDRiNzA0YTkyMGYyNGY4OWVmN2M3ZjczMTFhODU5OWQxMGM3ZjYzNThkMCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMmZjYzFmNTdlNzMyOGMxNTI5YWUxMjJjYjAxNTc0Mjg2ZjYzYTAwZGU0OTUyYzA3NWE5ZWMxOGZmOTI4OGE0NiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNGFjMzVlYWM4OTlhZTA5YmFkZjdiNTMwNDM2OWMwOWUwMGZmNzQ2ZGVlNGFhMzMxMjMzZTcyOWI1NjFhOGJkZCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMzI5NzFkY2JmN2IxYWEyYTU3MmU0NzhlODUyMzBhYWEwZWFhZWNjYWRjN2Q2ZGYwYmYyMjhkZTc5YjkyNWViZiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_b454bf7cab464be28a1c94ad10f9207f",
+      "statement": "watch restarts the sidecar with exponential backoff capped at 30 seconds up to MaxRestarts consecutive attempts, resets the counter when the process had stayed up for RestartHealthyAfter, and gives up after the budget is exhausted.",
+      "evidence": [
+        {
+          "resource": "repo://internal/harness/supervisor.go#L319-L377",
+          "version": "repo-lines-v1:sha256:f73f5edb5b0e4602f69b3e302d90d904e1e46c4645f5cdd85ea0f5b317d43729:eyJzZWxlY3RlZExpbmVDb3VudCI6NTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA5OTg1NWMyYTdkZTU4NTE1NGIxZjMxNmQzNmE2YmE2MzMyMDcwMjY5YTY4NDZjZWU1ZmQxYWU5NWRiMmU4NTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNkZTYwZjE2ODAzNTliNjQyMjIzYWUyOWU1YzkzZGI2ODg5YzdiY2NjOGVjYWY4NmY3OTM2NjQxNTAyZjZiY2IiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFjZDQ1NzZiODJiN2E1NmExOTY5MGVkMDNhZGZjOWU0Y2RmODEyZWYyY2UwOTA1MzlkYTkwYzQ3MWRiNGVkNzQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_316a9f98e07f4b3c91d739421475bb52",
+      "statement": "A session poisoned by a failed storage commit is unrecoverable in-process, so Supervisor.Call restarts the sidecar once and retries; Restart drops the connection before killing the process and zeroes the crash counter because a deliberate restart is not a crash.",
+      "evidence": [
+        {
+          "resource": "repo://internal/harness/supervisor.go#L394-L440",
+          "version": "repo-lines-v1:sha256:97dc8b89a5cbe9efaa0946fc4a4ec6d1f1c135cd3768c4b3b5a2c6759224da9e:eyJzZWxlY3RlZExpbmVDb3VudCI6NDcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBiZTU2NjgyOGUwNzA5YzBhZDI5OTRkZmU0YTU1MjE1Njk1MWVhNThhNmE4NzUwYzgzNzFhNzUzODE3MmY5MDIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRiNjc1MGI3NzljNDI0YjI1ZmVhMTdmODliMWRlODk4NDkwMDM5NjIzZWU5ZWZiZGMxZTM4YTAwYjljNzlhYTUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjlmYTk3ODRjNzE3MGIwNmVmMzMwNTBlN2UxYTkyNWMxZjUzNjQzYjk3ZjQ2MzFmNzVjYjBkMzFmZTg2MmFhMGQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU3YWZkZjM1YWVlNDJlNzRiY2FlOWMwMmIyYzUzOTgxMmZiY2MzMTAwOTgwZWMwZjhiMjM5ODg0YjIyNWFkNzkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_2555786c0ec040b5ba088e8738c4cbd2",
+      "statement": "Shutdown waits for running turns before tearing anything down, then stops previews and terminals, drains HTTP, and closes the sidecar before the store because the sidecar holds the durable transcript open.",
+      "evidence": [
+        {
+          "resource": "repo://cmd/v1/main.go#L113-L142",
+          "version": "repo-lines-v1:sha256:05e7e924c23a7f1e0d4bf3949afd779da3fb4cdea372ef708eaa30a88b4fedbc:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjEzNjRjMGFlYzk2MmEwNTMwZWQ2YzYzZjhkOTUzNzUxN2FkMDNmYzVkY2QyNmE0MGM4N2Q0MTRlNWU3MWY4ZTciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjUwYzAwNDc2OTFmNDY2ZmYzNjZiNjI2ZTQzODNmZGI0N2NmNzY0Yjg5MzMzMjhiODc4MzkwNTQ0YTViZmMxNDEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE2MTY1MjU4YzdiNWZiY2Q0NzdlMTI3ODlmMGE5ODljMDdjZjNhMGQ5Mjk5YWM0Mjc2ODUzNTFjNzE0MTZkNDAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_42bb46641c51424e8688fe6750157742",
+      "statement": "continuationMessage treats a round as unfinished when it has no tool call and either hit the output limit or produced no visible text, returning a prompt that tells the model to answer directly or continue without repeating itself.",
+      "evidence": [
+        {
+          "resource": "repo://sidecar/src/tools.js#L113-L140",
+          "version": "repo-lines-v1:sha256:b69867279a40cb19329ed2f50215c86f701f2bb05d546e209c3589019b612fd7:eyJzZWxlY3RlZExpbmVDb3VudCI6MjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVhNmY0ZjA0NDZmN2I4MGU3Zjg1ZGEwZjBiNTQ2NDgzNzQ0Yjk2YTJlYzE3NWUyYTI5MDcwZTgwZmM5N2I1MDMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMwNmY4MmFkOThhMTM4ZGQ2NDVjMDFiYzdjNjZlNzFlYmU4MWRkNzM0Y2UxNTcxNjMyMmZjYTI4YWE1MzA3NzMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRlY2E5MjQ3MGYwZjhkNTVlNGMzMmVkYTY5N2UzMjkyMTBjNmY1MjliOTFlYjRiNGRhNTFkMzNmYmIzYjUzZTMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc3MTAyNTcxMmUyM2NjZmI2NDU2NDE4NmVhYTEzZWRiOWU5MjIzMWRmYmIyYTdjZWRlMWVkZjRjNmE5NjhlY2QifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_f8de92d40ee04a88b6584d5817e0da3e",
+      "statement": "The continuation hook returns {continue: message} from onYield so the turn stays durable across a successor generation, bounded by a process-local counter to three continuations within five minutes because pi-durable's per-task memo resets on continuation.",
+      "evidence": [
+        {
+          "resource": "repo://sidecar/src/tools.js#L165-L205",
+          "version": "repo-lines-v1:sha256:69a814518678eb73793241c14e89cd160c957aac01b23b28415e069f06e58adc:eyJzZWxlY3RlZExpbmVDb3VudCI6NDEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI2Y2RlNWE4ZWNkYzkxYjdjYzI0YmJiZWRiNmUyMjQ3ZjEwMzAzMjcwYjU4MWZjNTMwZDY1OWFkMTJkMjVjNDMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjViYWQ3Y2MyZGZhZmMyMTc1ZmEyZDk3MDRlMDIwMmY5NDA4M2E5ZGE2OWE1ODViMGIxOGM0OGJlYTIzNjI3NWUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZhN2MzNzJkOWY0MzIzZjFhNmE3YTMwMTFmNTU1ZTE3NmZhYmZkZjZjM2YyNDczNzlmNDkyMjJhOTVlOTliMzAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjZmNDE3MmIyODhjZWExMWEzOWIxZDJlMTcyOTc0NDRhNTQ0MDBlOTRkYmIzYmFlODQxMDI2ZWRiYTc0MTJiNTgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_f43239287b7f4b85bb4e14650053e03a",
+      "statement": "A tool-calling round that the provider ended with stop or length is promoted back to a toolUse stop reason in afterResponse so the call actually runs, while an error stop reason is left to its own retry and compaction handling.",
+      "evidence": [
+        {
+          "resource": "repo://sidecar/src/tools.js#L132-L150",
+          "version": "repo-lines-v1:sha256:eb20415e4d97eb2207cc9bb03939ee24eecc15457c3885627aedaa3eee6452e9:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY3Y2RhODJkYTYwNjIzOGUwNWU2MjM5OTU2OWM1ZWUwMzk5MzQxOTY0OGFlNWQ0M2EyYmY4Y2Q2MzQ3ZjgyNjMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU4Y2UyMDRmNTdlM2ZkMmI4ZDVkYzY2YjU4Mjc1NGFmNjdiZmRhZTA0ZjFlOWE4MWQxM2Q3MTEyMDIwMDcyZWQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA2MWRlOTc1ODZiYWViMzI5NzA5M2RmYTIzZTQxMzgxZDVkOWVkNWJlYjRlM2IxMDhlZTAzOGIxNmMxZTEwMjIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_a50393921cf743b8b00ad5173737dec6",
+      "statement": "When a turn's context is cancelled and it was not already aborted, the loop aborts the run in the sidecar on a fresh timeout and persists the partial output, so a stopped turn does not keep generating into a transcript nobody is watching.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/harness_chat.go#L1175-L1190",
+          "version": "repo-lines-v1:sha256:ac7b7c2198873b0f33066645ad18cd0378f64b9980db88baa90b7449af911c80:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdkMDA2ODlmMDhiNzliNmQ1ZTNhN2ZmNzNkMTU0NGMyMTgxYmU4NjJhNmUwM2I1NmExNmRjODdlMTI5MGYwNzEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM4ODA4ZjI0MDQwN2RlZWE3ZmVlNjkxZDllOGYwMjEzY2RlNDA5YjkyOTc3YmU2ZmEwNzRkYzAzNjJjODY0NTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjIyZjJmZjVmZWVjNjBmNTg3YzhmYWU0ZTg3ZjgwOWE2NjFjZmZlZDZiNDdhYWU1ZjZkNmEyNjUzYWE4OTUyZWYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjlhZDUzY2FmNTU0NTUzZDYzZDYzMDNhMTNhNWYyZWYxMDZlODQ5ODQ0MTUzZjIzYWZhOWQ4YzRjNzhiMjMyOGIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_9dae5561d1a643efa87d488bde380983",
+      "statement": "A stall watchdog tracks the last activity and the last time the runtime itself spoke, with a 60 second stall timeout, a 5 second ping timeout and a 10 minute ceiling; a failed ping gives up, and an alive-but-silent runtime is logged once before the ceiling ends the turn.",
+      "evidence": [
+        {
+          "resource": "repo://internal/server/harness_chat.go#L934-L949",
+          "version": "repo-lines-v1:sha256:0b46883f0879226301884645229f40f92721ea77a404252dfdec0f553f1d891c:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFiYjQ3YzVmNTJiNmEwYWEyODBhMmM1NmFhNjNlM2IxM2JlODhiZDcyNTMxZTVmNzVkNjM4Mjc1ZTdkNzBkMTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIzMzgxOTM3NzM2NjYyNGJiMDZiOWViNmU1YWU5YzdmN2EwNWU2MTllNTI3MmNmM2EzNzJjNTQ3MTYzZTg0NzciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjNmMGNhNDkyNGNjYjVkODE4OWNjNzEzNDU4YWZkMDY0YWQwMGI5MjQ2N2U3YjgzZjI4OGEwYmMzYmU2YTRjMWQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM1YjY5YmQ5NGYyOGUwYTFlZWQ0MTViY2I1ZjIwZmIxNTY1NGNlNzA5M2JiNzhlOWIxOGY1ZjRmODNiNTUxMzEifQ"
+        },
+        {
+          "resource": "repo://internal/server/harness_chat.go#L956-L990",
+          "version": "repo-lines-v1:sha256:c5a9d12a2a912b339e08f9683b62436c2a2332e5ba1bcf7e111fbc419e01efec:eyJzZWxlY3RlZExpbmVDb3VudCI6MzUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI3MjA3NTQ1YjRkOWNmYmJmYmJiYmNiMTUyYWM3OWQ0MGI1YWQyOWFkNGFmNDA3MWRhNjYxY2NlODdlOTgwNDciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY3Y2RhODJkYTYwNjIzOGUwNWU2MjM5OTU2OWM1ZWUwMzk5MzQxOTY0OGFlNWQ0M2EyYmY4Y2Q2MzQ3ZjgyNjMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjkyZTkzNDU4OTE2ODQzZGZkYWE4YWM0Zjg2NWJhNDc3NTY2OWQwMjdlMDE2ZTA2NjkwMWYwNGRmMzg3ZjIxNzgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjljNWZmMTI0OGM0OTY4Mzc3NjgwODhmODgxOTAyYTc1NDRjMGIzYTliZWNjOTE0MzU1YThlY2QwZWU0YzExYjEifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.9.0",
+    "at": "2026-11-15T05:31:58.285Z"
+  }
+}
