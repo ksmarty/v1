@@ -1,4 +1,5 @@
 import {
+  Fragment,
   createContext,
   memo,
   useCallback,
@@ -24,7 +25,16 @@ import {
   THINKING_META_KEY,
   type ChatAttachmentInput,
 } from '../api';
-import type { ContextUsage } from '../types';
+import type { ContextUsage, ProviderUsage, ProviderUsageWindow } from '../types';
+import {
+  UsageRings,
+  resetLabel,
+  usageColor,
+  usageError,
+  usageSummary,
+  worstWindow,
+} from './UsageRings';
+import { subscribeAppearance } from '../appearance';
 import { freshThinkingLevel } from '../thinking';
 import type {
   ChatAttachmentMeta,
@@ -42,7 +52,7 @@ import type {
   SavedProvider,
   Todo,
 } from '../types';
-import { errMsg, diffLines, findCatalogModel, findProviderForModel, getDebugHud, getJsonPretty, getThinkingCollapsed, getToolCallsCollapsed, getTurnFoldEnabled, humanizeModelId, modelMatches, normalizeBaseURL } from '../utils';
+import { errMsg, diffLines, findCatalogModel, findProviderForModel, getComposerButtonLayout, getDebugHud, getJsonPretty, getThinkingCollapsed, getToolCallsCollapsed, getTurnFoldEnabled, humanizeModelId, modelMatches, normalizeBaseURL, visibleComposerButtons, type ComposerButton } from '../utils';
 import { notifyTurnDone, notifyTurnError, notifyAsk } from '../notify';
 import { pushActive } from '../push';
 import { permissionMeta } from '../permissions';
@@ -4218,6 +4228,19 @@ export default function ChatPane({
   const ctxReqRef = useRef(0);
   const [ctxOpen, setCtxOpen] = useState(false);
   const [ctxCompacting, setCtxCompacting] = useState(false);
+  // The provider's own plan usage (5 hour / weekly / monthly windows) for the
+  // rings button. `supported: false` disables the button: the current model's
+  // provider publishes no allowance, so there is nothing to draw.
+  const [usage, setUsage] = useState<ProviderUsage | null>(null);
+  const [usageLoading, setUsageLoading] = useState(true);
+  const usageReqRef = useRef(0);
+  const [usageOpen, setUsageOpen] = useState(false);
+  // Composer button layout (Settings → Appearance → Composer buttons). The
+  // layout is account-scoped, so it also has to land when the saved copy arrives
+  // or another device changes it — the appearance subscription is what re-reads
+  // it, the same way the tab bar does.
+  const [composerLayout, setComposerLayout] = useState(getComposerButtonLayout);
+  useEffect(() => subscribeAppearance(() => setComposerLayout(getComposerButtonLayout())), []);
   const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
   // Any chip still moving keeps Send disabled: sending now would carry that
   // file inline through the turn request, which is the slow path the early
@@ -5511,6 +5534,32 @@ export default function ChatPane({
     loadContext();
   }, [loadContext]);
 
+  // Plan usage for the rings button. Re-read when the provider changes (another
+  // provider is another account) and refreshed on demand when the popup opens.
+  const loadUsage = useCallback(
+    (force = false) => {
+      const req = ++usageReqRef.current;
+      setUsageLoading(true);
+      api
+        .providerUsage(providerId || undefined, force)
+        .then((u) => {
+          if (usageReqRef.current === req) setUsage(u);
+        })
+        .catch(() => {
+          // A failed read must not leave the button permanently dead: it stays
+          // live so opening the popup can say what went wrong.
+          if (usageReqRef.current === req) setUsage({ supported: true, error: 'request failed' });
+        })
+        .finally(() => {
+          if (usageReqRef.current === req) setUsageLoading(false);
+        });
+    },
+    [providerId],
+  );
+  useEffect(() => {
+    loadUsage();
+  }, [loadUsage]);
+
   // Auto-scroll on new content, but only while the user is already at (or near)
   // the bottom — otherwise reading history during a stream gets yanked around.
   // Declared here because the run-status effect below re-pins on return.
@@ -6513,6 +6562,7 @@ export default function ChatPane({
             }
           }
           void loadContext(true); // bypass the cache: usage changed this turn
+          void loadUsage(true); // the turn just spent some of the allowance
           setAskPrompt(null); // the turn ended — no question can be pending
           setSteering([]); // the turn ended — nothing is pending injection
           setLocalStatus(null); // drop the transient info notice (e.g. continuation)
@@ -8037,6 +8087,120 @@ export default function ChatPane({
   const ctxHue = 120 - (120 * ctxPct) / 100;
   const ctxBorder = `hsl(${ctxHue} 70% 50% / 0.45)`;
 
+  // Plan usage: the provider's own allowance buckets. A provider that publishes
+  // none answers supported:false, which disables the button instead of hiding
+  // it, so the row keeps its shape and the tooltip says why.
+  const usageWindows: ProviderUsageWindow[] = usage?.windows ?? [];
+  const usageWorst = worstWindow(usageWindows);
+  const usageSupported = usage?.supported !== false;
+  const usageBorder =
+    usageSupported && usageWorst
+      ? `hsl(${120 - (120 * Math.min(100, usageWorst.percent)) / 100} 70% 50% / 0.45)`
+      : undefined;
+
+  // Each square composer button, keyed so the saved order/hidden layout can pick
+  // from them. `null` means "not applicable right now" (a provider with no
+  // thinking levels, a phone without the tool/task panes) and the row drops it.
+  const composerButtons: Record<ComposerButton, ReactNode> = {
+    thinking: !showThinking ? null : (
+      <button
+        type="button"
+        disabled={thinkingLoading}
+        onClick={() => {
+          setPlusOpen(false);
+          setTodosOpen(false);
+          setCtxOpen(false);
+          setUsageOpen(false);
+          setThinkingOpen(true);
+        }}
+        aria-label="Thinking level"
+        title={`Thinking: ${thinkingLoading ? '…' : thinkingLabel || 'off'} — click to change`}
+        className={`flex min-h-[36px] shrink-0 items-center rounded-md border px-2.5 py-1 transition-colors hover:text-text disabled:cursor-not-allowed disabled:opacity-60 ${thinkingColor.border} ${thinkingColor.text}`}
+      >
+        <IconBrain className={`h-3.5 w-3.5 shrink-0 ${thinkingLoading ? 'animate-spin' : ''}`} />
+      </button>
+    ),
+    context: (
+      <button
+        type="button"
+        onClick={() => {
+          setPlusOpen(false);
+          setTodosOpen(false);
+          setThinkingOpen(false);
+          setUsageOpen(false);
+          setCtxOpen((o) => !o);
+        }}
+        aria-label="Context usage"
+        title="Context usage — click for details and compaction"
+        className={`flex min-h-[36px] shrink-0 items-center rounded-md border px-2.5 py-1 transition-colors hover:text-text ${
+          ctxOpen ? 'bg-border' : ''
+        }`}
+        style={{ borderColor: ctxBorder }}
+      >
+        {/* While loading the ring shows 0%; the sweep animation plays
+            when the real value lands. */}
+        <ContextRing ctx={ctxLoading || !ctx ? null : ctx} />
+      </button>
+    ),
+    usage: (
+      <button
+        type="button"
+        disabled={!usageSupported}
+        onClick={() => {
+          setPlusOpen(false);
+          setTodosOpen(false);
+          setThinkingOpen(false);
+          setCtxOpen(false);
+          // Opening is when the reader wants a current number, so bypass the
+          // client and server caches on the way in.
+          if (!usageOpen) loadUsage(true);
+          setUsageOpen((o) => !o);
+        }}
+        aria-label="Plan usage"
+        title={
+          usageSupported
+            ? `Plan usage: ${usageSummary(usageWindows)}${
+                usageLoading ? ' (refreshing…)' : ''
+              } — click for details`
+            : "Plan usage — this model's provider reports no allowance"
+        }
+        className={`flex min-h-[36px] shrink-0 items-center rounded-md border px-1.5 py-[3px] transition-colors hover:text-text disabled:cursor-not-allowed disabled:opacity-40 ${
+          usageOpen ? 'bg-border' : ''
+        }`}
+        style={usageBorder ? { borderColor: usageBorder } : undefined}
+      >
+        {/* Three rings, 5 hour outermost: the shortest window is the one that
+            stops you mid-day, so it gets the most room. */}
+        <UsageRings windows={usageWindows} />
+      </button>
+    ),
+    permissions: (
+      <button
+        type="button"
+        onClick={() => openTools('perms')}
+        aria-label="Permission mode"
+        title={`${permissionMeta(permissionMode).title} — click to change`}
+        className={`flex min-h-[36px] shrink-0 items-center rounded-md border px-2.5 py-1 transition-colors hover:text-text ${permissionMeta(permissionMode).badge}`}
+      >
+        <IconLock className="h-3.5 w-3.5 shrink-0" />
+      </button>
+    ),
+    tools: isDesktop ? toolsButton : null,
+    tasks: isDesktop ? tasksButton : null,
+    minimap: (
+      <IconButton
+        data-map-toggle
+        onClick={() => setMapOpen((o) => !o)}
+        aria-label="Toggle message map"
+        title="Message map"
+        disabled={userKeys.length <= 1}
+        className={`h-9! w-9! shrink-0 rounded-md! border border-border ${mapOpen ? 'text-accent' : ''} disabled:opacity-40`}
+      >
+        <IconMap className="h-4 w-4" />
+      </IconButton>
+    ),
+  };
+
   return (
     <DelegateOpenContext.Provider value={openDelegate}>
     <div className="relative flex h-full min-h-0 flex-col">
@@ -8056,65 +8220,11 @@ export default function ChatPane({
               </span>
               <IconChevronDown className="hidden h-3.5 w-3.5 shrink-0 text-faint sm:block" />
             </button>
-            {showThinking && (
-              <button
-                type="button"
-                disabled={thinkingLoading}
-                onClick={() => {
-                  setPlusOpen(false);
-                  setTodosOpen(false);
-                  setCtxOpen(false);
-                  setThinkingOpen(true);
-                }}
-                aria-label="Thinking level"
-                title={`Thinking: ${thinkingLoading ? '…' : thinkingLabel || 'off'} — click to change`}
-                className={`flex min-h-[36px] shrink-0 items-center rounded-md border px-2.5 py-1 transition-colors hover:text-text disabled:cursor-not-allowed disabled:opacity-60 ${thinkingColor.border} ${thinkingColor.text}`}
-              >
-                <IconBrain
-                  className={`h-3.5 w-3.5 shrink-0 ${thinkingLoading ? 'animate-spin' : ''}`}
-                />
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => {
-                setPlusOpen(false);
-                setTodosOpen(false);
-                setThinkingOpen(false);
-                setCtxOpen((o) => !o);
-              }}
-              aria-label="Context usage"
-              title="Context usage — click for details and compaction"
-              className={`flex min-h-[36px] shrink-0 items-center rounded-md border px-2.5 py-1 transition-colors hover:text-text ${
-                ctxOpen ? 'bg-border' : ''
-              }`}
-              style={{ borderColor: ctxBorder }}
-            >
-              {/* While loading the ring shows 0%; the sweep animation plays
-                  when the real value lands. */}
-              <ContextRing ctx={ctxLoading || !ctx ? null : ctx} />
-            </button>
-            <button
-              type="button"
-              onClick={() => openTools('perms')}
-              aria-label="Permission mode"
-              title={`${permissionMeta(permissionMode).title} — click to change`}
-              className={`flex min-h-[36px] shrink-0 items-center rounded-md border px-2.5 py-1 transition-colors hover:text-text ${permissionMeta(permissionMode).badge}`}
-            >
-              <IconLock className="h-3.5 w-3.5 shrink-0" />
-            </button>
-            {isDesktop && toolsButton}
-            {isDesktop && tasksButton}
-            <IconButton
-              data-map-toggle
-              onClick={() => setMapOpen((o) => !o)}
-              aria-label="Toggle message map"
-              title="Message map"
-              disabled={userKeys.length <= 1}
-              className={`h-9! w-9! shrink-0 rounded-md! border border-border ${mapOpen ? 'text-accent' : ''} disabled:opacity-40`}
-            >
-              <IconMap className="h-4 w-4" />
-            </IconButton>
+            {/* Order and visibility come from Settings → Appearance; four is
+                the cap, and the model name takes whatever they leave. */}
+            {visibleComposerButtons(composerLayout).map((id) => (
+              <Fragment key={id}>{composerButtons[id]}</Fragment>
+            ))}
           </div>
         </div>
       )}
@@ -8959,6 +9069,73 @@ export default function ChatPane({
                       </>
                     ) : (
                       <p className="text-xs text-faint">Loading context usage…</p>
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
+
+            {usageOpen && (
+              <>
+                <button
+                  type="button"
+                  aria-label="Close usage"
+                  className="fixed inset-0 z-20 cursor-default"
+                  onClick={() => setUsageOpen(false)}
+                />
+                <div
+                  className={`absolute z-30 w-64 overflow-hidden rounded-lg border bg-surface ${
+                    expanded
+                      ? 'bottom-2 left-2 border-border-strong shadow-[0_0_24px_rgba(0,0,0,0.7)]'
+                      : 'bottom-full left-2 mb-1 border-border shadow-lg'
+                  }`}
+                >
+                  <div className="flex items-baseline justify-between border-b border-border px-3 py-2">
+                    <span className="text-xs font-medium text-subtle">Plan usage</span>
+                    {usage?.provider && (
+                      <span className="text-[11px] text-faint">{usage.provider}</span>
+                    )}
+                  </div>
+                  <div className="flex flex-col gap-3 px-3 py-2.5">
+                    {usageWindows.length > 0 ? (
+                      <>
+                        {usageWindows.map((w) => (
+                          <div key={w.key}>
+                            <div className="flex items-baseline justify-between gap-2">
+                              <span className="text-xs text-text">{w.label}</span>
+                              <span
+                                className="font-mono text-xs"
+                                style={{ color: usageColor(w.percent) }}
+                              >
+                                {Math.round(w.percent)}%
+                              </span>
+                            </div>
+                            <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-border">
+                              <div
+                                className="h-full rounded-full"
+                                style={{
+                                  width: `${Math.min(100, Math.max(0, w.percent))}%`,
+                                  background: usageColor(w.percent),
+                                }}
+                              />
+                            </div>
+                            {w.resetsAt && (
+                              <div className="mt-1 text-[11px] text-faint">
+                                {resetLabel(w.resetsAt)}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                        {usage?.error && (
+                          <p className="text-[11px] text-faint">
+                            Last refresh failed: {usage.error}
+                          </p>
+                        )}
+                      </>
+                    ) : (
+                      <p className="text-xs text-faint">
+                        {usageLoading ? 'Loading plan usage…' : usageError(usage)}
+                      </p>
                     )}
                   </div>
                 </div>

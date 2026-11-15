@@ -196,6 +196,7 @@ func (s *Server) routes(m *http.ServeMux) {
 	m.HandleFunc("GET /api/providers", s.handleListProviders)
 	m.HandleFunc("POST /api/providers/refresh", s.handleRefreshProviders)
 	m.HandleFunc("GET /api/providers/thinking", s.handleProviderThinking)
+	m.HandleFunc("GET /api/providers/usage", s.handleProviderUsage)
 	m.HandleFunc("GET /api/providers/search", s.handleSearchProviders)
 	m.HandleFunc("POST /api/providers/add", s.handleAddProvider)
 	m.HandleFunc("POST /api/providers/remove", s.handleRemoveProvider)

@@ -10,6 +10,7 @@ import {
   errMsg,
   getChatSide,
   getChatTabLayout,
+  getComposerButtonLayout,
   getDebugHud,
   getJsonPretty,
   getNotifyAsk,
@@ -25,6 +26,7 @@ import {
   isStandalone,
   randomId,
   setNotifyAsk,
+  MAX_COMPOSER_BUTTONS,
   setDebugHud,
   setNotifyEnabled,
   setNotifyOnlyBackground,
@@ -32,6 +34,7 @@ import {
   setNotifyTurnError,
   type ChatSide,
   type ChatTab,
+  type ComposerButton,
 } from '../utils';
 import { getStoredTheme, listThemeOptions } from '../themes';
 import {
@@ -65,6 +68,10 @@ import {
   IconGlobe,
   IconGrip,
   IconKey,
+  IconLayers,
+  IconList,
+  IconMap,
+  IconRings,
   IconLock,
   IconLogout,
   IconModel,
@@ -128,6 +135,7 @@ const SETTINGS_SEARCH: {
   { id: 'sec-theme', page: 'appearance', label: 'Theme', hint: 'Dark, light, custom swatches', keywords: 'theme dark light color appearance swatch applies instantly remembered account synced device' },
   { id: 'sec-chat-side', page: 'appearance', label: 'Chat side', hint: 'Chat pane left or right', keywords: 'chat side left right desktop layout appearance' },
   { id: 'sec-chat-tabs', page: 'appearance', label: 'Chat tabs', hint: 'Reorder and hide project tabs', keywords: 'tabs chat files terminal git memories project order hide drag' },
+  { id: 'sec-composer-buttons', page: 'appearance', label: 'Composer buttons', hint: 'Reorder and hide the buttons beside the model name', keywords: 'composer buttons context permissions minimap usage rings thinking tools tasks order hide four limit' },
   { id: 'sec-tool-calls', page: 'appearance', label: 'Tool calls', hint: 'Pretty-print JSON', keywords: 'tool calls json pretty print format result arguments' },
   { id: 'sec-turn-fold', page: 'appearance', label: 'Turns', hint: 'Fold finished turns to their summary', keywords: 'turn fold collapse summary rounds tools in between steps hide' },
   { id: 'sec-thinking-collapsed', page: 'appearance', label: 'Thinking blocks', hint: 'Collapse reasoning blocks by default', keywords: 'thinking reasoning collapse blocks default stream hide' },
@@ -1815,6 +1823,200 @@ function ChatTabsControl() {
   );
 }
 
+const COMPOSER_BUTTON_META: Record<ComposerButton, { label: string; icon: ReactNode }> = {
+  thinking: { label: 'Thinking level', icon: <IconBrain className="h-4 w-4" /> },
+  context: { label: 'Context usage', icon: <IconLayers className="h-4 w-4" /> },
+  usage: { label: 'Plan usage', icon: <IconRings className="h-4 w-4" /> },
+  permissions: { label: 'Permission mode', icon: <IconLock className="h-4 w-4" /> },
+  tools: { label: 'Tool calls', icon: <IconWrench className="h-4 w-4" /> },
+  tasks: { label: 'Tasks', icon: <IconList className="h-4 w-4" /> },
+  minimap: { label: 'Message map', icon: <IconMap className="h-4 w-4" /> },
+};
+
+// Composer buttons control: reorder (drag & drop, or the arrows) and show/hide
+// the square buttons beside the model name. At most MAX_COMPOSER_BUTTONS can be
+// visible at once; the model input takes whatever space they leave.
+function ComposerButtonsControl() {
+  // The saved layout keeps one order for every button, visible ones first, so
+  // the state is rebuilt by walking that order once and reading each button's
+  // hidden flag — appending `hidden` again would list every button twice.
+  const [buttons, setButtons] = useState<{ id: ComposerButton; hidden: boolean }[]>(() => {
+    const l = getComposerButtonLayout();
+    const off = new Set(l.hidden);
+    return [
+      ...l.order.filter((id) => !off.has(id)).map((id) => ({ id, hidden: false })),
+      ...l.order.filter((id) => off.has(id)).map((id) => ({ id, hidden: true })),
+    ];
+  });
+  const [dragId, setDragId] = useState<ComposerButton | null>(null);
+  const [drop, setDrop] = useState<{ id: ComposerButton; side: 'before' | 'after' } | null>(null);
+
+  const persist = (next: { id: ComposerButton; hidden: boolean }[]) => {
+    setButtons(next);
+    // Account-scoped like the tab bar: `saveAppearance` writes the device
+    // mirror (which is what ChatPane reads) and the owner's settings.
+    void saveAppearance({
+      composerButtons: {
+        order: next.filter((t) => !t.hidden).map((t) => t.id),
+        hidden: next.filter((t) => t.hidden).map((t) => t.id),
+      },
+    });
+  };
+
+  const visibleCount = buttons.filter((t) => !t.hidden).length;
+  const atCap = visibleCount >= MAX_COMPOSER_BUTTONS;
+  const hiddenOf = (id: ComposerButton) => buttons.find((t) => t.id === id)?.hidden ?? false;
+
+  const toggleHidden = (id: ComposerButton) => {
+    const t = buttons.find((x) => x.id === id);
+    if (!t) return;
+    // Hiding always works. Showing a fifth would squeeze the model name to
+    // nothing, so that is refused until one of the four is hidden first.
+    if (t.hidden && atCap) return;
+    persist(buttons.map((x) => (x.id === id ? { ...x, hidden: !x.hidden } : x)));
+  };
+
+  // Move id next to toId within its own group (visible or hidden).
+  const move = (id: ComposerButton, toId: ComposerButton, side: 'before' | 'after') => {
+    if (id === toId || hiddenOf(id) !== hiddenOf(toId)) return;
+    const item = buttons.find((t) => t.id === id);
+    if (!item) return;
+    const rest = buttons.filter((t) => t.id !== id);
+    const at = rest.findIndex((t) => t.id === toId);
+    rest.splice(at + (side === 'after' ? 1 : 0), 0, item);
+    persist(rest);
+  };
+
+  const shift = (id: ComposerButton, dir: -1 | 1) => {
+    const idx = buttons.findIndex((t) => t.id === id);
+    const item = buttons[idx];
+    if (!item) return;
+    const group = buttons.filter((t) => t.hidden === item.hidden);
+    const gIdx = group.findIndex((t) => t.id === id);
+    const target = gIdx + dir;
+    if (target < 0 || target >= group.length) return;
+    const next = [...buttons];
+    const otherIdx = next.findIndex((t) => t.id === group[target].id);
+    [next[idx], next[otherIdx]] = [next[otherIdx], next[idx]];
+    persist(next);
+  };
+
+  const row = (t: { id: ComposerButton; hidden: boolean }, i: number, groupLen: number) => {
+    const meta = COMPOSER_BUTTON_META[t.id];
+    return (
+      <div
+        key={t.id}
+        draggable
+        onDragStart={(e) => {
+          setDragId(t.id);
+          setDrop(null);
+          e.dataTransfer.effectAllowed = 'move';
+        }}
+        onDragEnd={() => {
+          setDragId(null);
+          setDrop(null);
+        }}
+        onDragOver={(e: DragEvent<HTMLDivElement>) => {
+          if (!dragId || hiddenOf(dragId) !== t.hidden) return;
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'move';
+          const rect = e.currentTarget.getBoundingClientRect();
+          const side = e.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
+          setDrop((d) => (d && d.id === t.id && d.side === side ? d : { id: t.id, side }));
+        }}
+        onDrop={(e: DragEvent<HTMLDivElement>) => {
+          e.preventDefault();
+          if (dragId && drop) move(dragId, drop.id, drop.side);
+          setDragId(null);
+          setDrop(null);
+        }}
+        className={`relative flex cursor-grab items-center gap-2 rounded-lg border px-2.5 py-2 transition-colors active:cursor-grabbing ${
+          dragId === t.id ? 'opacity-40' : ''
+        } ${t.hidden ? 'border-dashed border-border' : 'border-border bg-surface'}`}
+      >
+        {drop && drop.id === t.id && (
+          <span
+            className={`pointer-events-none absolute inset-x-1.5 h-0.5 rounded-full bg-accent ${
+              drop.side === 'before' ? '-top-0.5' : '-bottom-0.5'
+            }`}
+          />
+        )}
+        <IconGrip className="h-4 w-4 shrink-0 text-faint" />
+        <span
+          className={`flex min-w-0 items-center gap-2 text-sm ${
+            t.hidden ? 'text-faint' : 'text-text'
+          }`}
+        >
+          {meta.icon}
+          {meta.label}
+        </span>
+        <div className="ml-auto flex shrink-0 items-center gap-0.5">
+          {!t.hidden && (
+            <>
+              <button
+                type="button"
+                aria-label={`Move ${meta.label} up`}
+                disabled={i === 0}
+                onClick={() => shift(t.id, -1)}
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-dim transition-colors hover:bg-border hover:text-text disabled:opacity-30"
+              >
+                <IconChevronUp className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                aria-label={`Move ${meta.label} down`}
+                disabled={i === groupLen - 1}
+                onClick={() => shift(t.id, 1)}
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-dim transition-colors hover:bg-border hover:text-text disabled:opacity-30"
+              >
+                <IconChevronDown className="h-3.5 w-3.5" />
+              </button>
+            </>
+          )}
+          <button
+            type="button"
+            aria-label={t.hidden ? `Show ${meta.label} button` : `Hide ${meta.label} button`}
+            title={
+              t.hidden && atCap
+                ? `Only ${MAX_COMPOSER_BUTTONS} buttons fit — hide one first`
+                : t.hidden
+                  ? 'Show button'
+                  : 'Hide button'
+            }
+            disabled={t.hidden && atCap}
+            onClick={() => toggleHidden(t.id)}
+            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-dim transition-colors hover:bg-border hover:text-text disabled:opacity-30"
+          >
+            {t.hidden ? <IconEyeOff className="h-3.5 w-3.5" /> : <IconEye className="h-3.5 w-3.5" />}
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  const visible = buttons.filter((t) => !t.hidden);
+  const hidden = buttons.filter((t) => t.hidden);
+
+  return (
+    <div className="flex max-w-md flex-col gap-1.5">
+      <p className="text-xs text-faint">
+        {visible.length} of {MAX_COMPOSER_BUTTONS} shown. Hidden buttons can be switched back on at
+        any time; the model name expands to fill whatever the buttons leave.
+      </p>
+      {visible.map((t, i) => row(t, i, visible.length))}
+      {hidden.length > 0 && (
+        <>
+          <div className="mt-2 flex items-center gap-2 text-[11px] text-faint">
+            Hidden
+            <div className="h-px flex-1 bg-border" />
+          </div>
+          {hidden.map((t, i) => row(t, i, hidden.length))}
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function Settings() {
   const [settings, setSettings] = useState<SettingsType | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -3367,6 +3569,13 @@ export default function Settings() {
           description="Choose which tabs appear in the project view and their order. Drag to reorder; the eye toggles a tab on or off. Saved to your account."
         >
           <ChatTabsControl />
+        </Section>
+        <Section
+          id="sec-composer-buttons"
+          title="Composer buttons"
+          description={`The square buttons beside the model name — context, plan usage, permissions, minimap and the rest. Drag to reorder; the eye toggles one on or off. Up to ${MAX_COMPOSER_BUTTONS} show at once.`}
+        >
+          <ComposerButtonsControl />
         </Section>
         <Section
           id="sec-tool-calls"

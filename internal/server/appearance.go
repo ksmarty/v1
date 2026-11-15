@@ -12,9 +12,10 @@ import (
 // the SPA interprets them.
 const keyAppearance = "appearance"
 
-// chatTabsSetting is the project view's tab bar: the tabs in display order, and
-// the ones the user hid. An empty order means "the built-in order", which keeps
-// a tab added in a later release from being invisible to an existing account.
+// chatTabsSetting is a reorderable, hideable list: the project view's tab bar
+// and the chat composer's buttons both use it. An empty order means "the
+// built-in order", which keeps an entry added in a later release from being
+// invisible to an existing account.
 type chatTabsSetting struct {
 	Order  []string `json:"order"`
 	Hidden []string `json:"hidden"`
@@ -27,6 +28,8 @@ type appearanceSettings struct {
 	Theme    string          `json:"theme"`
 	ChatSide string          `json:"chatSide"`
 	ChatTabs chatTabsSetting `json:"chatTabs"`
+	// ComposerButtons is the row beside the model name, same shape.
+	ComposerButtons chatTabsSetting `json:"composerButtons"`
 	// JSONPretty pretty-prints tool-call arguments and results.
 	JSONPretty bool `json:"jsonPretty"`
 	// ToolCallsCollapsed folds a message's tool calls into one line.
@@ -43,6 +46,7 @@ type appearancePatch struct {
 	Theme              *string          `json:"theme"`
 	ChatSide           *string          `json:"chatSide"`
 	ChatTabs           *chatTabsSetting `json:"chatTabs"`
+	ComposerButtons    *chatTabsSetting `json:"composerButtons"`
 	JSONPretty         *bool            `json:"jsonPretty"`
 	ToolCallsCollapsed *bool            `json:"toolCallsCollapsed"`
 	TurnFold           *bool            `json:"turnFold"`
@@ -55,6 +59,7 @@ func defaultAppearance() appearanceSettings {
 	return appearanceSettings{
 		ChatSide:           "left",
 		ChatTabs:           chatTabsSetting{Order: []string{}, Hidden: []string{}},
+		ComposerButtons:    chatTabsSetting{Order: []string{}, Hidden: []string{}},
 		JSONPretty:         true,
 		ToolCallsCollapsed: true,
 	}
@@ -89,6 +94,12 @@ func (a appearanceSettings) normalized() appearanceSettings {
 	if a.ChatTabs.Hidden == nil {
 		a.ChatTabs.Hidden = []string{}
 	}
+	if a.ComposerButtons.Order == nil {
+		a.ComposerButtons.Order = []string{}
+	}
+	if a.ComposerButtons.Hidden == nil {
+		a.ComposerButtons.Hidden = []string{}
+	}
 	return a
 }
 
@@ -105,6 +116,9 @@ func (s *Server) applyAppearancePatch(userID string, patch appearancePatch) erro
 	}
 	if patch.ChatTabs != nil {
 		cur.ChatTabs = *patch.ChatTabs
+	}
+	if patch.ComposerButtons != nil {
+		cur.ComposerButtons = *patch.ComposerButtons
 	}
 	if patch.JSONPretty != nil {
 		cur.JSONPretty = *patch.JSONPretty

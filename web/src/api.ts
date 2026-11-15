@@ -26,6 +26,7 @@ import type {
   MCPServerStatus,
   PermissionMode,
   PreviewStatus,
+  ProviderUsage,
   Project,
   Provider,
   ProviderAddResult,
@@ -88,6 +89,13 @@ const CTX_USAGE_TTL = 10 * 1000;
 
 let ctxUsageCache: { key: string; at: number; data: ContextUsage } | null = null;
 
+// Plan usage is metered per window, so it changes slowly: a minute of cache is
+// well inside the granularity of the numbers, and it keeps the composer from
+// polling the provider's rate-limit endpoint on every render.
+const USAGE_TTL = 60 * 1000;
+
+let usageCache: { key: string; at: number; data: ProviderUsage } | null = null;
+
 // Storage key for the persisted thinking-metadata cache (ChatPane). Kept
 // here so clearClientCaches can drop it.
 export const THINKING_META_KEY = 'v1.thinkingMeta';
@@ -98,6 +106,7 @@ export const THINKING_META_KEY = 'v1.thinkingMeta';
 export function clearClientCaches(): void {
   providersCache = null;
   ctxUsageCache = null;
+  usageCache = null;
   try {
     localStorage.removeItem(PROVIDERS_CACHE_KEY);
     localStorage.removeItem(PROVIDERS_CACHE_AT_KEY);
@@ -323,9 +332,25 @@ export const api = {
     request<{ levels: string[]; off: boolean }>(
       `/api/providers/thinking?providerId=${encodeURIComponent(providerId)}&model=${encodeURIComponent(model)}`,
     ),
+  // Plan usage: how much of the provider's own allowance is spent (5 hour,
+  // weekly, monthly). The server discovers the endpoint from the base URL, so a
+  // provider that publishes none answers supported:false rather than erroring.
+  // Cached briefly because the composer re-renders while a turn streams.
+  providerUsage: async (providerId?: string, force = false) => {
+    const key = providerId ?? '';
+    if (!force && usageCache && usageCache.key === key && Date.now() - usageCache.at < USAGE_TTL) {
+      return usageCache.data;
+    }
+    const q = new URLSearchParams();
+    if (providerId) q.set('providerId', providerId);
+    if (force) q.set('force', '1');
+    const qs = q.toString();
+    const data = await request<ProviderUsage>(`/api/providers/usage${qs ? `?${qs}` : ''}`);
+    usageCache = { key, at: Date.now(), data };
+    return data;
+  },
   searchProviders: (query: string) =>
-    request<ProvidersSearchResult>(`/api/providers/search?q=${encodeURIComponent(query)}`),
-  addProvider: (id: string) => {
+    request<ProvidersSearchResult>(`/api/providers/search?q=${encodeURIComponent(query)}`),  addProvider: (id: string) => {
     expireProvidersCache();
     return post<ProviderAddResult>('/api/providers/add', { id });
   },

@@ -98,6 +98,14 @@ export const IconLayers = (p: SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
+export const IconRings = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}>
+    <circle cx="12" cy="12" r="9.5" />
+    <circle cx="12" cy="12" r="6" />
+    <circle cx="12" cy="12" r="2.5" />
+  </svg>
+);
+
 export const IconExpand = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}>
     <path d="M15 3h6v6" />

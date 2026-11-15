@@ -12,19 +12,24 @@ import { debugError } from './debuglog';
 import { applyTheme, getStoredTheme, setStoredTheme } from './themes';
 import type { AppearanceSettings } from './types';
 import {
+  COMPOSER_BUTTON_IDS,
+  DEFAULT_COMPOSER_BUTTONS,
   getChatSide,
   getChatTabLayout,
+  getComposerButtonLayout,
   getJsonPretty,
   getThinkingCollapsed,
   getToolCallsCollapsed,
   getTurnFoldEnabled,
   setChatSide,
   setChatTabLayout,
+  setComposerButtonLayout,
   setJsonPretty,
   setThinkingCollapsed,
   setToolCallsCollapsed,
   setTurnFoldEnabled,
   type ChatTab,
+  type ComposerButton,
 } from './utils';
 
 type Listener = (a: AppearanceSettings) => void;
@@ -42,10 +47,12 @@ export function subscribeAppearance(fn: Listener): () => void {
 /** The appearance as this device knows it: the mirror, or the defaults. */
 export function localAppearance(): AppearanceSettings {
   const tabs = getChatTabLayout();
+  const composer = getComposerButtonLayout();
   return {
     theme: getStoredTheme(),
     chatSide: getChatSide(),
     chatTabs: { order: tabs.order, hidden: tabs.hidden },
+    composerButtons: { order: composer.order, hidden: composer.hidden },
     jsonPretty: getJsonPretty(),
     toolCallsCollapsed: getToolCallsCollapsed(),
     turnFold: getTurnFoldEnabled(),
@@ -69,6 +76,24 @@ export function applyAppearance(patch: Partial<AppearanceSettings>): AppearanceS
       hidden: patch.chatTabs.hidden.filter((id): id is ChatTab => isChatTab(id)),
     });
   }
+  if (patch.composerButtons !== undefined) {
+    // An empty order means "the built-in order" here too; `order` holds hidden
+    // ids as well, so it is the full list, not just the visible four.
+    const order = patch.composerButtons.order.filter((id): id is ComposerButton => isComposerButton(id));
+    // An empty order means "the built-in row" — the model picker first, then
+    // the four the SPA ships visible — not "every button at once".
+    setComposerButtonLayout(
+      order.length > 0
+        ? {
+            order,
+            hidden: patch.composerButtons.hidden.filter((id): id is ComposerButton => isComposerButton(id)),
+          }
+        : {
+            order: [...DEFAULT_COMPOSER_BUTTONS.order],
+            hidden: [...DEFAULT_COMPOSER_BUTTONS.hidden],
+          },
+    );
+  }
   if (patch.jsonPretty !== undefined) setJsonPretty(patch.jsonPretty);
   if (patch.toolCallsCollapsed !== undefined) setToolCallsCollapsed(patch.toolCallsCollapsed);
   if (patch.turnFold !== undefined) setTurnFoldEnabled(patch.turnFold);
@@ -82,6 +107,10 @@ const CHAT_TABS: string[] = ['chat', 'files', 'terminal', 'git', 'memories', 'gi
 
 function isChatTab(id: string): boolean {
   return CHAT_TABS.includes(id);
+}
+
+function isComposerButton(id: string): boolean {
+  return (COMPOSER_BUTTON_IDS as string[]).includes(id);
 }
 
 let hydration: Promise<void> | null = null;
@@ -101,6 +130,7 @@ export function hydrateAppearance(): Promise<void> {
         theme: a.theme,
         chatSide: a.chatSide,
         chatTabs: a.chatTabs,
+        composerButtons: a.composerButtons,
         jsonPretty: a.jsonPretty,
         toolCallsCollapsed: a.toolCallsCollapsed,
         turnFold: a.turnFold,

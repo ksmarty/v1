@@ -291,6 +291,88 @@ export function setChatTabLayout(l: ChatTabLayout): void {
     // ignore (private mode etc.)
   }
 }
+
+// Composer buttons: the square buttons in the row beside the model name
+// (Settings → Appearance → Composer buttons).
+export type ComposerButton =
+  | 'thinking'
+  | 'context'
+  | 'usage'
+  | 'permissions'
+  | 'tools'
+  | 'tasks'
+  | 'minimap';
+
+export type ComposerButtonLayout = {
+  /** Buttons eligible to show, in display order (visible ones first). */
+  order: ComposerButton[];
+  /** Buttons the user turned off. */
+  hidden: ComposerButton[];
+};
+
+export const COMPOSER_BUTTON_IDS: ComposerButton[] = [
+  'thinking',
+  'context',
+  'usage',
+  'permissions',
+  'tools',
+  'tasks',
+  'minimap',
+];
+
+// Four is all the row fits before the model name gets squeezed on a phone; the
+// model input is allowed to expand into whatever the buttons leave.
+export const MAX_COMPOSER_BUTTONS = 4;
+
+// Default layout: the three squares that already lived here plus the plan-usage
+// rings. Thinking, tools and tasks start hidden so the row stays at four, and
+// are one toggle away.
+export const DEFAULT_COMPOSER_BUTTONS: ComposerButtonLayout = {
+  order: ['context', 'usage', 'permissions', 'minimap', 'thinking', 'tools', 'tasks'],
+  hidden: ['thinking', 'tools', 'tasks'],
+};
+
+const COMPOSER_BUTTONS_KEY = 'v1.composerButtons';
+
+export function getComposerButtonLayout(): ComposerButtonLayout {
+  try {
+    const v = JSON.parse(localStorage.getItem(COMPOSER_BUTTONS_KEY) ?? 'null') as {
+      order?: unknown;
+      hidden?: unknown;
+    } | null;
+    const known = (x: unknown): x is ComposerButton =>
+      typeof x === 'string' && (COMPOSER_BUTTON_IDS as string[]).includes(x);
+    if (v && Array.isArray(v.order)) {
+      const order = v.order.filter(known);
+      // Buttons added since the layout was saved still get offered, at the end.
+      for (const id of COMPOSER_BUTTON_IDS) if (!order.includes(id)) order.push(id);
+      const saved = Array.isArray(v.hidden) ? v.hidden.filter(known) : [];
+      // The row holds at most MAX_COMPOSER_BUTTONS: a layout saved before the
+      // cap (or edited by hand) can name more, so the extras are hidden here
+      // rather than silently dropped from the far end.
+      const shown = order.filter((id) => !saved.includes(id));
+      const overflow = shown.slice(MAX_COMPOSER_BUTTONS);
+      const hidden = order.filter((id) => saved.includes(id) || overflow.includes(id));
+      return { order, hidden };
+    }
+  } catch {
+    // ignore (private mode etc.)
+  }
+  return { order: [...DEFAULT_COMPOSER_BUTTONS.order], hidden: [...DEFAULT_COMPOSER_BUTTONS.hidden] };
+}
+
+export function setComposerButtonLayout(l: ComposerButtonLayout): void {
+  try {
+    localStorage.setItem(COMPOSER_BUTTONS_KEY, JSON.stringify(l));
+  } catch {
+    // ignore (private mode etc.)
+  }
+}
+
+/** The buttons to render, in order, capped at {@link MAX_COMPOSER_BUTTONS}. */
+export function visibleComposerButtons(l: ComposerButtonLayout): ComposerButton[] {
+  return l.order.filter((id) => !l.hidden.includes(id)).slice(0, MAX_COMPOSER_BUTTONS);
+}
 // Splits old/new texts into shared context lines and the changed middle
 // section, for diff rendering (chat edit diffs, the git changes modal).
 export function diffLines(oldText: string, newText: string) {

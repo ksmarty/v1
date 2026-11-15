@@ -102,6 +102,7 @@ export interface AppearanceSettings {
   theme: string;
   chatSide: 'left' | 'right';
   chatTabs: { order: string[]; hidden: string[] };
+  composerButtons: { order: string[]; hidden: string[] };
   jsonPretty: boolean;
   toolCallsCollapsed: boolean;
   turnFold: boolean;
@@ -297,6 +298,36 @@ export interface ContextUsage {
   budget: number;
   /** Token count at which compaction is recommended. */
   threshold: number;
+}
+
+/** One metered bucket of a plan: a rolling few-hour window, a week, a month. */
+export interface ProviderUsageWindow {
+  /** The provider's own name for the bucket ("rolling", "weekly", ...). */
+  key: string;
+  /** Human label ("5 hour", "Weekly", ...). */
+  label: string;
+  /** Spent share of the allowance, 0..100. */
+  percent: number;
+  /** Provider verdict when it sends one ("ok", "exhausted", ...). */
+  status?: string;
+  /** When the bucket rolls over, ISO timestamp. */
+  resetsAt?: string;
+}
+
+/**
+ * A provider's own plan usage — what a subscription reports instead of
+ * per-token pricing. `supported: false` means the endpoint publishes none, so
+ * the composer's usage button renders disabled.
+ */
+export interface ProviderUsage {
+  supported: boolean;
+  providerId?: string;
+  /** The endpoint family that answered (e.g. "opencode-zen"). */
+  provider?: string;
+  windows?: ProviderUsageWindow[];
+  fetchedAt?: string;
+  /** Why the read failed; the button stays live so the reason can be shown. */
+  error?: string;
 }
 
 export interface Todo {
