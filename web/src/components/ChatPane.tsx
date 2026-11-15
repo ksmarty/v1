@@ -2652,8 +2652,8 @@ function CollapsedToolsGroup({
           {members.map((m, j) => (
             <div key={j} className="flex flex-col gap-1.5">
               {m.content && m.content.trim() && (
-                <div className="whitespace-pre-wrap break-words px-0.5 text-sm text-text">
-                  {m.content}
+                <div className="min-w-0 px-0.5">
+                  <Markdown text={m.content} />
                 </div>
               )}
               <CollapsedToolBlocks
@@ -8392,45 +8392,93 @@ export default function ChatPane({
               };
 
               let turn: { it: Item; i: number }[] = [];
-              // The turn-fold: each finished round pushes its rows into
-              // partNodes, with summaryNode tracking the round's text row.
-              // When the turn ends, everything except the last summary goes
-              // behind one TurnFold toggle, so the transcript reads as a
-              // series of summaries.
-              let partNodes: ReactNode[] = [];
+              // The turn-fold pass: every row a turn produced collects into
+              // partWork, in order, as entries — work (calls/results/ask/
+              // reasoning/background) and text. At the part boundary the
+              // entries fold into ONE group; only the part's LAST text row —
+              // the summary — renders outside it, so the transcript reads as
+              // a series of summaries.
               let partKey = '';
-              let summaryNode: ReactNode = null;
-              // One work group per turn, not one per round: a multi-round turn
-              // used to render a column of small groups, each holding a single
-              // round's calls. Every work row of the turn now collects here and
-              // is emitted once, where the turn's first work row sat.
-              let partWork: CollapseData[] = [];
-              let partWorkKey = '';
-              let partWorkAt = -1;
+              let partWork: { it: Item; i: number; d: CollapseData | null }[] = [];
               const finishPartTurn = () => {
-                const nodes = partNodes;
                 const foldKey = partKey || 'turn';
-                const summary = summaryNode;
-                partNodes = [];
+                const entries = partWork;
                 partKey = '';
-                summaryNode = null;
-                if (partWork.length > 0) {
-                  const group = (
-                    <div key={`group-${partWorkKey}`} data-msg-key={partWorkKey}>
+                partWork = [];
+                if (entries.length === 0) return;
+                const hasTools = entries.some(
+                  (e) =>
+                    e.d &&
+                    (e.d.calls.length + e.d.results.length > 0 ||
+                      e.d.ask != null ||
+                      !!e.d.background),
+                );
+                const collapsed = getToolCallsCollapsed() && hasTools;
+                // The summary is the part's last assistant text row — the
+                // answer the reader reads. Intermediate comments fold into
+                // the collapse, in order, where they happened.
+                let summaryIdx = -1;
+                for (let k = entries.length - 1; k >= 0; k--) {
+                  const { it } = entries[k];
+                  if (
+                    it.kind === 'msg' &&
+                    it.role === 'assistant' &&
+                    !it.background &&
+                    it.content?.trim()
+                  ) {
+                    summaryIdx = k;
+                    break;
+                  }
+                }
+                const members: CollapseData[] = [];
+                const nodes: ReactNode[] = [];
+                let summary: ReactNode = null;
+                entries.forEach(({ it, i, d }, k) => {
+                  if (k === summaryIdx) {
+                    if (it.kind !== 'msg') return; // the summary search only picks msg rows
+                    summary = collapsed
+                      ? renderMessage(it, i, {
+                          ...it,
+                          reasoning: undefined,
+                          toolCalls: undefined,
+                          toolResults: undefined,
+                        })
+                      : renderMessage(it, i);
+                    // The summary's text leaves the group, but its reasoning
+                    // and calls still belong there.
+                    if (
+                      d &&
+                      (d.calls.length + d.results.length > 0 ||
+                        d.ask != null ||
+                        d.reasoning ||
+                        d.background)
+                    ) {
+                      members.push({ ...d, content: undefined });
+                    }
+                    nodes.push(summary);
+                    return;
+                  }
+                  if (collapsed) {
+                    if (d) members.push(d);
+                  } else {
+                    nodes.push(renderMessage(it, i));
+                  }
+                });
+                if (members.length > 0) {
+                  // Text entries folded in, so the group sits at the top of
+                  // the part and the summary follows it.
+                  nodes.unshift(
+                    <div key={`group-${entries[0].it.key}`} data-msg-key={entries[0].it.key}>
                       <CollapsedToolsGroup
-                        members={partWork}
+                        members={members}
                         active={live}
                         onAskAnswered={(answer) => void answerAsk(answer)}
                         onOpenBackground={openBackgroundOutput}
                       />
-                    </div>
+                    </div>,
                   );
-                  nodes.splice(partWorkAt < 0 ? 0 : Math.min(partWorkAt, nodes.length), 0, group);
                 }
-                partWork = [];
-                partWorkKey = '';
-                partWorkAt = -1;
-                if (nodes.length === 0) return;
+                if (nodes.length === 0 && summary == null) return;
                 const work = summary != null ? nodes.filter((n) => n !== summary) : nodes;
                 // A turn folds only once it is done. While the run is live the
                 // reader must see its work and comments as they happen, and
@@ -8446,54 +8494,23 @@ export default function ChatPane({
               const flushTurn = () => {
                 if (turn.length === 0) return;
                 if (!partKey) partKey = turn[0]?.it.key ?? '';
-                let lastText: ReactNode = null;
-                if (getToolCallsCollapsed()) {
-                const members: CollapseData[] = [];
-                for (const { it } of turn) {
-                  const w = workOf(it);
-                  if (w) members.push(w);
-                }
-                const hasTools = members.some(
-                  (m) => m.calls.length + m.results.length > 0 || m.ask != null || !!m.background,
-                );
-                if (hasTools) {
-                  // The turn's single group is spliced in where its first work
-                  // row belongs; later rounds only add members to it.
-                  if (partWorkAt < 0) {
-                    partWorkAt = partNodes.length;
-                    partWorkKey = turn.find(({ it }) => workOf(it))?.it.key ?? '';
+                for (const { it, i } of turn) {
+                  if (it.kind !== 'msg') {
+                    partWork.push({ it, i, d: workOf(it) });
+                    continue;
                   }
-                  partWork.push(...members);
-                  for (const { it, i } of turn) {
-                    if (it.kind !== 'msg') continue;
-                    if (it.background) continue;
-                    if (it.content?.trim()) {
-                      lastText = renderMessage(it, i, {
-                        ...it,
-                        reasoning: undefined,
-                        toolCalls: undefined,
-                        toolResults: undefined,
-                      });
-                      partNodes.push(lastText);
-                    }
+                  // An assistant row contributes its work, its text, or both;
+                  // a text-only round becomes a content-only member so the
+                  // comment folds into the group at its own place. A background
+                  // user row keeps its content stripped — the background row
+                  // inside the group already shows that text.
+                  let d = workOf(it);
+                  if (it.role === 'assistant' && it.content?.trim()) {
+                    d = d ? { ...d, content: it.content } : { ...collapseData(it) };
                   }
-                } else {
-                  turn.forEach(({ it, i }) => {
-                    const node = renderMessage(it, i);
-                    if (it.kind === 'msg' && it.content?.trim()) lastText = node;
-                    partNodes.push(node);
-                  });
+                  if (d == null) continue;
+                  partWork.push({ it, i, d });
                 }
-                } else {
-                  // Tool-call collapse is off, but the turn fold can still
-                  // wrap the verbatim rows; they render exactly as before.
-                  turn.forEach(({ it, i }) => {
-                    const node = renderMessage(it, i);
-                    if (it.kind === 'msg' && it.content?.trim()) lastText = node;
-                    partNodes.push(node);
-                  });
-                }
-                if (lastText != null) summaryNode = lastText;
                 turn = [];
               };
               items.forEach((it, i) => {
@@ -8510,11 +8527,11 @@ export default function ChatPane({
                 ) {
                   turn.push({ it, i });
                   // A round that says something ends the current work run: the
-                  // tools before it (and this round's own reasoning) collapse
-                  // into one group above, and its text renders just below that
-                  // group. Without this the group swallowed the whole turn and
-                  // every comment stacked at the bottom. Rows without text
-                  // keep accumulating so they stay in the same group.
+                  // rows before it fold into the turn's one group, and its own
+                  // text stays outside only until a later round speaks — the
+                  // part's LAST text row is the summary that survives outside
+                  // the collapse. Rows without text keep accumulating so they
+                  // stay in the same group.
                   if (it.role === 'assistant' && it.content?.trim()) {
                     flushTurn();
                   }
