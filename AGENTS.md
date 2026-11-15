@@ -393,32 +393,35 @@ or `make dev`), then report: (1) the new stamped build version (`v1 <version>
   on): reporting a chat that ended oddly must not require turning a debug
   setting on first. The release tap is swallowed, or the menu a hold just opened
   would close again.
-- The transcript's work groups are per WORK RUN, not per turn: the work between
-  two spoken texts folds into one `CollapsedToolsGroup` — tools, reasoning,
-  asks and background rows in chronological order (`partWork` entries `{it, i,
-  d}` in the render pass of `ChatPane.tsx`), and the text that closes the run —
-  a summary — renders outside it. EVERY summary stays visible, so the
-  transcript reads as a series of summaries with one collapse per run of work;
-  a fold that swallowed intermediate texts hid each turn behind its last
-  message. The run boundary is the assistant text row itself: rows without text
-  (tool-only rounds) keep accumulating into the open run, a text row closes it
-  (`flushTurn` + `finishPartTurn`) and the next run starts after it. A LIVE
-  `tool`/`ask` row is the open run's work too (`workOf` maps it to the same
-  `CollapseData` shape as the `toolCalls` a reload carries on the assistant
-  message), so it joins the run instead of closing it: pushing it to `rows`
-  while the run streamed was what stuck as many round cards as the turn had
-  rounds, next to the single group that appeared once the chat finished. The
-  group is CLOSED by default and auto-opens only while the run is still adding
-  to it (`active={live}` and a member whose call has no result, or an
+- The transcript's work groups are per TURN: everything a turn produced between
+  two user messages folds into ONE `CollapsedToolsGroup` — tools, reasoning,
+  asks, background rows AND the turn's intermediate comments, in chronological
+  order (`partWork` entries `{it, i, d}` in the render pass of
+  `ChatPane.tsx`) — and only the turn's LAST text row (the summary) renders
+  outside it. Splitting the collapse at every intermediate text (one group per
+  work run) read as a column of small groups for one turn; the user asked for
+  the whole turn in one collapse with the texts inside it, not beside it. An
+  assistant text row transfers the buffer into the open part (`flushTurn`) but
+  does NOT close it; `finishPartTurn` fires only at user/error rows and at the
+  end of the loop, so a text-only change would regress to per-run groups. A
+  LIVE `tool`/`ask` row is the open turn's work too (`workOf` maps it to the
+  same `CollapseData` shape as the `toolCalls` a reload carries on the
+  assistant message), so it joins the turn instead of closing it: pushing it to
+  `rows` while the run streamed was what stuck as many round cards as the turn
+  had rounds, next to the single group that appeared once the chat finished.
+  The group is CLOSED by default and auto-opens only while the run is still
+  adding to it (`active={live}` and a member whose call has no result, or an
   unanswered ask — a question is never hidden), then closes again when the run
   ends unless the reader toggled it (`touched`). When the group renders, the
   summary's own reasoning/calls fold into it as a member — but ONLY then: an
-  uncollapsed run (tool collapse off, or a run with no work at all) renders the
-  row verbatim, and a member built anyway duplicated its reasoning in an empty
-  group. Mid-run the in-progress text is the current run's summary, so the
-  model's latest words stay visible below the group until a later round speaks.
-  User and error rows never enter the pass's `turn` buffer — they close it and
-  render standalone, so an error can never be swallowed by a collapsed group.
+  uncollapsed turn (tool collapse off, or a turn with no work at all) renders
+  the row verbatim, and a member built anyway duplicated its reasoning in an
+  empty group. Mid-run the in-progress text is the current turn's summary, so
+  the model's latest words stay visible below the group until a later round
+  speaks. User and error rows never enter the pass's `turn` buffer — they close
+  it and render standalone, so an error can never be swallowed by a collapsed
+  group; a steered message (a user row mid-turn) splits the turn at itself, so
+  work on either side collapses next to its own side of the transcript.
 - A send during a run is QUEUED, not streamed: `POST /chat` answers 202 with the
   queue entry's id, and `streamBody` raises `QueuedError` (never reading that
   JSON as an empty event stream, which produced a synthetic `done`). `run()` then

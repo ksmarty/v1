@@ -8495,15 +8495,15 @@ export default function ChatPane({
                   (it.role === 'assistant' || (it.role === 'user' && it.background))
                 ) {
                   turn.push({ it, i });
-                  // A round that says something ENDS the part: the work before
-                  // it — and this row's own reasoning/calls — fold into that
-                  // part's one group, its text stays visible below the group,
-                  // and the next part starts after it. Rows without text keep
-                  // accumulating into the open part so they stay in the same
-                  // group as the tools they belong to.
+                  // Every row of the turn — tools, reasoning, asks, background
+                  // rows AND the turn's intermediate comments — folds into ONE
+                  // group, in chronological order; only the turn's LAST text
+                  // row (the summary) renders outside. Rows without text keep
+                  // accumulating; a text row transfers the buffer into the
+                  // open part but does not close it, so the collapse spans the
+                  // whole turn, not just the work between two texts.
                   if (it.role === 'assistant' && it.content?.trim()) {
                     flushTurn();
-                    finishPartTurn();
                   }
                 } else {
                   flushTurn();
