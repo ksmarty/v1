@@ -158,16 +158,21 @@ function SessionRow({
   projectId,
   session: s,
   activeSessionIds,
+  onArchive,
 }: {
   projectId: string;
   session: ChatSession;
   activeSessionIds: Set<string>;
+  onArchive: (s: ChatSession) => void;
 }) {
   return (
-    <li className="border-b border-border/60 last:border-0">
+    // The archive button is a sibling of the link, not a child: a button
+    // nested inside an anchor is invalid, and its click would open the chat
+    // instead of archiving it.
+    <li className="flex items-center border-b border-border/60 pr-1.5 last:border-0">
       <Link
         to={`/project/${projectId}?session=${s.id}`}
-        className="flex items-center gap-2 px-4 py-2.5 transition-colors hover:bg-bg/60"
+        className="flex min-w-0 flex-1 items-center gap-2 px-4 py-2.5 transition-colors hover:bg-bg/60"
       >
         <IconChat className="h-3.5 w-3.5 shrink-0 text-faint" />
         <span
@@ -191,6 +196,17 @@ function SessionRow({
           <span className="shrink-0 text-xs text-faint">{timeAgo(lastTurnISO(s))}</span>
         )}
       </Link>
+      {/* Small and quiet until hovered: every row carries one, so on a long
+          dashboard a loud button would compete with the chat names. */}
+      <button
+        type="button"
+        onClick={() => onArchive(s)}
+        title={`Archive ${s.name}`}
+        aria-label={`Archive ${s.name}`}
+        className="ml-1 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-faint transition-colors hover:bg-border hover:text-text focus-visible:bg-border focus-visible:text-text md:h-6 md:w-6"
+      >
+        <IconArchive className="h-3.5 w-3.5" />
+      </button>
     </li>
   );
 }
@@ -202,6 +218,7 @@ function ProjectCard({
   onNewSession,
   onArchived,
   onDelete,
+  onArchiveSession,
 }: {
   project: Project;
   sessions: ChatSession[];
@@ -209,6 +226,7 @@ function ProjectCard({
   onNewSession: () => void;
   onArchived: () => void;
   onDelete: () => void;
+  onArchiveSession: (s: ChatSession) => void;
 }) {
   return (
     <section className="rounded-xl border border-border bg-surface">
@@ -235,7 +253,13 @@ function ProjectCard({
           <li className="px-4 py-2.5 text-xs text-faint">No sessions yet</li>
         )}
         {sessions.map((s) => (
-          <SessionRow key={s.id} projectId={p.id} session={s} activeSessionIds={activeSessionIds} />
+          <SessionRow
+            key={s.id}
+            projectId={p.id}
+            session={s}
+            activeSessionIds={activeSessionIds}
+            onArchive={onArchiveSession}
+          />
         ))}
       </ul>
     </section>
@@ -671,6 +695,14 @@ export default function Projects() {
   const [sessionsByProject, setSessionsByProject] = useState<Record<string, ChatSession[]>>({});
   // The project whose archived sessions the three-dot menu opened.
   const [archivedFor, setArchivedFor] = useState<Project | null>(null);
+  // The chat whose row's archive button was pressed. Archiving hides a thread
+  // from the dashboard, so it asks first — and names the chat in the question,
+  // because a mis-click on a long list otherwise archives something silently.
+  const [archiving, setArchiving] = useState<{ projectId: string; session: ChatSession } | null>(
+    null,
+  );
+  const [archiveBusy, setArchiveBusy] = useState(false);
+  const [archiveError, setArchiveError] = useState<string | null>(null);
 
   const loadActive = useCallback(() => {
     api
@@ -746,6 +778,24 @@ export default function Projects() {
       setDeleteError(errMsg(e));
     } finally {
       setDeleteBusy(false);
+    }
+  };
+
+  // Archiving is reversible — the thread moves to the project's archived list,
+  // where the three-dot menu offers Restore — so the dialog says that rather
+  // than warning like the delete one does.
+  const confirmArchive = async () => {
+    if (!archiving) return;
+    setArchiveBusy(true);
+    setArchiveError(null);
+    try {
+      await api.archiveSession(archiving.projectId, archiving.session.id);
+      setArchiving(null);
+      await refreshProjectSessions(archiving.projectId);
+    } catch (e) {
+      setArchiveError(errMsg(e));
+    } finally {
+      setArchiveBusy(false);
     }
   };
 
@@ -872,6 +922,10 @@ export default function Projects() {
                       projectId={projectId}
                       session={session}
                       activeSessionIds={activeSessionIds}
+                      onArchive={(s) => {
+                        setArchiveError(null);
+                        setArchiving({ projectId, session: s });
+                      }}
                     />
                   ))}
                 </ul>
@@ -895,6 +949,10 @@ export default function Projects() {
                     onDelete={() => {
                       setDeleteError(null);
                       setDeleting(p);
+                    }}
+                    onArchiveSession={(s) => {
+                      setArchiveError(null);
+                      setArchiving({ projectId: p.id, session: s });
                     }}
                   />
                 ))}
@@ -963,6 +1021,29 @@ export default function Projects() {
           </Button>
           <Button variant="danger" onClick={() => void confirmDelete()} disabled={deleteBusy}>
             {deleteBusy ? <Spinner className="h-4 w-4" /> : 'Delete'}
+          </Button>
+        </div>
+      </Dialog>
+
+      <Dialog
+        open={archiving !== null}
+        onClose={() => {
+          if (!archiveBusy) setArchiving(null);
+        }}
+        title="Archive chat"
+      >
+        <p className="text-sm text-dim">
+          Archive <span className="font-medium text-text">{archiving?.session.name}</span>? It
+          leaves the dashboard and moves to this project&apos;s archived chats, where you can
+          restore it at any time.
+        </p>
+        {archiveError && <ErrorBox message={archiveError} className="mt-3" />}
+        <div className="mt-4 flex justify-end gap-2">
+          <Button variant="ghost" onClick={() => setArchiving(null)} disabled={archiveBusy}>
+            Cancel
+          </Button>
+          <Button onClick={() => void confirmArchive()} disabled={archiveBusy}>
+            {archiveBusy ? <Spinner className="h-4 w-4" /> : 'Archive'}
           </Button>
         </div>
       </Dialog>
