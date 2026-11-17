@@ -1,3 +1,4 @@
+import { lsSet } from '../storage';
 import { useEffect } from 'react';
 
 /**
@@ -57,7 +58,7 @@ export function useAppHeight() {
         }
         best = height;
         try {
-          localStorage.setItem(key(), String(best));
+          lsSet(key(), String(best));
         } catch {
           // storage unavailable (e.g. private mode) — session-only fallback
         }

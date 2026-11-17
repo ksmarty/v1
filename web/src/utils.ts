@@ -1,3 +1,4 @@
+import { lsSet } from './storage';
 import type { Provider, ProviderModel, SavedProvider } from './types';
 
 export function errMsg(e: unknown): string {
@@ -56,7 +57,7 @@ export function getChatSide(): ChatSide {
 
 export function setChatSide(side: ChatSide): void {
   try {
-    localStorage.setItem(CHAT_SIDE_KEY, side);
+    lsSet(CHAT_SIDE_KEY, side);
   } catch {
     // ignore (private mode etc.)
   }
@@ -74,7 +75,7 @@ export function getDebugHud(): boolean {
 
 export function setDebugHud(on: boolean): void {
   try {
-    localStorage.setItem(DEBUG_HUD_KEY, on ? '1' : '0');
+    lsSet(DEBUG_HUD_KEY, on ? '1' : '0');
   } catch {
     // ignore (private mode etc.)
   }
@@ -96,7 +97,7 @@ export function getNotifyEnabled(): boolean {
 
 export function setNotifyEnabled(on: boolean): void {
   try {
-    localStorage.setItem(NOTIFY_KEY, on ? '1' : '0');
+    lsSet(NOTIFY_KEY, on ? '1' : '0');
   } catch {
     // ignore (private mode etc.)
   }
@@ -113,7 +114,7 @@ function getBool(key: string, def: boolean): boolean {
 }
 function setBool(key: string, v: boolean): void {
   try {
-    localStorage.setItem(key, v ? '1' : '0');
+    lsSet(key, v ? '1' : '0');
   } catch {
     // ignore
   }
@@ -159,7 +160,7 @@ export function getJsonPretty(): boolean {
 
 export function setJsonPretty(on: boolean): void {
   try {
-    localStorage.setItem(JSON_PRETTY_KEY, on ? '1' : '0');
+    lsSet(JSON_PRETTY_KEY, on ? '1' : '0');
   } catch {
     // ignore (private mode etc.)
   }
@@ -179,7 +180,7 @@ export function getToolCallsCollapsed(): boolean {
 
 export function setToolCallsCollapsed(on: boolean): void {
   try {
-    localStorage.setItem(TOOL_CALLS_COLLAPSE_KEY, on ? '1' : '0');
+    lsSet(TOOL_CALLS_COLLAPSE_KEY, on ? '1' : '0');
   } catch {
     // ignore (private mode etc.)
   }
@@ -199,7 +200,7 @@ export function getThinkingCollapsed(): boolean {
 
 export function setThinkingCollapsed(on: boolean): void {
   try {
-    localStorage.setItem(THINKING_COLLAPSED_KEY, on ? '1' : '0');
+    lsSet(THINKING_COLLAPSED_KEY, on ? '1' : '0');
   } catch {
     // ignore (private mode etc.)
   }
@@ -265,7 +266,7 @@ export function getChatTabLayout(): ChatTabLayout {
 
 export function setChatTabLayout(l: ChatTabLayout): void {
   try {
-    localStorage.setItem(CHAT_TABS_KEY, JSON.stringify(l));
+    lsSet(CHAT_TABS_KEY, JSON.stringify(l));
   } catch {
     // ignore (private mode etc.)
   }
@@ -342,7 +343,7 @@ export function getComposerButtonLayout(): ComposerButtonLayout {
 
 export function setComposerButtonLayout(l: ComposerButtonLayout): void {
   try {
-    localStorage.setItem(COMPOSER_BUTTONS_KEY, JSON.stringify(l));
+    lsSet(COMPOSER_BUTTONS_KEY, JSON.stringify(l));
   } catch {
     // ignore (private mode etc.)
   }

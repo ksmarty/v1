@@ -35,6 +35,7 @@ import {
   worstWindow,
 } from './UsageRings';
 import { subscribeAppearance } from '../appearance';
+import { lsRemove, lsSet } from '../storage';
 import { freshThinkingLevel } from '../thinking';
 import type {
   ChatAttachmentMeta,
@@ -379,7 +380,7 @@ function writeThinkingMeta(key: string, meta: { levels: string[]; off: boolean }
     for (const k of Object.keys(map)) {
       if (now - map[k].at > THINKING_META_TTL) delete map[k];
     }
-    localStorage.setItem(THINKING_META_KEY, JSON.stringify(map));
+    lsSet(THINKING_META_KEY, JSON.stringify(map));
   } catch {
     // ignore (private mode etc.)
   }
@@ -767,10 +768,13 @@ function parseBackgroundResult(text: string): {
 // every return to that chat opened blank and then filled in — the flicker this
 // cache exists to prevent. Keeping the newest rows that fit always leaves
 // something to paint.
-const CHAT_CACHE_MAX = 300_000;
+// iOS counts localStorage against a ~5MB quota in UTF-16 units (2.5M
+// characters), and the providers catalog plus these caches share it — so the
+// totals are char budgets, well under what the quota can hold.
+const CHAT_CACHE_MAX = 200_000;
 // Everything cached together has to fit in the origin's storage quota, which is
 // shared with the rest of the app. The oldest chats are dropped first.
-const CHAT_CACHE_TOTAL = 3_000_000;
+const CHAT_CACHE_TOTAL = 1_000_000;
 const CHAT_CACHE_MIN_ROWS = 6;
 
 // How many messages one history page holds. A chat opens with the newest page
@@ -1064,7 +1068,7 @@ function writeChatCache(
     // A trimmed snapshot is not the whole chat. Saying it is would make the next
     // open trust it and never fetch the rest — the transcript then showed only
     // its newest turn, with nothing to scroll back through.
-    localStorage.setItem(key, serialise(rows, complete && rows.length === items.length));
+    lsSet(key, serialise(rows, complete && rows.length === items.length));
     pruneChatCaches(key);
   } catch {
     // Full or unavailable storage: the cache is an optimisation, never a
@@ -1100,7 +1104,7 @@ function pruneChatCaches(keep: string): void {
     for (const e of entries) {
       if (total <= CHAT_CACHE_TOTAL) return;
       if (e.key === keep) continue;
-      localStorage.removeItem(e.key);
+      lsRemove(e.key);
       total -= e.size;
     }
   } catch {
@@ -4375,8 +4379,8 @@ export default function ChatPane({
       prevDraftKey.current = draftKey;
       return;
     }
-    if (input) localStorage.setItem(draftKey, input);
-    else localStorage.removeItem(draftKey);
+    if (input) lsSet(draftKey, input);
+    else lsRemove(draftKey);
   }, [draftKey, input]);
 
   const itemsRef = useRef<Item[]>([]);
@@ -4716,7 +4720,7 @@ export default function ChatPane({
   const persistSelection = useCallback(
     (pid: string, m: string, th: string) => {
       try {
-        localStorage.setItem(
+        lsSet(
           `v1.chatModel.${projectId}`,
           JSON.stringify({ providerId: pid, model: m, thinking: th }),
         );
@@ -5432,13 +5436,13 @@ export default function ChatPane({
             // Keep the stored session in step: settings' back button restores
             // `/project/:id` without the query, and a stale stored id would
             // open a different thread than the one being worked in.
-            localStorage.setItem(sessionStorageKey(projectId), deep);
+            lsSet(sessionStorageKey(projectId), deep);
             return deep;
           }
           const stored = localStorage.getItem(sessionStorageKey(projectId));
           if (stored && list.some((s) => s.id === stored && !s.archived)) return stored;
           const def = list.find((s) => !s.archived)?.id || '';
-          if (def) localStorage.setItem(sessionStorageKey(projectId), def);
+          if (def) lsSet(sessionStorageKey(projectId), def);
           return def;
         });
       })
@@ -5453,7 +5457,7 @@ export default function ChatPane({
   // the app reopen that one instead of the one actually being worked in.
   const rememberSession = useCallback(
     (id: string) => {
-      localStorage.setItem(sessionStorageKey(projectId), id);
+      lsSet(sessionStorageKey(projectId), id);
       const url = new URL(window.location.href);
       if (url.searchParams.get('session') !== id) {
         url.searchParams.set('session', id);

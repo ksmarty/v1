@@ -1,3 +1,4 @@
+import { lsSet } from './storage';
 import type {
   AppearanceSettings,
   AskQuestionDTO,
@@ -75,11 +76,21 @@ function readProvidersCache(): { data: Provider[]; at: number } | null {
   }
 }
 
+// The catalog payload runs ~1.2MB — caching it whole filled half of iOS's
+// ~2.5M-character origin quota and left the chat caches to overflow it, which
+// turned every keystroke into a QuotaExceededError. Past this, the cache is
+// memory-only: it is an optimization, and the providers fetch runs on every
+// open of the picker anyway.
+const PROVIDERS_CACHE_MAX = 600_000;
+
 function writeProvidersCache(data: Provider[]): void {
   providersCache = { data, at: Date.now() };
   try {
-    localStorage.setItem(PROVIDERS_CACHE_KEY, JSON.stringify(data));
-    localStorage.setItem(PROVIDERS_CACHE_AT_KEY, String(Date.now()));
+    const raw = JSON.stringify(data);
+    if (raw.length <= PROVIDERS_CACHE_MAX) {
+      lsSet(PROVIDERS_CACHE_KEY, raw);
+      lsSet(PROVIDERS_CACHE_AT_KEY, String(Date.now()));
+    }
   } catch {
     // storage unavailable — in-memory only
   }

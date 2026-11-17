@@ -19,3 +19,4 @@ bin/
 
 # Local diagnostics exports (contain private transcript data)
 .herdr-web-ui/
+v1

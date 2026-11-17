@@ -1,3 +1,4 @@
+import { lsSet } from './storage';
 /**
  * Runtime theming.
  *
@@ -209,7 +210,7 @@ export function getStoredTheme(): string {
 
 export function setStoredTheme(name: string): void {
   try {
-    localStorage.setItem(THEME_STORAGE_KEY, name);
+    lsSet(THEME_STORAGE_KEY, name);
   } catch {
     // ignore (private mode etc.)
   }

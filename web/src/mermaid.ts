@@ -1,10 +1,12 @@
 // Mermaid support for markdown replies: render a fenced `mermaid` block to an
 // SVG once, cache it (in memory and on disk), and export it as SVG or a 3x PNG.
 //
-// Mermaid is heavy (~1.5 MB of parser + renderers), so it is imported
+// Mermaid is heavy (~1.5 MB of parser + renderers), so it is
+
 // dynamically: a chat with no diagrams never downloads it, and the chunk is
 // prefetched on idle so the first diagram does not have to wait for it.
 import type { MermaidConfig } from 'mermaid';
+import { lsSet } from './storage';
 
 // Diagrams are drawn with mermaid's light palette on a white card, in every
 // theme. Model-authored diagrams (and their classDef fills) are written for a
@@ -64,7 +66,7 @@ function persist(code: string, svg: string) {
   list.unshift({ code, svg });
   if (list.length > STORE_MAX) list.length = STORE_MAX;
   try {
-    localStorage.setItem(STORE_KEY, JSON.stringify(list));
+    lsSet(STORE_KEY, JSON.stringify(list));
   } catch {
     // Quota or a private-mode refusal: the in-memory cache still works.
   }

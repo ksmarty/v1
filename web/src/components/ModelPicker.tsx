@@ -1,3 +1,4 @@
+import { lsSet } from '../storage';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ProviderModel, SavedProvider } from '../types';
 import { fuzzyScore } from '../utils';
@@ -63,7 +64,7 @@ export default function ModelPicker({
   const toggleFav = (id: string) => {
     setFavs((prev) => {
       const next = prev.includes(id) ? prev.filter((f) => f !== id) : [...prev, id];
-      localStorage.setItem(favKey, JSON.stringify(next));
+      lsSet(favKey, JSON.stringify(next));
       return next;
     });
   };
@@ -77,7 +78,7 @@ export default function ModelPicker({
     }
   });
   const persistCustom = (next: string[]) => {
-    localStorage.setItem('v1-custom-models', JSON.stringify(next));
+    lsSet('v1-custom-models', JSON.stringify(next));
     setUsedCustom(next);
   };
   const saveCustomModel = (id: string) => {
