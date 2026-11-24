@@ -2095,6 +2095,18 @@ func (s *Store) GetMessage(projectID string, id int64) (*Message, error) {
 	return m, err
 }
 
+// GetMessageInSession returns a message only when it belongs to both the
+// project and session. History mutations must not use a project-wide id to
+// cross into another session of the same project.
+func (s *Store) GetMessageInSession(projectID, sessionID string, id int64) (*Message, error) {
+	m, err := scanMessage(s.db.QueryRow(`SELECT id, project_id, role, content, tool_json, model, reasoning, usage, attachments, created_at
+		FROM messages WHERE project_id = ? AND session_id = ? AND id = ?`, projectID, sessionID, id))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	return m, err
+}
+
 // UpdateMessageContent rewrites a message's content, or returns ErrNotFound
 // when no such message exists for the project.
 func (s *Store) UpdateMessageContent(projectID string, id int64, content string) error {

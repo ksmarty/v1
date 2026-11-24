@@ -1,0 +1,36 @@
+# Chat correctness audit
+
+This pass reviewed the composer, live/detached runs, transcript reconciliation, queue editing/resume, history mutations, steering, and tool rendering. The issues below were confirmed against the current code; speculative findings without a failing path were excluded.
+
+## Confirmed issues
+
+| Area | Issue and user impact | Required fix / regression check |
+| --- | --- | --- |
+| Stop and detached runs | `/stop` aborted only the browser request, although generation is deliberately detached on the server. The Stop button also disappeared when a run was active only remotely. | Route both controls through `POST /chat/stop`; recognize `runActive` as busy and verify a remote run can be stopped. |
+| History actions | Edit, rewind, regenerate, retry, clear, compact, and fork did not consistently reject a detached active run. | Apply one busy condition in the UI and enforce run-active checks in the server before destructive history operations. |
+| Edit ordering | The server updated a message before checking `run_active`, so a request that returned 409 still changed history. | Check the run first; a rejected edit must leave the stored content unchanged. |
+| Edit scope | Editing looked up a message by project, not by the requested session. A crafted request could edit another session in the same project and bypass that session's run guard. | Require the target message's `session_id` to match the requested session; test a cross-session rejection. |
+| Held queue drain | When the queue contained only a held edit, the turn waited for its release and then looped without draining it. Releasing the edit could run the previous prompt again. | Drain immediately after the hold wait; test model-call order and count with a held-then-edited queue. |
+| Queue resume | Resume deleted the persisted queue row, then a lost start race enqueued a second copy and the error path restored the original. A failed queue-file delete was only logged. | Start an already-claimed row without enqueuing another copy; fail safely when its durable deletion fails. Test single delivery under a concurrent run. |
+| Queue editor | Saving released the edit hold asynchronously while the editor closed immediately; Enter plus blur could issue the save twice. The old prompt could drain before its edit landed. | Keep the hold through the save, close/release deterministically, and suppress duplicate saves. |
+| Mid-run send fallback | `queueChat` used a JSON client, but a run ending before the request arrived made the same endpoint return SSE. The client reported a JSON parse error and restored the composer while the server was generating. | Preserve and consume the SSE response when the request wins the start race; test both 202 queueing and direct-stream fallback without a duplicate POST. |
+| Quiet transcript refresh | The transcript signature compared message length and tool-result counts, not their values. A same-length edit or changed payload could stay stale until a full reload. | Fingerprint actual row content and payloads; test same-length edits and same-arity tool changes. |
+| Status polling | Each foreground transition started another self-scheduling poll chain without cancelling the old timer. | Keep exactly one timer across visibility changes and test repeated hide/show cycles. |
+| Completion notifications | Live completion stored a synthetic assistant/error key as the last-notified key. Reconnect compared that against a persisted numeric key and could notify again. | Reconcile live completion with the persisted transcript key and test no duplicate after reconnect. |
+| Steering attachments | Steered messages sent only attachment names to the model instead of the normal image/text content parts. | Reuse the normal user-content encoder for steering and test that bytes/text reach the sidecar. |
+| Steering display | The optimistic steering row omitted attachment chips until the persisted injected message arrived. | Preserve attachment metadata in the optimistic row. |
+| Extension tool errors | The transcript renderer displayed a tool's raw JSON body even when the tool supplied a concise `innerText` error, exposing `Internal` as the primary error text. | Prefer `innerText` for readable errors while retaining the detailed JSON behind the existing input/details affordances. |
+| Delegate result pagination | Delegate answers and tool counts came from only the newest 40 transcript entries. Long delegates could return an empty answer and “No tools were used” despite earlier rounds. | Follow the transcript's `next` cursor until both are found or history is exhausted; test with more than 40 entries. |
+| Harness retry with screenshots | `harnessKeepUserTurns` counts screenshot-injected UI rows as durable user submissions, so retry can skip its rewind and submit the user prompt twice. | Exclude screenshot tool rows from the durable-user count while preserving real steers/background injections; test rewind count. |
+| Ask response validation | An unknown or cross-session ask request id clears the selected session's pending card before the id is validated. | Validate the persisted `(project, session, request id)` tuple before clearing or resolving; test unknown and cross-session ids leave all asks pending. |
+| Continuation budget | Empty-response continuation attempts are keyed only by conversation and survive a successful answer, so a later turn can inherit an exhausted retry budget. | Clear the state on a visible successful answer, or key it by turn; test consecutive turns receive independent budgets. |
+| Compact completion | `/compact` reports success when the durable compaction task is queued, not when it commits; later failure is hidden. | Await the task's terminal outcome and propagate failure before returning `compacted:true`. |
+| Sidecar recovery readiness | Durable work resumes during `open`, before Go attaches its bridge peer, so a recovered host-tool call can fail with “called before the host connected.” | Gate resumed execution on bridge/ready attachment; test a pending host tool stays pending until ready and then runs once. |
+
+## Status
+
+All 20 issues above have been fixed and covered by regression tests across `internal/server`, `internal/harness`, `sidecar/test`, and `web/scripts/chat-utils.test.mjs`. See `docs/chat-handoff.md` for the file-by-file change summary and verification commands.
+
+## Verification
+
+Backend regressions belong in `internal/server` and `internal/harness`; sidecar protocol coverage belongs in `sidecar/test/bridge.test.mjs`. UI changes require the TypeScript production build plus focused browser checks of live, queued, and detached-run states. The final change must also pass `go test ./...` and `cd web && npm run build`.

@@ -383,7 +383,11 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	// from the edited text: update its content, then run with LastUserID set so
 	// history is truncated at it and the message is not re-added.
 	if body.EditMessageID > 0 {
-		msg, err := s.st.GetMessage(p.ID, body.EditMessageID)
+		if s.turns.get(p.ID, params.SessionID) != nil {
+			writeError(w, http.StatusConflict, "run_active")
+			return
+		}
+		msg, err := s.st.GetMessageInSession(p.ID, params.SessionID, body.EditMessageID)
 		if errors.Is(err, store.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "message not found")
 			return
@@ -405,11 +409,6 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Mid-run sends steer (consumed next round) or queue (a follow-up turn).
-	// Edits rewrite history, so they must wait for a quiet project.
-	if body.EditMessageID > 0 && s.turns.get(p.ID, params.SessionID) != nil {
-		writeError(w, http.StatusConflict, "run_active")
-		return
-	}
 	q, started, queuedID, qerr := s.turns.beginOrQueue(p.ID, params.SessionID, body.Message, body.Attachments, userID, s.cfg.MaxConcurrentRunsPerUser)
 	if qerr != nil {
 		if errors.Is(qerr, errTooManyRuns) {
@@ -452,7 +451,12 @@ func (s *Server) handleTruncateMessages(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, "id is required")
 		return
 	}
-	if err := s.st.DeleteMessagesAfter(p.ID, s.chatSessionID(p, body.SessionID), body.ID); err != nil {
+	sessionID := s.chatSessionID(p, body.SessionID)
+	if s.turns.get(p.ID, sessionID) != nil {
+		writeError(w, http.StatusConflict, "run_active")
+		return
+	}
+	if err := s.st.DeleteMessagesAfter(p.ID, sessionID, body.ID); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -786,15 +790,16 @@ func (s *Server) streamChatTurn(w http.ResponseWriter, r *http.Request, p *store
 			// happened (the SSE stream may be long gone by then). Explicit
 			// cancellations (stop button, shutdown) are not errors worth
 			// keeping.
+			var errorMessageID int64
 			if !errors.Is(err, context.Canceled) {
-				_, _ = s.st.AddMessage(p.ID, params.SessionID, "error", err.Error(), "", params.Client.Model, "", "", "")
+				errorMessageID, _ = s.st.AddMessage(p.ID, params.SessionID, "error", err.Error(), "", params.Client.Model, "", "", "")
 			}
 			// A canceled turn is not worth a push (the user pressed stop), but a real
 			// failure is exactly what they want to hear about.
 			if !errors.Is(err, context.Canceled) {
 				s.notifyTurnPush(userID, p.ID, params.SessionID, p.Name, err)
 			}
-			emit(agent.ChatEvent{Type: "error", Error: err.Error()})
+			emit(agent.ChatEvent{Type: "error", Error: err.Error(), MessageID: errorMessageID})
 			return
 		}
 		// A continued turn (resumed from a mid-response failure) is folded
@@ -842,7 +847,15 @@ func (s *Server) streamChatTurn(w http.ResponseWriter, r *http.Request, p *store
 		if !more {
 			s.notifyTurnPush(userID, p.ID, params.SessionID, p.Name, nil)
 		}
-		emit(agent.ChatEvent{Type: "done", Usage: turn.Usage, More: more})
+		done := agent.ChatEvent{Type: "done", Usage: turn.Usage, More: more}
+		if !more {
+			// The browser's notification de-dup key must be the durable row id,
+			// not its synthetic live-stream key, or a reconnect notifies again.
+			if last, err := s.st.SessionLastMessageID(p.ID, params.SessionID); err == nil {
+				done.MessageID = last
+			}
+		}
+		emit(done)
 
 		// Remembering is not something the user should have to ask for: with
 		// capture on, the model reads back its own turn and keeps what will still
@@ -858,20 +871,8 @@ func (s *Server) streamChatTurn(w http.ResponseWriter, r *http.Request, p *store
 		// per message; anything left drains next iteration. Unconsumed steers
 		// come first. A message being edited (held) is skipped by the drain;
 		// the run waits for the edit to finish instead of ending.
-		msgs := q.drain()
-		if len(msgs) == 0 {
-			if q.heldCount() > 0 {
-				waiter := time.NewTicker(250 * time.Millisecond)
-				defer waiter.Stop()
-				for q.heldCount() > 0 {
-					select {
-					case <-ctx.Done():
-						return
-					case <-waiter.C:
-					}
-				}
-				continue
-			}
+		msgs, ok := waitForQueued(ctx, q)
+		if !ok {
 			return
 		}
 		for _, extra := range msgs[1:] {
@@ -889,6 +890,27 @@ func (s *Server) streamChatTurn(w http.ResponseWriter, r *http.Request, p *store
 		params.LastUserID = msgID
 		params.SkipSnapshot = false
 	}
+}
+
+// waitForQueued takes the next follow-up batch. If every remaining row is
+// held for editing, it waits for the editor and then drains again: continuing
+// the outer turn loop without this second drain re-runs the previous prompt.
+func waitForQueued(ctx context.Context, q *turnQueue) ([]queuedMsg, bool) {
+	msgs := q.drain()
+	if len(msgs) > 0 || q.heldCount() == 0 {
+		return msgs, len(msgs) > 0
+	}
+	waiter := time.NewTicker(250 * time.Millisecond)
+	defer waiter.Stop()
+	for q.heldCount() > 0 {
+		select {
+		case <-ctx.Done():
+			return nil, false
+		case <-waiter.C:
+		}
+	}
+	msgs = q.drain()
+	return msgs, len(msgs) > 0
 }
 
 // handleChatWatch attaches the caller to a running turn's live SSE stream.

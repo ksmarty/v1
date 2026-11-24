@@ -606,14 +606,24 @@ func TestHarnessKeepUserTurns(t *testing.T) {
 
 	// A completed turn, then a second question.
 	add("assistant")
-	add("user")
+	// An injected screenshot row carries role="user" and AgentToolJSON in v1's
+	// store, while pi-durable kept the screenshot inside the tool result rather
+	// than as a user submission. It must not inflate the kept turn count when a
+	// later turn is retried.
+	if _, err := s.st.AddInjectedMessage(p.ID, sessionID, "", agent.AgentToolJSON, "m", `[{"name":"screenshot.png"}]`); err != nil {
+		t.Fatal(err)
+	}
+	secondUserID, err := s.st.AddUserMessage(p.ID, sessionID, "user text", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if got := harnessKeepUserTurns(s.st, p.ID, sessionID); got != 1 {
 		t.Fatalf("second turn = %d, want 1", got)
 	}
 
 	// A retry trims back to a user message, so the turns before it survive and
 	// the re-run turn itself is excluded.
-	if err := s.st.DeleteMessagesAfter(p.ID, sessionID, 3); err != nil {
+	if err := s.st.DeleteMessagesAfter(p.ID, sessionID, secondUserID); err != nil {
 		t.Fatal(err)
 	}
 	if got := harnessKeepUserTurns(s.st, p.ID, sessionID); got != 1 {

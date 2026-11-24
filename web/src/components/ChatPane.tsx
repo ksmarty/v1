@@ -20,6 +20,7 @@ import {
   messageAttachmentUrl,
   retryChat,
   streamChat,
+  streamChatResponse,
   uploadAttachment,
   watchChat,
   THINKING_META_KEY,
@@ -36,6 +37,7 @@ import {
 } from './UsageRings';
 import { subscribeAppearance } from '../appearance';
 import { lsRemove, lsSet } from '../storage';
+import { resultError, transcriptSignature } from '../chatUtils';
 import { freshThinkingLevel } from '../thinking';
 import type {
   ChatAttachmentMeta,
@@ -1001,25 +1003,6 @@ function useDelayedTrue(on: boolean, delay = 400): boolean {
 /** Newest persisted message id in a mapped transcript (0 when none). */
 function newestId(items: Item[]): number {
   return items.reduce((max, it) => (it.kind === 'msg' ? Math.max(max, Number(it.key) || 0) : max), 0);
-}
-
-/**
- * A cheap fingerprint of a transcript: the keys of every row plus the parts a
- * reload could actually change. Two fingerprints that match mean the fetch
- * brought nothing new, so the state write (and the repaint that follows it) can
- * be skipped outright — a quiet reload of an unchanged thread then does no work
- * at all instead of handing React a fresh array of equivalent rows.
- */
-function transcriptSignature(items: Item[]): string {
-  return items
-    .map((it) => {
-      if (it.kind !== 'msg') return `${it.kind}:${it.key}`;
-      const calls = it.toolCalls?.length ?? 0;
-      const results = it.toolResults?.length ?? 0;
-      const atts = it.attachments?.length ?? 0;
-      return `${it.key}:${it.content.length}:${calls}:${results}:${atts}:${it.usage ? 1 : 0}`;
-    })
-    .join('|');
 }
 
 function writeChatCache(
@@ -3178,31 +3161,6 @@ function AskBlock({
   );
 }
 
-// Whether a stored tool result reports a failure. Deliberately stricter than
-// toolErrorMessage, which treats any non-JSON text as an error: right for the
-// tools that always answer in JSON, wrong here, where a bare string is a normal
-// successful answer.
-function resultError(detail: string): string | null {
-  const t = detail.trim();
-  if (!t) return null;
-  if (/^error[:\s]/i.test(t)) return t;
-  if (t[0] !== '{') return null;
-  try {
-    const d = JSON.parse(t) as Record<string, unknown>;
-    if (!d || typeof d !== 'object') return null;
-    const e = d.error;
-    if (typeof e === 'string' && e) return e;
-    if (e && typeof e === 'object') {
-      const msg = (e as { message?: unknown }).message;
-      return typeof msg === 'string' && msg ? msg : t;
-    }
-    if (d.success === false || d.ok === false) return t;
-    return null;
-  } catch {
-    return null;
-  }
-}
-
 // A sub-agent result ends with `[v1-subagent:<conversationId>]`. Split it off
 // so the transcript can be fetched on demand and the marker never reaches the
 // visible text.
@@ -4303,6 +4261,8 @@ export default function ChatPane({
   const [queueEditId, setQueueEditId] = useState<string | null>(null);
   const [queueEditText, setQueueEditText] = useState('');
   const queueEditIdRef = useRef<string | null>(null);
+  const queueEditSavingRef = useRef<string | null>(null);
+  const queueHoldRef = useRef<Promise<void>>(Promise.resolve());
   const watchRef = useRef<AbortController | null>(null);
   // The run's direct SSE stream, open as long as the POST /chat response is —
   // which outlives `streaming`: queued follow-up turns keep the same stream
@@ -4446,6 +4406,9 @@ export default function ChatPane({
   // connection never receives the marker, so it stays 0 there.
   const replayLeftRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
+  // A queue request can win the start race just as the previous stream ends.
+  // Replacing that stream must not let its late rejection clean up the new one.
+  const runIDRef = useRef(0);
   // When the current turn started — for the elapsed time shown with usage.
   const turnStartRef = useRef(0);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -5622,12 +5585,21 @@ export default function ChatPane({
     if (!sessionId) return;
     let cancelled = false;
     let timer: number | undefined;
+    let sequence = 0;
     const tick = async () => {
       if (cancelled) return;
+      const own = ++sequence;
+      // A foreground event invalidates an older in-flight tick. Only the
+      // newest one may schedule the next poll, so visibility changes cannot
+      // accumulate permanent polling chains.
+      if (timer !== undefined) {
+        window.clearTimeout(timer);
+        timer = undefined;
+      }
       void refreshQueue();
       try {
         const st = await api.chatStatus(projectId, sessionId);
-        if (cancelled) return;
+        if (cancelled || own !== sequence) return;
         setRunActive(st.running);
         // A finished run is the moment to try a live stream again: the buffering
         // may have been this turn's (a proxy timeout, a cold tunnel).
@@ -5691,7 +5663,7 @@ export default function ChatPane({
       } catch {
         // transient — try again on the next tick
       }
-      timer = window.setTimeout(tick, 3000);
+      if (!cancelled && own === sequence) timer = window.setTimeout(tick, 3000);
     };
     void tick();
     const onVisible = () => {
@@ -6535,10 +6507,11 @@ export default function ChatPane({
             if (!replaying) {
               void notifyTurnDone(projectId, sessionId, projectName, sessionNameRef.current);
             }
-            // The live event notified — mark it so the reconnect load() path
-            // does not notify a second time for the same turn.
-            const doneKey = assistantKeyRef.current;
-            if (doneKey) {
+            // The live event notified — remember the durable row id so the
+            // reconnect load() path does not notify a second time. Synthetic
+            // sN/eN keys can never match the numeric ids in a fetched row.
+            if (ev.messageId && ev.messageId > 0) {
+              const doneKey = String(ev.messageId);
               lastNotifiedRef.current = doneKey;
               try { localStorage.setItem(notifiedKey, doneKey); } catch {}
             }
@@ -6569,9 +6542,11 @@ export default function ChatPane({
           if (!replaying) {
             void notifyTurnError(projectId, sessionId, projectName, sessionNameRef.current);
           }
-          const errorKey = `e${counterRef.current}`;
-          lastNotifiedRef.current = errorKey;
-          try { localStorage.setItem(notifiedKey, errorKey); } catch {}
+          if (ev.messageId && ev.messageId > 0) {
+            const errorKey = String(ev.messageId);
+            lastNotifiedRef.current = errorKey;
+            try { localStorage.setItem(notifiedKey, errorKey); } catch {}
+          }
           setAskPrompt(null);
           setSteering([]);
           setLocalStatus(null);
@@ -6789,8 +6764,12 @@ export default function ChatPane({
       // and its files go back to the composer instead of being erased by the
       // next reload with nothing left to retry from.
       sent?: { key: string; text: string; atts: ComposerAttachment[] },
+      replace = false,
     ) => {
-      if (streaming) return;
+      if (streaming && !replace) return;
+      const runID = ++runIDRef.current;
+      const isCurrent = () => runIDRef.current === runID;
+      if (replace) abortRef.current?.abort();
       setStreaming(true);
       turnStartRef.current = Date.now();
       assistantKeyRef.current = null;
@@ -6804,9 +6783,11 @@ export default function ChatPane({
       mainStreamRef.current = true;
       try {
         await start(ctrl.signal);
+        if (!isCurrent()) return;
         mainStreamRef.current = false;
         finish();
       } catch (e) {
+        if (!isCurrent()) return;
         mainStreamRef.current = false;
         if (e instanceof QueuedError) {
           // The session already had a run, so this message went onto that run's
@@ -6846,6 +6827,7 @@ export default function ChatPane({
           // it in the background — streaming the retry live would replay the
           // whole generation in front of the user.
           await load();
+          if (!isCurrent()) return;
           // The resync can fail while the network is still down — that is
           // expected, not an error worth showing.
           setLoadError(null);
@@ -6853,6 +6835,7 @@ export default function ChatPane({
             finish();
             return;
           }
+          if (!isCurrent()) return;
           // The run can still be alive server-side — it outlives the connection
           // by design — and then the right move is to attach to its live stream,
           // which replays everything we missed. Resuming instead spins for up to
@@ -6871,6 +6854,7 @@ export default function ChatPane({
           assistantKeyRef.current = null;
           toolStackRef.current = {};
           const ok = await resumeTurn(ctrl.signal);
+          if (!isCurrent()) return;
           setResuming(false);
           if (ok) {
             await load();
@@ -7068,6 +7052,7 @@ export default function ChatPane({
   }, [localStatus]);
   const runLocalCommand = useCallback(async (text: string): Promise<boolean> => {
     const command = text.trim().split(/\s+/)[0];
+    const busy = streaming || runActive || resuming;
     if (!CHAT_COMMANDS.some((c) => c.name === command)) return false;
     switch (command) {
       case '/help':
@@ -7084,7 +7069,8 @@ export default function ChatPane({
         setLocalStatus('Preview restarting…');
         break;
       case '/stop':
-        if (streaming) {
+        if (busy) {
+          void api.stopChat(projectId, sessionId).catch(() => {});
           abortRef.current?.abort();
           setLocalStatus('Stopped.');
         } else {
@@ -7092,7 +7078,7 @@ export default function ChatPane({
         }
         break;
       case '/clear':
-        if (streaming) {
+        if (busy) {
           setLocalStatus('Stop the current run before clearing.');
           break;
         }
@@ -7108,7 +7094,7 @@ export default function ChatPane({
         }
         break;
       case '/compact':
-        if (streaming) {
+        if (busy) {
           setLocalStatus('Stop the current run before compacting.');
           break;
         }
@@ -7145,7 +7131,7 @@ export default function ChatPane({
     }
     setInput('');
     return true;
-  }, [projectId, sessionId, streaming, load, loadContext, rememberSession]);
+  }, [projectId, sessionId, streaming, runActive, resuming, load, loadContext, rememberSession]);
 
   // Sends a mid-run message. `steer` hands it to the running turn, which is the
   // send button's default; without it the message waits its turn in the queue.
@@ -7166,6 +7152,17 @@ export default function ChatPane({
         atts,
         uploadIds,
       );
+      if (res.stream) {
+        // The previous run ended before this request arrived, so this exact
+        // response is the new turn. Reuse it: parsing it as JSON lost the live
+        // stream, and posting again would run the prompt twice.
+        const stream = res.stream;
+        await load({ quiet: true });
+        await run(async (signal) => {
+          await streamChatResponse(stream, handleEvent, signal);
+        }, undefined, true);
+        return;
+      }
       if (!res.queued) {
         // The run finished before this arrived, so it became a normal turn.
         void refreshQueue();
@@ -7191,7 +7188,7 @@ export default function ChatPane({
           : undefined;
       setQueued((prev) => [...prev, { id: res.id ?? '', text, attachments: metas }]);
     },
-    [projectId, sessionId, modelOverride, providerOverride, refreshQueue],
+    [projectId, sessionId, modelOverride, providerOverride, refreshQueue, run, handleEvent, load],
   );
 
   const send = useCallback(async () => {
@@ -7263,19 +7260,48 @@ export default function ChatPane({
     [projectId, sessionId, refreshQueue],
   );
 
-  // Replaces one queued message's text in place. Saving also releases the
-  // hold taken when the edit started, so the message can be sent again.
+  // Serialize hold changes ahead of edits. Otherwise a delayed hold(true) can
+  // land after the edit's atomic save+release and strand the row forever.
+  const queueHold = useCallback(
+    (id: string, held: boolean): Promise<void> => {
+      const next = queueHoldRef.current
+        .catch(() => {})
+        .then(() => api.chatQueueHold(projectId, sessionId, id, held));
+      queueHoldRef.current = next;
+      return next;
+    },
+    [projectId, sessionId],
+  );
+
+  // Replaces one queued message's text in place. The server save releases the
+  // hold atomically; keep the editor open (and held) if that save fails.
   const editQueued = useCallback(
     async (id: string, text: string) => {
       const trimmed = text.trim();
-      if (!trimmed) return;
+      if (!trimmed) {
+        setLocalStatus('A queued message cannot be empty.');
+        return;
+      }
+      // Enter is immediately followed by blur as the editor closes. Only one
+      // of those events may issue the edit.
+      if (queueEditSavingRef.current === id) return;
+      queueEditSavingRef.current = id;
       setQueued((prev) => prev.map((m) => (m.id === id ? { ...m, text: trimmed } : m)));
       try {
+        await queueHoldRef.current.catch(() => {});
         await api.chatQueueEdit(projectId, sessionId, id, trimmed);
-      } catch {
+        if (queueEditIdRef.current === id) {
+          queueEditIdRef.current = null;
+          setQueueEditId(null);
+          setQueueEditText('');
+        }
         void refreshQueue();
+      } catch (e) {
+        setLocalStatus(errMsg(e));
+        void refreshQueue();
+      } finally {
+        queueEditSavingRef.current = null;
       }
-      void api.chatQueueHold(projectId, sessionId, id, false).catch(() => {});
     },
     [projectId, sessionId, refreshQueue],
   );
@@ -7284,19 +7310,18 @@ export default function ChatPane({
   // drain skips it, and release the hold when the edit ends.
   const setQueueEditing = useCallback(
     (id: string | null, text: string) => {
-      setQueueEditId((prev) => {
-        if (prev && prev !== id) {
-          void api.chatQueueHold(projectId, sessionId, prev, false).catch(() => {});
-        }
-        return id;
-      });
+      const previous = queueEditIdRef.current;
       queueEditIdRef.current = id;
+      setQueueEditId(id);
       setQueueEditText(text);
+      if (previous && previous !== id) {
+        void queueHold(previous, false).catch(() => {});
+      }
       if (id) {
-        void api.chatQueueHold(projectId, sessionId, id, true).catch(() => {});
+        void queueHold(id, true).catch(() => {});
       }
     },
-    [projectId, sessionId],
+    [queueHold],
   );
 
   // Leaving the page abandons any in-progress edit — release the hold so the
@@ -7304,10 +7329,10 @@ export default function ChatPane({
   useEffect(() => {
     return () => {
       if (queueEditIdRef.current) {
-        void api.chatQueueHold(projectId, sessionId, queueEditIdRef.current, false).catch(() => {});
+        void queueHold(queueEditIdRef.current, false).catch(() => {});
       }
     };
-  }, [projectId, sessionId]);
+  }, [queueHold]);
 
   // Exports a diagnostics dump of this chat (version, provider, run state,
   // session messages) as a JSON file — for reporting chats that end oddly.
@@ -7337,12 +7362,17 @@ export default function ChatPane({
       try {
         await api.chatQueueSteer(projectId, sessionId, id);
         setQueued((prev) => prev.filter((m) => m.id !== id));
-        if (entry) setSteering((prev) => [...prev, { id: entry.id, text: entry.text }]);
+        if (entry) {
+          setSteering((prev) => [
+            ...prev,
+            { id: entry.id, text: entry.text, attachments: entry.attachments },
+          ]);
+        }
       } catch {
         void refreshQueue();
       }
     },
-    [projectId, queued, refreshQueue],
+    [projectId, sessionId, queued, refreshQueue],
   );
 
   // Deletes a queued follow-up so it is never sent.
@@ -7429,7 +7459,7 @@ export default function ChatPane({
   );
 
   const regenerate = useCallback(() => {
-    if (streaming || !llmReady) return;
+    if (streaming || runActive || resuming || !llmReady) return;
     update((prev) => {
       let idx = -1;
       for (let i = prev.length - 1; i >= 0; i--) {
@@ -7449,7 +7479,7 @@ export default function ChatPane({
       // and drops the error — reload to show that merged state.
       await load();
     });
-  }, [streaming, llmReady, projectId, sessionId, handleEvent, run, update, load, providerOverride, modelOverride]);
+  }, [streaming, runActive, resuming, llmReady, projectId, sessionId, handleEvent, run, update, load, providerOverride, modelOverride]);
 
   const setItemEditing = useCallback(
     (key: string, editing: boolean) => {
@@ -7466,7 +7496,7 @@ export default function ChatPane({
     (key: string, text: string) => {
       const trimmed = text.trim();
       const id = Number(key);
-      if (!trimmed || streaming || !llmReady || !persisted(key)) return;
+      if (!trimmed || streaming || runActive || resuming || !llmReady || !persisted(key)) return;
       setItemEditing(key, false);
       update((prev) => {
         const idx = prev.findIndex((it) => it.kind === 'msg' && it.key === key);
@@ -7501,7 +7531,7 @@ export default function ChatPane({
         ),
       );
     },
-    [streaming, llmReady, projectId, modelOverride, providerOverride, handleEvent, run, update, thinkingEffort],
+    [streaming, runActive, resuming, llmReady, projectId, sessionId, modelOverride, providerOverride, handleEvent, run, update, thinkingEffort],
   );
 
   // Rewind/revert: cut the thread back to a chosen message (drops everything
@@ -7509,7 +7539,7 @@ export default function ChatPane({
   const rewindTo = useCallback(
     async (key: string) => {
       const id = Number(key);
-      if (!persisted(key)) return;
+      if (!persisted(key) || streaming || runActive || resuming) return;
       try {
         await api.truncateMessages(projectId, sessionId, id);
         await load();
@@ -7517,7 +7547,7 @@ export default function ChatPane({
         setLoadError(errMsg(e));
       }
     },
-    [projectId, load],
+    [projectId, sessionId, streaming, runActive, resuming, load],
   );
 
   // Rewinds immediately, or opens the approval dialog when the setting
@@ -7784,7 +7814,7 @@ export default function ChatPane({
       <IconCheck className="h-4 w-4" />
     </IconButton>
   );
-  const stopButton = streaming && (
+  const stopButton = (streaming || runActive || resuming) && (
     <IconButton
       onClick={() => setConfirmStopOpen(true)}
       aria-label="Stop generating"
@@ -8310,7 +8340,7 @@ export default function ChatPane({
                   <MessageRow
                     item={shown}
                     isLast={i === lastMsgIdx}
-                    streaming={streaming}
+                    streaming={live}
                     live={live}
                     turnEnd={turnEndKeys.has(it.key)}
                     validTag={validTag}
@@ -8599,7 +8629,6 @@ export default function ChatPane({
                       if (e.key === 'Enter' && !e.shiftKey) {
                         e.preventDefault();
                         void editQueued(m.id, queueEditText);
-                        setQueueEditing(null, '');
                       } else if (e.key === 'Escape') {
                         setQueueEditing(null, '');
                       }
@@ -8607,7 +8636,6 @@ export default function ChatPane({
                     onBlur={() => {
                       if (queueEditId === m.id) {
                         void editQueued(m.id, queueEditText);
-                        setQueueEditing(null, '');
                       }
                     }}
                     className="min-h-[52px] min-w-0 flex-1 resize-y rounded-md border border-border bg-bg px-2 py-1.5 text-xs text-text outline-none focus:border-subtle"

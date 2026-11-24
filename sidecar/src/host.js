@@ -25,6 +25,7 @@ import { BACKGROUND_CONTEXT, withAbortSignal } from "@earendil-works/chord/conte
 
 import { log } from "./log.js";
 import { countToolCalls, firstAssistantText } from "./entries.js";
+import { readDelegateAnswer } from "./delegate_answer.js";
 import { writeModelCatalog } from "./modeldata.js";
 import { installProviderFetchLog } from "./providerlog.js";
 import { RpcError, createPeer } from "./rpc.js";
@@ -208,7 +209,6 @@ class Sidecar {
 			},
 			this.ctx,
 		);
-		this.harness.resume();
 		log.info("harness opened", {
 			database: this.database,
 			extensions: this.loadedExtensions.map((entry) => entry.id).join(","),
@@ -231,6 +231,7 @@ class Sidecar {
 				`sidecar: protocol mismatch (host ${params.protocolVersion}, sidecar ${PROTOCOL_VERSION})`,
 			);
 		}
+		this.harness?.resume();
 		log.info("handshake", { client: params?.client ?? "(unversioned)" });
 		return {
 			protocolVersion: PROTOCOL_VERSION,
@@ -689,24 +690,9 @@ class Sidecar {
 		}
 	}
 
-	/** The child's final assistant text, read back from its transcript. */
+	/** The child's final assistant text and tool usage, read across its transcript. */
 	async readAnswer(conversation, maxChars) {
-		const page = await conversation.entries({}, 40, undefined, this.ctx);
-		const items = page?.items ?? [];
-		// Tool calls are counted across every entry, not just the final message:
-		// the sub-agent's tools ran in earlier rounds, so stopping at the final
-		// text would report "no tools".
-		const toolCalls = countToolCalls(items);
-		// entries() is newest-first, so the first assistant message carrying text
-		// is the answer the child finished on.
-		const text = firstAssistantText(items);
-		const limit = Number.isInteger(maxChars) && maxChars > 0 ? maxChars : 20000;
-		const truncated = text.length > limit;
-		return {
-			conversationId: String(conversation.id),
-			text: truncated ? `${text.slice(0, limit)}\n… (truncated)` : text,
-			toolCalls,
-		};
+		return readDelegateAnswer(conversation, maxChars, this.ctx);
 	}
 
 	async conversationFor(params) {
@@ -864,7 +850,13 @@ class Sidecar {
 	async compact(params) {
 		const conversation = await this.conversationFor(params);
 		const taskId = await conversation.compact(params?.instructions, this.ctx);
-		return { taskId: String(taskId) };
+		const settled = await this.harness.waitForTask(taskId, this.ctx);
+		const outcome = settled?.state?.outcome;
+		if (outcome && outcome.status !== "completed") {
+			const message = outcome.error?.message || outcome.reason || `compaction ${outcome.status}`;
+			throw new RpcError(-32000, `compaction failed: ${message}`);
+		}
+		return { taskId: String(taskId), ...(outcome?.result ?? {}) };
 	}
 
 	async reset(params) {

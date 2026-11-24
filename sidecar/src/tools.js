@@ -175,12 +175,16 @@ export function buildContinuationHook() {
 			}
 		},
 		onYield: async (answer, api, context) => {
-			const message = continuationMessage(answer.content, answer.stopReason);
-			if (message === null) return undefined;
 			// pi-durable's per-task memo resets when a continuation hands the run to a
 			// successor generation, so it cannot bound this. A process-local counter,
-			// reset by a gap between turns, can.
+			// cleared when a turn produces a finished answer and reset by a gap
+			// between turns, can.
 			const key = String(api.conversationId ?? "");
+			const message = continuationMessage(answer.content, answer.stopReason);
+			if (message === null) {
+				continuationAttempts.delete(key);
+				return undefined;
+			}
 			const now = Date.now();
 			const prev = continuationAttempts.get(key);
 			const attempts = prev !== undefined && now - prev.at < CONTINUATION_WINDOW_MS ? prev.attempts : 0;

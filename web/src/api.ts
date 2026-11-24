@@ -158,7 +158,7 @@ async function parseError(res: Response): Promise<string> {
   return res.statusText || `Request failed (${res.status})`;
 }
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+async function requestResponse(path: string, init: RequestInit = {}): Promise<Response> {
   const method = init.method ?? 'GET';
   const started = Date.now();
   let res: Response;
@@ -185,6 +185,11 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   debugBreadcrumb('api', `${method} ${path} → ${res.status}`, {
     ms: Date.now() - started,
   });
+  return res;
+}
+
+async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const res = await requestResponse(path, init);
   if (res.status === 204) return undefined as T;
   const ct = res.headers.get('content-type') ?? '';
   if (ct.includes('application/json')) {
@@ -467,10 +472,11 @@ export const api = {
     request<DiagnosticsDump>(
       `/api/projects/${id}/diagnostics?sessionId=${encodeURIComponent(sessionId)}`,
     ),
-  // Mid-run send: the same endpoint queues the message onto the active run
-  // (steer/follow-up) instead of opening an SSE stream. When queued, the
-  // response carries the queue entry's id.
-  queueChat: (
+  // Mid-run send: the same endpoint either queues onto the active run (202)
+  // or wins the start race and opens a normal SSE turn. Return that exact
+  // response so the caller can consume it instead of parsing SSE as JSON or
+  // posting the message a second time.
+  queueChat: async (
     id: string,
     sessionId: string,
     message: string,
@@ -479,18 +485,25 @@ export const api = {
     thinking?: string,
     attachments?: ChatAttachmentInput[],
     uploadIds?: string[],
-  ) =>
-    post<{ queued?: boolean; id?: string }>(`/api/projects/${id}/chat`, {
-      message,
-      sessionId,
-      model,
-      providerId,
-      thinking,
-      // A message sent while a run is active can carry files: the server keeps
-      // them on the queue entry and the follow-up turn replays them.
-      ...(attachments && attachments.length > 0 ? { attachments } : {}),
-      ...(uploadIds && uploadIds.length > 0 ? { uploadIds } : {}),
-    }),
+  ): Promise<{ queued?: boolean; id?: string; stream?: Response }> => {
+    const res = await requestResponse(`/api/projects/${id}/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message,
+        sessionId,
+        model,
+        providerId,
+        thinking,
+        // A message sent while a run is active can carry files: the server keeps
+        // them on the queue entry and the follow-up turn replays them.
+        ...(attachments && attachments.length > 0 ? { attachments } : {}),
+        ...(uploadIds && uploadIds.length > 0 ? { uploadIds } : {}),
+      }),
+    });
+    if (res.status === 202) return (await res.json()) as { queued?: boolean; id?: string };
+    return { stream: res };
+  },
   chatStatus: (id: string, sessionId: string) =>
     request<{ running: boolean; lastMessageId?: number }>(
       `/api/projects/${id}/chat/status?sessionId=${encodeURIComponent(sessionId)}`,
@@ -761,15 +774,20 @@ export class QueuedError extends Error {
 async function readWithIdleDeadline(
   reader: ReadableStreamDefaultReader<Uint8Array>,
   ms: number,
+  signal?: AbortSignal,
 ): Promise<ReadableStreamReadResult<Uint8Array> | 'idle'> {
   let timer = 0;
   const idle = new Promise<'idle'>((resolve) => {
     timer = window.setTimeout(() => resolve('idle'), ms);
   });
+  const onAbort = () => void reader.cancel().catch(() => {});
+  if (signal?.aborted) onAbort();
+  else signal?.addEventListener('abort', onAbort, { once: true });
   try {
     return await Promise.race([reader.read(), idle]);
   } finally {
     window.clearTimeout(timer);
+    signal?.removeEventListener('abort', onAbort);
   }
 }
 
@@ -801,6 +819,22 @@ async function streamChatEvents(
   }
 }
 
+export async function streamChatResponse(
+  res: Response,
+  onEvent: (ev: ChatEvent) => void,
+  signal: AbortSignal,
+): Promise<void> {
+  const inner = new AbortController();
+  const onAbort = () => inner.abort();
+  if (signal.aborted) inner.abort();
+  else signal.addEventListener('abort', onAbort, { once: true });
+  try {
+    await streamBody('', undefined, onEvent, inner, false, STREAM_IDLE_MS, res);
+  } finally {
+    signal.removeEventListener('abort', onAbort);
+  }
+}
+
 async function streamBody(
   path: string,
   body: unknown,
@@ -808,11 +842,16 @@ async function streamBody(
   inner: AbortController,
   get: boolean,
   idleMs: number,
+  initialResponse?: Response,
 ): Promise<void> {
   // Headers can be held back too: race the fetch itself so a proxy that withholds
   // the response until it is complete is detected like a buffered body.
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const res = await Promise.race([
+  let res: Response;
+  if (initialResponse) {
+    res = initialResponse;
+  } else {
+    res = await Promise.race([
     fetch(path, {
       method: get ? 'GET' : 'POST',
       credentials: 'same-origin',
@@ -827,6 +866,7 @@ async function streamBody(
       }, STREAM_FIRST_EVENT_MS);
     }),
   ]).finally(() => clearTimeout(timer));
+  }
 
 
   if (res.status === 401) {
@@ -879,7 +919,7 @@ async function streamBody(
   for (;;) {
     let chunk: ReadableStreamReadResult<Uint8Array> | 'idle';
     try {
-      chunk = await readWithIdleDeadline(reader, sawEvent ? idleMs : STREAM_FIRST_EVENT_MS);
+      chunk = await readWithIdleDeadline(reader, sawEvent ? idleMs : STREAM_FIRST_EVENT_MS, inner.signal);
     } catch (e) {
       // A dead/incomplete stream (e.g. the connection dropped mid-run) must
       // not leave a zombie reader that keeps the tab spinning forever.

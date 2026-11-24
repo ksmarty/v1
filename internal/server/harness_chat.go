@@ -592,11 +592,11 @@ func harnessKeepUserTurns(st *store.Store, projectID, sessionID string) int {
 	}
 	users := 0
 	for _, m := range msgs {
-		if m.Role == "user" {
+		if m.Role == "user" && !agent.IsAgentRow(m.ToolJSON) {
 			users++
 		}
 	}
-	if len(msgs) > 0 && msgs[len(msgs)-1].Role == "user" {
+	if len(msgs) > 0 && msgs[len(msgs)-1].Role == "user" && !agent.IsAgentRow(msgs[len(msgs)-1].ToolJSON) {
 		users--
 	}
 	if users < 0 {
@@ -1113,31 +1113,22 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge,
 		// No bridge means nowhere to deliver the steer, but the transcript still
 		// records it — the same thing the built-in loop does with a nil client.
 		// Production only reaches this path with a live bridge.
-		deliver := func(reqID, text string) error {
+		deliver := func(reqID string, content any) error {
 			if bridge == nil {
 				return nil
 			}
-			return bridge.Steer(ctx, sidecarID, reqID, text)
+			return bridge.Steer(ctx, sidecarID, reqID, content)
 		}
 		for _, msg := range params.Steer() {
 			if msg.Text == "" && len(msg.Attachments) == 0 {
 				continue
 			}
-			// The sidecar takes text only: the attachments ride along as a note
-			// so the model at least knows files were sent (the built-in loop
-			// delivers them as real parts).
-			steerText := scrubHarnessText(msg.Text)
-			if len(msg.Attachments) > 0 {
-				names := make([]string, 0, len(msg.Attachments))
-				for _, a := range msg.Attachments {
-					names = append(names, a.Name)
-				}
-				steerText = strings.TrimSpace(
-					steerText + "\n\n[attached files: " + strings.Join(names, ", ") + "]",
-				)
-			}
+			// A steer uses the same content parts as a fresh turn. Reducing files
+			// to a list of names told the model a file existed without giving it
+			// the image or text it was supposed to inspect.
+			content := harnessUserContent(scrubHarnessText(msg.Text), msg.Attachments)
 			reqID := steerRequestID()
-			if err := deliver(reqID, steerText); err != nil {
+			if err := deliver(reqID, content); err != nil {
 				log.Printf("harness: steer failed: %v", err)
 				// The steer was already drained from the queue, so put it back. A
 				// message the user sent must not vanish because the running turn could

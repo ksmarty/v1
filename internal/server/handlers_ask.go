@@ -15,7 +15,9 @@ import (
 
 // askRequest is a pending question from the agent's ask_user tool.
 type askRequest struct {
-	ch chan string
+	projectID string
+	sessionID string
+	ch        chan string
 }
 
 // askRegistry tracks in-flight questions by id so the chat UI can answer them.
@@ -24,22 +26,30 @@ type askRegistry struct {
 	reqs map[string]*askRequest
 }
 
-func (r *askRegistry) register(id string) *askRequest {
-	ar := &askRequest{ch: make(chan string, 1)}
+func (r *askRegistry) register(projectID, sessionID, id string) *askRequest {
+	ar := &askRequest{projectID: projectID, sessionID: sessionID, ch: make(chan string, 1)}
 	r.mu.Lock()
 	r.reqs[id] = ar
 	r.mu.Unlock()
 	return ar
 }
 
-func (r *askRegistry) resolve(id, answer string) *askRequest {
+func (r *askRegistry) unregister(id string) {
 	r.mu.Lock()
-	ar := r.reqs[id]
 	delete(r.reqs, id)
 	r.mu.Unlock()
-	if ar != nil {
-		ar.ch <- answer
+}
+
+func (r *askRegistry) resolve(projectID, sessionID, id, answer string) *askRequest {
+	r.mu.Lock()
+	ar := r.reqs[id]
+	if ar == nil || ar.projectID != projectID || ar.sessionID != sessionID {
+		r.mu.Unlock()
+		return nil
 	}
+	delete(r.reqs, id)
+	r.mu.Unlock()
+	ar.ch <- answer
 	return ar
 }
 
@@ -61,7 +71,8 @@ func (s *Server) turnAsk(projectID, sessionID string, emit func(agent.ChatEvent)
 		if err := s.st.SetPendingAsk(projectID, sessionID, id, first.Question, agent.Labels(first.Options), qsJSON); err != nil {
 			return agent.AskResponse{}, fmt.Errorf("failed to persist question: %w", err)
 		}
-		ar := s.ask.register(id)
+		ar := s.ask.register(projectID, sessionID, id)
+		defer s.ask.unregister(id)
 		if emit != nil {
 			emit(agent.ChatEvent{Type: "question_request", RequestID: id, Text: first.Question, Options: agent.Labels(first.Options), Questions: questions})
 		}
@@ -184,13 +195,17 @@ func (s *Server) handleAskRespond(w http.ResponseWriter, r *http.Request) {
 			payload = string(b)
 		}
 	}
-	_ = s.st.ClearPendingAsk(p.ID, s.chatSessionID(p, body.SessionID))
-	ar := s.ask.resolve(body.RequestID, payload)
-	if ar == nil {
-		writeError(w, http.StatusNotFound, "no pending question with that id")
+	sessionID := s.chatSessionID(p, body.SessionID)
+	ar := s.ask.resolve(p.ID, sessionID, body.RequestID, payload)
+	if ar != nil {
+		_ = s.st.ClearPendingAsk(p.ID, sessionID)
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+	if pending, err := s.st.GetPendingAsk(p.ID, sessionID); err == nil && pending.ID == body.RequestID {
+		_ = s.st.ClearPendingAsk(p.ID, sessionID)
+	}
+	writeError(w, http.StatusNotFound, "no pending question with that id")
 }
 
 // handleAskPending returns the project's pending ask_user question, or

@@ -10,8 +10,8 @@
 	},
 	"scripts": {
 		"start": "node src/host.js",
-		"check": "node --check src/host.js && node --check src/rpc.js && node --check src/provider.js && node --check src/providerlog.js && node --check src/modeldata.js && node --check src/tools.js && node --check src/extensions.js && node --check src/log.js",
-		"test": "node test/bridge.test.mjs"
+		"check": "node --check src/host.js && node --check src/rpc.js && node --check src/provider.js && node --check src/providerlog.js && node --check src/modeldata.js && node --check src/tools.js && node --check src/extensions.js && node --check src/log.js && node --check src/delegate_answer.js",
+		"test": "node --test test/delegate-answer.test.mjs && node test/bridge.test.mjs"
 	},
 	"dependencies": {
 		"@earendil-works/chord": "1.0.4",

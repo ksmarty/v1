@@ -1,8 +1,10 @@
 package server
 
 import (
+	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"v1/internal/agent"
 	"v1/internal/store"
@@ -67,6 +69,62 @@ func TestQueueWaitFields(t *testing.T) {
 	}
 	if list[0].QueuedAt.IsZero() || list[1].QueuedAt.Before(list[0].QueuedAt) {
 		t.Fatalf("queuedAt ordering wrong: %v, %v", list[0].QueuedAt, list[1].QueuedAt)
+	}
+}
+
+func TestWaitForQueuedDrainsReleasedEdit(t *testing.T) {
+	q := &turnQueue{}
+	id := q.add("before edit", nil)
+	if err := q.hold(id, true); err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		_ = q.edit(id, "after edit")
+	}()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	msgs, ok := waitForQueued(ctx, q)
+	if !ok || len(msgs) != 1 || msgs[0].Text != "after edit" {
+		t.Fatalf("released queue = %+v, ok=%v; want the edited message", msgs, ok)
+	}
+}
+
+func TestResumeClaimDoesNotDuplicateOnActiveRun(t *testing.T) {
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	m := newTurnManager(st)
+	pick := store.QueuedMessage{ID: "claimed", Text: "resume me", QueuedAt: 1}
+	if err := st.InsertQueuedMessage("p1", "s1", pick); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.DeleteQueuedMessage("p1", "s1", pick.ID); err != nil {
+		t.Fatal(err)
+	}
+	// The competing run starts after the durable claim, as in the handler's
+	// start race. The claimed text must not be passed to this second call.
+	if _, started, _, err := m.beginOrQueue("p1", "s1", "competing", nil, "u", 0); err != nil || !started {
+		t.Fatalf("competing run: started=%v err=%v", started, err)
+	}
+	q, started, _, err := m.beginOrQueue("p1", "s1", "", nil, "u", 0)
+	if err != nil || started {
+		t.Fatalf("claimed start: started=%v err=%v", started, err)
+	}
+	if err := st.InsertQueuedMessage("p1", "s1", pick); err != nil {
+		t.Fatal(err)
+	}
+	if got := q.list(); len(got) != 0 {
+		t.Fatalf("claimed message was enqueued again: %+v", got)
+	}
+	rows, err := st.ListQueuedMessages("p1", "s1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].ID != pick.ID {
+		t.Fatalf("durable queue = %+v, want one restored claim", rows)
 	}
 }
 

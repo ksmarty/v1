@@ -115,26 +115,31 @@ func (s *Server) handleChatQueueResume(w http.ResponseWriter, r *http.Request) {
 	}
 	atts := agent.ParseAttachments(pick.Attachments)
 	params := agent.ChatParams{
-		Store:           s.st,
-		Project:         p,
-		Client:          s.llmClientFor(userID, providerID),
-		Message:         pick.Text,
-		SessionID:       sessionID,
-		Attachments:     atts,
-		Model:           model,
-		Vision:          s.modelSupportsImages(userID, providerID, model),
-		SoftTimeout:     s.cfg.TurnSoftTimeout,
-		HardTimeout:     s.cfg.TurnHardTimeout,
-		AutoPlan:        s.cfg.AutoPlan,
+		Store:       s.st,
+		Project:     p,
+		Client:      s.llmClientFor(userID, providerID),
+		Message:     pick.Text,
+		SessionID:   sessionID,
+		Attachments: atts,
+		Model:       model,
+		Vision:      s.modelSupportsImages(userID, providerID, model),
+		SoftTimeout: s.cfg.TurnSoftTimeout,
+		HardTimeout: s.cfg.TurnHardTimeout,
+		AutoPlan:    s.cfg.AutoPlan,
 	}
 	// The turn starts from the row itself, so the persisted copy goes first: a
 	// queue created after this point (beginOrQueue hydrates from the store)
 	// must not contain it, or the message would run twice — once as this turn
 	// and once again when the run drains what it thinks is still queued.
 	if _, derr := s.st.DeleteQueuedMessage(p.ID, sessionID, pick.ID); derr != nil {
-		log.Printf("queue: dropping resumed %s: %v", pick.ID, derr)
+		writeError(w, http.StatusInternalServerError, derr.Error())
+		return
 	}
-	q, started, _, qerr := s.turns.beginOrQueue(p.ID, sessionID, pick.Text, atts, userID, s.cfg.MaxConcurrentRunsPerUser)
+	// The row has already been claimed. If another run wins before this call,
+	// adding pick.Text here would enqueue a second copy and the restore below
+	// would restore the original as well. An empty message only joins that run;
+	// this attempt still owns delivering the claimed row on a successful start.
+	q, started, _, qerr := s.turns.beginOrQueue(p.ID, sessionID, "", nil, userID, s.cfg.MaxConcurrentRunsPerUser)
 	if qerr != nil || !started {
 		// Nothing lost: put the row back on its own, so anything queued while
 		// this attempt was in flight survives too. The client reports queued,

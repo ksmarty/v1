@@ -395,9 +395,9 @@ export type ChatEvent =
   | { type: 'memories'; memories: Memory[] }
   | { type: 'permission_request'; requestId: string; tool: string; detail: string }
   /** "more" means the run continues: a queued message becomes the next turn. */
-  | { type: 'done'; usage?: ChatUsage; more?: boolean }
+  | { type: 'done'; usage?: ChatUsage; more?: boolean; messageId?: number }
   | { type: 'context'; usage?: ChatUsage }
-  | { type: 'error'; error: string }
+  | { type: 'error'; error: string; messageId?: number }
   | {
       type: 'question_request';
       requestId: string;
