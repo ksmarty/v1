@@ -13,19 +13,24 @@ RUN --mount=type=cache,target=/root/.npm npm run build
 
 # ---------- Stage 2: build the Go backend (cross-compiled) ----------
 FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS build
-ARG TARGETOS TARGETARCH
-ARG VERSION=dev
-ARG COMMIT=unknown
 WORKDIR /src
 
+# Keep TARGETOS/TARGETARCH below the module download and source copy so BuildKit
+# runs `go mod download` once on $BUILDPLATFORM instead of launching two
+# concurrent downloads (amd64 + arm64) that race on the shared /go/pkg/mod
+# cache mount and double the HTTP/2 streams to proxy.golang.org.
 COPY go.mod go.sum ./
-RUN --mount=type=cache,target=/go/pkg/mod go mod download
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download || (sleep 2 && go mod download) || (sleep 5 && go mod download)
 
 COPY . .
 # The backend embeds the frontend via //go:embed at internal/server/dist,
 # so the built assets must be in place BEFORE `go build`.
 COPY --from=web /app/web/dist ./internal/server/dist
 
+ARG TARGETOS TARGETARCH
+ARG VERSION=dev
+ARG COMMIT=unknown
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
