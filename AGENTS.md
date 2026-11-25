@@ -157,20 +157,30 @@ or `make dev`), then report: (1) the new stamped build version (`v1 <version>
   injected user message with an image attachment (the built-in loop) or on the
   tool result (the pi-durable harness, whose OpenAI adapter turns tool-result
   images into a follow-up user message). Either way it is persisted as a user
-  attachment and streamed to the UI as `injected_message`, so the screenshot is
-  in the chat log live and after a reload. The model can embed the latest
+  attachment and streamed to the UI as `injected_message`, which the chat UI
+  folds directly onto the preceding `screenshot_app` tool card (inside the
+  turn's `CollapsedToolsGroup`, rather than a separate `"From the agent"` row)
+  so the screenshot is inspectable in the tool card live and after a reload.
+  The model can embed the latest
   screenshot in its reply with `![screenshot](v1-screenshot)`, which the
   markdown renderer resolves to the most recent image attachment in the
-  session. The vision system-prompt note and the tool description make visual
+  session (including screenshots folded into `screenshot_app` tool cards). The
+  vision system-prompt note and the tool description make visual
   verification part of done: after a change that affects what the user sees,
   the agent is told to call `screenshot_app` and look at the image before
-  reporting completion. The injected row's bubble already frames the shot, so
-  the image inside carries no border of its own (two frames read as a double
-  border), and the full-screen viewer's zoom controls are `fixed`, not
+  reporting completion. The full-screen viewer's zoom controls are `fixed`, not
   `absolute`: inside a padded, notch-inset overlay an absolute child is laid out
   against the padding box and sat below the overlay's own close button.
   Node-mode previews are screenshotted via `preview.Manager.DirectURL`
   (the proxy requires a session when auth is on).
+- When a turn fails on a provider usage-wall error (5-hour, weekly, or monthly
+  allowance limit, including URL-encoded `429` JSON payloads such as
+  `GoUsageLimitError`), `ErrorMessageCard` unwraps the human-readable message
+  and offers an **Auto-retry when usage resets** button (`parseUsageLimitError`
+  in `web/src/chatUtils.ts`, persisted per error row in `localStorage` under
+  `v1-usage-autoretry:<key>`) that counts down to the window reset (from the
+  error text or the active provider's live usage window) and triggers
+  `regenerate` automatically when the reset elapses.
 - Attachments have no size limit. Images are scaled once when the turn is
   accepted (`agent.NormalizeImageAttachments`): both the stored copy and the
   model copy are bounded by a longest edge (2000px) and an encoded base64

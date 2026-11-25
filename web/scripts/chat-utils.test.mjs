@@ -9,6 +9,8 @@ const js = ts.transpileModule(source, {
 const {
   canonicalizeTranscriptItems,
   findAssistantIndexForToolResult,
+  formatUsageResetCountdown,
+  parseUsageLimitError,
   pickTurnSummaryIndex,
   resultError,
   transcriptSignature,
@@ -183,6 +185,45 @@ assert.equal(
   ]),
   1,
   'a usage-bearing turn-final assistant summary must never be folded inside CollapsedToolsGroup between Folded context and a trailing synthetic tool card',
+);
+
+const baseMs = 1_700_000_000_000;
+const goUsageErr = parseUsageLimitError(
+  'error:%20429%3A%20%7B%22type%22%3A%22GoUsageLimitError%22,%22message%22%3A%22OpenCode%20Go%20usage%20limit%20reached%20(5-hour,%20resets%20in%204h%2048m).%20To%20keep%20going%20now,%20turn%20on%20Extra%20Usage%20or%20upgrade%20to%20Go%20Plus%20at%20https%3A//opencode.ai/console/org_01M37B7KN6JQRD1MSDHHV5S26W/go.%22%7D',
+  baseMs,
+);
+assert.ok(goUsageErr, 'URL-encoded 429 GoUsageLimitError should be detected as a usage limit wall');
+assert.equal(goUsageErr.errorType, 'GoUsageLimitError');
+assert.equal(goUsageErr.windowKind, '5-hour');
+assert.equal(
+  goUsageErr.cleanMessage,
+  'OpenCode Go usage limit reached (5-hour, resets in 4h 48m). To keep going now, turn on Extra Usage or upgrade to Go Plus at https://opencode.ai/console/org_01M37B7KN6JQRD1MSDHHV5S26W/go.',
+);
+assert.equal(goUsageErr.resetMs, (4 * 3600 + 48 * 60) * 1000);
+assert.equal(goUsageErr.resetAt, baseMs + (4 * 3600 + 48 * 60) * 1000);
+assert.equal(formatUsageResetCountdown(goUsageErr.resetMs), '4h 48m');
+
+const weeklyUsageErr = parseUsageLimitError(
+  '429: {"error":{"type":"UsageLimitError","message":"Weekly usage limit reached (weekly, resets in 2d 5h)."}}',
+  baseMs,
+);
+assert.ok(weeklyUsageErr);
+assert.equal(weeklyUsageErr.windowKind, 'weekly');
+assert.equal(weeklyUsageErr.resetMs, (2 * 86400 + 5 * 3600) * 1000);
+assert.equal(formatUsageResetCountdown(weeklyUsageErr.resetMs), '2d 5h');
+
+const monthlyUsageErr = parseUsageLimitError(
+  'OpenCode Go usage limit reached (monthly, resets in 12h 15m).',
+  baseMs,
+);
+assert.ok(monthlyUsageErr);
+assert.equal(monthlyUsageErr.windowKind, 'monthly');
+assert.equal(monthlyUsageErr.resetMs, (12 * 3600 + 15 * 60) * 1000);
+
+assert.equal(
+  parseUsageLimitError('network error: connection reset by peer', baseMs),
+  null,
+  'normal transport errors must not be treated as usage-limit walls',
 );
 
 console.log('chat utility regression tests passed');

@@ -40,9 +40,12 @@ import { lsRemove, lsSet } from '../storage';
 import {
   canonicalizeTranscriptItems,
   findAssistantIndexForToolResult,
+  formatUsageResetCountdown,
+  parseUsageLimitError,
   pickTurnSummaryIndex,
   resultError,
   transcriptSignature,
+  type UsageLimitErrorInfo,
 } from '../chatUtils';
 import { freshThinkingLevel } from '../thinking';
 import type {
@@ -84,6 +87,8 @@ import BackgroundTasksModal from './BackgroundTasksModal';
 // Lets a deeply nested tool block open a sub-agent's transcript without
 // threading a callback through every collapse/block layer.
 const DelegateOpenContext = createContext<(conversationId: string) => void>(() => {});
+const ImageOpenContext = createContext<(url: string, name: string) => void>(() => {});
+const ProviderUsageContext = createContext<ProviderUsage | null>(null);
 import TrackBorder, { TRACK_DEFAULTS } from './TrackBorder';
 import DiagramDialog from './DiagramDialog';
 import Zoomable from './Zoomable';
@@ -137,7 +142,13 @@ import json from 'highlight.js/lib/languages/json';
 // gets the same token colors as fenced code blocks.
 hljs.registerLanguage('json', json);
 
-type ToolCall = { id?: string; name: string; detail: string; display?: unknown };
+type ToolCall = {
+  id?: string;
+  name: string;
+  detail: string;
+  display?: unknown;
+  attachments?: AttachmentView[];
+};
 
 // Autocomplete item for the composer's /, @ and # menus. `insert` is the
 // token written into the textarea; `label`/`hint` are display-only.
@@ -589,6 +600,8 @@ type ToolItem = {
   ok?: boolean;
   /** A delegate's child conversation id, once the sidecar links it. */
   delegateId?: string;
+  /** Attachments (e.g. a screenshot from screenshot_app) folded into this tool card. */
+  attachments?: AttachmentView[];
   afterId?: number;
 };
 
@@ -829,6 +842,47 @@ function isLiveKey(it: Item): boolean {
   return !/^\d+$/.test(String(it.key));
 }
 
+// Folds an agent-injected screenshot row onto the preceding screenshot_app tool
+// call in `list` so the screenshot lives inside the tool card (and inside the
+// turn's CollapsedToolsGroup) instead of rendering a separate "From the agent"
+// bubble outside the tools.
+function foldScreenshotIntoItems(list: Item[], attachments: AttachmentView[] | undefined): boolean {
+  if (!attachments || attachments.length === 0) return false;
+  for (let i = list.length - 1; i >= 0; i--) {
+    const it = list[i];
+    if (it.kind === 'tool') {
+      if (it.name === 'screenshot_app' && !(it.attachments && it.attachments.length > 0)) {
+        list[i] = { ...it, running: false, ok: true, attachments };
+        return true;
+      }
+      continue;
+    }
+    if (it.kind === 'msg' && it.role === 'assistant' && !it.notice) {
+      const calls = [...(it.toolCalls ?? [])];
+      let attached = false;
+      for (let j = calls.length - 1; j >= 0; j--) {
+        if (
+          calls[j].name === 'screenshot_app' &&
+          !(calls[j].attachments && calls[j].attachments!.length > 0)
+        ) {
+          calls[j] = { ...calls[j], attachments };
+          attached = true;
+          break;
+        }
+      }
+      if (!attached) {
+        calls.push({ name: 'screenshot_app', detail: '{}', attachments });
+      }
+      list[i] = { ...it, toolCalls: calls };
+      return true;
+    }
+    if (it.kind === 'msg' && it.role === 'user' && !it.background && !it.injected) {
+      break;
+    }
+  }
+  return false;
+}
+
 // normalizeCached brings a cached snapshot back into the canonical shape —
 // this is the retroactive fix for every chat whose snapshot was written by an
 // older build: (1) rows are re-sorted by store id, so a snapshot saved with
@@ -861,7 +915,7 @@ function normalizeCached(items: Item[]): Item[] {
   // message was on an earlier page would otherwise survive at the tail
   // (`afterId = lastPersisted`) after the turn's final summary and pull that
   // summary inside `CollapsedToolsGroup`.
-  const out = anchored.filter((it) => {
+  const filtered = anchored.filter((it) => {
     if (!isLiveKey(it)) return true;
     if (it.kind === 'tool' || it.kind === 'ask') return false;
     if (it.kind !== 'msg') return true;
@@ -886,7 +940,25 @@ function normalizeCached(items: Item[]): Item[] {
     }
     return true;
   });
-  return canonicalize(out);
+  const sorted = canonicalize(filtered);
+  const out: Item[] = [];
+  for (const it of sorted) {
+    if (it.kind === 'msg' && it.role === 'user' && it.injected) {
+      if (!foldScreenshotIntoItems(out, it.attachments) && it.attachments?.length) {
+        out.push({
+          kind: 'msg',
+          key: it.key,
+          role: 'assistant',
+          content: '',
+          sentAt: it.sentAt,
+          toolCalls: [{ name: 'screenshot_app', detail: '{}', attachments: it.attachments }],
+        });
+      }
+      continue;
+    }
+    out.push(it);
+  }
+  return out;
 }
 
 function readChatCache(projectId: string, sessionId: string): CachedChat | null {
@@ -1527,11 +1599,60 @@ function DisplayBlock({ display }: { display: unknown }) {
   return <ToolBody detail={JSON.stringify(display)} />;
 }
 
-function ToolChip({ name, detail, result }: { name: string; detail: string; result?: ToolCall }) {
+function ScreenshotToolPreview({
+  attachments,
+  onImageClick,
+}: {
+  attachments: AttachmentView[];
+  onImageClick: (url: string, name: string) => void;
+}) {
+  const images = attachments.filter((a) => a.kind === 'image' && a.url);
+  if (images.length === 0) return null;
+  return (
+    <div className="flex flex-wrap items-start gap-2 border-t border-border/80 p-2">
+      {images.map((a, i) => (
+        <button
+          key={i}
+          type="button"
+          onClick={() => onImageClick(a.url as string, a.name)}
+          title={`View ${a.name}`}
+          className="block max-w-full overflow-hidden rounded-md transition-opacity hover:opacity-85"
+        >
+          <img
+            src={a.url}
+            alt={a.name}
+            loading="lazy"
+            className="block h-auto max-h-80 w-auto max-w-full object-contain"
+          />
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function ToolChip({
+  name,
+  detail,
+  result,
+  attachments,
+}: {
+  name: string;
+  detail: string;
+  result?: ToolCall;
+  attachments?: AttachmentView[];
+}) {
   const [open, setOpen] = useState(false);
   const display = useToolDisplay(name);
   const Icon = toolIcon(name, display);
   const openDelegate = useContext(DelegateOpenContext);
+  const openImage = useContext(ImageOpenContext);
+  const screenshots = useMemo(
+    () =>
+      (attachments?.length ? attachments : result?.attachments)?.filter(
+        (a) => a.kind === 'image' && Boolean(a.url),
+      ) ?? [],
+    [attachments, result?.attachments],
+  );
   // A sub-agent result carries the child conversation id as a trailing marker;
   // hide it from the text and offer the full transcript instead.
   const sub = name === 'delegate' && result ? subagentId(result.detail) : null;
@@ -1569,10 +1690,12 @@ function ToolChip({ name, detail, result }: { name: string; detail: string; resu
     );
   }
   const label = diff ? diff.path : chipLabel(detail, display);
-  // set_todos / remember / write_file expand to a readable preview of their
-  // arguments instead of the JSON envelope.
+  // set_todos / remember / write_file / screenshot_app expand to a readable
+  // preview instead of a raw JSON envelope.
   const preview =
-    name === 'set_todos' ? (
+    name === 'screenshot_app' && screenshots.length > 0 ? (
+      <ScreenshotToolPreview attachments={screenshots} onImageClick={openImage} />
+    ) : name === 'set_todos' ? (
       <TodoListBlock detail={detail} />
     ) : name === 'make_plan' || name === 'update_plan' ? (
       <PlanBlock detail={detail} />
@@ -1588,6 +1711,7 @@ function ToolChip({ name, detail, result }: { name: string; detail: string; resu
   // Nothing worth expanding (e.g. restart_preview with empty args) renders as
   // a static row — no chevron, no dropdown.
   const expandable = diff !== null || writeContent !== null || preview !== null || meaningfulDetail(detail) || result != null;
+  const hasOutcome = Boolean(result) || (name === 'screenshot_app' && screenshots.length > 0);
   const header = (
     <>
       {expandable ? (
@@ -1612,7 +1736,7 @@ function ToolChip({ name, detail, result }: { name: string; detail: string; resu
           </span>
         </span>
       )}
-      {result &&
+      {hasOutcome &&
         (resultErr !== null ? (
           <IconX className="h-3 w-3 shrink-0 text-red-500" />
         ) : (
@@ -1675,7 +1799,7 @@ function ToolChip({ name, detail, result }: { name: string; detail: string; resu
               <DisplayBlock display={result.display} />
             ) : sub ? (
               <DelegateResultBlock detail={result.detail} />
-            ) : (
+            ) : name === 'screenshot_app' && screenshots.length > 0 ? null : (
               <ToolBody detail={result.detail} />
             ))}
           {/* A generic tool shows its raw JSON arguments. When there is also a
@@ -3765,6 +3889,216 @@ function EditUserBubble({
   );
 }
 
+function usageAutoRetryStorageKey(errorKey: string): string {
+  return `v1-usage-autoretry:${errorKey}`;
+}
+
+function readArmedUsageAutoRetry(errorKey: string): number | null {
+  try {
+    const raw = localStorage.getItem(usageAutoRetryStorageKey(errorKey));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { resetAt?: unknown };
+    return typeof parsed?.resetAt === 'number' && Number.isFinite(parsed.resetAt)
+      ? parsed.resetAt
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function matchProviderWindowResetAt(
+  usage: ProviderUsage | null,
+  info: UsageLimitErrorInfo,
+): number | null {
+  const windows = usage?.windows;
+  if (!windows || windows.length === 0) return null;
+  const parseResetsAt = (w?: ProviderUsageWindow): number | null => {
+    if (!w?.resetsAt) return null;
+    const ts = new Date(w.resetsAt).getTime();
+    return Number.isFinite(ts) && ts > 0 ? ts : null;
+  };
+  const kindRe =
+    info.windowKind === '5-hour'
+      ? /5\s*h|rolling/i
+      : info.windowKind === 'weekly'
+        ? /week/i
+        : info.windowKind === 'monthly'
+          ? /month/i
+          : info.windowKind === 'daily'
+            ? /day/i
+            : null;
+  if (kindRe) {
+    const match = windows.find((w) => kindRe.test(`${w.key} ${w.label}`) && parseResetsAt(w) !== null);
+    const ts = parseResetsAt(match);
+    if (ts !== null) return ts;
+  }
+  const exhausted = windows.find(
+    (w) => (w.percent >= 100 || w.status === 'exhausted') && parseResetsAt(w) !== null,
+  );
+  return parseResetsAt(exhausted);
+}
+
+function ErrorMessageCard({
+  item,
+  streaming,
+  canContinue,
+  retryText,
+  onRegenerate,
+  onRetrySend,
+}: {
+  item: MsgItem;
+  streaming: boolean;
+  canContinue: boolean;
+  retryText?: string;
+  onRegenerate: () => void;
+  onRetrySend: (text: string) => void;
+}) {
+  const providerUsage = useContext(ProviderUsageContext);
+  const baseTimeRef = useRef<number>(item.sentAt ?? Date.now());
+  if (typeof item.sentAt === 'number' && item.sentAt > 0) {
+    baseTimeRef.current = item.sentAt;
+  }
+  const usageWall = useMemo(
+    () => parseUsageLimitError(item.content, baseTimeRef.current),
+    [item.content, item.sentAt],
+  );
+  const [armedResetAt, setArmedResetAt] = useState<number | null>(() =>
+    readArmedUsageAutoRetry(item.key),
+  );
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    setArmedResetAt(readArmedUsageAutoRetry(item.key));
+  }, [item.key]);
+
+  const targetResetAt = useMemo(() => {
+    if (!usageWall) return null;
+    const providerResetAt = matchProviderWindowResetAt(providerUsage, usageWall);
+    if (providerResetAt !== null) return providerResetAt + 5000;
+    return usageWall.resetAt !== null ? usageWall.resetAt + 5000 : null;
+  }, [usageWall, providerUsage]);
+
+  useEffect(() => {
+    if (!usageWall) return;
+    const intervalMs = armedResetAt !== null ? 1000 : 15000;
+    const id = window.setInterval(() => setNow(Date.now()), intervalMs);
+    return () => window.clearInterval(id);
+  }, [usageWall, armedResetAt]);
+
+  const clearArmed = useCallback(() => {
+    setArmedResetAt(null);
+    lsRemove(usageAutoRetryStorageKey(item.key));
+  }, [item.key]);
+
+  useEffect(() => {
+    if (armedResetAt === null || streaming) return;
+    if (now < armedResetAt) return;
+    clearArmed();
+    onRegenerate();
+  }, [armedResetAt, now, streaming, clearArmed, onRegenerate]);
+
+  const toggleAutoRetry = useCallback(() => {
+    if (armedResetAt !== null) {
+      clearArmed();
+      return;
+    }
+    const resetAt = targetResetAt ?? Date.now() + 60_000;
+    if (resetAt <= Date.now()) {
+      clearArmed();
+      onRegenerate();
+      return;
+    }
+    setNow(Date.now());
+    setArmedResetAt(resetAt);
+    lsSet(usageAutoRetryStorageKey(item.key), JSON.stringify({ resetAt }));
+  }, [armedResetAt, targetResetAt, clearArmed, onRegenerate]);
+
+  const activeResetAt = armedResetAt ?? targetResetAt;
+  const remainingMs = activeResetAt !== null ? Math.max(0, activeResetAt - now) : null;
+  const countdown = remainingMs !== null && remainingMs > 0 ? formatUsageResetCountdown(remainingMs) : null;
+
+  return (
+    <div className="flex flex-col gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2.5">
+      <div className="flex items-start gap-2">
+        <IconX className="mt-0.5 h-4 w-4 shrink-0 text-red-400" />
+        <div className="min-w-0 flex-1 whitespace-pre-wrap break-words text-sm leading-relaxed text-red-300">
+          {usageWall ? usageWall.cleanMessage : item.content}
+        </div>
+      </div>
+      {!streaming && (
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {usageWall && (
+            <button
+              type="button"
+              onClick={toggleAutoRetry}
+              className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors ${
+                armedResetAt !== null
+                  ? 'border-amber-400/50 bg-amber-500/15 text-amber-200 hover:bg-amber-500/25'
+                  : 'border-red-400/35 bg-red-500/15 text-red-200 hover:bg-red-500/25'
+              }`}
+              title={
+                armedResetAt !== null
+                  ? 'Click to cancel scheduled auto-retry'
+                  : 'Automatically retry this turn when the usage window resets'
+              }
+            >
+              <IconRefresh className={`h-3 w-3 ${armedResetAt !== null ? 'animate-spin' : ''}`} />
+              {armedResetAt !== null
+                ? `Auto-retry in ${countdown ?? 'now'} · Cancel`
+                : countdown
+                  ? `Auto-retry when usage resets (${countdown})`
+                  : 'Auto-retry when usage resets'}
+            </button>
+          )}
+          {canContinue ? (
+            // The run died mid-reply and its partial answer was persisted, so
+            // the useful action is to carry on from it rather than start the
+            // turn over. The server folds the partial and the continuation into
+            // one message once it succeeds.
+            <button
+              type="button"
+              onClick={() => {
+                clearArmed();
+                onRegenerate();
+              }}
+              className="text-xs font-medium text-red-300 underline-offset-2 transition-colors hover:text-red-200 hover:underline"
+              title="Continue the reply that was cut off"
+            >
+              Continue
+            </button>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={() => {
+                  clearArmed();
+                  onRegenerate();
+                }}
+                className="text-xs font-medium text-red-300 underline-offset-2 transition-colors hover:text-red-200 hover:underline"
+              >
+                Try again
+              </button>
+              {retryText ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    clearArmed();
+                    onRetrySend(retryText);
+                  }}
+                  className="ml-1 text-xs font-medium text-red-300 underline-offset-2 transition-colors hover:text-red-200 hover:underline"
+                  title="Send this message again"
+                >
+                  Send this message again
+                </button>
+              ) : null}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const MessageRow = memo(function MessageRow({
   item,
   isLast,
@@ -3823,10 +4157,23 @@ const MessageRow = memo(function MessageRow({
     // (the nice preview alone, no JSON envelope underneath).
     const liveResults = isNoiseResult(item.detail)
       ? []
-      : [{ name: item.name, detail: item.detail, display: item.display }];
+      : [
+          {
+            name: item.name,
+            detail: item.detail,
+            display: item.display,
+            attachments: item.attachments,
+          },
+        ];
     return (
       <ToolBlocks
-        calls={[{ name: item.name, detail: item.call ?? item.detail }]}
+        calls={[
+          {
+            name: item.name,
+            detail: item.call ?? item.detail,
+            attachments: item.attachments,
+          },
+        ]}
         results={liveResults}
       />
     );
@@ -3997,52 +4344,14 @@ const MessageRow = memo(function MessageRow({
   }
   if (item.role === 'error') {
     return (
-      <div className="flex flex-col gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2.5">
-        <div className="flex items-start gap-2">
-          <IconX className="mt-0.5 h-4 w-4 shrink-0 text-red-400" />
-          <div className="min-w-0 flex-1 whitespace-pre-wrap break-words text-sm leading-relaxed text-red-300">
-            {item.content}
-          </div>
-        </div>
-        {!streaming && (
-          <div className="flex justify-end">
-            {canContinue ? (
-              // The run died mid-reply and its partial answer was persisted, so
-              // the useful action is to carry on from it rather than start the
-              // turn over. The server folds the partial and the continuation into
-              // one message once it succeeds.
-              <button
-                type="button"
-                onClick={onRegenerate}
-                className="text-xs font-medium text-red-300 underline-offset-2 transition-colors hover:text-red-200 hover:underline"
-                title="Continue the reply that was cut off"
-              >
-                Continue
-              </button>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  onClick={onRegenerate}
-                  className="text-xs font-medium text-red-300 underline-offset-2 transition-colors hover:text-red-200 hover:underline"
-                >
-                  Try again
-                </button>
-                {retryText ? (
-                  <button
-                    type="button"
-                    onClick={() => onRetrySend(retryText)}
-                    className="ml-3 text-xs font-medium text-red-300 underline-offset-2 transition-colors hover:text-red-200 hover:underline"
-                    title="Send this message again"
-                  >
-                    Send this message again
-                  </button>
-                ) : null}
-              </>
-            )}
-          </div>
-        )}
-      </div>
+      <ErrorMessageCard
+        item={item}
+        streaming={streaming}
+        canContinue={Boolean(canContinue)}
+        retryText={retryText}
+        onRegenerate={onRegenerate}
+        onRetrySend={onRetrySend}
+      />
     );
   }
   // The ask joins the tool collapse like everything else, but stays open
@@ -4954,6 +5263,29 @@ export default function ChatPane({
           // used to fall back to looking like something the user typed.
           const marker = markerName(typeof m.tool === 'string' ? m.tool : '');
           const background = marker === 'background';
+          const injected = !writtenByUser(marker) && !background;
+          const atts = m.attachments?.map((a, i) => ({
+            ...a,
+            // Every attachment gets its endpoint URL, not just images: the
+            // non-image chip opens a viewer that fetches this.
+            url: messageAttachmentUrl(projectId, m.id, i),
+          }));
+          if (injected) {
+            // Screenshots belong inside the screenshot_app tool card (which
+            // folds into CollapsedToolsGroup) rather than a separate standalone
+            // "From the agent" bubble.
+            if (!foldScreenshotIntoItems(mapped, atts) && atts && atts.length > 0) {
+              mapped.push({
+                kind: 'msg',
+                key: m.id,
+                role: 'assistant',
+                content: '',
+                sentAt: Number(m.createdAt) * 1000,
+                toolCalls: [{ name: 'screenshot_app', detail: '{}', attachments: atts }],
+              });
+            }
+            continue;
+          }
           // Who wrote the row is a fact the server recorded with it, not
           // something to guess from position: a user row that follows tool
           // calls is often the reader's own message sent mid-turn, which the
@@ -4965,14 +5297,9 @@ export default function ChatPane({
             content: m.content,
             background,
             steered: marker === 'steer',
-            injected: !writtenByUser(marker) && !background,
+            injected: false,
             sentAt: Number(m.createdAt) * 1000,
-            attachments: m.attachments?.map((a, i) => ({
-              ...a,
-              // Every attachment gets its endpoint URL, not just images: the
-              // non-image chip opens a viewer that fetches this.
-              url: messageAttachmentUrl(projectId, m.id, i),
-            })),
+            attachments: atts,
           });
           if (!background) lastUserAt = Number(m.createdAt);
         } else if (m.role === 'notice') {
@@ -4988,7 +5315,13 @@ export default function ChatPane({
             sentAt: Number(m.createdAt) * 1000,
           });
         } else {
-          mapped.push({ kind: 'msg', key: m.id, role: 'error', content: m.content });
+          mapped.push({
+            kind: 'msg',
+            key: m.id,
+            role: 'error',
+            content: m.content,
+            sentAt: Number(m.createdAt) * 1000,
+          });
         }
       }
       return mapped;
@@ -5043,6 +5376,24 @@ export default function ChatPane({
           };
           return canonicalizeTranscriptItems([...nextOlder, ...newer.slice(1)]);
         }
+      }
+    }
+    if (
+      first &&
+      first.kind === 'msg' &&
+      first.role === 'assistant' &&
+      !first.content &&
+      !first.reasoning &&
+      (!first.toolResults || first.toolResults.length === 0) &&
+      first.toolCalls &&
+      first.toolCalls.length === 1 &&
+      first.toolCalls[0].name === 'screenshot_app' &&
+      first.toolCalls[0].attachments &&
+      first.toolCalls[0].attachments.length > 0
+    ) {
+      const nextOlder = older.slice();
+      if (foldScreenshotIntoItems(nextOlder, first.toolCalls[0].attachments)) {
+        return canonicalizeTranscriptItems([...nextOlder, ...newer.slice(1)]);
       }
     }
     return canonicalizeTranscriptItems([...older, ...newer]);
@@ -5873,10 +6224,24 @@ export default function ChatPane({
   // with the `v1-screenshot` token the screenshot tool advertises.
   const latestScreenshot = useMemo(() => {
     let latest: string | null = null;
-    for (const it of items) {
-      if (it.kind !== 'msg' || !it.attachments) continue;
-      for (const a of it.attachments) {
+    const scanAtts = (atts?: AttachmentView[]) => {
+      if (!atts) return;
+      for (const a of atts) {
         if (a.kind === 'image' && a.url) latest = a.url;
+      }
+    };
+    for (const it of items) {
+      if (it.kind === 'tool') {
+        scanAtts(it.attachments);
+        continue;
+      }
+      if (it.kind !== 'msg') continue;
+      scanAtts(it.attachments);
+      if (it.toolCalls) {
+        for (const tc of it.toolCalls) scanAtts(tc.attachments);
+      }
+      if (it.toolResults) {
+        for (const tr of it.toolResults) scanAtts(tr.attachments);
       }
     }
     return latest;
@@ -6703,6 +7068,7 @@ export default function ChatPane({
               key: `e${++counterRef.current}`,
               role: 'error',
               content: ev.error,
+              sentAt: Date.now(),
               afterId: newestId(prev),
             },
           ]);
@@ -6724,9 +7090,9 @@ export default function ChatPane({
         }
         case 'injected_message': {
           // The agent added a user message mid-turn (a screenshot from the
-          // screenshot_app tool) — render it like any other user turn. If the
-          // text matches a pending steer, that steer has landed and the row
-          // gets a "steered" badge.
+          // screenshot_app tool) — fold screenshots directly into the
+          // screenshot_app tool card; steered and background rows render in
+          // the transcript flow.
           const id = ev.messageId ?? 0;
           clearFinishedBg(ev.text);
           // Match the landed row to the steer that produced it. An attachment-
@@ -6751,6 +7117,34 @@ export default function ChatPane({
           const steered = marker === 'steer';
           const injected = !writtenByUser(marker) && !background;
           if (pending) setSteering((prev) => prev.filter((s) => s.id !== pending.id));
+          const atts = ev.attachments?.map((a, i) => ({
+            ...a,
+            url: id > 0 ? messageAttachmentUrl(projectId, String(id), i) : undefined,
+          }));
+          if (injected) {
+            update((prev) => {
+              const next = prev.map((it) =>
+                it.kind === 'msg' && it.role === 'assistant'
+                  ? { ...it, reasoningCollapsed: true }
+                  : it,
+              );
+              if (!foldScreenshotIntoItems(next, atts) && atts && atts.length > 0) {
+                next.push({
+                  kind: 'tool',
+                  key: id > 0 ? String(id) : `t${++counterRef.current}`,
+                  name: 'screenshot_app',
+                  call: '{}',
+                  detail: '{"ok":true}',
+                  running: false,
+                  ok: true,
+                  attachments: atts,
+                  afterId: id > 0 ? undefined : newestId(prev),
+                });
+              }
+              return next;
+            });
+            break;
+          }
           // The injected message ends the round in flight: the server persisted
           // the text it had already streamed ahead of this row, so the model's
           // next words belong to a row BELOW it. Leaving the open row as the
@@ -6758,7 +7152,7 @@ export default function ChatPane({
           // then sat at the bottom with the reply it started continuing above it.
           assistantKeyRef.current = null;
           update((prev) => [
-            // A screenshot/injected message closes any thinking block that was
+            // A steered/background message closes any thinking block that was
             // still open from the previous round. As with a tool call, this
             // includes a message still marked `streaming`.
             ...prev.map((it) =>
@@ -6772,14 +7166,11 @@ export default function ChatPane({
               role: 'user',
               content: ev.text ?? '',
               steered,
-              injected,
+              injected: false,
               background,
               sentAt: Date.now(),
               afterId: id > 0 ? undefined : newestId(prev),
-              attachments: ev.attachments?.map((a, i) => ({
-                ...a,
-                url: id > 0 ? messageAttachmentUrl(projectId, String(id), i) : undefined,
-              })),
+              attachments: atts,
             },
           ]);
           break;
@@ -8406,6 +8797,8 @@ export default function ChatPane({
 
   return (
     <DelegateOpenContext.Provider value={openDelegate}>
+    <ImageOpenContext.Provider value={openLightbox}>
+    <ProviderUsageContext.Provider value={usage}>
     <div className="relative flex h-full min-h-0 flex-col">
       {llmReady && (
         <div className="shrink-0 px-3 py-1.5 md:px-4">
@@ -8573,11 +8966,24 @@ export default function ChatPane({
               const workOf = (it: Item): CollapseData | null => {
                 if (it.kind === 'tool') {
                   return {
-                    calls: [{ name: it.name, detail: it.call ?? it.detail }],
+                    calls: [
+                      {
+                        name: it.name,
+                        detail: it.call ?? it.detail,
+                        attachments: it.attachments,
+                      },
+                    ],
                     results:
                       it.running || isNoiseResult(it.detail)
                         ? []
-                        : [{ name: it.name, detail: it.detail, display: it.display }],
+                        : [
+                            {
+                              name: it.name,
+                              detail: it.detail,
+                              display: it.display,
+                              attachments: it.attachments,
+                            },
+                          ],
                     ask: null,
                     askCount: 0,
                   };
@@ -9651,6 +10057,8 @@ export default function ChatPane({
         />
       )}
     </div>
+    </ProviderUsageContext.Provider>
+    </ImageOpenContext.Provider>
     </DelegateOpenContext.Provider>
   );
 }
