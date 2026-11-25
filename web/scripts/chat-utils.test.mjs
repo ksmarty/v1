@@ -6,9 +6,13 @@ const source = readFileSync(new URL('../src/chatUtils.ts', import.meta.url), 'ut
 const js = ts.transpileModule(source, {
   compilerOptions: { module: ts.ModuleKind.ES2022, target: ts.ScriptTarget.ES2022 },
 }).outputText;
-const { resultError, transcriptSignature } = await import(
-  `data:text/javascript;base64,${Buffer.from(js).toString('base64')}`
-);
+const {
+  canonicalizeTranscriptItems,
+  findAssistantIndexForToolResult,
+  pickTurnSummaryIndex,
+  resultError,
+  transcriptSignature,
+} = await import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`);
 
 const row = {
   kind: 'msg',
@@ -54,5 +58,105 @@ assert.equal(resultError('{"error":{"message":"Useful failure"}}'), 'Useful fail
 assert.equal(resultError('{"error":"Direct failure"}'), 'Direct failure');
 assert.equal(resultError('ordinary successful text'), null);
 assert.equal(resultError('{"ok":true}'), null);
+
+// Synthetic live rows must stay anchored at their chronological `afterId`
+// instead of sinking below later numeric injected/follow-up rows.
+const mixed = [
+  { key: 'u1', afterId: 0 },
+  { key: 's2', afterId: 0 },
+  { key: 't3', afterId: 0 },
+  { key: '15' },
+  { key: 's4', afterId: 15 },
+];
+assert.deepEqual(
+  canonicalizeTranscriptItems(mixed).map((it) => it.key),
+  ['u1', 's2', 't3', '15', 's4'],
+  'mid-turn numeric injected rows must not jump above earlier synthetic rows',
+);
+
+const outOfOrderPersisted = [
+  { key: '10' },
+  { key: '14' },
+  { key: '12' },
+  { key: 's5', afterId: 10 },
+];
+assert.deepEqual(
+  canonicalizeTranscriptItems(outOfOrderPersisted).map((it) => it.key),
+  ['10', 's5', '12', '14'],
+  'synthetic rows anchored after id 10 must stay between 10 and 12',
+);
+
+// Tool results persisted after an injected screenshot/background/steered user
+// row must pair with the owning assistant row instead of creating an orphan row
+// below the injection.
+const mappedWithInjection = [
+  { kind: 'msg', key: '1', role: 'user' },
+  {
+    kind: 'msg',
+    key: '2',
+    role: 'assistant',
+    toolCalls: [{ id: 'call_shot' }, { id: 'call_read' }],
+  },
+  { kind: 'msg', key: '3', role: 'user', injected: true },
+];
+assert.equal(
+  findAssistantIndexForToolResult(mappedWithInjection, 'call_read'),
+  1,
+  'tool result after an injected screenshot row must pair with its owning assistant row',
+);
+assert.equal(
+  findAssistantIndexForToolResult(mappedWithInjection),
+  1,
+  'tool result without call id still crosses intervening injected user rows',
+);
+assert.equal(
+  findAssistantIndexForToolResult([
+    ...mappedWithInjection,
+    { kind: 'msg', key: '4', role: 'user' },
+  ]),
+  -1,
+  'a real user prompt closes tool-result pairing without a matching call id',
+);
+
+// Pre-tool assistant comments must stay inside the work group rather than
+// being promoted below subsequent tool calls.
+assert.equal(
+  pickTurnSummaryIndex([
+    {
+      it: { kind: 'msg', role: 'assistant', content: 'Let me check the files first.' },
+      d: { calls: [], results: [] },
+    },
+    {
+      it: { kind: 'tool', name: 'read_file' },
+      d: { calls: [{ name: 'read_file', detail: '{}' }], results: [] },
+    },
+  ]),
+  -1,
+  'pre-tool assistant text followed by tools must not be pulled below the tools',
+);
+assert.equal(
+  pickTurnSummaryIndex([
+    {
+      it: { kind: 'msg', role: 'assistant', content: 'Taking a screenshot now.' },
+      d: { calls: [{ name: 'screenshot_app', detail: '{}' }], results: [] },
+    },
+  ]),
+  -1,
+  'an assistant row carrying its own tool calls is part of the work group, not a post-tool summary',
+);
+assert.equal(
+  pickTurnSummaryIndex([
+    {
+      it: { kind: 'tool', name: 'read_file' },
+      d: { calls: [{ name: 'read_file', detail: '{}' }], results: [] },
+    },
+    {
+      it: { kind: 'msg', role: 'assistant', content: 'All done.' },
+      d: { calls: [], results: [] },
+    },
+  ]),
+  1,
+  'a pure final assistant text row after tools is the turn summary',
+);
 
 console.log('chat utility regression tests passed');

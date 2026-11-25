@@ -138,10 +138,11 @@ func (m *BackgroundManager) Start(dir, command string, timeout time.Duration, se
 			<-waitCh
 		}
 		job.Output = out.String()
-		close(job.done)
+		job.Text = BackgroundResultText(job)
 		if job.notify != nil {
 			job.notify(job)
 		}
+		close(job.done)
 	}()
 	return job.ID, nil
 }
@@ -292,6 +293,9 @@ func (m *BackgroundManager) Completed(sessionID string) []*BackgroundJob {
 		default:
 		}
 	}
+	sort.Slice(out, func(i, k int) bool {
+		return out[i].StartedAt.Before(out[k].StartedAt)
+	})
 	return out
 }
 

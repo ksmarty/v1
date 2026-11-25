@@ -383,6 +383,7 @@ export interface ChatMessage {
 }
 
 export type ChatEvent =
+  | { type: 'user_message'; messageId?: number }
   | { type: 'delta'; text: string; replace?: boolean; turn_id?: string }
   | { type: 'reasoning'; text: string; replace?: boolean; turn_id?: string }
   | { type: 'info'; text: string }

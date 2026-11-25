@@ -486,8 +486,12 @@ func (s *Server) runHarnessTurn(ctx context.Context, p *store.Project, params ag
 			return nil, err
 		}
 	} else if params.ContinueFromID <= 0 {
-		if _, err := s.st.AddUserMessage(p.ID, params.SessionID, params.Message, model, agent.MarshalAttachments(params.Attachments)); err != nil {
+		msgID, err := s.st.AddUserMessage(p.ID, params.SessionID, params.Message, model, agent.MarshalAttachments(params.Attachments))
+		if err != nil {
 			return nil, err
+		}
+		if emit != nil && msgID > 0 {
+			emit(agent.ChatEvent{Type: "user_message", MessageID: msgID})
 		}
 	}
 	if params.Exec != nil {
@@ -1169,7 +1173,7 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge,
 	// which a steer does. Without it the model would never learn how a background
 	// command it started ended.
 	pollBackground := func() {
-		if params.PollBackground == nil || bridge == nil {
+		if params.PollBackground == nil {
 			return
 		}
 		for _, r := range params.PollBackground() {
@@ -1177,11 +1181,23 @@ func (s *Server) consumeHarnessTurn(ctx context.Context, bridge *harness.Bridge,
 				continue
 			}
 			reqID := fmt.Sprintf("v1-background-%d", time.Now().UnixNano())
-			if err := bridge.Steer(ctx, sidecarID, reqID, r.Text); err != nil {
-				log.Printf("harness: background result injection failed: %v", err)
-				continue
+			if bridge != nil {
+				if err := bridge.Steer(ctx, sidecarID, reqID, r.Text); err != nil {
+					log.Printf("harness: background result injection failed: %v", err)
+					continue
+				}
 			}
 			pendingInjections[reqID] = true
+			// Flush already-streamed assistant text before persisting the
+			// background row so SQLite IDs preserve chronological order.
+			flushRound()
+			if r.MessageID == 0 && s != nil && s.st != nil && params.Project != nil {
+				if msgID, addErr := s.st.AddInjectedMessage(params.Project.ID, params.SessionID, r.Text, agent.BackgroundToolJSON, model, ""); addErr == nil {
+					r.MessageID = msgID
+				} else {
+					log.Printf("chat: recording a background message: %v", addErr)
+				}
+			}
 			emit(agent.ChatEvent{Type: "injected_message", MessageID: r.MessageID, Text: r.Text, Tool: "background", ToolJSON: agent.MarkerName(agent.BackgroundToolJSON)})
 		}
 	}

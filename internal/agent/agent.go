@@ -383,8 +383,12 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 			return nil, err
 		}
 	} else if p.ContinueFromID <= 0 {
-		if _, err := p.Store.AddUserMessage(p.Project.ID, p.SessionID, p.Message, p.Client.Model, MarshalAttachments(p.Attachments)); err != nil {
+		msgID, err := p.Store.AddUserMessage(p.Project.ID, p.SessionID, p.Message, p.Client.Model, MarshalAttachments(p.Attachments))
+		if err != nil {
 			return nil, err
+		}
+		if p.Emit != nil && msgID > 0 {
+			p.Emit(ChatEvent{Type: "user_message", MessageID: msgID})
 		}
 	}
 	_ = p.Store.TouchProject(p.Project.ID)
@@ -561,6 +565,11 @@ func RunChat(ctx context.Context, p ChatParams) (*TurnResult, error) {
 		// it to the model's view and surfaces it in the UI.
 		if p.PollBackground != nil {
 			for _, r := range p.PollBackground() {
+				if r.MessageID == 0 && p.Store != nil {
+					if msgID, err := p.Store.AddInjectedMessage(p.Project.ID, p.SessionID, r.Text, BackgroundToolJSON, p.Client.Model, ""); err == nil {
+						r.MessageID = msgID
+					}
+				}
 				history = append(history, llm.Message{Role: "user", Content: r.Text})
 				p.Emit(ChatEvent{Type: "injected_message", MessageID: r.MessageID, Text: r.Text, Tool: "background", ToolJSON: MarkerName(BackgroundToolJSON)})
 			}

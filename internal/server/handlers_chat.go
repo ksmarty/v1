@@ -703,23 +703,48 @@ func (s *Server) streamChatTurn(w http.ResponseWriter, r *http.Request, p *store
 	params.Emit = emit
 	params.Steer = q.steerDrain
 	params.Requeue = func(m agent.SteerMessage) { q.add(m.Text, m.Attachments) }
-	// Background commands are detached from the turn: the result is persisted
-	// as a user message when the command finishes (so nothing is lost if the
-	// turn ends first) and the running turn injects it at the next round.
+	// Background commands are detached from the turn: while a turn is active,
+	// persistence waits for the turn's pollBackground (after flushRound) or turn
+	// exit so a job finishing mid-stream cannot take a SQLite ID ahead of the
+	// assistant text already on screen. If the turn has already ended when the
+	// job finishes, BackgroundNotify persists it immediately.
 	params.Background = s.background
+	var bgMu sync.Mutex
+	turnRunning := true
+	defer func() {
+		bgMu.Lock()
+		turnRunning = false
+		for _, j := range s.background.Completed(params.SessionID) {
+			if j.MsgID != 0 {
+				continue
+			}
+			text := j.Text
+			if text == "" {
+				text = agent.BackgroundResultText(j)
+			}
+			if msgID, err := s.st.AddInjectedMessage(p.ID, params.SessionID, text, agent.BackgroundToolJSON, params.Client.Model, ""); err == nil {
+				j.Text = text
+				j.MsgID = msgID
+			}
+		}
+		bgMu.Unlock()
+	}()
 	params.BackgroundNotify = func(job *agent.BackgroundJob) {
 		text := agent.BackgroundResultText(job)
-		// Stored as a user row with tool_json='"background"' (a JSON string) so
-		// the frontend can tell finished background commands apart from real user
-		// messages and render them distinctively (they are not the user
-		// speaking). The marker must stay valid JSON — the API sends tool_json
-		// to the browser as json.RawMessage, and a non-JSON marker made the whole
-		// message list fail to encode.
-		msgID, err := s.st.AddInjectedMessage(p.ID, params.SessionID, text, agent.BackgroundToolJSON, params.Client.Model, "")
-		if err == nil {
-			job.Text = text
-			job.MsgID = msgID
+		job.Text = text
+		bgMu.Lock()
+		if !turnRunning {
+			// Stored as a user row with tool_json='"background"' (a JSON string) so
+			// the frontend can tell finished background commands apart from real user
+			// messages and render them distinctively (they are not the user
+			// speaking). The marker must stay valid JSON — the API sends tool_json
+			// to the browser as json.RawMessage, and a non-JSON marker made the whole
+			// message list fail to encode.
+			if msgID, err := s.st.AddInjectedMessage(p.ID, params.SessionID, text, agent.BackgroundToolJSON, params.Client.Model, ""); err == nil {
+				job.MsgID = msgID
+			}
 		}
+		bgMu.Unlock()
 		// The command runs detached from the turn, so this is the only signal
 		// that it stopped. Without it the running badge keeps counting a job
 		// that already finished, while the tasks modal — which asks the server

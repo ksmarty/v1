@@ -1339,3 +1339,64 @@ func TestHarnessReasoningOnlyTurnErrors(t *testing.T) {
 		t.Fatalf("error = %v, want a no-answer message", err)
 	}
 }
+
+func TestConsumeHarnessTurnPutsBackgroundResultBehindStreamedText(t *testing.T) {
+	s, p, sessionID := newHarnessTestServer(t)
+	restore := shortSteerGrace(t)
+	defer restore()
+	q := harness.NewEventQueue()
+	runner := &harnessToolRunner{results: map[string]harness.ToolResult{}}
+	q.Push([]harness.Event{
+		{Type: "message_update", Changes: []harness.Change{delta("text_delta", "Working ")}},
+	})
+	polls := 0
+	params := agent.ChatParams{
+		Project:   p,
+		SessionID: sessionID,
+		PollBackground: func() []agent.BackgroundResult {
+			polls++
+			if polls != 2 {
+				return nil
+			}
+			q.Push([]harness.Event{
+				{Type: "message_update", Changes: []harness.Change{delta("text_delta", "still")}},
+				{Type: "message_end", Entry: json.RawMessage(`{"id":1,"kind":"assistant","model":[{"role":"assistant",` +
+					`"content":[{"type":"text","text":"Working still"}]}]}`)},
+			})
+			q.Push([]harness.Event{{Type: "run_end"}})
+			return []agent.BackgroundResult{{ID: "bg123456", Text: "[Background #bg123456: npm test] finished (exit 0):\n\nok"}}
+		},
+	}
+	var injected []agent.ChatEvent
+	turn, err := s.consumeHarnessTurn(context.Background(), nil, "conv-1", q, runner, params, "test-model",
+		func(ev agent.ChatEvent) {
+			if ev.Type == "injected_message" {
+				injected = append(injected, ev)
+			}
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if turn == nil {
+		t.Fatal("no turn result")
+	}
+	if len(injected) != 1 || injected[0].Tool != "background" || injected[0].MessageID == 0 {
+		t.Fatalf("injected events = %+v", injected)
+	}
+	msgs, err := s.st.ListMessages(p.ID, sessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 3 {
+		t.Fatalf("persisted rows = %+v", msgs)
+	}
+	if msgs[0].Role != "assistant" || msgs[0].Content != "Working " {
+		t.Fatalf("row 0 = %+v", msgs[0])
+	}
+	if msgs[1].Role != "user" || msgs[1].ID != injected[0].MessageID {
+		t.Fatalf("row 1 = %+v (injected id %d)", msgs[1], injected[0].MessageID)
+	}
+	if msgs[2].Role != "assistant" || msgs[2].Content != "still" {
+		t.Fatalf("row 2 = %+v", msgs[2])
+	}
+}

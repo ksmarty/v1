@@ -37,7 +37,13 @@ import {
 } from './UsageRings';
 import { subscribeAppearance } from '../appearance';
 import { lsRemove, lsSet } from '../storage';
-import { resultError, transcriptSignature } from '../chatUtils';
+import {
+  canonicalizeTranscriptItems,
+  findAssistantIndexForToolResult,
+  pickTurnSummaryIndex,
+  resultError,
+  transcriptSignature,
+} from '../chatUtils';
 import { freshThinkingLevel } from '../thinking';
 import type {
   ChatAttachmentMeta,
@@ -131,7 +137,7 @@ import json from 'highlight.js/lib/languages/json';
 // gets the same token colors as fenced code blocks.
 hljs.registerLanguage('json', json);
 
-type ToolCall = { name: string; detail: string; display?: unknown };
+type ToolCall = { id?: string; name: string; detail: string; display?: unknown };
 
 // Autocomplete item for the composer's /, @ and # menus. `insert` is the
 // token written into the textarea; `label`/`hint` are display-only.
@@ -565,6 +571,8 @@ type MsgItem = {
   reasoningCollapsed?: boolean;
   stale?: boolean;
   editing?: boolean;
+  /** Newest persisted message ID that existed when this synthetic row was created. */
+  afterId?: number;
 };
 
 type ToolItem = {
@@ -581,6 +589,7 @@ type ToolItem = {
   ok?: boolean;
   /** A delegate's child conversation id, once the sidecar links it. */
   delegateId?: string;
+  afterId?: number;
 };
 
 /** The agent's ask_user question(s), shown inline like other harnesses. */
@@ -590,6 +599,7 @@ type AskItem = {
   questions: AskQuestionView[];
   result?: AskResultView;
   failed?: boolean;
+  afterId?: number;
 };
 
 type Item = MsgItem | ToolItem | AskItem;
@@ -607,16 +617,25 @@ function asToolJSON(tool: unknown): unknown {
   return tool ?? null;
 }
 
-/** Parses an assistant message's tool_json: {"tool_calls":[{function:{name,arguments}}]}. */
+/** Parses an assistant message's tool_json: {"tool_calls":[{id,function:{name,arguments}}]}. */
 function parseToolCalls(tool: unknown): ToolCall[] | null {
   const data = asToolJSON(tool) as {
-    tool_calls?: { function?: { name?: string; arguments?: string } }[];
+    tool_calls?: { id?: string; function?: { name?: string; arguments?: string } }[];
   } | null;
   if (!data || !Array.isArray(data.tool_calls)) return null;
   return data.tool_calls.map((c) => ({
+    id: typeof c?.id === 'string' && c.id ? c.id : undefined,
     name: c?.function?.name ?? 'tool',
     detail: c?.function?.arguments ?? '',
   }));
+}
+
+/** Parses a role "tool" message's tool_json for its tool_call_id. */
+function parseToolCallId(tool: unknown): string | undefined {
+  const data = asToolJSON(tool) as { tool_call_id?: string } | null;
+  return data && typeof data.tool_call_id === 'string' && data.tool_call_id
+    ? data.tool_call_id
+    : undefined;
 }
 
 /** Parses a role "tool" message's tool_json: {"name": "..."}. */
@@ -801,18 +820,8 @@ function chatCacheKey(projectId: string, sessionId: string): string {
  */
 type CachedChat = { items: Item[]; newest: number; complete: boolean };
 
-// canonicalRank orders a row for the transcript: a persisted row by its store
-// id (AUTOINCREMENT — write order IS message order), anything synthetic/live
-// at the end in its own relative order.
-function canonicalRank(it: Item): number {
-  const n = Number(it.key);
-  return Number.isFinite(n) && n > 0 ? n : Number.MAX_SAFE_INTEGER;
-}
-
 function canonicalize(items: Item[]): Item[] {
-  const out = [...items];
-  out.sort((a, b) => canonicalRank(a) - canonicalRank(b));
-  return out;
+  return canonicalizeTranscriptItems(items);
 }
 
 // Live-key shape: u/s/t/e/i/n plus a counter (see handleEvent).
@@ -831,43 +840,64 @@ function isLiveKey(it: Item): boolean {
 // the time the cache is read back, and a live tool_end still updates it by
 // key when a run does resume.
 function normalizeCached(items: Item[]): Item[] {
-  const calls = new Set<string>();
-  const results = new Set<string>();
-  const assistantTexts: string[] = [];
-  const userTexts = new Set<string>();
-  for (const it of items) {
-    if (isLiveKey(it)) continue;
-    if (it.kind === 'msg') {
-      for (const c of it.toolCalls ?? []) calls.add(`call\u0000${c.name}\u0000${c.detail}`);
-      for (const r of it.toolResults ?? []) results.add(`res\u0000${r.name}\u0000${r.detail}`);
-      if (it.role === 'assistant' && it.content.trim()) assistantTexts.push(it.content.trim());
-      if (it.role === 'user') userTexts.add(it.content);
+  let lastPersisted = 0;
+  const anchored = items.map((it) => {
+    const n = Number(it.key);
+    if (Number.isFinite(n) && n > 0) {
+      if (n > lastPersisted) lastPersisted = n;
+      return it;
     }
-  }
-  const out = items.filter((it) => {
-    if (!isLiveKey(it)) return true;
-    if (it.kind === 'tool') {
-      const callSig = it.call !== undefined ? calls.has(`call\u0000${it.name}\u0000${it.call}`) : false;
-      const resSig = it.detail ? results.has(`res\u0000${it.name}\u0000${it.detail}`) : false;
-      if (resSig || callSig) return false;
+    const afterId =
+      typeof it.afterId === 'number' && Number.isFinite(it.afterId) && it.afterId >= 0
+        ? it.afterId
+        : lastPersisted;
+    return it.afterId === afterId ? it : { ...it, afterId };
+  });
+  const persistedItems = anchored.filter((it) => !isLiveKey(it));
+  const out = anchored
+    .filter((it) => {
+      if (!isLiveKey(it)) return true;
+      const afterId = it.afterId ?? 0;
+      const persistedAfter = persistedItems.filter((p) => Number(p.key) > afterId);
+      if (it.kind === 'tool') {
+        const calls = new Set<string>();
+        const results = new Set<string>();
+        for (const p of persistedAfter) {
+          if (p.kind !== 'msg') continue;
+          for (const c of p.toolCalls ?? []) calls.add(`call\u0000${c.name}\u0000${c.detail}`);
+          for (const r of p.toolResults ?? []) results.add(`res\u0000${r.name}\u0000${r.detail}`);
+        }
+        const callSig = it.call !== undefined ? calls.has(`call\u0000${it.name}\u0000${it.call}`) : false;
+        const resSig = it.detail ? results.has(`res\u0000${it.name}\u0000${it.detail}`) : false;
+        if (resSig || callSig) return false;
+        return true;
+      }
+      if (it.kind !== 'msg') return true;
+      if (it.role === 'assistant') {
+        const text = it.content.trim();
+        // An empty live row in a snapshot holds nothing — drop it. A drifted
+        // tail (from a truncated ring replay the snapshot was written during)
+        // is covered by the persisted copy: it is either a prefix of it or a
+        // fragment inside it. Only long fragments qualify for the substring
+        // test, so a two-word reply cannot be swallowed by coincidence.
+        if (!text) return false;
+        return !persistedAfter.some(
+          (p) =>
+            p.kind === 'msg' &&
+            p.role === 'assistant' &&
+            Boolean(p.content.trim()) &&
+            (p.content.trim().startsWith(text) ||
+              (text.length >= 64 && p.content.trim().includes(text))),
+        );
+      }
+      if (it.role === 'user') {
+        return !persistedAfter.some(
+          (p) => p.kind === 'msg' && p.role === 'user' && p.content === it.content,
+        );
+      }
       return true;
-    }
-    if (it.kind !== 'msg') return true;
-    if (it.role === 'assistant') {
-      const text = it.content.trim();
-      // An empty live row in a snapshot holds nothing — drop it. A drifted
-      // tail (from a truncated ring replay the snapshot was written during)
-      // is covered by the persisted copy: it is either a prefix of it or a
-      // fragment inside it. Only long fragments qualify for the substring
-      // test, so a two-word reply cannot be swallowed by coincidence.
-      if (!text) return false;
-      return !assistantTexts.some((t) => t.startsWith(text) || (text.length >= 64 && t.includes(text)));
-    }
-    if (it.role === 'user') return !userTexts.has(it.content);
-    return true;
-  }).map((it) =>
-    it.kind === 'tool' && it.running ? { ...it, running: false, ok: false } : it,
-  );
+    })
+    .map((it) => (it.kind === 'tool' && it.running ? { ...it, running: false, ok: false } : it));
   return canonicalize(out);
 }
 
@@ -2453,6 +2483,11 @@ function CollapsedToolBlocks({
   return (
     <>
       {d.reasoning && <ReasoningBlock text={d.reasoning} autoOpen={false} />}
+      {d.content && d.content.trim() && (
+        <div className="min-w-0 px-0.5">
+          <Markdown text={d.content} />
+        </div>
+      )}
       <ToolBlocks calls={d.calls} results={d.results} />
       {d.background && onOpenBackground && (
         <BackgroundResultRow text={d.background.text} onOpen={onOpenBackground} />
@@ -2616,11 +2651,6 @@ function CollapsedToolsGroup({
         <div className="flex flex-col gap-1.5 px-1 pb-1">
           {members.map((m, j) => (
             <div key={j} className="flex flex-col gap-1.5">
-              {m.content && m.content.trim() && (
-                <div className="min-w-0 px-0.5">
-                  <Markdown text={m.content} />
-                </div>
-              )}
               <CollapsedToolBlocks
                 d={m}
                 onAskAnswered={onAskAnswered}
@@ -4869,10 +4899,11 @@ export default function ChatPane({
           // the call chip already tells the story. Failures and
           // output-bearing results (read_file, run_command, …) stay.
           if (isNoiseResult(m.content)) continue;
-          const last = mapped[mapped.length - 1];
-          if (last && last.kind === 'msg' && last.role === 'assistant') {
-            last.toolResults = [
-              ...(last.toolResults ?? []),
+          const ownerIdx = findAssistantIndexForToolResult(mapped, parseToolCallId(m.tool));
+          const owner = ownerIdx >= 0 ? mapped[ownerIdx] : undefined;
+          if (owner && owner.kind === 'msg' && owner.role === 'assistant') {
+            owner.toolResults = [
+              ...(owner.toolResults ?? []),
               { name, detail: m.content, display: parseToolDisplay(m.tool) },
             ];
           } else {
@@ -5047,99 +5078,102 @@ export default function ChatPane({
   // the page does not already carry it: the persisted copy has a numeric id, so
   // the two are matched by role and text instead.
   const withLiveTail = useCallback((fresh: Item[], mark: number): Item[] => {
-    const seen = new Set(
-      fresh.flatMap((it) => (it.kind === 'msg' ? [`${it.role}\u0000${it.content}`] : [])),
-    );
-    // A live assistant row's text usually drifts while it streams, so an exact
-    // match against the persisted copy misses and the row survived a reload —
-    // appended at the tail, i.e. BELOW rows the store ordered before it (a
-    // steered user row landing "inside" the previous turn's summary). The
-    // streamed copy is a prefix of the persisted one, so containment drops it
-    // too and the store's own copy takes over at its correct position.
-    const assistantTexts: string[] = [];
-    for (const it of fresh) {
-      if (it.kind === 'msg' && it.role === 'assistant' && it.content.trim()) {
-        assistantTexts.push(it.content.trim());
-      }
-    }
-    // Tool cards the fetched page already renders are duplicates, not rows the
-    // fetch missed: the assistant row carries the call's arguments and the
-    // result row folds into it, so a reload used to leave a second card for
-    // every call — the pile of tool calls appearing after the turn summary.
-    const toolSigs = new Set<string>();
-    for (const it of fresh) {
-      if (it.kind !== 'msg') continue;
-      for (const c of it.toolCalls ?? []) toolSigs.add(`call\u0000${c.name}\u0000${c.detail}`);
-      for (const r of it.toolResults ?? []) toolSigs.add(`res\u0000${r.name}\u0000${r.detail}`);
-    }
+    const newestFresh = newestId(fresh);
     // Is the run still writing? A run that is over cannot be streaming a row;
     // anything still running in the live tail is then an orphan — its tool_end
     // event died with a dropped stream — and stops pretending to spin.
     const runLive = itemsRef.current.some((x) => x.kind === 'msg' && x.streaming === true);
-    const live = itemsRef.current.filter((it) => {
+    let lastPersisted = 0;
+    const currentWithAnchors = itemsRef.current.map((it) => {
+      const n = Number(it.key);
+      if (Number.isFinite(n) && n > 0) {
+        if (n > lastPersisted) lastPersisted = n;
+        return it;
+      }
+      const afterId =
+        typeof it.afterId === 'number' && Number.isFinite(it.afterId) && it.afterId >= 0
+          ? it.afterId
+          : lastPersisted;
+      return it.afterId === afterId ? it : { ...it, afterId };
+    });
+    const live: Item[] = [];
+    for (const it of currentWithAnchors) {
       const m = /^[uste](\d+)$/.exec(it.key);
-      if (!m) return false;
+      if (!m) continue;
+      const seq = Number(m[1]);
+      const afterId = it.afterId ?? 0;
+      const freshAfter = fresh.filter((f) => {
+        const id = Number(f.key);
+        return Number.isFinite(id) && id > afterId;
+      });
       // A user or assistant row is something the reader has already seen. A
       // reload whose snapshot predates the send — or the turn that produced
       // the reply — must not erase it, or a message disappears mid-generation
       // with nothing left to retry from. Error and tool rows are transient UI
       // state, so they only survive when they postdate the fetch.
       const message = it.kind === 'msg' && (it.role === 'user' || it.role === 'assistant');
-      if (!message && Number(m[1]) <= mark) return false;
+      if (!message && seq <= mark) continue;
       if (it.kind === 'tool') {
-        // Drop the card when the fetched transcript already shows the call:
-        // its result is folded in (resSig), or only the call chip is and the
-        // result never persisted (finished card). A still-running card whose
-        // page predates the result stays up so it can land here.
+        const toolSigs = new Set<string>();
+        for (const f of freshAfter) {
+          if (f.kind !== 'msg') continue;
+          for (const c of f.toolCalls ?? []) toolSigs.add(`call\u0000${c.name}\u0000${c.detail}`);
+          for (const r of f.toolResults ?? []) toolSigs.add(`res\u0000${r.name}\u0000${r.detail}`);
+        }
         const callSig = it.call !== undefined ? toolSigs.has(`call\u0000${it.name}\u0000${it.call}`) : false;
         const resSig = it.detail ? toolSigs.has(`res\u0000${it.name}\u0000${it.detail}`) : false;
-        if (resSig || (callSig && !it.running)) return false;
-        // An interrupted or orphaned run never delivered the tool_end, so the
-        // live card would spin forever below the summary. The transcript keeps
-        // it as a failed chip — the result row exists or the run ended without
-        // one, and either way it is not still running.
+        if (resSig || (callSig && !it.running)) continue;
+        if (!it.running && afterId < newestFresh) continue;
         if (!runLive && it.running) {
-          return { ...it, running: false, ok: false };
+          live.push({ ...it, running: false, ok: false });
+          continue;
         }
-        return true;
+        live.push(it);
+        continue;
       }
-      if (it.kind !== 'msg') return true;
-      if (seen.has(`${it.role}\u0000${it.content}`)) return false;
-      const liveText = it.content.trim();
+      if (it.kind !== 'msg') {
+        live.push(it);
+        continue;
+      }
       if (
-        it.role === 'assistant' &&
-        liveText &&
-        assistantTexts.some(
-          (text) => text.startsWith(liveText) || (liveText.length >= 64 && text.includes(liveText)),
+        freshAfter.some(
+          (f) => f.kind === 'msg' && f.role === it.role && f.content === it.content,
         )
       ) {
-        // The streamed copy is covered by the persisted one — its full text,
-        // a prefix of it, or (a truncated replay/cached drift) a long
-        // fragment inside it. Drop it and let the store's copy take over at
-        // its correct position. A row that is still being written by the run
-        // only goes if the run is actually streaming this turn — the live
-        // store copy would otherwise blink the tail out from under a
-        // generation in flight.
-        if (it.streaming) return runLive;
-        return false;
+        continue;
       }
-      if (it.role === 'assistant' && !it.streaming && !it.content.trim() && !runLive) {
-        return false;
+      if (it.role === 'user' && seq <= mark && afterId < newestFresh && !runLive) {
+        continue;
       }
-      return true;
-    });
-    // Canonical order for everything: persisted rows sort by store id — the
-    // id is the write order, so id order IS message order, retroactively for
-    // any chat whose rows were merged in a different sequence — and live
-    // rows keep their own relative order at the tail (stable sort). Nothing
-    // that survives any of the merge paths above can land out of order.
-    const merged = live.length === 0 ? fresh : [...fresh, ...live];
-    const rank = (it: Item): number => {
-      const n = Number(it.key);
-      return Number.isFinite(n) && n > 0 ? n : Number.MAX_SAFE_INTEGER;
-    };
-    merged.sort((a, b) => rank(a) - rank(b));
-    return merged;
+      const liveText = it.content.trim();
+      if (it.role === 'assistant') {
+        const covered =
+          liveText !== '' &&
+          freshAfter.some(
+            (f) =>
+              f.kind === 'msg' &&
+              f.role === 'assistant' &&
+              Boolean(f.content.trim()) &&
+              (f.content.trim().startsWith(liveText) ||
+                (liveText.length >= 64 && f.content.trim().includes(liveText))),
+          );
+        if (covered) {
+          // The persisted transcript already carries this assistant round after
+          // `afterId` — drop the synthetic copy so it cannot duplicate or sink
+          // below newer persisted rows.
+          continue;
+        }
+        // A settled round (`!it.streaming`) whose anchor predates newer
+        // persisted rows in `fresh` has already been committed to SQLite (for
+        // example a short flushed prefix or a reasoning-only round closed by
+        // tool_start). Keeping it would pin an orphan copy below newer rows.
+        if (!it.streaming && (!liveText || afterId < newestFresh)) {
+          continue;
+        }
+      }
+      live.push(it);
+    }
+    return canonicalizeTranscriptItems(live.length === 0 ? fresh : [...fresh, ...live]);
   }, []);
 
   // Pull every older page in the background, so the device ends up holding the
@@ -6203,12 +6237,46 @@ export default function ChatPane({
                   reasoning: ev.text,
                   sentAt: Date.now(),
                   streaming: true,
+                  afterId: newestId(prev),
                 },
               ];
             });
           } else {
             queueStream('reasoning', k, ev.text, ev.replace);
           }
+          break;
+        }
+        case 'user_message': {
+          const id = ev.messageId ?? 0;
+          if (id <= 0) break;
+          const key = String(id);
+          update((prev) => {
+            let syntheticIdx = -1;
+            for (let i = prev.length - 1; i >= 0; i--) {
+              const it = prev[i];
+              if (it.kind === 'msg' && it.role === 'user' && /^u\d+$/.test(it.key)) {
+                syntheticIdx = i;
+                break;
+              }
+            }
+            if (syntheticIdx === -1) return prev;
+            if (prev.some((it, idx) => idx !== syntheticIdx && it.key === key)) {
+              return prev.filter((_, idx) => idx !== syntheticIdx);
+            }
+            return prev.map((it, idx) =>
+              idx === syntheticIdx && it.kind === 'msg'
+                ? {
+                    ...it,
+                    key,
+                    afterId: undefined,
+                    attachments: it.attachments?.map((a, i) => ({
+                      ...a,
+                      url: a.url ?? messageAttachmentUrl(projectId, key, i),
+                    })),
+                  }
+                : it,
+            );
+          });
           break;
         }
         case 'delta': {
@@ -6225,7 +6293,15 @@ export default function ChatPane({
                   ? { ...it, reasoningCollapsed: it.key === nk ? it.reasoningCollapsed : true, streaming: false }
                   : it,
               ),
-              { kind: 'msg', key: nk, role: 'assistant', content: ev.replace ? ev.text : '', sentAt: Date.now(), streaming: true },
+              {
+                kind: 'msg',
+                key: nk,
+                role: 'assistant',
+                content: ev.replace ? ev.text : '',
+                sentAt: Date.now(),
+                streaming: true,
+                afterId: newestId(prev),
+              },
             ]);
           }
           queueStream('text', k, ev.text, ev.replace);
@@ -6252,21 +6328,26 @@ export default function ChatPane({
         case 'tool_start': {
           assistantKeyRef.current = null;
           // A tool call begins after the previous round — close any thinking
-          // block still open from it. The guard deliberately includes a message
-          // still marked `streaming`: its round has ended, and waiting for the
-          // next reasoning/delta event leaves the block open too long.
-          update((prev) =>
-            prev.map((it) =>
-              it.kind === 'msg' && it.role === 'assistant'
-                ? { ...it, reasoningCollapsed: true }
-                : it,
-            ),
-          );
+          // block still open from it and mark its assistant row settled so a
+          // mid-turn quiet reload cannot treat an earlier round as still
+          // streaming and sort it below newer persisted rows.
           const key = `t${++counterRef.current}`;
           (toolStackRef.current[ev.name] ||= []).push(key);
           update((prev) => [
-            ...prev,
-            { kind: 'tool', key, name: ev.name, call: ev.detail, detail: ev.detail, running: true },
+            ...prev.map((it) =>
+              it.kind === 'msg' && it.role === 'assistant'
+                ? { ...it, reasoningCollapsed: true, streaming: false }
+                : it,
+            ),
+            {
+              kind: 'tool',
+              key,
+              name: ev.name,
+              call: ev.detail,
+              detail: ev.detail,
+              running: true,
+              afterId: newestId(prev),
+            },
           ]);
           break;
         }
@@ -6406,13 +6487,11 @@ export default function ChatPane({
             });
           }
           // A user question lands after the previous round — close any
-          // thinking block still open from it. The guard deliberately includes
-          // a message still marked `streaming`: its round has ended, and waiting
-          // for the next reasoning/delta event leaves the block open too long.
+          // thinking block still open from it and mark that round settled.
           update((prev) =>
             prev.map((it) =>
               it.kind === 'msg' && it.role === 'assistant'
-                ? { ...it, reasoningCollapsed: true }
+                ? { ...it, reasoningCollapsed: true, streaming: false }
                 : it,
             ),
           );
@@ -6470,6 +6549,7 @@ export default function ChatPane({
               content: ev.text,
               notice: true,
               sentAt: Date.now(),
+              afterId: id > 0 ? undefined : newestId(prev),
             },
           ]);
           break;
@@ -6482,23 +6562,26 @@ export default function ChatPane({
           break;
         }
         case 'done': {
-          if (ev.usage) {
-            const u = ev.usage;
-            const k = assistantKeyRef.current;
-            if (k) {
-              update((prev) =>
-                prev.map((it) =>
-                  it.kind === 'msg' && it.key === k
-                    ? {
-                        ...it,
-                        usage: u,
-                        elapsedMs: turnStartRef.current > 0 ? Date.now() - turnStartRef.current : undefined,
-                      }
-                    : it,
-                ),
-              );
-            }
-          }
+          const doneAssistantKey = assistantKeyRef.current;
+          assistantKeyRef.current = null;
+          update((prev) =>
+            prev.map((it) => {
+              if (it.kind !== 'msg' || it.role !== 'assistant') return it;
+              const isFinal = doneAssistantKey !== null && it.key === doneAssistantKey;
+              return {
+                ...it,
+                reasoningCollapsed: true,
+                streaming: false,
+                ...(isFinal && ev.usage
+                  ? {
+                      usage: ev.usage,
+                      elapsedMs:
+                        turnStartRef.current > 0 ? Date.now() - turnStartRef.current : undefined,
+                    }
+                  : {}),
+              };
+            }),
+          );
           // A message queued (or steered but unconsumed) while this turn ran
           // becomes a follow-up turn on this same stream: the run is not over, so
           // neither the alert nor the composer's idle state may say it is.
@@ -6537,7 +6620,13 @@ export default function ChatPane({
         case 'error': {
           update((prev) => [
             ...prev,
-            { kind: 'msg', key: `e${++counterRef.current}`, role: 'error', content: ev.error },
+            {
+              kind: 'msg',
+              key: `e${++counterRef.current}`,
+              role: 'error',
+              content: ev.error,
+              afterId: newestId(prev),
+            },
           ]);
           if (!replaying) {
             void notifyTurnError(projectId, sessionId, projectName, sessionNameRef.current);
@@ -6608,6 +6697,7 @@ export default function ChatPane({
               injected,
               background,
               sentAt: Date.now(),
+              afterId: id > 0 ? undefined : newestId(prev),
               attachments: ev.attachments?.map((a, i) => ({
                 ...a,
                 url: id > 0 ? messageAttachmentUrl(projectId, String(id), i) : undefined,
@@ -6914,6 +7004,7 @@ export default function ChatPane({
           role: 'user',
           content: trimmed,
           sentAt: Date.now(),
+          afterId: newestId(prev),
           attachments: chips.map((a) => ({
             name: a.name,
             mime: a.mime,
@@ -7158,9 +7249,31 @@ export default function ChatPane({
         // stream, and posting again would run the prompt twice.
         const stream = res.stream;
         await load({ quiet: true });
+        const sentKey = `u${++counterRef.current}`;
+        update((prev) => [
+          ...prev,
+          {
+            kind: 'msg',
+            key: sentKey,
+            role: 'user',
+            content: text,
+            sentAt: Date.now(),
+            afterId: newestId(prev),
+            attachments: chips.map((a) => ({
+              name: a.name,
+              mime: a.mime,
+              kind: a.kind,
+              size: a.content.length,
+              url:
+                a.kind === 'image'
+                  ? `data:${a.mime};base64,${a.content}`
+                  : `data:${a.mime || 'text/plain'};charset=utf-8,${encodeURIComponent(a.content)}`,
+            })),
+          },
+        ]);
         await run(async (signal) => {
           await streamChatResponse(stream, handleEvent, signal);
-        }, undefined, true);
+        }, { key: sentKey, text, atts: chips }, true);
         return;
       }
       if (!res.queued) {
@@ -7197,7 +7310,7 @@ export default function ChatPane({
     // Anything that really sends marks the session used, so leaving it later
     // does not delete it as an unused one.
     markSessionUsed(sessionId);
-    if (streaming) {
+    if (streaming || runActive) {
       // Mid-run sends carry their attachments too: the queued message keeps
       // them, and whichever turn drains it delivers the files with the text.
       const text = input.trim();
@@ -7220,13 +7333,13 @@ export default function ChatPane({
     }
     sendText(input);
     setExpanded(false);
-  }, [input, streaming, attachments, uploading, runLocalCommand, sendText, enqueue, clearErrors, stickToBottom]);
+  }, [input, streaming, runActive, attachments, uploading, runLocalCommand, sendText, enqueue, clearErrors, stickToBottom]);
 
   // The secondary action beside Send: queue without steering, so the message
   // waits for the next turn instead of joining the running one.
   const queueInput = useCallback(async () => {
     const text = input.trim();
-    if ((!text && attachments.length === 0) || !streaming || uploading) return;
+    if ((!text && attachments.length === 0) || !(streaming || runActive) || uploading) return;
     const atts = attachments;
     clearErrors();
     setInput('');
@@ -7240,7 +7353,7 @@ export default function ChatPane({
       setAttachments(atts);
       setLoadError(errMsg(e));
     }
-  }, [input, streaming, attachments, uploading, enqueue, clearErrors]);
+  }, [input, streaming, runActive, attachments, uploading, enqueue, clearErrors]);
 
   // Moves a queued message up/down (optimistically; the server is the source
   // of truth on the next refresh).
@@ -7846,7 +7959,7 @@ export default function ChatPane({
   );
   // Only while a run is active and there is something to send. Send steers, so
   // this is the alternative for a message that should wait for the next turn.
-  const queueButton = streaming && input.trim() !== '' && (
+  const queueButton = (streaming || runActive) && (input.trim() !== '' || attachments.length > 0) && (
     <IconButton
       onClick={() => void queueInput()}
       disabled={!hasModel}
@@ -7861,11 +7974,11 @@ export default function ChatPane({
     <IconButton
       onClick={() => void send()}
       disabled={(!input.trim() && attachments.length === 0) || !hasModel || uploading}
-      aria-label={streaming ? 'Steer the running turn' : 'Send message'}
+      aria-label={streaming || runActive ? 'Steer the running turn' : 'Send message'}
       title={
         uploading
           ? 'Still uploading the attached file…'
-          : streaming
+          : streaming || runActive
             ? 'Send to steer the current run — it becomes a follow-up turn if the run finishes first'
             : hasModel
               ? 'Send message'
@@ -8424,22 +8537,11 @@ export default function ChatPane({
                       !!e.d.background),
                 );
                 const collapsed = getToolCallsCollapsed() && hasTools;
-                // The summary is the part's last assistant text row — the
-                // answer the reader reads. Intermediate comments fold into
-                // the collapse, in order, where they happened.
-                let summaryIdx = -1;
-                for (let k = entries.length - 1; k >= 0; k--) {
-                  const { it } = entries[k];
-                  if (
-                    it.kind === 'msg' &&
-                    it.role === 'assistant' &&
-                    !it.background &&
-                    it.content?.trim()
-                  ) {
-                    summaryIdx = k;
-                    break;
-                  }
-                }
+                // The summary is the part's final assistant text row (with no
+                // tool calls/results/ask of its own) — the answer the reader
+                // reads. Intermediate pre-tool comments fold into the collapse,
+                // in chronological order, where they happened.
+                const summaryIdx = pickTurnSummaryIndex(entries);
                 const members: CollapseData[] = [];
                 const nodes: ReactNode[] = [];
                 let summary: ReactNode = null;
