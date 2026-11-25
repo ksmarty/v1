@@ -854,50 +854,38 @@ function normalizeCached(items: Item[]): Item[] {
     return it.afterId === afterId ? it : { ...it, afterId };
   });
   const persistedItems = anchored.filter((it) => !isLiveKey(it));
-  const out = anchored
-    .filter((it) => {
-      if (!isLiveKey(it)) return true;
-      const afterId = it.afterId ?? 0;
-      const persistedAfter = persistedItems.filter((p) => Number(p.key) > afterId);
-      if (it.kind === 'tool') {
-        const calls = new Set<string>();
-        const results = new Set<string>();
-        for (const p of persistedAfter) {
-          if (p.kind !== 'msg') continue;
-          for (const c of p.toolCalls ?? []) calls.add(`call\u0000${c.name}\u0000${c.detail}`);
-          for (const r of p.toolResults ?? []) results.add(`res\u0000${r.name}\u0000${r.detail}`);
-        }
-        const callSig = it.call !== undefined ? calls.has(`call\u0000${it.name}\u0000${it.call}`) : false;
-        const resSig = it.detail ? results.has(`res\u0000${it.name}\u0000${it.detail}`) : false;
-        if (resSig || callSig) return false;
-        return true;
-      }
-      if (it.kind !== 'msg') return true;
-      if (it.role === 'assistant') {
-        const text = it.content.trim();
-        // An empty live row in a snapshot holds nothing — drop it. A drifted
-        // tail (from a truncated ring replay the snapshot was written during)
-        // is covered by the persisted copy: it is either a prefix of it or a
-        // fragment inside it. Only long fragments qualify for the substring
-        // test, so a two-word reply cannot be swallowed by coincidence.
-        if (!text) return false;
-        return !persistedAfter.some(
-          (p) =>
-            p.kind === 'msg' &&
-            p.role === 'assistant' &&
-            Boolean(p.content.trim()) &&
-            (p.content.trim().startsWith(text) ||
-              (text.length >= 64 && p.content.trim().includes(text))),
-        );
-      }
-      if (it.role === 'user') {
-        return !persistedAfter.some(
-          (p) => p.kind === 'msg' && p.role === 'user' && p.content === it.content,
-        );
-      }
-      return true;
-    })
-    .map((it) => (it.kind === 'tool' && it.running ? { ...it, running: false, ok: false } : it));
+  // Cached snapshots are read back for a settled transcript before the client
+  // attaches to any active stream. Transient synthetic tool/ask rows (`tN`,
+  // `aN`) in a snapshot must not be resurrected: when a turn spanned more than
+  // CHAT_PAGE (20) SQLite rows, an older synthetic `tN` row whose persisted
+  // message was on an earlier page would otherwise survive at the tail
+  // (`afterId = lastPersisted`) after the turn's final summary and pull that
+  // summary inside `CollapsedToolsGroup`.
+  const out = anchored.filter((it) => {
+    if (!isLiveKey(it)) return true;
+    if (it.kind === 'tool' || it.kind === 'ask') return false;
+    if (it.kind !== 'msg') return true;
+    const afterId = it.afterId ?? 0;
+    const persistedAfter = persistedItems.filter((p) => Number(p.key) > afterId);
+    if (it.role === 'assistant') {
+      const text = it.content.trim();
+      if (!text || lastPersisted > afterId) return false;
+      return !persistedAfter.some(
+        (p) =>
+          p.kind === 'msg' &&
+          p.role === 'assistant' &&
+          Boolean(p.content.trim()) &&
+          (p.content.trim().startsWith(text) ||
+            (text.length >= 64 && p.content.trim().includes(text))),
+      );
+    }
+    if (it.role === 'user') {
+      return !persistedAfter.some(
+        (p) => p.kind === 'msg' && p.role === 'user' && p.content === it.content,
+      );
+    }
+    return true;
+  });
   return canonicalize(out);
 }
 
@@ -905,7 +893,12 @@ function readChatCache(projectId: string, sessionId: string): CachedChat | null 
   try {
     const raw = localStorage.getItem(chatCacheKey(projectId, sessionId));
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as { items?: Item[]; newest?: number; complete?: boolean };
+    const parsed = JSON.parse(raw) as {
+      items?: Item[];
+      newest?: number;
+      complete?: boolean;
+      schema?: number;
+    };
     if (!Array.isArray(parsed.items) || parsed.items.length === 0) return null;
     const items = normalizeCached(parsed.items);
     if (items.length === 0) return null;
@@ -916,7 +909,11 @@ function readChatCache(projectId: string, sessionId: string): CachedChat | null 
       const n = Number(it.key);
       if (Number.isFinite(n) && n > 0 && it.kind === 'msg') newest = Math.max(newest, n);
     }
-    return { items, newest: newest > 0 ? newest : (parsed.newest ?? 0), complete: parsed.complete === true };
+    // Snapshots written before schema 2 could carry a multi-page gap or stale
+    // synthetic tail rows while marked `complete: true`; render their normalized
+    // items immediately, then let `load()` + `backfill()` refresh from SQLite.
+    const complete = parsed.schema === 2 && parsed.complete === true;
+    return { items, newest: newest > 0 ? newest : (parsed.newest ?? 0), complete };
   } catch {
     return null;
   }
@@ -1041,12 +1038,16 @@ function writeChatCache(
   items: Item[],
   complete = false,
 ): void {
+  // Never persist transient synthetic tool/ask rows (`tN`, `aN`) into the
+  // durable localStorage cache; normalized rows are always in canonical order.
+  const cleanItems = normalizeCached(items);
   // A cached row must never look like it is still streaming: the run it
   // belonged to is over by the time this is read back.
   const serialise = (rows: Item[], done = complete): string =>
     JSON.stringify({
+      schema: 2,
       items: rows.map((it) => ('streaming' in it && it.streaming ? { ...it, streaming: false } : it)),
-      newest: newestId(items),
+      newest: newestId(cleanItems),
       complete: done,
       writtenAt: Date.now(),
     });
@@ -1056,10 +1057,10 @@ function writeChatCache(
     // megabytes on its own. Drop just those URLs first: the chip keeps its name
     // and size, and a persisted row comes back from the server with a URL of
     // its own.
-    let rows = items;
+    let rows = cleanItems;
     let raw = serialise(rows);
     if (raw.length > CHAT_CACHE_MAX) {
-      rows = items.map(dropInlineAttachmentUrls);
+      rows = cleanItems.map(dropInlineAttachmentUrls);
       raw = serialise(rows);
     }
     // Still too big: keep the newest rows that fit. What is dropped is old
@@ -5014,6 +5015,39 @@ export default function ChatPane({
   // below, i.e. before paint: pinning in a passive effect paints the top of the
   // thread for a frame and then jumps to the bottom.
   const pinPendingRef = useRef(false);
+  // Stitch a page boundary where `older` ended on an assistant tool-call row
+  // and `newer` began with the `role: "tool"` result row(s) for that call (which
+  // `mapMessages` turned into a synthetic assistant wrapper with `toolResults`
+  // and no `toolCalls`).
+  const stitchPageBoundary = useCallback((older: Item[], newer: Item[]): Item[] => {
+    if (older.length === 0 || newer.length === 0) return [...older, ...newer];
+    const first = newer[0];
+    if (
+      first &&
+      first.kind === 'msg' &&
+      first.role === 'assistant' &&
+      !first.content &&
+      !first.reasoning &&
+      (!first.toolCalls || first.toolCalls.length === 0) &&
+      first.toolResults &&
+      first.toolResults.length > 0
+    ) {
+      const targetIdx = findAssistantIndexForToolResult(older);
+      if (targetIdx >= 0) {
+        const target = older[targetIdx];
+        if (target && target.kind === 'msg' && target.role === 'assistant') {
+          const nextOlder = older.slice();
+          nextOlder[targetIdx] = {
+            ...target,
+            toolResults: [...(target.toolResults ?? []), ...first.toolResults],
+          };
+          return canonicalizeTranscriptItems([...nextOlder, ...newer.slice(1)]);
+        }
+      }
+    }
+    return canonicalizeTranscriptItems([...older, ...newer]);
+  }, []);
+
   const prependOlder = useCallback((older: Item[]) => {
     if (older.length === 0) return;
     // A page can arrive twice (a scroll-triggered load racing the background
@@ -5028,9 +5062,10 @@ export default function ChatPane({
     if (box) {
       pendingAdjustRef.current = { prevH: box.scrollHeight, prevTop: box.scrollTop, toBottom };
     }
-    itemsRef.current = [...fresh, ...itemsRef.current];
-    setItems((prev) => [...fresh, ...prev]);
-  }, []);
+    const combined = stitchPageBoundary(fresh, itemsRef.current);
+    itemsRef.current = combined;
+    setItems((prev) => stitchPageBoundary(fresh, prev));
+  }, [stitchPageBoundary]);
 
   // Apply that correction before the browser paints. A requestAnimationFrame
   // runs after paint, so the content had already shifted for one frame every
@@ -5067,8 +5102,8 @@ export default function ChatPane({
     const cut = Number(firstFresh.key);
     const older = prev.filter((it) => it.kind === 'msg' && Number(it.key) > 0 && Number(it.key) < cut);
     if (older.length === 0) return fresh;
-    return [...older, ...fresh];
-  }, []);
+    return stitchPageBoundary(older, fresh);
+  }, [stitchPageBoundary]);
 
   // Rows this client created while a fetch was in flight are newer than the
   // page that just arrived, so replacing the transcript wholesale would swallow
@@ -5079,10 +5114,16 @@ export default function ChatPane({
   // the two are matched by role and text instead.
   const withLiveTail = useCallback((fresh: Item[], mark: number): Item[] => {
     const newestFresh = newestId(fresh);
-    // Is the run still writing? A run that is over cannot be streaming a row;
-    // anything still running in the live tail is then an orphan — its tool_end
-    // event died with a dropped stream — and stops pretending to spin.
-    const runLive = itemsRef.current.some((x) => x.kind === 'msg' && x.streaming === true);
+    // Check the active run/stream refs (not only whether a message row in
+    // `itemsRef` still had `streaming === true`): once a turn has finished
+    // (`!turnActive`), stale synthetic `tN` / `sN` rows from earlier rounds
+    // must not survive `load()` at the tail of `fresh` after the turn's final
+    // summary.
+    const turnActive =
+      Boolean(streamingRef.current) ||
+      Boolean(runActiveRef.current) ||
+      Boolean(watchRef.current) ||
+      Boolean(mainStreamRef.current);
     let lastPersisted = 0;
     const currentWithAnchors = itemsRef.current.map((it) => {
       const n = Number(it.key);
@@ -5114,6 +5155,7 @@ export default function ChatPane({
       const message = it.kind === 'msg' && (it.role === 'user' || it.role === 'assistant');
       if (!message && seq <= mark) continue;
       if (it.kind === 'tool') {
+        if (!turnActive) continue;
         const toolSigs = new Set<string>();
         for (const f of freshAfter) {
           if (f.kind !== 'msg') continue;
@@ -5124,14 +5166,11 @@ export default function ChatPane({
         const resSig = it.detail ? toolSigs.has(`res\u0000${it.name}\u0000${it.detail}`) : false;
         if (resSig || (callSig && !it.running)) continue;
         if (!it.running && afterId < newestFresh) continue;
-        if (!runLive && it.running) {
-          live.push({ ...it, running: false, ok: false });
-          continue;
-        }
         live.push(it);
         continue;
       }
       if (it.kind !== 'msg') {
+        if (!turnActive) continue;
         live.push(it);
         continue;
       }
@@ -5142,11 +5181,14 @@ export default function ChatPane({
       ) {
         continue;
       }
-      if (it.role === 'user' && seq <= mark && afterId < newestFresh && !runLive) {
+      if (it.role === 'user' && seq <= mark && afterId < newestFresh && !turnActive) {
         continue;
       }
       const liveText = it.content.trim();
       if (it.role === 'assistant') {
+        if (!turnActive && (seq <= mark || afterId <= newestFresh)) {
+          continue;
+        }
         const covered =
           liveText !== '' &&
           freshAfter.some(
@@ -5189,7 +5231,7 @@ export default function ChatPane({
       backfillingRef.current = true;
       try {
         let before = oldestKey(itemsRef.current);
-        let collected: Item[] = [];
+        let collectedRaw: ChatMessage[] = [];
         let more = false;
         while (before > 0) {
           const page = await api.getMessagesPage(projectId, sessionId, CHAT_PAGE, before);
@@ -5199,17 +5241,17 @@ export default function ChatPane({
           // on screen), and discarding it here is what kept the cache
           // incomplete while turns fired reloads, so scroll-up kept fetching.
           if (sessionIdRef.current !== sessionId) return;
-          const older = mapMessages(page.messages, 0);
-          if (older.length === 0) {
+          if (page.messages.length === 0) {
             more = page.hasMore;
             break;
           }
-          collected = [...older, ...collected];
+          collectedRaw = [...page.messages, ...collectedRaw];
           more = page.hasMore;
-          const next = oldestKey(older);
-          if (!more || next === 0 || next === before) break; // no progress — stop
+          const next = Number(page.messages[0]?.id ?? 0);
+          if (!more || !next || next >= before) break; // no progress — stop
           before = next;
         }
+        const collected = collectedRaw.length > 0 ? mapMessages(collectedRaw, 0) : [];
         if (collected.length > 0) {
           prependOlder(collected);
           setHasOlder(more);
@@ -5305,7 +5347,36 @@ export default function ChatPane({
       // made a big chat slow to open.
       const page = pagePromise ? await pagePromise : await api.getMessagesPage(projectId, sessionId, CHAT_PAGE);
       if (!page) throw pageErr ?? new Error('The transcript could not be loaded.');
-      const fetched = mapMessages(page.messages, 0);
+      // When a single turn persists more than CHAT_PAGE (20) SQLite rows (tool
+      // calls + results + screenshots), bridge any gap back to the last
+      // contiguous loaded id (`transcriptMarkRef`) before `mapMessages` runs so
+      // tool results pair with their call rows across page boundaries and the
+      // middle of the turn is not left out of `mergeTail`.
+      let rawMessages = page.messages;
+      let pageHasMore = page.hasMore;
+      const loadedMark =
+        transcriptMarkRef.current.session === loadSession && transcriptMarkRef.current.id > 0
+          ? transcriptMarkRef.current.id
+          : 0;
+      if (loadedMark > 0 && rawMessages.length > 0 && pageHasMore) {
+        let oldestRaw = Number(rawMessages[0]?.id ?? 0);
+        let gapPages = 0;
+        while (pageHasMore && oldestRaw > loadedMark + 1 && gapPages < 25) {
+          const olderPage = await api.getMessagesPage(projectId, sessionId, CHAT_PAGE, oldestRaw);
+          if (loadSeqRef.current !== loadSeq || sessionIdRef.current !== loadSession) return;
+          if (olderPage.messages.length === 0) {
+            pageHasMore = olderPage.hasMore;
+            break;
+          }
+          rawMessages = [...olderPage.messages, ...rawMessages];
+          pageHasMore = olderPage.hasMore;
+          const nextOldest = Number(olderPage.messages[0]?.id ?? 0);
+          if (!nextOldest || nextOldest >= oldestRaw) break;
+          oldestRaw = nextOldest;
+          gapPages++;
+        }
+      }
+      const fetched = mapMessages(rawMessages, 0);
       const mapped =
         errorsClearedRef.current === errorsMark
           ? fetched
@@ -5313,8 +5384,12 @@ export default function ChatPane({
       // Drop the result if a newer load started or the session changed while
       // the fetch was in flight (switching mid-load shows the old transcript).
       if (loadSeqRef.current !== loadSeq || sessionIdRef.current !== loadSession) return;
-      const merged = withLiveTail(page.hasMore ? mergeTail(itemsRef.current, mapped) : mapped, liveMark);
+      const merged = withLiveTail(pageHasMore ? mergeTail(itemsRef.current, mapped) : mapped, liveMark);
       const keptHistory = merged.length > mapped.length;
+      const bridgedGap =
+        loadedMark > 0 &&
+        rawMessages.length > 0 &&
+        Number(rawMessages[0]?.id ?? 0) <= loadedMark + 1;
       // Only touch state when the fetch actually changed the thread. A poll or a
       // turn-end reload of an unchanged chat then commits nothing, so the rows
       // are not even re-rendered — the previous objects stay on screen.
@@ -5325,12 +5400,13 @@ export default function ChatPane({
         setItems(merged);
         pinPendingRef.current = true;
       }
-      setHasOlder(page.hasMore && (!keptHistory || hasOlderRef.current));
+      const stillHasOlder = pageHasMore && (!keptHistory || !bridgedGap || hasOlderRef.current);
+      setHasOlder(stillHasOlder);
       transcriptMarkRef.current = { session: loadSession, id: newestId(mapped) };
-      writeChatCache(projectId, sessionId, merged, !page.hasMore);
+      writeChatCache(projectId, sessionId, merged, !stillHasOlder);
       // Fill the rest of the thread in behind the reader, unless it is already
       // here (a reload that only brought new turns must not refetch it).
-      if (page.hasMore && (!keptHistory || hasOlderRef.current)) void backfill();
+      if (stillHasOlder) void backfill();
 
       // Runs that finished while the app was away are discovered here (the
       // live SSE event was lost). Notify for the newest one, unless it was
@@ -6564,8 +6640,12 @@ export default function ChatPane({
         case 'done': {
           const doneAssistantKey = assistantKeyRef.current;
           assistantKeyRef.current = null;
+          const more = ev.more === true;
           update((prev) =>
             prev.map((it) => {
+              if (!more && it.kind === 'tool' && it.running) {
+                return { ...it, running: false };
+              }
               if (it.kind !== 'msg' || it.role !== 'assistant') return it;
               const isFinal = doneAssistantKey !== null && it.key === doneAssistantKey;
               return {
@@ -6585,7 +6665,6 @@ export default function ChatPane({
           // A message queued (or steered but unconsumed) while this turn ran
           // becomes a follow-up turn on this same stream: the run is not over, so
           // neither the alert nor the composer's idle state may say it is.
-          const more = ev.more === true;
           if (!more) {
             if (!replaying) {
               void notifyTurnDone(projectId, sessionId, projectName, sessionNameRef.current);
@@ -6609,12 +6688,11 @@ export default function ChatPane({
             setRunActive(true);
             break;
           }
-          // Converge on the persisted transcript, exactly like reopening the
-          // chat does. A reply whose last tokens never arrived (a dropped
-          // stream, a truncated event) is complete on the server, and without
-          // this the reader had to leave the chat and come back to see it.
-          void load({ quiet: true });
+          // Mark the stream finished BEFORE `load({ quiet: true })` so
+          // `withLiveTail` sees `turnActive === false` and drops any leftover
+          // synthetic `tN` / `sN` rows in favor of the persisted transcript.
           finish();
+          void load({ quiet: true });
           break;
         }
         case 'error': {

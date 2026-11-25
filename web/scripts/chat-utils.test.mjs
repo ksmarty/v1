@@ -158,5 +158,31 @@ assert.equal(
   1,
   'a pure final assistant text row after tools is the turn summary',
 );
+assert.equal(
+  pickTurnSummaryIndex([
+    {
+      it: { kind: 'msg', role: 'assistant', content: '' },
+      d: {
+        calls: [{ name: 'compress', detail: '{}' }],
+        results: [{ name: 'compress', detail: 'Folded context: m00649–m00672' }],
+      },
+    },
+    {
+      it: {
+        kind: 'msg',
+        role: 'assistant',
+        content: 'Both shipped as `21a40a8` on top of v0.1.98.',
+        usage: { input: 137882, output: 750, context: 138632 },
+      },
+      d: { calls: [], results: [] },
+    },
+    {
+      it: { kind: 'tool', name: 'edit_file' },
+      d: { calls: [{ name: 'edit_file', detail: '{"path":"web/fields.tsx"}' }], results: [] },
+    },
+  ]),
+  1,
+  'a usage-bearing turn-final assistant summary must never be folded inside CollapsedToolsGroup between Folded context and a trailing synthetic tool card',
+);
 
 console.log('chat utility regression tests passed');

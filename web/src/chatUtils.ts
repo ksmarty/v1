@@ -120,20 +120,36 @@ export function findAssistantIndexForToolResult(
  */
 export function pickTurnSummaryIndex(
   entries: Array<{
-    it: { kind: string; role?: string; content?: string };
+    it: { kind: string; role?: string; content?: string; usage?: unknown };
     d?: { calls: unknown[]; results: unknown[]; ask?: unknown } | null;
   }>,
 ): number {
   if (entries.length === 0) return -1;
+  const isToolFreeAssistantText = (entry: {
+    it: { kind: string; role?: string; content?: string; usage?: unknown };
+    d?: { calls: unknown[]; results: unknown[]; ask?: unknown } | null;
+  }): boolean => {
+    if (entry.it.kind !== 'msg' || entry.it.role !== 'assistant' || !entry.it.content?.trim()) {
+      return false;
+    }
+    if (
+      entry.d &&
+      (entry.d.calls.length > 0 || entry.d.results.length > 0 || entry.d.ask != null)
+    ) {
+      return false;
+    }
+    return true;
+  };
   const lastIdx = entries.length - 1;
-  const last = entries[lastIdx];
-  if (last.it.kind !== 'msg' || last.it.role !== 'assistant' || !last.it.content?.trim()) {
-    return -1;
+  if (isToolFreeAssistantText(entries[lastIdx])) {
+    return lastIdx;
   }
-  if (last.d && (last.d.calls.length > 0 || last.d.results.length > 0 || last.d.ask != null)) {
-    return -1;
+  for (let k = lastIdx - 1; k >= 0; k--) {
+    if (isToolFreeAssistantText(entries[k]) && Boolean(entries[k].it.usage)) {
+      return k;
+    }
   }
-  return lastIdx;
+  return -1;
 }
 
 /** Extracts the useful reason from a stored tool failure, if there is one. */
